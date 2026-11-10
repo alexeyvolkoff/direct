@@ -331,7 +331,7 @@ export async function addShareFromPicker() {
   return { name, kind: "fs" };
 }
 
-export const DEFAULT_STORAGE_PATH = "/Private/AIAssistant";
+export const DEFAULT_STORAGE_PATH = "/Private/Data";
 
 /** Register an OPFS share (fallback when no File System Access API). */
 export async function addOpfsShare(name = "LocalStorage") {
@@ -349,10 +349,10 @@ export async function ensureDefaultOpfsShare(defaultStorage = DEFAULT_STORAGE_PA
     let raw = (parsed.folder || DEFAULT_STORAGE_PATH).replace(/^\/+|\/+$/g, "");
     const localName = (typeof localStorage !== "undefined" ? localStorage.getItem("omd_local_devicename") : "") || getDefaultWebDeviceName();
 
-    // If the storage path is qualified with a foreign device (e.g. "/remote-node/AIAssistant" or "/remote-node"),
+    // If the storage path is qualified with a foreign device (e.g. "/remote-node/Data" or "/remote-node"),
     // do NOT treat that foreign device name as a local OPFS share! Local fallback is always Private.
     if (parsed.isDeviceQualified && parsed.deviceName && parsed.deviceName.toLowerCase() !== localName.toLowerCase()) {
-      raw = "Private/AIAssistant";
+      raw = "Private/Data";
     }
 
     if (raw.toLowerCase().startsWith(localName.toLowerCase() + "/")) {
@@ -362,9 +362,9 @@ export async function ensureDefaultOpfsShare(defaultStorage = DEFAULT_STORAGE_PA
     }
     // Collapse accidental duplicate "Private/Private"
     raw = raw.replace(/^Private\/Private(\/|$)/i, "Private$1");
-    // If given only "/AIAssistant" or "/OnMyChat", qualify it with the share prefix "/Private/..."
+    // If given only "/Data" or "/OnMyChat", qualify it with the share prefix "/Private/..."
     if (!raw.toLowerCase().startsWith("private/") && (
-      raw.toLowerCase() === "aiassistant" || raw.toLowerCase().startsWith("aiassistant/") ||
+      raw.toLowerCase() === "data" || raw.toLowerCase().startsWith("data/") ||
       raw.toLowerCase() === "onmychat" || raw.toLowerCase().startsWith("onmychat/")
     )) {
       raw = "Private/" + raw;
@@ -375,7 +375,7 @@ export async function ensureDefaultOpfsShare(defaultStorage = DEFAULT_STORAGE_PA
     if (deviceRegistry.list().some(d => d && !d.local && d.name && d.name.toLowerCase() === shareName.toLowerCase())) {
       shareName = "Private";
     }
-    const subPath = parts.slice(1).join("/") || "AIAssistant";
+    const subPath = parts.slice(1).join("/") || "Data";
 
     const opfsRoot = await getOpfsRoot();
     const shareDir = await opfsRoot.getDirectoryHandle(shareName, { create: true });
@@ -534,7 +534,7 @@ export class LocalDrive {
   async _resolveDir(folderId, create = false) {
     let clean = String(folderId || "/").replace(/^\/+/, "");
     if (!clean.toLowerCase().startsWith("private/") && (
-      clean.toLowerCase().startsWith("aiassistant/") || clean.toLowerCase() === "aiassistant" ||
+      clean.toLowerCase().startsWith("data/") || clean.toLowerCase() === "data" ||
       clean.toLowerCase().startsWith("onmychat/") || clean.toLowerCase() === "onmychat"
     )) {
       clean = "Private/" + clean;
@@ -715,7 +715,7 @@ export class LocalDrive {
   async homeWrite(virtualPath, dataBase64) {
     let clean = String(virtualPath || "").replace(/^\/+/, "");
     if (!clean.toLowerCase().startsWith("private/") && (
-      clean.toLowerCase().startsWith("aiassistant/") || clean.toLowerCase() === "aiassistant" ||
+      clean.toLowerCase().startsWith("data/") || clean.toLowerCase() === "data" ||
       clean.toLowerCase().startsWith("onmychat/") || clean.toLowerCase() === "onmychat"
     )) {
       clean = "Private/" + clean;

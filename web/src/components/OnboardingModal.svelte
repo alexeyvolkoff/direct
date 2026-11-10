@@ -68,7 +68,7 @@
         return parsed.folder.startsWith("/") ? parsed.folder : "/" + parsed.folder;
       }
     }
-    return "/AIAssistant";
+    return "/Data";
   }
 
   function applyConfiguredStorage(rawPath) {
@@ -77,8 +77,8 @@
     if (
       !clean ||
       clean === DEFAULT_STORAGE_PATH ||
-      clean === "/Documents/AIAssistant" ||
-      clean === "/Private/AIAssistant" ||
+      clean === "/Documents/Data" ||
+      clean === "/Private/Data" ||
       clean === "/Documents/OnMyChat" ||
       clean === "/Private/OnMyChat"
     ) {
@@ -189,7 +189,7 @@
     currentStep = 2;
     savingNode = false;
     storageChoice = isNativeStorageAvailable() ? "mobile_native" : "opfs";
-    storagePath = isNativeStorageAvailable() ? "/Documents/AIAssistant" : DEFAULT_STORAGE_PATH;
+    storagePath = isNativeStorageAvailable() ? "/Documents/Data" : DEFAULT_STORAGE_PATH;
     syncDefaultsFromIdentity().catch(() => {});
     fetchAssistantSummary().catch(() => {});
   } else if (!isOpen && wasOpen) {
@@ -202,7 +202,7 @@
   // 'opfs' | 'local_folder' | 'mobile_native' | 'remote_device'
   let storageChoice = isNativeStorageAvailable() ? "mobile_native" : "opfs";
   let localFolderName = "";
-  let storagePath = isNativeStorageAvailable() ? "/Documents/AIAssistant" : DEFAULT_STORAGE_PATH;
+  let storagePath = isNativeStorageAvailable() ? "/Documents/Data" : DEFAULT_STORAGE_PATH;
   let pickingFolder = false;
   let folderPickError = "";
 
@@ -367,7 +367,7 @@
   onMount(() => {
     if (isNativeStorageAvailable()) {
       storageChoice = "mobile_native";
-      storagePath = "/Documents/AIAssistant";
+      storagePath = "/Documents/Data";
     }
     syncDefaultsFromIdentity().catch(() => {});
     refreshNearby().catch(() => {});
@@ -404,7 +404,7 @@
       if (share && share.name) {
         localFolderName = share.name;
         storageChoice = "local_folder";
-        storagePath = "/" + share.name + "/AIAssistant";
+        storagePath = "/" + share.name + "/Data";
       }
     } catch (err) {
       if (err?.name !== "AbortError" && err?.code !== 20) {
@@ -607,9 +607,9 @@
       // 1. Persist storage path
       let chosenPath = DEFAULT_STORAGE_PATH;
       if (storageChoice === "mobile_native") {
-        chosenPath = "/Documents/AIAssistant";
+        chosenPath = "/Documents/Data";
       } else if (storageChoice === "local_folder" && localFolderName) {
-        chosenPath = "/" + localFolderName + "/AIAssistant";
+        chosenPath = "/" + localFolderName + "/Data";
       } else if (storageChoice === "remote_device" && selectedRemoteDevice) {
         const devName = selectedRemoteDevice.name || selectedRemoteDevice.linkId;
         chosenPath = "/" + devName + getRemoteSubfolder(selectedRemoteDevice);
@@ -833,7 +833,7 @@
 
             <div class="options-grid">
               {#if isMobile}
-                <!-- Option for Mobile: Native Storage /Documents/AIAssistant -->
+                <!-- Option for Mobile: Native Storage /Documents/Data -->
                 <label class="option-card {storageChoice === 'mobile_native' ? 'selected' : 'collapsed'}">
                   <input
                     type="radio"
@@ -855,7 +855,7 @@
                           {$_("onboarding_storage_mobile_desc", {}, "Системная папка «Документы» на вашем мобильном устройстве. Файлы и результаты генераций сохраняются прямо в память телефона.")}
                         </p>
                         <div class="option-path-preview">
-                          <code>/Documents/AIAssistant</code>
+                          <code>/Documents/Data</code>
                         </div>
                       </div>
                     {/if}
@@ -884,7 +884,7 @@
                           {$_("onboarding_storage_opfs_desc", {}, "Быстрое приватное хранилище (Origin Private File System). Работает в любой операционной системе и не требует подтверждения прав доступа к файлам ОС.")}
                         </p>
                         <div class="option-path-preview">
-                          <code>/Private/AIAssistant</code>
+                          <code>/Private/Data</code>
                         </div>
                       </div>
                     {/if}
@@ -920,7 +920,7 @@
                     <div class="option-top">
                       <span class="option-title">{$_("onboarding_storage_local_title", {}, "Локальная папка на вашем компьютере")}</span>
                       {#if localFolderName}
-                        <span class="badge-chosen">/{localFolderName}/AIAssistant</span>
+                        <span class="badge-chosen">/{localFolderName}/Data</span>
                       {/if}
                     </div>
                     {#if storageChoice === 'local_folder'}
@@ -930,7 +930,7 @@
                         </p>
                         {#if localFolderName}
                           <div class="option-path-preview">
-                            <code>/{localFolderName}/AIAssistant</code>
+                            <code>/{localFolderName}/Data</code>
                           </div>
                         {:else if !hasFsAccess}
                           <span class="note-fs">{$_("onboarding_storage_local_note", {}, "Доступно в Chrome, Edge и Яндекс.Браузере")}</span>
@@ -969,7 +969,7 @@
                   {#if storageChoice === 'remote_device'}
                     <div class="option-expand-content">
                       <p class="option-desc">
-                        {$_("onboarding_storage_remote_desc", {}, "Подключите узел или клиент Disk Direct (Desktop, NAS, Raspberry Pi), используя 10-значный Link ID. Папка по умолчанию: AIAssistant на этом устройстве.")}
+                        {$_("onboarding_storage_remote_desc", {}, "Подключите узел или клиент Disk Direct (Desktop, NAS, Raspberry Pi), используя 10-значный Link ID. Папка по умолчанию: Data на этом устройстве.")}
                       </p>
                       {#if selectedRemoteDevice}
                         <div class="option-path-preview">
@@ -1330,13 +1330,13 @@
                   <div class="summary-label">{$_("onboarding_summary_folder", {}, "Папка для сохранения")}</div>
                   <div class="summary-val">
                     {#if storageChoice === 'mobile_native'}
-                      {$_("onboarding_summary_folder_phone", {}, "Хранилище телефона (/Documents/AIAssistant)")}
+                      {$_("onboarding_summary_folder_phone", {}, "Хранилище телефона (/Documents/Data)")}
                     {:else if storageChoice === 'local_folder' && localFolderName}
-                      /{localFolderName}/AIAssistant
+                      /{localFolderName}/Data
                     {:else if storageChoice === 'remote_device' && selectedRemoteDevice}
                       {selectedRemoteDevice.name || selectedRemoteDevice.linkId} ({getRemoteSubfolder(selectedRemoteDevice)})
                     {:else}
-                      OPFS (/Private/AIAssistant)
+                      OPFS (/Private/Data)
                     {/if}
                   </div>
                 </div>

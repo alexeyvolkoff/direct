@@ -274,7 +274,7 @@
       (typeof localStorage !== "undefined" ? localStorage.getItem("omd_default_storage") : "") ||
       (typeof window !== "undefined" && window.__omdProfile?.defaultStorage) ||
       DEFAULT_STORAGE_PATH ||
-      "/AIAssistant"
+      "/Data"
     ).trim();
     const { folder } = parseStoragePath(raw);
     let clean = (folder || "").replace(/^\/+|\/+$/g, "");
@@ -288,7 +288,7 @@
     for (const u of knownUsers) {
       const uLower = u.toLowerCase();
       if (clean.toLowerCase() === uLower) {
-        clean = (DEFAULT_STORAGE_PATH || "/AIAssistant").replace(/^\/+/, "");
+        clean = (DEFAULT_STORAGE_PATH || "/Data").replace(/^\/+/, "");
         break;
       } else if (clean.toLowerCase().startsWith(uLower + "/")) {
         clean = clean.slice(u.length).replace(/^\/+/, "");
@@ -305,9 +305,9 @@
     clean = clean.replace(/^\/+|\/+$/g, "");
 
     if (!clean || clean.toLowerCase() === "alexey") {
-      clean = (DEFAULT_STORAGE_PATH || "/AIAssistant").replace(/^\/+/, "");
+      clean = (DEFAULT_STORAGE_PATH || "/Data").replace(/^\/+/, "");
     }
-    return clean || "AIAssistant";
+    return clean || "Data";
   }
 
   function getTargetFolder() {
@@ -491,11 +491,11 @@
       if (cleanBase && !candidateFolders.includes(`/${cleanBase}/generated`)) {
         candidateFolders.push(`/${cleanBase}/generated`);
       }
-      if (!candidateFolders.includes("/Private/AIAssistant/generated")) {
-        candidateFolders.push("/Private/AIAssistant/generated");
+      if (!candidateFolders.includes("/Private/Data/generated")) {
+        candidateFolders.push("/Private/Data/generated");
       }
-      if (!candidateFolders.includes("/AIAssistant/generated")) {
-        candidateFolders.push("/AIAssistant/generated");
+      if (!candidateFolders.includes("/Data/generated")) {
+        candidateFolders.push("/Data/generated");
       }
       if (!candidateFolders.includes("/Private/OnMyChat/generated")) {
         candidateFolders.push("/Private/OnMyChat/generated");
