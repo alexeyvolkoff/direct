@@ -1,0 +1,22 @@
+#!/bin/sh /etc/rc.common
+#Starts On My Disk
+
+START=80
+
+start() {
+        printf "Starting On My Disk:"
+        /opt/bin/onmydisk &
+        echo "OK"
+}
+stop() {
+        printf "Stopping On My Disk:"
+        /opt/bin/onmydisk -q
+        /bin/sleep 1
+        echo "OK"
+}
+restart() {
+        stop
+        start
+}
+
+

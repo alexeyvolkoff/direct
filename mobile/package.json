@@ -1,0 +1,24 @@
+{
+  "name": "omd-mobile",
+  "version": "3.0.4823",
+  "description": "Mobile sub-project for On My Disk using Capacitor",
+  "scripts": {
+    "sync": "cap sync",
+    "open:android": "cap open android",
+    "open:ios": "cap open ios",
+    "build:android": "cap build android",
+    "build:ios": "cap build ios"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^6.0.0",
+    "@capacitor/cli": "^6.0.0",
+    "@capacitor/ios": "^6.0.0",
+    "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "@capacitor-community/apple-sign-in": "^6.0.0",
+    "@capacitor/core": "^6.0.0",
+    "@capacitor/push-notifications": "^6.0.5",
+    "@capgo/capacitor-updater": "^6.4.0"
+  }
+}

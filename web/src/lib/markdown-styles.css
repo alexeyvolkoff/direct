@@ -1,0 +1,153 @@
+.md-view.light-theme {
+  color: #101c22;
+  --md-border: #d8dee4;
+  --md-border-strong: #c9d1d9;
+  --md-text-secondary: #57606a;
+  --md-code-bg: #f6f8fa;
+  --md-inline-code-bg: rgba(175, 184, 193, 0.25);
+  --md-table-head-bg: #f6f8fa;
+  --md-table-row-bg: #f8fafc;
+  --md-link: #0969da;
+  --md-stage-bg: #f8fafc;
+}
+
+.md-view.dark-theme {
+  color: #ffffff;
+  --md-border: #323f47;
+  --md-border-strong: #3d4b55;
+  --md-text-secondary: #a8b6c2;
+  --md-code-bg: #1a2329;
+  --md-inline-code-bg: rgba(148, 163, 184, 0.18);
+  --md-table-head-bg: #1a2329;
+  --md-table-row-bg: #1e272e;
+  --md-link: #58a6ff;
+  --md-stage-bg: #29333a;
+}
+
+.md-view .markdown-body {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 16px 24px 32px;
+  font-size: 15px;
+  line-height: 1.65;
+  word-wrap: break-word;
+  color: inherit;
+}
+
+.md-view .markdown-body h1,
+.md-view .markdown-body h2 {
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--md-border);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.md-view .markdown-body h1 { font-size: 1.7em; margin: 24px 0 16px; }
+.md-view .markdown-body h2 { font-size: 1.35em; margin: 24px 0 16px; }
+.md-view .markdown-body h3 { font-size: 1.15em; margin: 20px 0 12px; font-weight: 600; }
+.md-view .markdown-body h4 { font-size: 1em; margin: 16px 0 10px; font-weight: 600; }
+.md-view .markdown-body h5,
+.md-view .markdown-body h6 { font-size: 0.92em; margin: 16px 0 10px; font-weight: 600; }
+
+.md-view .markdown-body p {
+  margin: 0 0 14px;
+}
+
+.md-view .markdown-body ul,
+.md-view .markdown-body ol {
+  margin: 0 0 14px;
+  padding-left: 2em;
+}
+
+.md-view .markdown-body li {
+  margin: 4px 0;
+}
+
+.md-view .markdown-body li > input[type="checkbox"] {
+  margin-right: 6px;
+}
+
+.md-view .markdown-body blockquote {
+  margin: 0 0 14px;
+  padding: 2px 14px;
+  color: var(--md-text-secondary);
+  border-left: 4px solid var(--md-border-strong);
+}
+
+.md-view .markdown-body pre {
+  margin: 0 0 14px;
+  padding: 14px 16px;
+  border-radius: 8px;
+  overflow-x: auto;
+  background: var(--md-code-bg);
+  border: 1px solid var(--md-border);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.md-view .markdown-body pre > code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+}
+
+.md-view .markdown-body code {
+  font-family: "Roboto Mono", ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.88em;
+  background: var(--md-inline-code-bg);
+  border-radius: 5px;
+  padding: 0.15em 0.35em;
+}
+
+.md-view .markdown-body table {
+  margin: 0 0 14px;
+  border-collapse: collapse;
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.md-view .markdown-body th,
+.md-view .markdown-body td {
+  border: 1px solid var(--md-border-strong);
+  padding: 6px 13px;
+}
+
+.md-view .markdown-body th {
+  font-weight: 600;
+  background: var(--md-table-head-bg);
+}
+
+.md-view .markdown-body tr:nth-child(2n) {
+  background: var(--md-table-row-bg);
+}
+
+.md-view .markdown-body hr {
+  height: 0.25em;
+  border: 0;
+  margin: 18px 0;
+  background: var(--md-border);
+  border-radius: 2px;
+}
+
+.md-view .markdown-body a {
+  color: var(--md-link);
+  text-decoration: none;
+}
+
+.md-view .markdown-body a:hover {
+  text-decoration: underline;
+}
+
+.md-view .markdown-body img {
+  max-width: 100%;
+  border-radius: 6px;
+}
+
+.md-view .markdown-body .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 4px 0;
+}

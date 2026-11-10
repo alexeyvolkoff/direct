@@ -1,0 +1,271 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>AdvancedSettings</class>
+ <widget class="QWidget" name="AdvancedSettings">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>396</width>
+    <height>382</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Form</string>
+  </property>
+  <property name="styleSheet">
+   <string notr="true">#advancedWidget{
+background: url(:/resource/background.jpg);
+border-width: 0;
+}
+
+QWidget {
+	font-size: 14px;
+}
+
+QLabel {
+color: #e3eaee;
+background: transparent;
+}
+QLineEdit { 
+  background: rgb(255, 255, 255);
+ color: #143a61;
+ border: 2px solid #143a61;
+ border-radius:4px; 
+ padding:  2px;
+}
+
+QCheckBox {
+	background: transparent;
+   color: white;
+}
+
+QCheckBox::indicator { 
+  background: rgb(255, 255, 255);
+ color: #143a61;
+ border: 2px solid #143a61;
+ width:  14px; 
+ height:  14px;
+ border-radius:4px; 
+}
+QCheckBox::indicator:checked {
+    image: url(:/resource/object-select-symbolic.symbolic.png);
+}
+
+QPushButton {
+		background: rgba(249,253,255,60);
+		border-radius: 4px;
+	    color: #ffffff;
+}
+
+QPushButton:hover:pressed {
+		background-color: #3297ca;
+}
+
+QPushButton:hover:!pressed {
+        background-color: rgba(249,253,255,80);
+}</string>
+  </property>
+  <layout class="QGridLayout" name="gridLayout">
+   <item row="10" column="2">
+    <widget class="QLineEdit" name="passwordEdit">
+     <property name="text">
+      <string/>
+     </property>
+    </widget>
+   </item>
+   <item row="8" column="1">
+    <widget class="QLabel" name="portLabel">
+     <property name="text">
+      <string>Proxy port:</string>
+     </property>
+    </widget>
+   </item>
+   <item row="10" column="1">
+    <widget class="QLabel" name="passwordLabel">
+     <property name="text">
+      <string>Password:</string>
+     </property>
+    </widget>
+   </item>
+   <item row="12" column="1" colspan="2">
+    <layout class="QHBoxLayout" name="horizontalLayout">
+     <item>
+      <widget class="QPushButton" name="cancelButton">
+       <property name="minimumSize">
+        <size>
+         <width>0</width>
+         <height>32</height>
+        </size>
+       </property>
+       <property name="cursor">
+        <cursorShape>PointingHandCursor</cursorShape>
+       </property>
+       <property name="text">
+        <string>Back</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="okButton">
+       <property name="minimumSize">
+        <size>
+         <width>0</width>
+         <height>32</height>
+        </size>
+       </property>
+       <property name="cursor">
+        <cursorShape>PointingHandCursor</cursorShape>
+       </property>
+       <property name="text">
+        <string>Apply</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item row="2" column="2">
+    <widget class="QLineEdit" name="cloudPortEdit"/>
+   </item>
+   <item row="7" column="3">
+    <spacer name="horizontalSpacer_2">
+     <property name="orientation">
+      <enum>Qt::Horizontal</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>30</width>
+       <height>20</height>
+      </size>
+     </property>
+    </spacer>
+   </item>
+   <item row="1" column="1">
+    <widget class="QLabel" name="serverLabel">
+     <property name="text">
+      <string>Gateway:</string>
+     </property>
+    </widget>
+   </item>
+   <item row="9" column="1">
+    <widget class="QLabel" name="userLabel">
+     <property name="text">
+      <string>User:</string>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="2">
+    <widget class="QLineEdit" name="serverEdit"/>
+   </item>
+   <item row="6" column="1" colspan="2">
+    <widget class="QCheckBox" name="renewCheckBox">
+     <property name="toolTip">
+      <string>Switch account or re-login</string>
+     </property>
+     <property name="statusTip">
+      <string>Switch account or re-login</string>
+     </property>
+     <property name="text">
+      <string>Reset connection</string>
+     </property>
+    </widget>
+   </item>
+   <item row="9" column="2">
+    <widget class="QLineEdit" name="userEdit">
+     <property name="text">
+      <string/>
+     </property>
+    </widget>
+   </item>
+   <item row="11" column="1" colspan="2">
+    <widget class="QWidget" name="spacer" native="true">
+     <property name="minimumSize">
+      <size>
+       <width>0</width>
+       <height>24</height>
+      </size>
+     </property>
+    </widget>
+   </item>
+   <item row="7" column="1">
+    <widget class="QLabel" name="hostLabel">
+     <property name="text">
+      <string>Proxy host:</string>
+     </property>
+    </widget>
+   </item>
+   <item row="13" column="2">
+    <spacer name="verticalSpacer_2">
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>20</width>
+       <height>74</height>
+      </size>
+     </property>
+    </spacer>
+   </item>
+   <item row="8" column="2">
+    <widget class="QLineEdit" name="portEdit">
+     <property name="text">
+      <string/>
+     </property>
+    </widget>
+   </item>
+   <item row="7" column="2">
+    <widget class="QLineEdit" name="hostEdit"/>
+   </item>
+   <item row="2" column="1">
+    <widget class="QLabel" name="cloudPortLabel">
+     <property name="text">
+      <string>Port:</string>
+     </property>
+    </widget>
+   </item>
+   <item row="4" column="1" colspan="2">
+    <widget class="QCheckBox" name="autostartCheckBox">
+     <property name="text">
+      <string>Connect on system startup</string>
+     </property>
+    </widget>
+   </item>
+   <item row="5" column="1" colspan="2">
+    <widget class="QCheckBox" name="proxyCheckbox">
+     <property name="text">
+      <string>Use proxy</string>
+     </property>
+    </widget>
+   </item>
+   <item row="7" column="0">
+    <spacer name="horizontalSpacer">
+     <property name="orientation">
+      <enum>Qt::Horizontal</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>30</width>
+       <height>20</height>
+      </size>
+     </property>
+    </spacer>
+   </item>
+   <item row="0" column="2">
+    <spacer name="verticalSpacer">
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>20</width>
+       <height>40</height>
+      </size>
+     </property>
+    </spacer>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

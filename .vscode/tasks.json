@@ -1,0 +1,210 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Generate compile_commands.json",
+            "type": "shell",
+            "command": "./.vscode/generate_compile_commands.sh",
+            "windows": {
+                "command": "wsl bash -c './.vscode/generate_compile_commands.sh'"
+            },
+            "problemMatcher": [],
+            "group": "build"
+        },
+        {
+            "label": "Build",
+            "type": "shell",
+            "command": "make -j$(nproc)",
+            "windows": {
+                "command": "wsl bash -c 'make -j$(nproc)'"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": [
+                "$gcc"
+            ]
+        },
+        {
+            "label": "Rebuild",
+            "type": "shell",
+            "command": "make clean && make -j$(nproc)",
+            "windows": {
+                "command": "wsl bash -c 'make clean && make -j$(nproc)'"
+            },
+            "group": "build",
+            "problemMatcher": [
+                "$gcc"
+            ]
+        },
+        {
+            "label": "QMake Gateway Debug",
+            "type": "shell",
+            "command": "qmake CONFIG+=debug -r Gateway.pro",
+            "windows": {
+                "command": "wsl bash -c 'qmake CONFIG+=debug -r Gateway.pro'"
+            },
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            "label": "QMake Gateway Release",
+            "type": "shell",
+            "command": "qmake CONFIG+=release -r Gateway.pro",
+            "windows": {
+                "command": "wsl bash -c 'qmake CONFIG+=release -r Gateway.pro'"
+            },
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            "label": "QMake Node Debug",
+            "type": "shell",
+            "command": "qmake CONFIG+=debug -r Node.pro",
+            "windows": {
+                "command": "wsl bash -c 'qmake CONFIG+=debug -r Node.pro'"
+            },
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            "label": "QMake Node Release",
+            "type": "shell",
+            "command": "qmake CONFIG+=release -r Node.pro",
+            "windows": {
+                "command": "wsl bash -c 'qmake CONFIG+=release -r Node.pro'"
+            },
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            "label": "Build Gateway Debug",
+            "dependsOn": [
+                "QMake Gateway Debug"
+            ],
+            "type": "shell",
+            "command": "make -j$(nproc)",
+            "windows": {
+                "command": "wsl bash -c 'make -j$(nproc)'"
+            },
+            "group": "build",
+            "problemMatcher": [
+                "$gcc"
+            ]
+        },
+        {
+            "label": "Build Gateway Release",
+            "dependsOn": [
+                "QMake Gateway Release"
+            ],
+            "type": "shell",
+            "command": "make -j$(nproc)",
+            "windows": {
+                "command": "wsl bash -c 'make -j$(nproc)'"
+            },
+            "group": "build",
+            "problemMatcher": [
+                "$gcc"
+            ]
+        },
+        {
+            "label": "Build Node Debug",
+            "dependsOn": [
+                "QMake Node Debug"
+            ],
+            "type": "shell",
+            "command": "make -j$(nproc)",
+            "windows": {
+                "command": "wsl bash -c 'make -j$(nproc)'"
+            },
+            "group": "build",
+            "problemMatcher": [
+                "$gcc"
+            ]
+        },
+        {
+            "label": "Build Node Release",
+            "dependsOn": [
+                "QMake Node Release"
+            ],
+            "type": "shell",
+            "command": "make -j$(nproc)",
+            "windows": {
+                "command": "wsl bash -c 'make -j$(nproc)'"
+            },
+            "group": "build",
+            "problemMatcher": [
+                "$gcc"
+            ]
+        },
+        {
+            "label": "Clean All",
+            "type": "shell",
+            "command": "make clean || echo 'Already clean'",
+            "windows": {
+                "command": "wsl bash -c 'make clean || echo \"Already clean\"'"
+            },
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            "label": "Run Gateway Debug",
+            "type": "shell",
+            "command": "./omd-server -c ../etc/config/local.conf",
+            "options": {
+                "cwd": "${workspaceFolder}/run/bin_d"
+            },
+            "windows": {
+                "command": "wsl bash -c 'cd /home/alexey/projects/onmydisk/run/bin_d && ./omd-server -c ../etc/config/local.conf'"
+            },
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            }
+        },
+        {
+            "label": "Run Gateway Release",
+            "type": "shell",
+            "command": "./omd-server -c ../etc/config/local.conf",
+            "options": {
+                "cwd": "${workspaceFolder}/run/bin"
+            },
+            "windows": {
+                "command": "wsl bash -c 'cd /home/alexey/projects/onmydisk/run/bin && ./omd-server -c ../etc/config/local.conf'"
+            },
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            }
+        },
+        {
+            "label": "Build & Run Gateway Debug",
+            "dependsOn": [
+                "Build Gateway Debug"
+            ],
+            "type": "shell",
+            "command": "./omd-server -c ../etc/config/local.conf",
+            "options": {
+                "cwd": "${workspaceFolder}/run/bin_d"
+            },
+            "windows": {
+                "command": "wsl bash -c 'cd /home/alexey/projects/onmydisk/run/bin_d && ./omd-server -c ../etc/config/local.conf'"
+            },
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            }
+        },
+        {
+            "label": "Run Node",
+            "type": "shell",
+            "command": "cd Node/target/usr/bin && export LD_LIBRARY_PATH=../lib:$LD_LIBRARY_PATH && ./onmydisk",
+            "group": "test",
+            "problemMatcher": []
+        }
+    ]
+}

@@ -1,0 +1,34 @@
+*This is not a conversational request — create an image prompt for SDXL.*
+
+Return TWO lines: `Title: <short title>` then `Image: <comma-separated tags>`.
+
+Create a vivid, specific scene based on the conversation history and user request: "{prompt}"
+
+**CRITICAL — Include ALL of these in the Image tags:**
+   — **Main subject / action:** What or who is in the scene, what is happening?
+   — **Environment/Location:** Where is this? Be specific (indoors, outdoors, setting)
+   — **Lighting/Atmosphere:** Mood, lighting, time of day, weather
+   — **Details:** Objects, props, notable visual elements
+
+WARNING: The image MUST reflect the specific scene from the story. Do NOT generate generic or default scenes.
+
+**If the companion character is in the scene,** describe their pose and actions only. Do NOT describe their body, hair, or face — that is handled separately.
+
+**STYLE (Danbooru Tag Style):**
+   — Comma-separated tags, lowercase, no full sentences
+   — Structure: `[Subject/Action], [Details], [Location], [Lighting/Atmosphere], [Style]`
+   — Perspective: External observer view
+   — Use parentheses for emphasis: `(keyword:1.1)` or `((keyword))`
+
+**OUTPUT RULES:**
+   — Line 1: `Title:` (3-4 words max)
+   — Line 2: `Image:` followed by tags
+   — NO explanations, NO markdown, NO lists
+
+**Example:**
+Title: Rainy Night Balcony
+Image: 1girl, leaning on balcony railing, (intricate black lace dress:1.2), night cityscape background, neon lights reflection, pensive expression, cinematic lighting, wet pavement, moody atmosphere, photorealistic
+
+**Result:**
+Title: [Title]
+Image: [Prompt string]

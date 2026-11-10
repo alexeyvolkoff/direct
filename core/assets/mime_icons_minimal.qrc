@@ -1,0 +1,13 @@
+<RCC>
+    <qresource prefix="/filemanager">
+        <file>mimetypes/128/folder.png</file>
+        <file>mimetypes/64/folder.png</file>
+        <file>mimetypes/24/folder.png</file>
+        <file>mimetypes/128/document.png</file>
+        <file>mimetypes/64/document.png</file>
+        <file>mimetypes/24/document.png</file>
+        <file>mimetypes/128/unknown.png</file>
+        <file>mimetypes/24/unknown.png</file>
+        <file>mimetypes/64/unknown.png</file>
+    </qresource>
+</RCC>

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">On My Disk</string>
+    <string name="title_activity_main">On My Disk</string>
+    <string name="package_name">net.onmydisk.app</string>
+    <string name="custom_url_scheme">net.onmydisk.app</string>
+</resources>

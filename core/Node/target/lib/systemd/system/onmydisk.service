@@ -1,0 +1,16 @@
+[Unit]
+Description=On My Disk daemon
+; Start after the network has been configured
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/onmydisk
+Restart=always
+RestartSec=1s
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target

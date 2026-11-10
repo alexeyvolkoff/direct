@@ -1,0 +1,850 @@
+variables:
+  QMAKE_OPENWRT_ARM: /data/tools/openwrt-arm/openwrt/staging_dir/toolchain-arm_cortex-a9+vfpv3-d16_gcc-8.4.0_musl_eabi/bin/qmake
+  GIT_CLEAN_FLAGS: -ffdx -e build/ -e run/ -e libdatachannel/
+
+
+stages:
+  - build
+  - build_innbox
+  - deploy_innbox
+  - deploy
+  - mobile
+  - test_automated
+
+
+repair_workspace:
+  stage: build
+  variables:
+    GIT_STRATEGY: none
+  script:
+    - docker run --rm -v "$(pwd)":/onmydisk alpine chown -R $(id -u):$(id -g) /onmydisk
+  tags:
+    - deb
+  when: manual
+
+
+
+
+build_openwrt_arm:
+  stage: build
+  variables:
+    KIT_ARCH: armv7
+    QTDIR: /data/tools/openwrt-arm/openwrt/staging_dir/target-arm_cortex-a9+vfpv3-d16_musl_eabi
+    STAGING_DIR: /data/tools/openwrt-arm/openwrt/staging_dir/target-arm_cortex-a9+vfpv3-d16_musl_eabi
+    KIT_INCLUDE: /data/tools/openwrt-arm/openwrt/staging_dir/target-arm_cortex-a9+vfpv3-d16_musl_eabi/usr/include
+  script:
+  - eval 'export PATH=/data/tools/openwrt-arm/openwrt/staging_dir/toolchain-arm_cortex-a9+vfpv3-d16_gcc-8.4.0_musl_eabi/bin:$PATH'
+  - mkdir -p build_arm
+  - pushd build_arm
+  - 'eval $QMAKE_OPENWRT_ARM CONFIG+=DEPLOY DEFINES+=ROUTER BUILD_VERSION=$CI_PIPELINE_ID ../Node.pro'
+  - make
+  - popd
+  - pushd Node
+  - sed -i "s|version|2.1.5.$CI_PIPELINE_ID|g" control/control
+  - sed -i "s|arch|arm_cortex-a9_vfpv3-d16|g" control/control
+  - pushd control
+  - tar --numeric-owner --group=0 --owner=0 -czvf ../control.tar.gz .
+  - popd
+  - pushd router
+  - tar --numeric-owner --group=0 --owner=0 -czvf ../data.tar.gz .
+  - popd
+  - echo 2.0 > debian-binary
+  - tar czvf onmydisk_"2.1.5.$CI_PIPELINE_ID"_armhf.ipk  control.tar.gz data.tar.gz  debian-binary
+  - scp onmydisk_"2.1.5.$CI_PIPELINE_ID"_armhf.ipk repo@forge.onmydisk.net:/opt/repo/OpenWrt/onmydisk-latest-armhf.ipk
+  - popd
+  tags:
+  - arm
+  when: manual
+  artifacts:
+    paths:
+    - Node/*.ipk
+    expire_in: 1 week
+
+
+build_innbox_mips:
+  stage: build_innbox
+  variables:
+    KIT_ARCH: mips
+    KIT_TARGET: INNBOX
+    QTDIR: /data/tools/openwrt/staging_dir/target-mips_24kc_musl
+    QMAKE_MIPS: /data/tools/openwrt/staging_dir/toolchain-mips_24kc_gcc-8.4.0_musl/bin/qmake
+    STAGING_DIR: /data/tools/openwrt/staging_dir/target-mips_24kc_musl
+    KIT_INCLUDE: /data/tools/openwrt/staging_dir/target-mips_24kc_musl/usr/include
+  script:
+  - eval 'export PATH=/data/tools/openwrt/staging_dir/toolchain-mips_24kc_gcc-8.4.0_musl/bin:$PATH'
+  - mkdir -p build_mips
+  - pushd build_mips
+  - 'eval $QMAKE_MIPS CONFIG+=DEPLOY DEFINES+=ROUTER BUILD_VERSION=$CI_PIPELINE_ID ../Node.pro'
+  - make
+  - popd
+  tags:
+  - mips
+  when: manual
+  artifacts:
+    paths:
+    - Node/router/opt/bin/onmydisk-*
+    expire_in: 1 week
+
+
+build_innbox_mipsel:
+  stage: build_innbox
+  variables:
+    KIT_ARCH: mipsel
+    KIT_TARGET: INNBOX
+    QTDIR: /data/tools/openwrt-lsb/staging_dir/target-mipsel_24kc_musl
+    QMAKE_MIPSEL: /data/tools/openwrt-lsb/staging_dir/toolchain-mipsel_mips32_gcc-8.4.0_musl/bin/qmake
+    STAGING_DIR: /data/tools/openwrt-lsb/staging_dir/target-mipsel_mips32_musl
+    KIT_INCLUDE: /data/tools/openwrt-lsb/staging_dir/target-mipsel_mips32_musl/usr/include
+  script:
+  - eval 'export PATH=/data/tools/openwrt-lsb/staging_dir/toolchain-mipsel_mips32_gcc-8.4.0_musl/bin:$PATH'
+  - mkdir -p build_mipsel
+  - pushd build_mipsel
+  - 'eval $QMAKE_MIPSEL CONFIG+=DEPLOY DEFINES+=ROUTER BUILD_VERSION=$CI_PIPELINE_ID ../Node.pro'
+  - make
+  - popd
+  tags:
+  - mipsel
+  when: manual
+  artifacts:
+    paths:
+    - Node/router/opt/bin/onmydisk-*
+    - Node/router/etc/onmydisk/onmydisk.conf
+    - Node/router/etc/init.d/*
+    - Node/licences/*
+    - Node/embedded.txt
+    expire_in: 1 week
+
+build_innbox_arm:
+  stage: build_innbox
+  variables:
+    KIT_ARCH: armv_7
+    KIT_TARGET: INNBOX
+    QTDIR: /data/tools/openwrt-arm-a53/staging_dir/target-arm_cortex-a7_musl_eabi
+    STAGING_DIR: /data/tools/openwrt-arm-a53/staging_dir/target-arm_cortex-a7_musl_eabi
+    QMAKE_OPENWRT_A7: /data/tools/openwrt-arm-a53/staging_dir/toolchain-arm_cortex-a7_gcc-11.2.0_musl_eabi/bin/qmake
+    KIT_INCLUDE: /data/tools/openwrt-arm-a53/staging_dir/target-arm_cortex-a7_musl_eabi/usr/include
+  script:  
+  - eval 'export PATH=/data/tools/openwrt-arm-a53/staging_dir/toolchain-arm_cortex-a7_gcc-11.2.0_musl_eabi/bin:$PATH'
+  - mkdir -p build_arm
+  - pushd build_arm
+  - 'eval $QMAKE_OPENWRT_A7 CONFIG+=DEPLOY DEFINES+=ROUTER BUILD_VERSION=$CI_PIPELINE_ID ../Node.pro'
+  - make
+  - popd
+  tags:
+  - mipsel
+  when: manual
+  artifacts:
+    paths:
+    - Node/router/opt/bin/onmydisk-*
+    - Node/router/etc/onmydisk/onmydisk.conf
+    - Node/router/etc/init.d/*
+    - Node/licences/*
+    - Node/embedded.txt
+    expire_in: 1 week
+
+
+deploy_innbox:
+  stage: deploy_innbox
+  dependencies:
+  - build_innbox_mips
+  - build_innbox_mipsel
+  - build_innbox_arm
+  script:
+  - pushd Node/router/opt/bin
+  - echo "2.1.5.$CI_PIPELINE_ID" >> version
+  - scp onmydisk-* repo@forge.onmydisk.net:/opt/repo/InnBox/
+  - scp version repo@forge.onmydisk.net:/opt/repo/InnBox/version
+  - popd
+  when: manual
+  tags:
+  - linux
+
+
+build_connector_amd64_deb:
+  stage: build
+  script:
+  # Prebuilt libdatachannel/juice/usrsctp live on the runner at
+  # /opt/omd-libdatachannel (already built, NOT rebuilt here). Same git
+  # ref/pin used by omd-tunnel/deploy/setup-libdatachannel.sh. P2P_ENABLED and
+  # RTC_STATIC are passed explicitly so the P2P tunnel (WebRTC) is built in.
+  - docker run --rm --entrypoint bash --user $(id -u):$(id -g) -v "$(pwd)":/onmydisk -v /opt/omd-libdatachannel:/opt/omd-libdatachannel:ro onmydisk/omd-builder:latest -c "cd /onmydisk && mkdir -p build && cd build && qmake-qt5 CONFIG+=DEPLOY DEFINES+=_ISOC23_SOURCE=0 DEFINES+=P2P_ENABLED DEFINES+=RTC_STATIC LDATACHANNEL_ROOT=/opt/omd-libdatachannel/x86_64 BUILD_VERSION=$CI_PIPELINE_ID ../Node.pro && make"
+  - pushd Node
+  - fpm -s dir -t deb -a x86_64 -n onmydisk-connector --description "On My Disk Connector" --depends "samba,udisks2,libstdc++6,libgl1,libegl1,libglu1-mesa,libxcb-xkb1,libxcb-xinerama0,libxcb-xinput0,libz1,libxkbcommon0,libxkbcommon-x11-0,libxrender1,libtag1v5,libpcre2-16-0,libcrypt1,ffmpeg,ruby-full,build-essential,zlib1g-dev,libqt5core5a | libqt5core5t64,libqt5network5 | libqt5network5t64,libqt5websockets5,libqt5widgets5 | libqt5widgets5t64,libqt5sql5 | libqt5sql5t64,libqt5webchannel5,poppler-utils,pandoc,rclone" --license "Apache" -v "2.1.5.$CI_PIPELINE_ID" --after-install after-install.sh -C target
+  - scp onmydisk-connector_"2.1.5.$CI_PIPELINE_ID"_amd64.deb repo@forge.onmydisk.net:/opt/repo/Ubuntu/focal/onmydisk-connector-amd64.deb
+  - ssh -o StrictHostKeyChecking=no repo@forge.onmydisk.net "mkdir -p /opt/repo/OnMyDisk/Connector"
+  - scp -o StrictHostKeyChecking=no onmydisk-connector_"2.1.5.$CI_PIPELINE_ID"_amd64.deb repo@forge.onmydisk.net:/opt/repo/OnMyDisk/Connector/onmydisk-connector-amd64.deb
+  - popd
+  tags:
+  - deb
+  when: manual
+  artifacts:
+    paths:
+    - Node/*.deb
+    expire_in: 1 week
+
+
+build_connector_arm64_deb:
+  stage: build
+  variables:
+    KIT_ARCH: armv_8
+    KIT_TARGET: FIREFLY
+    STAGING_DIR: /opt/sysroot/firefly-arm64-sysroot-20.04/
+    QMAKE_FIREFLY: /opt/firefly_qt5.15.2_arm64_20.04/host/bin/qmake
+    KIT_INCLUDE: /opt/sysroot/firefly-arm64-sysroot-20.04/usr/include/
+  script:
+  # Prebuilt arm64 libdatachannel/juice/usrsctp live on the runner at
+  # /opt/omd-libdatachannel/arm64 (already built, NOT rebuilt here).
+  - mkdir -p build_arm64
+  - pushd build_arm64
+  - 'eval $QMAKE_FIREFLY CONFIG+=DEPLOY DEFINES+=_ISOC23_SOURCE=0 DEFINES+=P2P_ENABLED DEFINES+=RTC_STATIC LDATACHANNEL_ROOT=/opt/omd-libdatachannel/arm64 BUILD_VERSION=$CI_PIPELINE_ID ../Node.pro'
+  - make
+  - popd
+  - pushd Node
+  - fpm -s dir -t deb -a arm64 -n onmydisk-connector --description "On My Disk Connector" --depends "samba,udisks2,libstdc++6,libgl1,libegl1,libglu1-mesa,libxcb-xkb1,libxcb-xinerama0,libxcb-xinput0,libz1,libxkbcommon0,libxkbcommon-x11-0,libxrender1,libtag1v5,libpcre2-16-0,libcrypt1,ffmpeg,ruby-full,build-essential,zlib1g-dev,libqt5core5a | libqt5core5t64,libqt5network5 | libqt5network5t64,libqt5websockets5,libqt5widgets5 | libqt5widgets5t64,libqt5sql5 | libqt5sql5t64,libqt5webchannel5,poppler-utils,pandoc,rclone" --license "Apache" -v "2.1.5.$CI_PIPELINE_ID" --after-install after-install.sh -C target
+  - scp onmydisk-connector_"2.1.5.$CI_PIPELINE_ID"_arm64.deb repo@forge.onmydisk.net:/opt/repo/Ubuntu/focal/onmydisk-connector-arm64.deb
+  - ssh -o StrictHostKeyChecking=no repo@forge.onmydisk.net "mkdir -p /opt/repo/OnMyDisk/Connector"
+  - scp -o StrictHostKeyChecking=no onmydisk-connector_"2.1.5.$CI_PIPELINE_ID"_arm64.deb repo@forge.onmydisk.net:/opt/repo/OnMyDisk/Connector/onmydisk-connector-arm64.deb
+  - popd
+  tags:
+  - deb
+  when: manual
+  artifacts:
+    paths:
+    - Node/*.deb
+    expire_in: 1 week
+
+deploy_connector_ota:
+  stage: deploy
+  tags:
+    - linux
+  script:
+    - ssh -o StrictHostKeyChecking=no repo@forge.onmydisk.net "mkdir -p /opt/repo/OnMyDisk/Connector"
+    - |
+      ssh -o StrictHostKeyChecking=no repo@forge.onmydisk.net bash -c "'
+        cd /opt/repo/OnMyDisk/Connector
+        AMD64_SHA=\$(sha256sum onmydisk-connector-amd64.deb 2>/dev/null | cut -d\" \" -f1 || echo \"\")
+        ARM64_SHA=\$(sha256sum onmydisk-connector-arm64.deb 2>/dev/null | cut -d\" \" -f1 || echo \"\")
+        ARMHF_SHA=\$(sha256sum onmydisk-connector-armhf.deb 2>/dev/null | cut -d\" \" -f1 || echo \"\")
+        cat <<EOF > version.json
+      {
+        \"version\": \"2.1.5.${CI_PIPELINE_ID}\",
+        \"build\": ${CI_PIPELINE_ID},
+        \"packages\": {
+          \"x86_64\": {
+            \"url\": \"https://forge.onmydisk.net/repo/OnMyDisk/Connector/onmydisk-connector-amd64.deb\",
+            \"sha256\": \"\$AMD64_SHA\"
+          },
+          \"aarch64\": {
+            \"url\": \"https://forge.onmydisk.net/repo/OnMyDisk/Connector/onmydisk-connector-arm64.deb\",
+            \"sha256\": \"\$ARM64_SHA\"
+          },
+          \"armv7l\": {
+            \"url\": \"https://forge.onmydisk.net/repo/OnMyDisk/Connector/onmydisk-connector-armhf.deb\",
+            \"sha256\": \"\$ARMHF_SHA\"
+          }
+        }
+      }
+      EOF
+      '"
+  when: manual
+
+
+
+build_direct:
+  stage: build
+  script:
+  - pushd svar
+  - npm i --legacy-peer-deps
+  - npm run build
+  - popd
+  - rm -rf build/Node
+  - docker run --rm --user $(id -u):$(id -g) -v "$(pwd)":/onmydisk onmydisk/omd-builder:latest /onmydisk/omd-tunnel/deploy/setup-libdatachannel.sh || ./omd-tunnel/deploy/setup-libdatachannel.sh
+  - docker run -v $(pwd):/onmydisk --user $(id -u gitlab-runner):$(id -g gitlab-runner) -e buildversion=$CI_PIPELINE_ID -e buildproject=Gateway.pro onmydisk/omd-builder:latest
+  - docker build -t onmydisk:direct .
+  - docker tag onmydisk:direct onmydisk/onmydisk:direct
+  - DOCKER_CONFIG=/home/gitlab-runner/docker-onmydisk docker push onmydisk/onmydisk:direct
+  - sudo -u alexey git -C /home/alexey/projects/omd/onmydisk fetch origin direct
+  - sudo -u alexey git -C /home/alexey/projects/omd/onmydisk push-gh ${CI_COMMIT_SHA}
+  only:
+    variables:
+      - $CI_COMMIT_BRANCH == "direct"
+  tags:
+  - linux, docker
+  when: manual
+
+deploy_direct:
+  stage: deploy
+  only:
+    variables:
+      - $CI_COMMIT_BRANCH == "direct"
+  dependencies: []
+  script:
+    - pushd svar && npm i --legacy-peer-deps && npm run build && popd
+    - rm -rf build/Node
+    - docker run --rm --user $(id -u):$(id -g) -v "$(pwd)":/onmydisk onmydisk/omd-builder:latest /onmydisk/omd-tunnel/deploy/setup-libdatachannel.sh || ./omd-tunnel/deploy/setup-libdatachannel.sh
+    - docker run --rm --user $(id -u):$(id -g) -v $(pwd):/onmydisk -e buildversion=$CI_PIPELINE_ID -e buildproject=Gateway.pro onmydisk/omd-builder:latest
+    - ssh -p 30333 -o StrictHostKeyChecking=no $DEPLOY_USER@onmydisk.net "mkdir -p /root/direct/bin /root/direct/www"
+    - rsync -avz -e "ssh -p 30333 -o StrictHostKeyChecking=no" docker-compose.yml $DEPLOY_USER@onmydisk.net:/root/direct/
+    - rsync -avz -e "ssh -p 30333 -o StrictHostKeyChecking=no" coturn/ $DEPLOY_USER@onmydisk.net:/root/direct/coturn/
+    - rsync -avz -e "ssh -p 30333 -o StrictHostKeyChecking=no" run/bin/omd-server $DEPLOY_USER@onmydisk.net:/root/direct/bin/
+    - rsync -avzc -e "ssh -p 30333 -o StrictHostKeyChecking=no" --delete svar/dist/ $DEPLOY_USER@onmydisk.net:/root/direct/www/
+    - ssh -p 30333 -o StrictHostKeyChecking=no $DEPLOY_USER@onmydisk.net "cd /root/direct && docker-compose up -d onmydisk-server && docker-compose restart onmydisk-server"
+    - sudo -u alexey git -C /home/alexey/projects/omd/onmydisk fetch origin direct
+    - sudo -u alexey git -C /home/alexey/projects/omd/onmydisk push-gh ${CI_COMMIT_SHA}
+  tags:
+    - linux
+  when: manual
+
+deploy_direct_front:
+  stage: deploy
+  only:
+    variables:
+      - $CI_COMMIT_BRANCH == "direct"
+  dependencies: []
+  script:
+    - pushd svar && npm i --legacy-peer-deps && npm run build && popd
+    - ssh -p 30333 -o StrictHostKeyChecking=no $DEPLOY_USER@onmydisk.net "mkdir -p /root/direct/www"
+    - rsync -avzc -e "ssh -p 30333 -o StrictHostKeyChecking=no" --delete svar/dist/ $DEPLOY_USER@onmydisk.net:/root/direct/www/
+    - sudo -u alexey git -C /home/alexey/projects/omd/onmydisk fetch origin direct
+    - sudo -u alexey git -C /home/alexey/projects/omd/onmydisk push-gh ${CI_COMMIT_SHA}
+  tags:
+    - linux
+  when: manual
+
+deploy_github:
+  stage: deploy
+  only:
+    variables:
+      - $CI_COMMIT_BRANCH == "direct"
+  dependencies: []
+  script:
+    - sudo -u alexey git -C /home/alexey/projects/omd/onmydisk fetch origin direct
+    - sudo -u alexey git -C /home/alexey/projects/omd/onmydisk push-gh ${CI_COMMIT_SHA}
+  tags:
+    - linux
+  when: manual
+
+build_pusherver_docker:
+  stage: build
+  script:
+  - pushd webpush
+  - docker build -t omd-pushserver:latest .
+  - docker tag omd-pushserver:latest onmydisk/omd-pushserver:latest
+  - DOCKER_CONFIG=/home/gitlab-runner/docker-onmydisk docker push onmydisk/omd-pushserver:latest
+  - popd
+  tags:
+  - linux, docker
+  when: manual
+
+build_gun_hub_docker:
+  stage: build
+  script:
+  - pushd gun-hub
+  - docker build -t omd-gun-hub:latest .
+  - docker tag omd-gun-hub:latest onmydisk/omd-gun-hub:latest
+  - DOCKER_CONFIG=/home/gitlab-runner/docker-onmydisk docker push onmydisk/omd-gun-hub:latest
+  - popd
+  tags:
+  - linux, docker
+  when: manual
+
+deploy_gun_hub:
+  stage: deploy
+  tags:
+    - linux
+  script:
+    # Execute deployment commands remotely against the combined compose.
+    # 1. Create directory for hub sources inside the integration tree
+    - ssh -p 30333 -o StrictHostKeyChecking=no $DEPLOY_USER@onmydisk.net "mkdir -p /root/direct/gun-hub"
+
+    # 1a. Keep the combined compose file up to date
+    - rsync -avz -e "ssh -p 30333 -o StrictHostKeyChecking=no" docker-compose.yml $DEPLOY_USER@onmydisk.net:/root/direct/
+
+    # 1b. One-time migration of GunDB data from the old standalone location
+    - ssh -p 30333 -o StrictHostKeyChecking=no $DEPLOY_USER@onmydisk.net "if [ -d /root/direct/gun-hub/data ] && [ ! -d /root/direct/gun-hub/data ]; then cp -a /root/direct/gun-hub/data /root/direct/gun-hub/data; echo 'migrated gun-hub data'; fi"
+
+    # 2. Sync Hub sources
+    - rsync -avz -e "ssh -p 30333 -o StrictHostKeyChecking=no" --exclude 'node_modules' --exclude '.git' --exclude 'data' gun-hub/ $DEPLOY_USER@onmydisk.net:/root/direct/gun-hub/
+
+    # 3. Remove any leftover container from the old standalone deployment
+    - ssh -p 30333 -o StrictHostKeyChecking=no $DEPLOY_USER@onmydisk.net "docker rm -f omd-gun-hub || true"
+
+    # 4. Build (utilizing docker cache) and start the hub service
+    - ssh -p 30333 -o StrictHostKeyChecking=no $DEPLOY_USER@onmydisk.net "
+        cd /root/direct &&
+        docker-compose build omd-gun-hub &&
+        docker-compose up -d omd-gun-hub"
+
+  when: manual
+
+
+
+
+
+
+
+
+test_list:
+  stage: test_automated
+  when: manual
+  script:
+  - export HURL_password=$SPUSER_PASSWORD
+  - hurl --test tests/list.hurl
+  tags:
+  - linux, docker
+
+test_getattributes:
+  stage: test_automated
+  when: manual
+  script:
+  - export HURL_password=$SPUSER_PASSWORD
+  - hurl --test tests/getattributes.hurl
+  tags:
+  - linux, docker
+
+test_getprofiledata:
+  stage: test_automated
+  when: manual
+  script:
+  - export HURL_password=$SPUSER_PASSWORD
+  - hurl --test tests/getprofiledata.hurl
+  tags:
+  - linux, docker
+
+test_getvideoattributes:
+  stage: test_automated
+  when: manual
+  script:
+  - export HURL_password=$SPUSER_PASSWORD
+  - hurl --test tests/getvideoattributes.hurl
+  tags:
+  - linux, docker
+
+test_copy:
+  stage: test_automated
+  when: manual
+  script:
+  - export HURL_password=$SPUSER_PASSWORD
+  - hurl --test tests/copy.hurl
+  tags:
+  - linux, docker
+
+test_move:
+  stage: test_automated
+  when: manual
+  script:
+  - export HURL_password=$SPUSER_PASSWORD
+  - hurl --test tests/move.hurl
+  tags:
+  - linux, docker
+
+test_remove:
+  stage: test_automated
+  when: manual
+  script:
+  - export HURL_password=$SPUSER_PASSWORD
+  - hurl --test tests/remove.hurl
+  tags:
+  - linux, docker
+
+test_rename:
+  stage: test_automated
+  when: manual
+  script:
+  - export HURL_password=$SPUSER_PASSWORD
+  - hurl --test tests/rename.hurl
+  tags:
+  - linux, docker
+
+test_getcontent:
+  stage: test_automated
+  when: manual
+  script:
+  - export HURL_password=$SPUSER_PASSWORD
+  - hurl --test tests/getcontent.hurl
+  tags:
+  - linux, docker
+
+test_getreference:
+  stage: test_automated
+  when: manual
+  script:
+  - export HURL_password=$SPUSER_PASSWORD
+  - hurl --test tests/getreference.hurl
+  tags:
+  - linux, docker
+
+
+build_tunnel_deb:
+  stage: build
+  script:
+  - ./omd-tunnel/deploy/build-deb.sh
+  - scp build-deb/omd-tunnel_*.deb repo@forge.onmydisk.net:/opt/repo/Ubuntu/focal/omd-tunnel-amd64.deb
+  variables:
+    OMD_TUNNEL_P2P_REQUIRED: "1"
+  tags:
+  - linux
+  when: manual
+  artifacts:
+    name: omd-tunnel-deb
+    paths:
+    - build-deb/*.deb
+    expire_in: 1 week
+
+
+build_tunnel_mxe:
+  stage: build
+  script:
+  - export PATH=/opt/mxe/usr/bin:$PATH
+  - ./omd-tunnel/deploy/build-windows-mxe.sh
+  - scp bin/omd-tunnel.exe repo@forge.onmydisk.net:/opt/repo/Windows/omd-tunnel-x64.exe
+  variables:
+    OMD_TUNNEL_P2P_REQUIRED: "1"
+  tags:
+  - linux
+  when: manual
+  artifacts:
+    name: omd-tunnel-win
+    paths:
+    - bin/omd-tunnel.exe
+    expire_in: 1 week
+
+
+build_node_mxe:
+  stage: build
+  script:
+  - export PATH=/opt/mxe/usr/bin:$PATH
+  - export CCACHE_DIR="$CI_PROJECT_DIR/build-mxe-ccache"
+  - ./Node/deploy/build-windows-embedded-mxe.sh
+  - cp Node/deploy/install-onmydisk.ps1 run/etc/config/onmydisk.conf bin/
+  - |-
+    # Clone OnMyChat directly from forge.onmydisk.net
+    git clone --depth 1 \
+        "https://gitlab-ci-token:${CI_JOB_TOKEN}@forge.onmydisk.net/onmydisk/onmychat.git" \
+        onmychat-src
+    ./Node/deploy/package-onmychat-win.sh onmychat-src bin/onmychat-latest.zip
+  # publish from the same runner that has repo@forge keys (same as build_tunnel_mxe)
+  - 'echo "== PUBLISH 1/3 - node exe, installer, config"'
+  - |-
+    scp -o StrictHostKeyChecking=accept-new \
+        bin/onmydisk.exe \
+        repo@forge.onmydisk.net:/opt/repo/Windows/onmydisk-node-latest-x64.exe
+  - |-
+    scp -o StrictHostKeyChecking=accept-new \
+        bin/install-onmydisk.ps1 \
+        bin/onmydisk.conf \
+        repo@forge.onmydisk.net:/opt/repo/Windows/
+  - 'echo "== PUBLISH 2/3 - onmychat zip"'
+  - |-
+    if [ -f bin/onmychat-latest.zip ]; then
+      scp -o StrictHostKeyChecking=accept-new \
+          bin/onmychat-latest.zip \
+          repo@forge.onmydisk.net:/opt/repo/Windows/
+      scp -o StrictHostKeyChecking=accept-new \
+          bin/onmychat-latest.zip \
+          repo@forge.onmydisk.net:/opt/repo/OnMyChat/
+    fi
+  - 'echo "== PUBLISH 3/3 - verify files on server (job fails if missing)"'
+  - |-
+    ssh -o StrictHostKeyChecking=accept-new repo@forge.onmydisk.net \
+        "ls -la /opt/repo/Windows/ | grep -E 'onmydisk-node-latest-x64|install-onmydisk\.ps1|onmydisk\.conf|onmychat'"
+  cache:
+    key: libdatachannel-build-mxe
+    paths:
+    - libdatachannel/build-mxe/
+  tags:
+  - linux
+  when: manual
+  artifacts:
+    name: omd-node-win
+    paths:
+    - bin/onmydisk.exe
+    - bin/install-onmydisk.ps1
+    - bin/onmydisk.conf
+    - bin/onmychat-latest.zip
+    expire_in: 1 week
+
+
+build_node_macos:
+  stage: build
+  image: node:20-bookworm
+  tags:
+    - linux
+  script:
+    - which jq >/dev/null || (apt-get update && apt-get install -y jq curl unzip)
+    - which unzip >/dev/null || (apt-get update && apt-get install -y unzip)
+    - |
+      CM_TOKEN="${CODEMAGIC_API_TOKEN:-}"
+      if [ -z "$CM_TOKEN" ] && [ -f "/home/alexey/projects/omd/etc/codemagic.token" ]; then
+        CM_TOKEN="$(tr -d '[:space:]' < /home/alexey/projects/omd/etc/codemagic.token)"
+      fi
+      if [ -z "$CM_TOKEN" ]; then
+        echo "ERROR: CODEMAGIC_API_TOKEN is not set and /home/alexey/projects/omd/etc/codemagic.token not found"
+        exit 1
+      fi
+      echo "Triggering Codemagic macOS Node & Tunnel build for branch ${CI_COMMIT_REF_NAME}..."
+      RESPONSE=$(curl -s -X POST https://api.codemagic.io/builds \
+        -H "Content-Type: application/json" \
+        -H "x-auth-token: ${CM_TOKEN}" \
+        --data "{\"appId\": \"6abe4c845eb3cd34fe4cc074\", \"workflowId\": \"macos-node-workflow\", \"branch\": \"${CI_COMMIT_REF_NAME}\", \"environment\": {\"variables\": {\"BUILD_VERSION\": \"${CI_PIPELINE_ID}\"}}}")
+      BUILD_ID=$(echo "$RESPONSE" | jq -r '.buildId // empty')
+      if [ -z "$BUILD_ID" ]; then
+        echo "Failed to start Codemagic macOS build: $RESPONSE"
+        exit 1
+      fi
+      echo "Codemagic macOS build started! Build ID: $BUILD_ID"
+      echo "Live build logs: https://codemagic.io/app/6abe4c845eb3cd34fe4cc074/build/$BUILD_ID"
+      echo "Waiting for macOS arm64 Node & Tunnel build to complete..."
+      while true; do
+        sleep 25
+        BUILD_INFO=$(curl -s -H "x-auth-token: ${CM_TOKEN}" "https://api.codemagic.io/builds/$BUILD_ID")
+        STATUS=$(echo "$BUILD_INFO" | jq -r '.build.status // empty')
+        echo "Current Codemagic status: $STATUS"
+        if [ "$STATUS" = "finished" ]; then
+          echo "macOS Node build completed successfully!"
+          ART_URL=$(echo "$BUILD_INFO" | jq -r '.build.artefacts[]? | select((.name | endswith(".tar.gz")) or (.type == "bundle") or (.name | endswith(".zip"))) | .url // empty' | head -n 1)
+          ART_NAME=$(echo "$BUILD_INFO" | jq -r '.build.artefacts[]? | select((.name | endswith(".tar.gz")) or (.type == "bundle") or (.name | endswith(".zip"))) | .name // empty' | head -n 1)
+          if [ -z "$ART_URL" ]; then
+            echo "ERROR: Codemagic finished without producing a macOS bundle artifact! Check logs: https://codemagic.io/app/6abe4c845eb3cd34fe4cc074/build/$BUILD_ID"
+            exit 1
+          fi
+          mkdir -p bin build_macos_tmp
+          curl -fsSL -H "x-auth-token: ${CM_TOKEN}" "$ART_URL" -o "build_macos_tmp/${ART_NAME}"
+          if echo "$ART_NAME" | grep -q '\.zip$'; then
+            unzip -q -o "build_macos_tmp/${ART_NAME}" -d build_macos_tmp/extracted
+            TAR_FILE=$(find build_macos_tmp/extracted -name "onmydisk-node-macos-*.tar.gz" | head -n 1)
+            if [ -z "$TAR_FILE" ]; then
+              echo "ERROR: No onmydisk-node-macos-*.tar.gz found inside ${ART_NAME}!"
+              exit 1
+            fi
+            cp "$TAR_FILE" bin/onmydisk-node-macos-arm64.tar.gz
+          else
+            cp "build_macos_tmp/${ART_NAME}" bin/onmydisk-node-macos-arm64.tar.gz
+          fi
+          rm -rf build_macos_tmp
+          cp Node/deploy/install-onmydisk-macos.sh bin/install-onmydisk.sh
+          chmod 664 bin/onmydisk-node-macos-arm64.tar.gz
+          chmod 775 bin/install-onmydisk.sh
+          ssh -o StrictHostKeyChecking=accept-new repo@forge.onmydisk.net "mkdir -p /opt/repo/macOS"
+          scp -o StrictHostKeyChecking=accept-new bin/onmydisk-node-macos-arm64.tar.gz bin/install-onmydisk.sh repo@forge.onmydisk.net:/opt/repo/macOS/
+          ssh -o StrictHostKeyChecking=accept-new repo@forge.onmydisk.net "chmod 664 /opt/repo/macOS/onmydisk-node-macos-arm64.tar.gz && chmod 775 /opt/repo/macOS/install-onmydisk.sh && ls -lh /opt/repo/macOS/"
+          break
+        elif [ "$STATUS" = "failed" ] || [ "$STATUS" = "canceled" ]; then
+          echo "macOS Node build $STATUS! Check logs: https://codemagic.io/app/6abe4c845eb3cd34fe4cc074/build/$BUILD_ID"
+          exit 1
+        fi
+      done
+  artifacts:
+    name: omd-node-macos
+    paths:
+      - bin/onmydisk-node-macos-arm64.tar.gz
+      - bin/install-onmydisk.sh
+    expire_in: 1 week
+  when: manual
+
+
+# ==============================================================================
+# Mobile & OTA Live Update Jobs (Capacitor)
+# ==============================================================================
+
+.android-common-setup: &android-common-setup
+  stage: mobile
+  image: node:20-bookworm
+  tags:
+    - linux
+  before_script:
+    # 1. Resolve Java Runtime Environment
+    - if [ -d "/home/alexey/projects/jdk-17" ]; then
+        export JAVA_HOME="/home/alexey/projects/jdk-17";
+        export PATH="$JAVA_HOME/bin:$PATH";
+        echo "Using local user-space JDK 17";
+      elif [ -x "$(command -v apt-get)" ] && [ "$(id -u)" = "0" ]; then
+        apt-get update && apt-get install -y openjdk-17-jdk;
+      fi
+    # 2. Resolve Android SDK
+    - if [ -d "/home/alexey/projects/android-sdk" ]; then
+        export ANDROID_HOME="/home/alexey/projects/android-sdk";
+        export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH";
+        echo "Using local user-space Android SDK";
+      elif [ -x "$(command -v apt-get)" ] && [ "$(id -u)" = "0" ]; then
+        apt-get update && apt-get install -y wget unzip;
+        mkdir -p /opt/android-sdk/cmdline-tools;
+        wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O /tmp/cmdline-tools.zip;
+        unzip -q /tmp/cmdline-tools.zip -d /opt/android-sdk/cmdline-tools;
+        mv /opt/android-sdk/cmdline-tools/cmdline-tools /opt/android-sdk/cmdline-tools/latest;
+        export ANDROID_HOME="/opt/android-sdk";
+        export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH";
+        yes | sdkmanager --sdk_root="$ANDROID_HOME" --licenses;
+        sdkmanager --sdk_root="$ANDROID_HOME" "platform-tools" "platforms;android-36" "build-tools;36.0.0";
+      fi
+    # 3. Build Svelte Static Frontend in svar
+    #    (no pre-compressed .gz siblings: Android AAPT2 rejects foo.js.gz as a
+    #     duplicate resource of foo.js — gzip is applied by the nginx proxy anyway)
+    - cd svar
+    - npm install --legacy-peer-deps
+    - export VITE_APP_VERSION="3.0.${CI_PIPELINE_IID}"
+    - COMPRESS_ASSETS=0 npm run build
+    # 4. Sync Capacitor Web Assets to Native Project
+    - cd ../mobile
+    - npm install
+    - if [ ! -f android/app/google-services.json ]; then if [ -n "${GOOGLE_SERVICES_JSON:-}" ]; then if [ -f "${GOOGLE_SERVICES_JSON}" ]; then cp "${GOOGLE_SERVICES_JSON}" android/app/google-services.json; else printf "%s" "${GOOGLE_SERVICES_JSON}" > android/app/google-services.json; fi; elif [ -f "/home/alexey/projects/omd/etc/fcm/google-services.json" ]; then cp "/home/alexey/projects/omd/etc/fcm/google-services.json" android/app/google-services.json; echo "Copied local FCM google-services.json"; fi; fi
+    - npx cap sync android
+    - chmod +x android/gradlew || true
+
+build-android:
+  <<: *android-common-setup
+  script:
+    # 5. Compile Android APK (signed release if keystore present, else debug)
+    - cd android
+    - ./gradlew --stop
+    - ./gradlew clean
+    - export BUILD_NUMBER=${CI_PIPELINE_IID}
+    - if [ -f "/home/alexey/projects/omd/etc/android/keystore.properties" ] || [ -n "${KEYSTORE_PROPERTIES:-}" ]; then
+        ./gradlew assembleRelease;
+      else
+        ./gradlew assembleDebug;
+      fi
+    - cd ..
+    # 6. Copy final APK artifact
+    - mkdir -p build_android
+    - if [ -f android/app/build/outputs/apk/release/app-release.apk ]; then
+        cp android/app/build/outputs/apk/release/app-release.apk build_android/OnMyDisk.apk;
+      else
+        cp android/app/build/outputs/apk/debug/app-debug.apk build_android/OnMyDisk.apk;
+      fi
+    - chmod 664 build_android/OnMyDisk.apk
+    # 7. Upload to central binary repository
+    - ssh -o StrictHostKeyChecking=no repo@forge.onmydisk.net "mkdir -p /opt/repo/OnMyDisk/Android"
+    - scp -o StrictHostKeyChecking=no build_android/OnMyDisk.apk repo@forge.onmydisk.net:/opt/repo/OnMyDisk/Android/OnMyDisk.apk
+    - ssh -o StrictHostKeyChecking=no repo@forge.onmydisk.net "chmod 664 /opt/repo/OnMyDisk/Android/OnMyDisk.apk"
+  artifacts:
+    name: omd-android-apk
+    paths:
+      - mobile/build_android/OnMyDisk.apk
+    expire_in: 1 week
+  when: manual
+
+build-android-play:
+  <<: *android-common-setup
+  script:
+    # 5. Verify Google Play Upload Keystore & compile signed Android App Bundle (.aab)
+    - |
+      if [ -n "${KEYSTORE_PROPERTIES:-}" ] && [ ! -f "${KEYSTORE_PROPERTIES}" ]; then
+        printf "%s" "${KEYSTORE_PROPERTIES}" > android/keystore.properties
+        chmod 600 android/keystore.properties
+      fi
+      if [ ! -f "/home/alexey/projects/omd/etc/android/keystore.properties" ] && [ ! -f "android/keystore.properties" ] && [ -z "${KEYSTORE_PROPERTIES:-}" ]; then
+        echo "ERROR: Release signing keystore.properties not found (/home/alexey/projects/omd/etc/android/keystore.properties or KEYSTORE_PROPERTIES)!"
+        exit 1
+      fi
+    - cd android
+    - ./gradlew --stop
+    - ./gradlew clean
+    - export BUILD_NUMBER=${CI_PIPELINE_IID}
+    - ./gradlew bundleRelease
+    - jarsigner -verify app/build/outputs/bundle/release/app-release.aab
+    - cd ..
+    # 6. Copy signed Google Play AAB artifact
+    - mkdir -p build_android
+    - cp android/app/build/outputs/bundle/release/app-release.aab build_android/OnMyDisk.aab
+    - cp android/app/build/outputs/bundle/release/app-release.aab "build_android/OnMyDisk-3.0.${CI_PIPELINE_IID}-release.aab"
+    - chmod 664 build_android/*.aab
+    # 7. Upload to central binary repository
+    - ssh -o StrictHostKeyChecking=no repo@forge.onmydisk.net "mkdir -p /opt/repo/OnMyDisk/Android"
+    - scp -o StrictHostKeyChecking=no build_android/OnMyDisk.aab repo@forge.onmydisk.net:/opt/repo/OnMyDisk/Android/OnMyDisk.aab
+    - ssh -o StrictHostKeyChecking=no repo@forge.onmydisk.net "chmod 664 /opt/repo/OnMyDisk/Android/OnMyDisk.aab"
+  artifacts:
+    name: "omd-google-play-3.0.${CI_PIPELINE_IID}"
+    paths:
+      - mobile/build_android/OnMyDisk.aab
+      - mobile/build_android/OnMyDisk-3.0.*-release.aab
+    expire_in: 2 weeks
+  when: manual
+
+build-ios:
+  stage: mobile
+  image: node:20-bookworm
+  tags:
+    - linux
+  script:
+    - which jq >/dev/null || (apt-get update && apt-get install -y jq curl)
+    - echo "Triggering Codemagic iOS cloud build for branch ${CI_COMMIT_REF_NAME}..."
+    - |
+      CM_TOKEN="${CODEMAGIC_API_TOKEN:-}"
+      if [ -z "$CM_TOKEN" ] && [ -f "/home/alexey/projects/omd/etc/codemagic.token" ]; then
+        CM_TOKEN="$(tr -d '[:space:]' < /home/alexey/projects/omd/etc/codemagic.token)"
+      fi
+      RESPONSE=$(curl -s -X POST https://api.codemagic.io/builds \
+        -H "Content-Type: application/json" \
+        -H "x-auth-token: ${CM_TOKEN}" \
+        --data "{\"appId\": \"6abe4c845eb3cd34fe4cc074\", \"workflowId\": \"ios-workflow\", \"branch\": \"${CI_COMMIT_REF_NAME}\", \"environment\": {\"variables\": {\"BUILD_NUMBER\": \"${CI_PIPELINE_IID}\"}}}")
+      BUILD_ID=$(echo "$RESPONSE" | jq -r '.buildId // empty')
+      if [ -z "$BUILD_ID" ]; then
+        echo "Failed to start Codemagic build: $RESPONSE"
+        exit 1
+      fi
+      echo "Codemagic build started successfully! Build ID: $BUILD_ID"
+      echo "Live build logs: https://codemagic.io/app/6abe4c845eb3cd34fe4cc074/build/$BUILD_ID"
+      echo "Waiting for iOS build to complete on macOS runner..."
+      while true; do
+        sleep 25
+        BUILD_INFO=$(curl -s -H "x-auth-token: ${CM_TOKEN}" "https://api.codemagic.io/builds/$BUILD_ID")
+        STATUS=$(echo "$BUILD_INFO" | jq -r '.build.status // empty')
+        echo "Current Codemagic status: $STATUS"
+        if [ "$STATUS" = "finished" ]; then
+          echo "iOS build completed successfully!"
+          IPA_URL=$(echo "$BUILD_INFO" | jq -r '.build.artefacts[]? | select(.name | endswith(".ipa")) | .url // empty' | head -n 1)
+          if [ -n "$IPA_URL" ]; then
+            mkdir -p build_ios
+            curl -fsSL -H "x-auth-token: ${CM_TOKEN}" "$IPA_URL" -o build_ios/OnMyDisk.ipa
+            chmod 664 build_ios/OnMyDisk.ipa
+            echo "Downloaded IPA to build_ios/OnMyDisk.ipa"
+            ssh -o StrictHostKeyChecking=no repo@forge.onmydisk.net "mkdir -p /opt/repo/OnMyDisk/iOS" || true
+            scp -o StrictHostKeyChecking=no build_ios/OnMyDisk.ipa repo@forge.onmydisk.net:/opt/repo/OnMyDisk/iOS/OnMyDisk.ipa || true
+            ssh -o StrictHostKeyChecking=no repo@forge.onmydisk.net "chmod 664 /opt/repo/OnMyDisk/iOS/OnMyDisk.ipa" || true
+          else
+            echo "ERROR: Codemagic finished without producing an IPA artifact! Check logs: https://codemagic.io/app/6abe4c845eb3cd34fe4cc074/build/$BUILD_ID"
+            exit 1
+          fi
+          break
+        elif [ "$STATUS" = "failed" ] || [ "$STATUS" = "canceled" ]; then
+          echo "iOS build $STATUS! Check logs: https://codemagic.io/app/6abe4c845eb3cd34fe4cc074/build/$BUILD_ID"
+          exit 1
+        fi
+      done
+  artifacts:
+    paths:
+      - build_ios/*.ipa
+    expire_in: 1 week
+  when: manual
+
+deploy_mobile_ota:
+  stage: deploy
+  tags:
+    - linux
+  script:
+    # 1. Install zip if not present
+    - if ! [ -x "$(command -v zip)" ]; then
+        if [ -x "$(command -v apt-get)" ] && [ "$(id -u)" = "0" ]; then
+          apt-get update && apt-get install -y zip;
+        fi
+      fi
+    # 2. Build Svelte Static Frontend in svar
+    #    (no .gz siblings in the OTA bundle — dead weight for WebView)
+    - cd svar
+    - npm install --legacy-peer-deps
+    - export VITE_APP_VERSION="3.0.${CI_PIPELINE_IID}"
+    - COMPRESS_ASSETS=0 npm run build
+    # 3. Zip the Svelte static build files (from svar/dist), excluding heavy unchanged WASM suites
+    - cd dist
+    - zip -r ../../omd-frontend.zip . -x "*.map" -x "*tracemonkey*" -x "wordcraft/*" -x "deckcraft/*" -x "gridcraft/*"
+    - cd ../..
+    # 4. Upload zip to central binary repository for live updates
+    - ssh -o StrictHostKeyChecking=no repo@forge.onmydisk.net "mkdir -p /opt/repo/OnMyDisk/Android"
+    - scp -o StrictHostKeyChecking=no omd-frontend.zip repo@forge.onmydisk.net:/opt/repo/OnMyDisk/Android/omd-frontend.zip
+    # 5. Generate and upload version.json for OTA live update check
+    - echo "{\"version\":\"3.0.${CI_PIPELINE_IID}\"}" > version.json
+    - scp -o StrictHostKeyChecking=no version.json repo@forge.onmydisk.net:/opt/repo/OnMyDisk/version.json
+    - scp -o StrictHostKeyChecking=no version.json repo@forge.onmydisk.net:/opt/repo/OnMyDisk/Android/version.json
+  when: manual
+

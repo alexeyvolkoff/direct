@@ -1,0 +1,77 @@
+version: '3.3'
+services:
+  onmydisk-server:
+    container_name: omd-direct-server
+    image: onmydisk/onmydisk:direct
+    restart: always
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    cap_add:
+      - SYS_PTRACE
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - 127.0.0.1:${GATEWAY_HTTP_PORT:-8080}:8080
+      - ${GATEWAY_NET_PORT:-9000}:9000
+      - ${GATEWAY_NET_PORT2:-9001}:9001
+      - ${GATEWAY_UDP_PORT:-8888}:8888
+      - 127.0.0.1:${GATEWAY_SIGNAL_PORT:-9988}:9988
+    networks:
+      - onmydisk
+    volumes:
+      - ./bin:/srv/bin
+      - ./www:/srv/www
+      - ./srvconf/pki:/srv/etc/pki
+      - ./srvconf/ssl:/srv/etc/ssl
+      - ./srvconf:/srv/etc/config
+      - ./logs:/srv/logs
+    environment:
+      - LSAN_OPTIONS=verbosity=1:log_threads=1
+
+  # GunDB relay + auth server (chats, profiles, settings, devices, DID certs).
+  # Kept in the same compose so a single `docker compose up -d` brings up the
+  # whole gateway stack; deploy_gun_hub still rebuilds only this service.
+  # TURN server for WebRTC (host network mode).
+  coturn:
+    container_name: coturn
+    image: coturn/coturn:latest
+    restart: always
+    network_mode: host
+    volumes:
+      - ./services/coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+      - coturn-data:/var/lib/coturn
+    command: ["--log-file=stdout", "--listening-port=${COTURN_PORT:-3478}"]
+
+  omd-gun-hub:
+    container_name: omd-gun-hub
+    build:
+      context: ./services/gun-hub
+      dockerfile: Dockerfile
+    restart: always
+    environment:
+      - REPO_PATH=/data
+      - NODE_ENV=production
+      - GOOGLE_CLIENT_ID=959849209352-vbi0vfimrqj904598felj8ieeb6to8s2.apps.googleusercontent.com
+      # Optional peer replication: comma-separated list of other hub URLs.
+      # Leave empty for a standalone hub.
+      - GUN_PEERS=
+      # Optional: shared secret for clustered hubs (same value on all instances).
+      # - DELETE_TOKEN_SECRET=change-me-in-production
+    volumes:
+      - ./services/gun-hub/data:/data
+      - ./services/gun-hub/hub.js:/app/hub.js
+      - ./services/gun-hub/canonical_dids.json:/app/canonical_dids.json
+    ports:
+      - "127.0.0.1:${GUNHUB_PORT:-8765}:8765"
+    networks:
+      - omd-network-prod
+
+volumes:
+  coturn-data:
+
+networks:
+  onmydisk:
+  omd-network-prod:
+    external: true

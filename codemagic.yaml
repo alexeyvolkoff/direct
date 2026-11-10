@@ -1,0 +1,140 @@
+workflows:
+  ios-workflow:
+    name: OnMyDisk iOS
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    integrations:
+      app_store_connect: omd_key
+    environment:
+      ios_signing:
+        provisioning_profiles:
+          - net_onmydisk_app
+        certificates:
+          - certificate: "Apple Distribution (omd_key)"
+            environment_variable: CM_DIST_CERT_PATH
+      node: 20
+      xcode: latest
+      cocoapods: default
+    triggering:
+      events:
+        - push
+        - tag
+      branch_patterns:
+        - pattern: '*'
+          include: true
+          source: true
+      tag_patterns:
+        - pattern: '*'
+          include: true
+    scripts:
+      - name: Install dependencies & build Svelte static frontend (web)
+        script: |
+          cd web
+          npm install --legacy-peer-deps
+          export NODE_OPTIONS="--max-old-space-size=6144"
+          export VITE_APP_VERSION="3.0.${BUILD_NUMBER:-4823}"
+          # No pre-compressed .gz siblings: they bloat the bundle and Android
+          # AAPT2 (same dist) rejects them as duplicate resources.
+          COMPRESS_ASSETS=0 npm run build
+      - name: Sync Capacitor iOS project
+        script: |
+          cd mobile
+          npm install
+          npx cap sync ios
+      - name: Configure iOS version & build number
+        script: |
+          BUILD_NUM="${BUILD_NUMBER:-4823}"
+          echo "Setting iOS Marketing Version to 3.0.1 and Build Number to $BUILD_NUM"
+          cd mobile/ios/App
+          agvtool new-marketing-version "3.0.1"
+          agvtool new-version -all "$BUILD_NUM"
+      - name: Install CocoaPods
+        script: |
+          cd mobile/ios/App
+          pod install
+      - name: Fetch or create fresh App Store provisioning profile
+        script: |
+          set -e
+          rm -rf ~/Library/MobileDevice/Provisioning\ Profiles/*.mobileprovision
+          BUNDLE_RES_ID=$(app-store-connect bundle-ids list \
+            --bundle-id-identifier "net.onmydisk.app" \
+            --strict-match-identifier \
+            --json | jq -r '.[0].id')
+          echo "Resolved Bundle ID resource: $BUNDLE_RES_ID"
+          test -n "$BUNDLE_RES_ID" && [ "$BUNDLE_RES_ID" != "null" ]
+          CERT_RES_ID=$(app-store-connect certificates list \
+            --type DISTRIBUTION \
+            --json | jq -r '(.[] | select(.attributes.serialNumber == "5FF54BFD8635F49D785057CE4ED49BE4") | .id), .[0].id' | head -n 1)
+          echo "Resolved Distribution Certificate resource: $CERT_RES_ID"
+          test -n "$CERT_RES_ID" && [ "$CERT_RES_ID" != "null" ]
+          app-store-connect profiles list --type IOS_APP_STORE --state ACTIVE --save --json >/dev/null
+          MATCHED=0
+          for p in ~/Library/MobileDevice/Provisioning\ Profiles/*.mobileprovision; do
+            [ -f "$p" ] || continue
+            PLIST=$(security cms -D -i "$p" 2>/dev/null || true)
+            if echo "$PLIST" | grep -q "<string>UMAS9T29TH.net.onmydisk.app</string>" && echo "$PLIST" | grep -q "<key>aps-environment</key>"; then
+              MATCHED=1
+              echo "Found valid ACTIVE profile with aps-environment: $p"
+            else
+              rm -f "$p"
+            fi
+          done
+          if [ "$MATCHED" -eq 0 ]; then
+            echo "Creating new ACTIVE IOS_APP_STORE profile on Apple Developer Portal..."
+            app-store-connect profiles create "$BUNDLE_RES_ID" \
+              --certificate-ids "$CERT_RES_ID" \
+              --type IOS_APP_STORE \
+              --save
+          fi
+          ls -la ~/Library/MobileDevice/Provisioning\ Profiles/
+      - name: Set up code signing settings on Xcode project
+        script: |
+          xcode-project use-profiles
+      - name: Build IPA for App Store / TestFlight
+        script: |
+          set -e
+          cd mobile/ios/App
+          xcode-project build-ipa \
+            --workspace App.xcworkspace \
+            --scheme App
+          if [ -f "build/ios/ipa/App.ipa" ]; then
+            mv build/ios/ipa/App.ipa build/ios/ipa/OnMyDisk.ipa
+            echo "Renamed output to OnMyDisk.ipa"
+          fi
+          test -f "build/ios/ipa/OnMyDisk.ipa"
+    artifacts:
+      - mobile/ios/App/build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      email:
+        recipients:
+          - alexey@volkoff.info
+        notify:
+          failure: true
+          success: true
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+
+  macos-node-workflow:
+    name: OnMyDisk macOS Node & Tunnel
+    max_build_duration: 45
+    instance_type: mac_mini_m2
+    triggering:
+      events: []
+    scripts:
+      - name: Install Homebrew dependencies (qt@5, openssl@3, cmake)
+        script: |
+          set -e
+          export HOMEBREW_NO_AUTO_UPDATE=1
+          export HOMEBREW_NO_INSTALL_CLEANUP=1
+          brew install qt@5 openssl@3 cmake
+      - name: Build self-contained macOS arm64 Node & Tunnel bundle
+        script: |
+          set -e
+          cd core
+          chmod +x Node/deploy/build-macos-embedded.sh
+          ./Node/deploy/build-macos-embedded.sh
+    artifacts:
+      - core/dist/onmydisk-node-macos-*.tar.gz
+

@@ -1,0 +1,12181 @@
+import os
+import hashlib
+import re
+import random
+import json
+import zipfile
+import shutil
+import logging
+from PIL import Image, PngImagePlugin, ImageOps, ExifTags
+import io
+import base64
+
+import aiohttp
+import asyncio
+import contextvars
+import time
+import subprocess
+
+generation_progress_var: contextvars.ContextVar = contextvars.ContextVar("generation_progress_cb", default=None)
+
+
+async def emit_generation_progress(stage: str, **info) -> None:
+    cb = generation_progress_var.get()
+    if callable(cb):
+        try:
+            res = cb(stage=stage, **info)
+            if asyncio.iscoroutine(res):
+                await res
+        except Exception:
+            pass
+
+from typing import AsyncGenerator
+
+from config import SETTINGS
+from config import USER_DATA_DIR
+
+from utils import clean_response, upload_to_storage, upload_data_to_storage, get_image_from_source, _STOP_TOKENS_PATTERN
+
+
+import user_context
+from user_context import UserContext
+from datetime import datetime, timezone
+import re
+import uuid
+
+from memory_index import (
+    add_memory_card,
+    fetch_document_text,
+    chunk_and_vectorize_to_file,
+)
+
+import unified_memory
+import horde_client
+import plane_service
+
+# LLM and RAG settings #
+OLLAMA_URL = SETTINGS["OLLAMA_URL"]
+DEFAULT_MODEL = SETTINGS["DEFAULT_MODEL"]
+WORK_MODEL = SETTINGS.get("WORK_MODEL", DEFAULT_MODEL)
+FUN_MODEL = SETTINGS.get("FUN_MODEL", DEFAULT_MODEL)
+VISION_MODEL = SETTINGS.get("VISION_MODEL", "gemma4:latest")
+IMAGE_TAG_MODEL = SETTINGS.get("IMAGE_TAG_MODEL", WORK_MODEL)
+FAST_MODEL = SETTINGS.get("FAST_MODEL", DEFAULT_MODEL)
+MCP_MODEL = DEFAULT_MODEL
+
+# AI Provider: 'local' (Ollama only), 'hybrid' (Ollama for Work/RAG, Horde for Fun/RP), 'horde' (always Horde)
+AI_PROVIDER = SETTINGS.get("AI_PROVIDER", "local").lower()
+HORDE_API_KEY = SETTINGS.get("HORDE_API_KEY", horde_client.ANONYMOUS_API_KEY)
+HORDE_MODEL = SETTINGS.get("HORDE_MODEL", "aphrodite/TheDrummer/Behemoth-X-123B-v2.1")
+LLM_NUM_CTX = int(SETTINGS.get("LLM_NUM_CTX", "32768"))
+# Protection: max output tokens (prevents runaway generation that hangs the system)
+LLM_NUM_PREDICT = int(SETTINGS.get("LLM_NUM_PREDICT", "2048"))
+# Protection: unload model from VRAM after N seconds of idle (frees memory, prevents stuck llama-server)
+LLM_KEEP_ALIVE = int(SETTINGS.get("LLM_KEEP_ALIVE", "300"))
+# Protection: max wall-clock seconds for a streaming response before forcibly aborting
+LLM_STREAM_TIMEOUT = int(SETTINGS.get("LLM_STREAM_TIMEOUT", "180"))
+# Protection: max seconds for blocking (non-streaming) LLM call
+LLM_REQUEST_TIMEOUT = int(SETTINGS.get("LLM_REQUEST_TIMEOUT", "120"))
+TEMPERATURE = float(SETTINGS.get("TEMPERATURE", "0.85"))
+TOP_P = float(SETTINGS.get("TOP_P", "0.9"))
+FREQUENCY_PENALTY = float(SETTINGS.get("FREQUENCY_PENALTY", "0.0"))
+PRESENCE_PENALTY = float(SETTINGS.get("PRESENCE_PENALTY", "0.0"))
+REPEAT_PENALTY = float(SETTINGS.get("REPEAT_PENALTY", "1.1"))
+REPEAT_LAST_N = int(SETTINGS.get("REPEAT_LAST_N", "64"))
+
+FUN_TEMPERATURE = float(SETTINGS.get("FUN_TEMPERATURE", "0.95"))
+FUN_TOP_P = float(SETTINGS.get("FUN_TOP_P", "0.9"))
+FUN_FREQUENCY_PENALTY = float(SETTINGS.get("FUN_FREQUENCY_PENALTY", "0.65"))
+FUN_PRESENCE_PENALTY = float(SETTINGS.get("FUN_PRESENCE_PENALTY", "0.5"))
+FUN_REPEAT_PENALTY = float(SETTINGS.get("FUN_REPEAT_PENALTY", "1.15"))
+FUN_REPEAT_LAST_N = int(SETTINGS.get("FUN_REPEAT_LAST_N", "128"))
+
+HUB_URL = SETTINGS.get("HUB_URL", "https://direct.onmydisk.net:8765")
+
+
+def _simple_hash(s: str) -> str:
+    """DJB2-like hash matching JS simpleHash in omd-key.js."""
+    if not s:
+        return "empty"
+    normalized = s.lower().strip()
+    h = 0
+    for ch in normalized:
+        h = ((h << 5) - h) + ord(ch)
+        h = h & 0xFFFFFFFF  # simulate 32-bit int
+    # JS: hash = hash & hash (converts to signed 32-bit), then Math.abs
+    if h >= 0x80000000:
+        h -= 0x100000000
+    return format(abs(h), 'x')
+
+
+async def _fetch_chunks_from_hub(token_hash: str, memory_id: str) -> list:
+    """Fetch document chunks from GunDB hub for chunk-level RAG."""
+    try:
+        url = f"{HUB_URL}/api/chunks?tokenHash={token_hash}&memoryId={memory_id}"
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                if resp.status != 200:
+                    return []
+                data = await resp.json()
+                return data.get("chunks", []) if data.get("ok") else []
+    except Exception as e:
+        logging.warning(f"[hub] fetch_chunks failed for {memory_id}: {e}")
+        return []
+
+
+async def _fetch_all_knowledge_from_hub(token_hash: str) -> list:
+    """Fetch all knowledge cards from hub (for backend-side relevance filtering)."""
+    try:
+        url = f"{HUB_URL}/api/knowledge?tokenHash={token_hash}"
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                if resp.status != 200:
+                    return []
+                data = await resp.json()
+                return data.get("cards", []) if data.get("ok") else []
+    except Exception as e:
+        logging.warning(f"[hub] fetch_all_knowledge failed: {e}")
+        return []
+
+
+def get_llm_model(ctx: UserContext, mode: str | None = None) -> str:
+    if mode is None:
+        mode = ctx.settings.get("content_mode", "work")
+    if mode == "fun":
+        return FUN_MODEL
+    return WORK_MODEL
+
+def get_fast_model(ctx: UserContext | None = None) -> str:
+    """Returns a fast lightweight model for prompt generation, titles, and descriptions."""
+    return FAST_MODEL or (get_llm_model(ctx) if ctx else DEFAULT_MODEL)
+
+# Imaging settings #
+COMFY_API_URL = SETTINGS["COMFY_API_URL"]
+
+WORKFLOW_PATH = SETTINGS["WORKFLOW_PATH"]
+COMFY_OUTPUT_DIR = SETTINGS["COMFY_OUTPUT_DIR"]
+AVATAR_DIR = SETTINGS["AVATAR_DIR"]
+APP_ROOT_DIR = SETTINGS["APP_ROOT_DIR"]
+HISTORY_LIMIT = int(SETTINGS["HISTORY_LIMIT"])
+SUMMARY_THRESHOLD = int(SETTINGS.get("SUMMARY_THRESHOLD", 20))
+SUMMARY_TAIL_LIMIT = SUMMARY_THRESHOLD  # хвост = порог суммирования
+GATEWAY_URL = SETTINGS["GATEWAY_URL"]
+REASONONG_SUPPORTED = False
+
+def hash_string(s: str) -> str:
+    return hashlib.md5(s.encode()).hexdigest()
+
+
+# Prompt loading logic
+PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")
+
+def get_prompt(filename):
+    try:
+        with open(os.path.join(PROMPTS_DIR, filename), "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except Exception as e:
+        logging.error(f"Failed to load prompt {filename}: {e}")
+        return ""
+
+def get_json_prompt(filename):
+    try:
+        with open(os.path.join(PROMPTS_DIR, filename), "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        logging.error(f"Failed to load json prompt {filename}: {e}")
+        return {}
+
+# Default system prompts
+BASE_SYSTEM_PROMPT = get_prompt("base_system.txt")
+MEMORIZATION_PROMPT = get_prompt("memorization.txt")
+SYSTEM_INSTRUCTION_CHARACTER = get_prompt("instruction_character.txt")
+SYSTEM_INSTRUCTION_GENERAL = get_prompt("instruction_general.txt")
+IMAGE_PROMPT_FUN = get_prompt("image_fun.txt")
+RAG_SYSTEM_PROMPT = get_prompt("rag_system.txt")
+IMPROVEMENT_PROMPT = get_prompt("improvement.txt")
+RECOGNITION_PROMPT = get_prompt("recognition.txt")
+
+STYLE_MODELS = {
+    "realistic": SETTINGS.get("REALISTIC_MODEL", "CyberRealisticXLPlay_V10.0_FP16.safetensors"),
+    "realistic2": SETTINGS.get("REALISTIC2_MODEL", SETTINGS.get("REALISTIC_MODEL", "CyberRealisticXLPlay_V10.0_FP16.safetensors")),
+    "perfect": SETTINGS.get("PERFECT_MODEL", "cyberrealisticPony_v180Coreshift.safetensors"),
+    "fantasy": SETTINGS.get("FANTASY_MODEL", "CyberIllustrious_V12_FP16.safetensors"),
+    "tooned": SETTINGS.get("TOONED_MODEL", "CyberRealistic_PonySemi_V5.safetensors"),
+}
+
+NEGATIVE_PROMPTS = get_json_prompt("negative_prompts.json")
+INTENT_PROMPT = get_prompt("intent.txt")
+CHAT_SUMMARY_PROMPT = get_prompt("chat_summary.txt")
+CONTENT_FILTER_PROMPT = get_prompt("content_filter.txt")
+SUMMARY_PROMPT = get_prompt("summary.txt")
+DOC_README_PROMPT = get_prompt("doc_readme.txt")
+FUN_PREPHASE = get_prompt("fun_prephase.txt")
+
+def get_fun_prephase(ctx=None) -> str:
+    """Returns the fun mode prephase prompt."""
+    return FUN_PREPHASE
+
+def get_image_fun(ctx=None) -> str:
+    """Returns image fun directives."""
+    return IMAGE_PROMPT_FUN
+
+DEFAULT_MCP_INSTRUCTIONS = get_prompt("mcp_instructions.txt")
+IMAGE_NEUTRAL_DESC_PROMPT = get_prompt("image_neutral_desc.txt")
+
+
+
+# Native Tool Definitions for Ollama
+MCP_TOOLS = [
+  {
+    "type": "function",
+    "function": {
+      "name": "list_omd_files",
+      "description": "List files in a directory. Results show METADATA (size, date) and are SORTED by date (most recent first). Size is in BYTES, not money/values. Use read_omd_file to see content.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "The absolute path EXACTLY as written by user, e.g. /Linux-desktop/Private/Data"
+          }
+        },
+        "required": ["path"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "read_omd_file",
+      "description": "Read the content of a file. Supports .txt, .md, .pdf, .docx, .odt, .csv. For PDFs and documents, the system automatically converts them to text.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "The EXACT absolute path of the file to read, e.g. /Linux-desktop/Private/Data/file.txt"
+          }
+        },
+        "required": ["path"]
+      }
+    }
+  },
+  {
+      "type": "function",
+      "function": {
+          "name": "write_omd_file",
+          "description": "Write data or create brand new documents in OnMyDisk storage. Supports text files (.txt, .md, .csv) and real office documents (.docx, .odt, .xlsx, .pptx). For .docx/.odt write Markdown (# headings, tables, bold text); for .xlsx write CSV rows; for .pptx write slide outlines. NEVER use this to report errors. Only write successfully gathered information.",
+          "parameters": {
+              "type": "object",
+              "properties": {
+                  "path": {
+                      "type": "string",
+                      "description": "The absolute path INCLUDING FILENAME, e.g. /Linux-desktop/Private/Data/invoice.docx"
+                  },
+                  "content": {
+                      "type": "string",
+                      "description": "The content to write (Markdown for .docx/.odt, CSV for .xlsx, text for .txt)"
+                  },
+                  "template_path": {
+                      "type": "string",
+                      "description": "Optional: Path to base template file if copying from an existing document"
+                  },
+                  "replacements": {
+                      "type": "object",
+                      "description": "Optional: Key-value map of exact text replacements to perform on the template"
+                  }
+              },
+              "required": ["path", "content"]
+          }
+      }
+  },
+  {
+      "type": "function",
+      "function": {
+          "name": "create_document_from_template",
+          "description": "Create a new office document (.docx, .odt, .xlsx, .pptx) based on an existing template or document, preserving 100% of formatting, tables, styles, logos, and layout. Replaces specified text strings in the template with new values.",
+          "parameters": {
+              "type": "object",
+              "properties": {
+                  "template_path": {
+                      "type": "string",
+                      "description": "The absolute path of the existing template/document to copy from, e.g. /beelink/Documents/Bineon_invoice.docx"
+                  },
+                  "target_path": {
+                      "type": "string",
+                      "description": "The absolute path for the new document to create, e.g. /beelink/Documents/Bineon_invoice_10.docx"
+                  },
+                  "replacements": {
+                      "type": "object",
+                      "description": "Dictionary of text replacements where keys are the exact original text in the template and values are the new replacement text, e.g. {'014/2026': '015/2026', '05.05.2026': '18.10.2026'}"
+                  }
+              },
+              "required": ["template_path", "target_path", "replacements"]
+          }
+      }
+  },
+  {
+      "type": "function",
+      "function": {
+          "name": "search_memory",
+          "description": "Search the internal knowledge base and indexed files for facts or information. You MUST use this tool FIRST for any general questions before falling back to the web search.",
+          "parameters": {
+              "type": "object",
+              "properties": {
+                  "query": {
+                      "type": "string",
+                      "description": "The search query"
+                  }
+              },
+              "required": ["query"]
+          }
+      }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "search_web",
+      "description": "Search the public internet (DuckDuckGo). ONLY use this if `search_memory` failed to find the answer, or if the user explicitly asks for real-time web data (weather, news).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The search query to send to the search engine"
+          }
+        },
+        "required": ["query"]
+      }
+    }
+  },
+  {
+      "type": "function",
+      "function": {
+          "name": "find_omd_file",
+          "description": "Find a single file in a directory based on natural language criteria (e.g., 'most recent', 'biggest', 'plain text').",
+          "parameters": {
+              "type": "object",
+              "properties": {
+                  "root_directory": {
+                      "type": "string",
+                      "description": "The directory to search within"
+                  },
+                  "condition": {
+                      "type": "string",
+                      "description": "Natural language condition (e.g., 'most recent invoice', 'largest pdf')"
+                  }
+              },
+              "required": ["root_directory", "condition"]
+          }
+      }
+  },
+  {
+      "type": "function",
+      "function": {
+          "name": "save_user_fact",
+          "description": "Save persistent, factual information explicitly stated by the user about themselves (e.g., biographical details, job roles, persistent preferences). DO NOT use for temporary context, emotions, or roleplay events.",
+          "parameters": {
+              "type": "object",
+              "properties": {
+                  "fact": {
+                      "type": "string",
+                      "description": "The exact factual statement to memorize"
+                  }
+              },
+              "required": ["fact"]
+          }
+      }
+  }
+]
+
+PLANE_TOOLS = [
+  {
+    "type": "function",
+    "function": {
+      "name": "list_plane_workspaces",
+      "description": "List all workspaces available to the user in Plane. Returns workspace names and slugs. Call this FIRST if you don't know the workspace slug.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "Optional: Plane API key. If omitted, automatically uses the key saved in user settings."
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "list_plane_projects",
+      "description": "List all projects in a specific Plane workspace. Returns project names, identifiers, and UUIDs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Optional: The workspace slug (e.g. from list_plane_workspaces, defaults to user's configured/discovered workspace)"
+          },
+          "token": {
+            "type": "string",
+            "description": "Optional: Plane API key."
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "list_plane_issues",
+      "description": "List tasks/issues from a Plane project. Shows task identifiers (e.g. KVIK10-38), titles, status, and priorities. In your answers, ALWAYS use the full task identifiers (e.g. KVIK10-38), never just plain sequence numbers. Can filter by state (e.g. 'todo', 'in progress', 'done').",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Optional: The workspace slug (auto-resolves if omitted)"
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Optional: The project ID, identifier, or name (auto-resolves if omitted and workspace has 1 project)"
+          },
+          "state": {
+            "type": "string",
+            "description": "Optional: Filter by state name or group (e.g. 'todo', 'in progress', 'done', 'backlog')"
+          },
+          "token": {
+            "type": "string",
+            "description": "Optional: Plane API key."
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_plane_issue_details",
+      "description": "Get full details of a specific Plane task/issue (accepts identifier like 'KVIK10-38', sequence number, or UUID), including complete description, status, priority, target dates, assignees, and comments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Optional: The workspace slug (auto-resolves if omitted)"
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Optional: The project ID or identifier (auto-resolves if omitted)"
+          },
+          "issue_id": {
+            "type": "string",
+            "description": "The task identifier (e.g. 'KVIK10-38'), short ID, sequence number (e.g. '38'), or UUID"
+          },
+          "token": {
+            "type": "string",
+            "description": "Optional: Plane API key."
+          }
+        },
+        "required": ["issue_id"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "create_plane_issue",
+      "description": "Create a new task/issue in a Plane project.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Optional: The workspace slug"
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Optional: The project ID"
+          },
+          "name": {
+            "type": "string",
+            "description": "Title of the task/issue"
+          },
+          "description": {
+            "type": "string",
+            "description": "Optional: Detailed description of the task (Markdown or plain text)"
+          },
+          "priority": {
+            "type": "string",
+            "description": "Optional: Priority ('urgent', 'high', 'medium', 'low', 'none')"
+          },
+          "state_name": {
+            "type": "string",
+            "description": "Optional: Initial state name (e.g. 'Todo', 'Backlog')"
+          },
+          "token": {
+            "type": "string",
+            "description": "Optional: Plane API key."
+          }
+        },
+        "required": ["name"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "update_plane_issue_state",
+      "description": "Update the workflow status of a Plane task/issue (e.g. move to 'In Progress', 'In Review', 'Done', 'Todo', 'Backlog').",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Optional: The workspace slug"
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Optional: The project ID"
+          },
+          "issue_id": {
+            "type": "string",
+            "description": "The task UUID or sequence number (e.g. '12' or 'PROJ-12')"
+          },
+          "state_name": {
+            "type": "string",
+            "description": "Target state name (e.g. 'In Progress', 'In Review', 'Done', 'Todo', 'Backlog')"
+          },
+          "token": {
+            "type": "string",
+            "description": "Optional: Plane API key."
+          }
+        },
+        "required": ["issue_id", "state_name"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "add_plane_issue_comment",
+      "description": "Post a comment, work progress report, or completion update to a Plane task/issue.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "Optional: The workspace slug"
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Optional: The project ID"
+          },
+          "issue_id": {
+            "type": "string",
+            "description": "The task UUID or sequence number (e.g. '12' or 'PROJ-12')"
+          },
+          "comment": {
+            "type": "string",
+            "description": "The comment text or report to attach to the task"
+          },
+          "token": {
+            "type": "string",
+            "description": "Optional: Plane API key."
+          }
+        },
+        "required": ["issue_id", "comment"]
+      }
+    }
+  }
+]
+
+# === MCP TOOLS ===
+def validate_omd_path(ctx: UserContext, path: str):
+    from typing import Optional
+    if not ctx or not ctx.storage:
+        return None
+        
+    storage_id = ctx.storage.strip("/")
+    if not storage_id:
+        return None
+        
+    storage_root = storage_id.split("/")[0] if "/" in storage_id else storage_id
+    storage_root_with_slash = "/" + storage_root
+    
+    path_str = str(path).strip()
+    if not path_str.startswith("/"):
+        path_str = "/" + path_str
+        
+    # Check prefix
+    if path_str == storage_root_with_slash or path_str.startswith(storage_root_with_slash + "/"):
+        return None
+        
+    return f"Error: Path '{path}' must start with your active storage root: '{storage_root_with_slash}'."
+
+async def find_omd_file(ctx: UserContext, root_directory: str, condition: str) -> str:
+    # 1. List files
+    listing = await list_omd_files(ctx, root_directory)
+    if listing.startswith("Error") or "Result: Directory" in listing:
+        return "[NO FILE FOUND]"
+    
+    # 2. Use LLM to pick the file
+    prompt = (
+        "You are a file selection assistant.\n"
+        "Given the following directory listing, identify the single file that best matches the condition.\n"
+        f"Condition: {condition}\n\n"
+        f"Listing:\n{listing}\n\n"
+        "Respond ONLY with the absolute path of the chosen file in this format: [FILE]:/absolute/path/to/file\n"
+        "If no file matches, respond with: [NO FILE FOUND]\n"
+        "IMPORTANT: The path must be taken EXACTLY from the [ABS_PATH] in the listing."
+    )
+    
+    payload = {
+        "model": get_llm_model(ctx),
+        "messages": [{"role": "system", "content": prompt}],
+        "stream": False,
+        "options": {"temperature": 0.0}
+    }
+    
+    data = await llm_request(payload)
+    if not data or "message" not in data:
+        return "[NO FILE FOUND]"
+    
+    return data["message"]["content"].strip()
+
+async def download_omd_file(ctx: UserContext, path: str) -> bytes:
+    if not ctx.omd_key or not ctx.storage:
+        raise ValueError("OMD storage not linked.")
+        
+    storage_id = ctx.storage.strip("/")
+    base_url = GATEWAY_URL.rstrip("/")
+    
+    clean_path = path if not path.startswith("/") else path[1:]
+    root_folder = storage_id.split("/")[0] if "/" in storage_id else storage_id
+
+    if path.startswith("/") or path.startswith(root_folder):
+        url_path = path.lstrip("/")
+    else:
+        url_path = f"{storage_id}/{clean_path}"
+        
+    url = f"{base_url}/{url_path}"
+    headers = {"Authorization": f"token:{ctx.omd_key}"}
+    
+    logging.info(f"Downloading raw binary file from OMD URL: {url}")
+    
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=headers, timeout=30) as resp:
+            if resp.status == 200:
+                return await resp.read()
+            else:
+                text = await resp.text()
+                raise IOError(f"Failed to download file from OMD: Status {resp.status} - {text}")
+
+async def upload_omd_file_binary(ctx: UserContext, path: str, data: bytes) -> str:
+    if not ctx.omd_key or not ctx.storage:
+        return "Error: OMD storage not linked."
+        
+    storage_id = ctx.storage.strip("/")
+    base_url = GATEWAY_URL.rstrip("/")
+    
+    clean_path = path if not path.startswith("/") else path[1:]
+    root_folder = storage_id.split("/")[0] if "/" in storage_id else storage_id
+    
+    if path.startswith("/") or path.startswith(root_folder):
+        url_path = path.lstrip("/")
+        dest_url = f"{base_url}/{url_path}"
+        path = "/" + url_path
+    else:
+        dest_url = f"{base_url}/{storage_id}/{clean_path}"
+        path = f"/{storage_id}/{clean_path}"
+        
+    headers = {
+        "Authorization": f"token:{ctx.omd_key}",
+        "Response": "json",
+        "Content-Type": "application/vnd.oasis.opendocument.text"
+    }
+    
+    logging.info(f"Uploading raw binary file to OMD URL: {dest_url}")
+    
+    async with aiohttp.ClientSession() as session:
+        async with session.put(dest_url, data=data, headers=headers) as resp:
+            if resp.status in [200, 201, 204]:
+                return f"Successfully wrote binary file to {path}"
+            else:
+                text = await resp.text()
+                return f"Error writing file: Status {resp.status} - {text}"
+
+
+
+async def list_supported_tools(ctx: UserContext, mode: str = "work") -> str:
+    if mode == "fun":
+        return "No tools available in fun mode."
+    # Construct description from MCP_TOOLS to ensure it's always accurate
+    output = "Currently supported System Tools:\n"
+    for tool in MCP_TOOLS:
+        name = tool["function"]["name"]
+        desc = tool["function"]["description"]
+        output += f"- {name}: {desc}\n"
+    return output
+
+async def list_omd_files(ctx: UserContext, path: str) -> str:
+    if not ctx.omd_key or not ctx.storage:
+        return "Error: OMD storage not linked."
+        
+    path_err = validate_omd_path(ctx, path)
+    if path_err:
+        return path_err
+    
+    try:
+        storage_id = ctx.storage.strip("/")
+        storage_key = ctx.omd_key
+        base_url = GATEWAY_URL.rstrip("/")
+        
+        # OMD API for listing: GET /<storage>/<path>?list&token=<key>
+        # OMD API for listing: GET /<storage>/<path>?list&token=<key>
+        root_folder = storage_id.split("/")[0] if "/" in storage_id else storage_id
+        # Strip leading slash for processing but keep it for comparison
+        clean_path = path if not path.startswith("/") else path[1:]
+        root_folder = storage_id.split("/")[0] if "/" in storage_id else storage_id
+        
+        # OMD Path Logic:
+        # If path starts with /, it is relative to Gateway root. 
+        # If it matches root_folder (device), we use it as is.
+        # If not, we still allow it as Gateway-absolute.
+        
+        # Simplified URL Token Authentication
+        if path.startswith("/") or path.startswith(root_folder):
+            url_path = path.lstrip("/")
+            url = f"{base_url}/{url_path}?list"
+            path = "/" + url_path
+        else:
+            url = f"{base_url}/{storage_id}/{clean_path}?list"
+            path = f"/{storage_id}/{clean_path}"
+        
+        list_headers = {"Authorization": f"token:{storage_key}"}
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=list_headers, timeout=10) as resp:
+                if resp.status in [200, 206]:
+                    text = await resp.text()
+                    items = []
+                    
+                    # Robust parsing of concatenated JSON chunks (OMD Transfer-Encoding: chunked)
+                    decoder = json.JSONDecoder()
+                    pos = 0
+                    text_len = len(text.strip())
+                    while pos < text_len:
+                        # Skip leading whitespace
+                        while pos < len(text) and text[pos].isspace():
+                            pos += 1
+                        if pos >= len(text):
+                            break
+                        try:
+                            obj, idx = decoder.raw_decode(text, pos)
+                            pos = idx
+                            if "list" in obj:
+                                items.extend(obj["list"])
+                            elif "result" in obj:
+                                if isinstance(obj["result"], list):
+                                    items.extend(obj["result"])
+                                elif isinstance(obj["result"], dict) and "list" in obj["result"]:
+                                    items.extend(obj["result"]["list"])
+                        except json.JSONDecodeError as je:
+                            logging.error(f"OMD chunk JSON decode error at pos {pos}: {je}")
+                            # Fallback if it is a single valid JSON block
+                            try:
+                                single_obj = json.loads(text)
+                                if "list" in single_obj:
+                                    items = single_obj["list"]
+                                elif "result" in single_obj:
+                                    items = single_obj["result"] if isinstance(single_obj["result"], list) else []
+                            except Exception:
+                                pass
+                            break
+                    
+                    if not items:
+                        return f"Result: Directory {path} is empty or does not exist."
+                    
+                    # Sort items by date descending (most recent first)
+                    try:
+                        items.sort(key=lambda x: x.get("date", ""), reverse=True)
+                    except Exception as e:
+                        logging.warning(f"Failed to sort OMD items: {e}")
+
+                    result_str = f"Files in {path} (most recent first):\n"
+                    base_dir = path.rstrip("/")
+                    for item in items:
+                        name = item.get("name", "")
+                        type_ = item.get("type", "file")
+                        size = item.get("size", "0")
+                        date = item.get("date", "")
+                        
+                        abs_path = f"{base_dir}/{name}"
+                        if type_ in ["dir", "directory"]:
+                            result_str += f"- [DIRECTORY] [ABS_PATH]: {abs_path}\n"
+                        else:
+                            result_str += f"- [FILE] [ABS_PATH]: {abs_path} (Size: {size}, Last Modified: {date})\n"
+                    return result_str
+                else:
+                    return f"Error: Could not list directory {path} (Status {resp.status})"
+    except Exception as e:
+        return f"Exception listing files: {e}"
+
+async def read_omd_file(ctx: UserContext, path: str) -> str:
+    if not ctx.omd_key or not ctx.storage:
+        return "Error: OMD storage not linked."
+        
+    path_err = validate_omd_path(ctx, path)
+    if path_err:
+        return path_err
+
+    # Real-document reading via the Craft engines (Word/Grid/Deck CLIs): full text
+    # with correct tables, lists and formatting, better than ?totext. Falls back
+    # to the gateway path below when a CLI is missing or fails. The CLI runs in a
+    # worker thread — a document conversion must not stall the API event loop.
+    try:
+        import craft_service as cs
+        name = path.rsplit("/", 1)[-1]
+        kind = cs.kind_for_filename(name)
+        if kind and cs._cli_path(kind):
+            local = cs.resolve_local_path(ctx, path)
+            if local:
+                with open(local, "rb") as f:
+                    data = f.read()
+            else:
+                data = await download_omd_file(ctx, path)
+            return await asyncio.to_thread(cs.read_document_text, kind, data, name)
+    except Exception as craft_err:
+        print(f"[craft] read fallback for {path}: {craft_err}", flush=True)
+
+    try:
+        storage_id = ctx.storage.strip("/")
+        base_url = GATEWAY_URL.rstrip("/")
+        
+        clean_path = path if not path.startswith("/") else path[1:]
+        root_folder = storage_id.split("/")[0] if "/" in storage_id else storage_id
+
+        if path.startswith("/") or path.startswith(root_folder):
+            url_path = path.lstrip("/")
+            url = f"{base_url}/{url_path}"
+        else:
+            url = f"{base_url}/{storage_id}/{clean_path}"
+        
+        # Use fetch_document_text which handles PDFs via ?totext parameter
+        return await fetch_document_text(url, ctx.omd_key)
+
+    except Exception as e:
+        return f"Exception reading file: {e}"
+
+async def search_memory_tool(ctx: UserContext, query: str) -> str:
+    try:
+        # RAG 3.0: unified search across memory cards + file chunks
+        all_results = await search_memory_results(ctx, query)
+        ctx.temp_search_distance = min((r.get("distance", 1.0) for r in all_results), default=1.0)
+
+        # Collect sources for the frontend widget (cached on UserContext)
+        sources = []
+        for res in all_results:
+            doc_id = res.get("document_id", "")
+            title  = res.get("title", "") or (doc_id.split("/")[-1] if doc_id else "")
+            owner  = res.get("owner") or user_context.node_owner()
+            if doc_id or title:
+                if not any(s["title"] == title and s["owner"] == owner for s in sources):
+                    full_path = doc_id if doc_id.startswith("/") else f"/{doc_id}"
+                    sources.append({
+                        "title":       title,
+                        "owner":       owner,
+                        "clickable":   True,
+                        "document_id": doc_id,
+                        "fullPath":    full_path,
+                        "path":        full_path,
+                        "url":         f"https://onmydisk.net{full_path}",
+                    })
+        ctx.temp_sources = sources
+
+        if not all_results:
+            return "No relevant knowledge or files found."
+
+        output = f"Knowledge & Indexed Files Search Results for '{query}':\n"
+        for i, res in enumerate(all_results, 1):
+            text    = res.get("text", "")
+            doc_id  = res.get("document_id", "")
+            title   = res.get("title", "") or (doc_id.split("/")[-1] if doc_id else "unknown")
+            clean_doc_id = str(doc_id).strip() if doc_id else ""
+            full_path = clean_doc_id if clean_doc_id.startswith("/") or clean_doc_id.startswith("http") else (f"/{clean_doc_id}" if clean_doc_id else "")
+            rec_type = res.get("type", "")
+            file_ref = full_path or title
+            header  = f"{'File' if rec_type == 'file_chunk' else 'Memory'}: {file_ref}"
+            output += f"{i}. [{header}]\n{text}\n\n"
+
+        return output.strip()
+    except Exception as e:
+        return f"Error searching memory/files: {e}"
+
+KNOWLEDGE_STRONG_DISTANCE = float(SETTINGS.get("KNOWLEDGE_STRONG_DISTANCE", "0.55"))
+
+async def search_memory_results(ctx: UserContext, query: str) -> list:
+    """Raw unified memory search with relevance data (distance: lower=better)."""
+    prompt_tags = _extract_hashtags(query)
+    return unified_memory.search_for_rag(
+        query,
+        private_mode=ctx.private_mode,
+        top_k=5,
+        tags_filter=prompt_tags or None,
+    )
+
+def _write_local_atomic(local_path: str, data: bytes) -> None:
+    parent = os.path.dirname(local_path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    tmp = f"{local_path}.{os.getpid()}.omd-tmp"
+    try:
+        with open(tmp, "wb") as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, local_path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+async def _save_omd_binary_data(ctx: UserContext, path: str, data: bytes) -> str:
+    # 1. Check if local target on trusted node (direct atomic file write)
+    try:
+        import craft_service as cs
+        local_path = cs.resolve_local_path(ctx, path)
+        if local_path:
+            await asyncio.to_thread(_write_local_atomic, local_path, data)
+            logging.info(f"[_save_omd_binary_data] Saved locally: {local_path} ({len(data)} bytes)")
+            return f"Successfully wrote to {path}"
+    except Exception as e:
+        logging.error(f"[_save_omd_binary_data] Local write failed: {e}")
+        return f"Error writing file locally: {e}"
+
+    # 2. Remote / Guest mode: save strictly via P2P (device_push)
+    device_push = getattr(ctx, "device_push", None)
+    if not device_push:
+        return (
+            f"Error: Remote device storage requires active P2P consent (device_push). "
+            f"Unable to write to '{path}' without P2P tunnel."
+        )
+
+    try:
+        import device_push as dp
+        success = await dp.push_file_to_device_path(
+            omd_key=ctx.omd_key or "",
+            device_push=device_push,
+            rel_path=path,
+            data=data,
+            ctx=ctx,
+        )
+        if success:
+            return f"Successfully wrote to {path} via P2P"
+        else:
+            return f"Error: Failed to write to {path} over P2P tunnel"
+    except Exception as e:
+        logging.error(f"[_save_omd_binary_data] P2P write exception: {e}")
+        return f"Exception writing file over P2P: {e}"
+
+async def _read_omd_binary_data(ctx: UserContext, path: str) -> bytes:
+    import craft_service as cs
+    local = cs.resolve_local_path(ctx, path)
+    if local and os.path.isfile(local):
+        with open(local, "rb") as f:
+            return f.read()
+    data = await download_omd_file(ctx, path)
+    if not data or data.startswith(b"<!DOCTYPE") or data.startswith(b"<html") or data.startswith(b"Error"):
+        logging.warning(f"[_read_omd_binary_data] Download failed or returned non-binary for {path}")
+        return b""
+    return data
+
+async def create_document_from_template(
+    ctx: UserContext,
+    template_path: str,
+    target_path: str,
+    replacements: dict | list | str | None = None,
+    commands: list | None = None
+) -> str:
+    """Create a new office document based on an existing template, preserving 100% of formatting,
+    styles, tables, logos, and layout, while replacing specified texts or executing commands."""
+    template_path = str(template_path).strip()
+    target_path = str(target_path).strip()
+    if template_path and not template_path.startswith("/"):
+        template_path = "/" + template_path
+
+    # If target_path is relative or just a filename, place it in the same directory as template_path
+    if template_path and ("/" not in target_path.strip("/") or (ctx and ctx.storage and not target_path.startswith("/" + ctx.storage.strip("/").split("/")[0]))):
+        parent_dir = template_path.rsplit("/", 1)[0]
+        filename = os.path.basename(target_path) if os.path.basename(target_path) else "new_document" + os.path.splitext(template_path)[1]
+        target_path = f"{parent_dir}/{filename}"
+
+    if target_path and not target_path.startswith("/"):
+        target_path = "/" + target_path
+
+    path_err = validate_omd_path(ctx, target_path)
+    if path_err:
+        return path_err
+    template_err = validate_omd_path(ctx, template_path)
+    if template_err:
+        return template_err
+
+    try:
+        template_data = await _read_omd_binary_data(ctx, template_path)
+        if not template_data:
+            return f"Error: Template file '{template_path}' is empty or could not be read."
+
+        import craft_service as cs
+        source_name = os.path.basename(template_path)
+        target_name = os.path.basename(target_path)
+        kind = cs.kind_for_filename(target_name) or cs.kind_for_filename(source_name) or "doc"
+
+        if isinstance(replacements, str):
+            try:
+                replacements = json.loads(replacements)
+            except Exception:
+                pass
+
+        cmds = []
+        if replacements and isinstance(replacements, dict):
+            for old_txt, new_txt in replacements.items():
+                if old_txt is not None and new_txt is not None:
+                    old_s = str(old_txt).strip()
+                    new_s = str(new_txt).strip()
+                    if old_s:
+                        cmds.append(f'edit.replaceAll={json.dumps({"text": old_s, "with": new_s}, ensure_ascii=False)}')
+        elif replacements and isinstance(replacements, list):
+            for item in replacements:
+                if isinstance(item, dict):
+                    old_s = str(item.get("find") or item.get("text") or item.get("old") or "").strip()
+                    new_s = str(item.get("replace") or item.get("with") or item.get("new") or "").strip()
+                    if old_s:
+                        cmds.append(f'edit.replaceAll={json.dumps({"text": old_s, "with": new_s}, ensure_ascii=False)}')
+
+        if commands and isinstance(commands, list):
+            for c in commands:
+                if c and isinstance(c, str):
+                    cmds.append(c.strip())
+
+        if cmds:
+            logging.info(f"[create_document_from_template] Applying {len(cmds)} commands to {template_path} -> {target_path}")
+            result_data = await asyncio.to_thread(
+                cs.edit_document,
+                kind,
+                template_data,
+                source_name,
+                cmds,
+                author="OMD Agent",
+                out_name=target_name
+            )
+        else:
+            result_data = template_data
+
+        save_res = await _save_omd_binary_data(ctx, target_path, result_data)
+        if save_res.startswith("Successfully"):
+            return f"Successfully created {target_path} based on template {template_path}"
+        return save_res
+    except Exception as e:
+        logging.error(f"[create_document_from_template] Error: {e}")
+        return f"Error creating document from template: {e}"
+
+async def write_omd_file(ctx: UserContext, path: str, content: str = "", template_path: str = "", replacements: dict | None = None) -> str:
+    path = str(path).strip()
+
+    # If template_path is provided, route directly to create_document_from_template
+    if template_path:
+        return await create_document_from_template(ctx, template_path, path, replacements=replacements)
+
+    if path and not path.startswith("/"):
+        path = "/" + path
+
+    path_err = validate_omd_path(ctx, path)
+    if path_err:
+        return path_err
+
+    # Fallback if path looks like a directory
+    if not os.path.splitext(path)[1]:
+        path = path.rstrip("/") + "/new_file.txt"
+        logging.info(f"[write_omd_file] No extension found, appending default filename: {path}")
+
+    filename = os.path.basename(path)
+
+    # 1. Compile document bytes (Office documents via Craft, plain text as UTF-8)
+    try:
+        import craft_service as cs
+        kind = cs.kind_for_filename(filename)
+        if kind and cs._cli_path(kind):
+            data = await asyncio.to_thread(cs.create_document, kind, filename, content)
+        else:
+            data = content.encode("utf-8")
+    except Exception as e:
+        logging.error(f"[write_omd_file] Error generating content for {path}: {e}")
+        return f"Error preparing document content: {e}"
+
+    return await _save_omd_binary_data(ctx, path, data)
+
+def extract_plan_steps(text: str) -> list:
+    steps = []
+    lines = text.split('\n')
+    in_plan = False
+    for line in lines:
+        line_strip = line.strip()
+        if not line_strip:
+            continue
+        # Skip tags and formatting wrapper lines
+        if any(tag in line_strip.upper() for tag in ["[/PLAN]", "[THOUGHT]", "[/THOUGHT]", "<THOUGHT>", "</THOUGHT>", "[CHECKLIST]", "[/CHECKLIST]"]):
+            continue
+        if "[PLAN]" in line_strip.upper() or "PLAN:" in line_strip.upper() or "CHECKLIST:" in line_strip.upper():
+            in_plan = True
+            continue
+        if in_plan:
+            # If we hit a new section like "Tool Call:" or "Agent Reasoning" or something empty/different
+            if line_strip.startswith("[") and not line_strip.upper().startswith("[PLAN"):
+                break
+            # Match plan items
+            # Supports: "Step 1: ...", "1. ...", "- [ ] ...", "- ...", "* ..."
+            match = re.match(r'^(?:-\s*\[\s*\]\s*|-\s*\[\s*x\s*\]\s*|-\s*|\*\s*|Step\s*\d+\s*:\s*|\d+\.\s*)(.*)', line_strip, re.IGNORECASE)
+            if match:
+                content = match.group(1).strip()
+                if content:
+                    steps.append(content)
+            elif line_strip.startswith("Step") or (line_strip and line_strip[0].isdigit()):
+                # Fallback for plain "Step 1 ..." or "1 ..."
+                content = re.sub(r'^(?:Step\s*\d+\s*|\d+\s+)', '', line_strip).strip()
+                if content:
+                    steps.append(content)
+    # If no steps found with explicit [PLAN] header, try a global scan of the whole text for "Step X:" or "1. " patterns
+    if not steps:
+        for line in lines:
+            line_strip = line.strip()
+            # Skip tags and formatting wrapper lines
+            if any(tag in line_strip.upper() for tag in ["[/PLAN]", "[THOUGHT]", "[/THOUGHT]", "<THOUGHT>", "</THOUGHT>", "[CHECKLIST]", "[/CHECKLIST]"]):
+                continue
+            match = re.match(r'^(?:Step\s*\d+\s*:\s*|\d+\.\s+)(.*)', line_strip, re.IGNORECASE)
+            if match:
+                content = match.group(1).strip()
+                if content:
+                    steps.append(content)
+    return steps
+
+def clean_reasoning_text(text: str) -> str:
+    """
+    Cleans intermediate reasoning/thought text for the UI reasoning block.
+    Removes channel delimiters, thought tags, plan tags, and stop tokens,
+    while preserving actual multi-line reasoning bullets.
+    """
+    if not text:
+        return ""
+    text = re.sub(r'<\|?channel\|?[^>\n]*>', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'</?(?:thought|think)>', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\[/?(?:PLAN|THOUGHT|CHECKLIST)\]', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'^(?:Agent\s+Reasoning\s*\(Turn\s*\d+\)\s*:|Agent\s+Conclusion\s*:)\s*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\n(?:Agent\s+Reasoning\s*\(Turn\s*\d+\)\s*:|Agent\s+Conclusion\s*:)\s*', '\n', text, flags=re.IGNORECASE)
+    text = _STOP_TOKENS_PATTERN.sub('', text)
+
+    lines = text.split('\n')
+    cleaned_lines = []
+    in_plan_block = False
+    for line in lines:
+        line_strip = line.strip()
+        if not line_strip:
+            cleaned_lines.append(line)
+            continue
+
+        # Filter out creepy self-referential persona thoughts (e.g. "Drafting the Response (June persona):")
+        if re.search(r'(?:persona|character|june)\s*(?:check|reminder|mode|\bpersona\b)?[:\)]', line_strip, re.IGNORECASE) and not re.search(r'(?:tool|file|code|query|search)', line_strip, re.IGNORECASE):
+            continue
+
+        if "[PLAN]" in line_strip.upper() or "PLAN:" in line_strip.upper() or "CHECKLIST:" in line_strip.upper():
+            in_plan_block = True
+            continue
+        if in_plan_block:
+            is_checkbox = re.match(r'^(?:-\s*\[\s*[ xX]?\s*\]\s*|Step\s*\d+|\d+\.\s+\[)', line_strip, re.IGNORECASE)
+            if not is_checkbox and not line_strip.startswith(("- [", "* [")):
+                in_plan_block = False
+            else:
+                continue
+        cleaned_lines.append(line)
+        
+    cleaned = []
+    last_empty = False
+    for line in cleaned_lines:
+        if not line.strip():
+            if not last_empty:
+                cleaned.append("")
+                last_empty = True
+        else:
+            cleaned.append(line)
+            last_empty = False
+            
+    return "\n".join(cleaned).strip()
+
+def get_non_plan_reasoning(text: str) -> str:
+    return clean_reasoning_text(text)
+
+def update_todos_from_text(todos: list, text: str) -> bool:
+    """
+    Updates status of items in todos list based on checklist markers in text.
+    Looks for:
+    - [x], - [X], (completed), (done), (выполнено), (успешно) -> completed
+    - [ ], (pending), (в процессе) -> in_progress or pending
+    Returns True if any todo item was updated.
+    """
+    if not todos or not text:
+        return False
+    updated = False
+    lines = text.split('\n')
+    for line in lines:
+        l_str = line.strip()
+        if not l_str:
+            continue
+        is_completed = bool(re.search(r'\[[xX]\]|\(\s*(?:выполнено|completed|done|успешно)\s*\)', l_str, re.IGNORECASE))
+        
+        # Look for step index like - [1], - [2], Step 1:, 1.
+        idx_match = re.search(r'-\s*\[\s*(\d+)\s*\]|Step\s*(\d+)|\b(\d+)\.\s+', l_str, re.IGNORECASE)
+        step_idx = None
+        if idx_match:
+            for g in idx_match.groups():
+                if g and g.isdigit():
+                    step_idx = int(g) - 1
+                    break
+                    
+        if is_completed:
+            if step_idx is not None and 0 <= step_idx < len(todos):
+                if todos[step_idx]["status"] != "completed":
+                    todos[step_idx]["status"] = "completed"
+                    updated = True
+                    continue
+            for t_item in todos:
+                words = [w for w in re.findall(r'\w{4,}', t_item.get("content", "").lower())]
+                if words and sum(1 for w in words if w in l_str.lower()) >= min(2, len(words)):
+                    if t_item["status"] != "completed":
+                        t_item["status"] = "completed"
+                        updated = True
+                        break
+    return updated
+
+class McpStreamFilter:
+    """
+    Filters a stream of tokens into reasoning deltas, plan updates, and content deltas.
+    Prevents [PLAN] blocks, <channel|>, and thoughts from leaking into the user chat bubble.
+    """
+    def __init__(self, is_turn_zero: bool = False):
+        self.is_turn_zero = is_turn_zero
+        self.buffer = ""
+        self.in_plan = False
+        self.in_thought = False
+        self.content_started = False
+
+    def feed(self, token: str) -> list[tuple[str, str]]:
+        if self.content_started:
+            if not self.is_turn_zero:
+                return [("content", token)]
+            else:
+                return [("reasoning", token)]
+
+        self.buffer += token
+        events = []
+        
+        while self.buffer:
+            # 1. Check for explicit channel marker: <channel|>, <|channel|>, <channel|main>
+            channel_match = re.search(r"<\|?channel\|?(?:main|response|chat|final)?>", self.buffer, re.IGNORECASE)
+            if channel_match:
+                pre = self.buffer[:channel_match.start()]
+                if pre:
+                    events.append(("reasoning", pre))
+                self.buffer = self.buffer[channel_match.end():].lstrip("\n\r")
+                self.content_started = True
+                if self.buffer and not self.is_turn_zero:
+                    events.append(("content", self.buffer))
+                    self.buffer = ""
+                break
+
+            # 2. Check for explicit thought tag opening: <thought>, <think>
+            thought_open = re.search(r"<(?:thought|think)>", self.buffer, re.IGNORECASE)
+            if thought_open and not self.in_thought:
+                pre = self.buffer[:thought_open.start()]
+                if pre:
+                    events.append(("reasoning", pre))
+                self.in_thought = True
+                self.buffer = self.buffer[thought_open.end():]
+                continue
+
+            # 3. Check for explicit thought tag closing: </thought>, </think>
+            if self.in_thought:
+                thought_close = re.search(r"</(?:thought|think)>", self.buffer, re.IGNORECASE)
+                if thought_close:
+                    th = self.buffer[:thought_close.start()]
+                    if th:
+                        events.append(("reasoning", th))
+                    self.in_thought = False
+                    self.buffer = self.buffer[thought_close.end():].lstrip("\n\r")
+                    continue
+                else:
+                    safe_len = max(0, len(self.buffer) - 12)
+                    if safe_len > 0:
+                        chunk = self.buffer[:safe_len]
+                        events.append(("reasoning", chunk))
+                        self.buffer = self.buffer[safe_len:]
+                    break
+
+            # 4. Check for [PLAN] / [THOUGHT] / CHECKLIST: prefix
+            buf_strip = self.buffer.lstrip()
+            if not self.in_plan:
+                if len(buf_strip) < 15 and any(buf_strip.upper().startswith(p[:len(buf_strip)]) for p in ["[PLAN]", "[THOUGHT]", "<CHANNEL", "<|CHANNEL", "<THOUGHT>", "<THINK>"]):
+                    break
+                if any(buf_strip.upper().startswith(p) for p in ["[PLAN]", "PLAN:", "[CHECKLIST]", "CHECKLIST:"]):
+                    self.in_plan = True
+
+            if self.in_plan:
+                if "\n" in self.buffer:
+                    line, rest = self.buffer.split("\n", 1)
+                    l_str = line.strip()
+                    is_plan_header = any(p in l_str.upper() for p in ["[PLAN]", "PLAN:", "CHECKLIST:"])
+                    is_plan_item = re.match(r"^(?:-\s*\[\s*[\w\s-]*\s*\]|-\s*|\*\s*|Step\s*\d+|\d+\.\s*|•\s*)", l_str, re.IGNORECASE)
+                    
+                    if is_plan_header or (is_plan_item and len(l_str) > 0) or (not l_str and self.in_plan):
+                        events.append(("reasoning", line + "\n"))
+                        self.buffer = rest
+                        continue
+                    else:
+                        self.in_plan = False
+                        # Transition to content mode!
+                        self.content_started = True
+                        if not self.is_turn_zero:
+                            events.append(("content", self.buffer))
+                        else:
+                            events.append(("reasoning", self.buffer))
+                        self.buffer = ""
+                        break
+                else:
+                    break
+
+            # Check if buffer ends with partial channel tag prefix
+            potential_tag = False
+            for tag in ["<channel|>", "<|channel|>", "<channel|main>", "<channel|final>"]:
+                for i in range(1, len(tag)):
+                    if self.buffer.endswith(tag[:i]):
+                        potential_tag = True
+                        break
+                if potential_tag:
+                    break
+
+            if potential_tag:
+                break
+
+            # Not in plan, not in thought, not in channel marker -> User-facing content
+            self.content_started = True
+            if not self.is_turn_zero:
+                events.append(("content", self.buffer))
+            else:
+                events.append(("reasoning", self.buffer))
+            self.buffer = ""
+            break
+
+        return events
+
+    def flush(self) -> list[tuple[str, str]]:
+        events = []
+        if self.buffer:
+            if self.content_started and not self.is_turn_zero:
+                events.append(("content", self.buffer))
+            else:
+                events.append(("reasoning", self.buffer))
+            self.buffer = ""
+        return events
+
+def split_mcp_output(text: str, has_tool_calls: bool = False) -> tuple[str, str]:
+    """
+    Splits agent output into (reasoning, final_content).
+    Detects channel markers (<channel|>), thinking blocks (<thought>...</thought>), 
+    and output generation markers.
+    """
+    if not text:
+        return "", ""
+
+    # 1. Explicit channel marker (e.g. <channel|>, <|channel|>, <|channel|>main)
+    channel_split = re.split(r'<\|?channel\|?(?:main|response|chat|final)?>', text, maxsplit=1, flags=re.IGNORECASE)
+    if len(channel_split) == 2:
+        reasoning_part, content_part = channel_split[0], channel_split[1]
+        return clean_reasoning_text(reasoning_part), clean_assistant_response(content_part)
+
+    # 2. Explicit <thought>...</thought> or <think>...</think>
+    thought_match = re.search(r'<(?:thought|think)>(.*?)</(?:thought|think)>', text, flags=re.DOTALL | re.IGNORECASE)
+    if thought_match:
+        reasoning_part = thought_match.group(1)
+        content_part = text[:thought_match.start()] + text[thought_match.end():]
+        return clean_reasoning_text(reasoning_part), clean_assistant_response(content_part)
+
+    # 3. If there are tool calls in this turn, all accompanying text is reasoning
+    if has_tool_calls:
+        return clean_reasoning_text(text), ""
+
+    # 4. Known section headers separating analysis/planning from the actual response
+    markers = [
+        r'\*\*Final Output Generation:\*\*',
+        r'\*\*Final Response:\*\*',
+        r'\*\*Response:\*\*',
+        r'\*\*Conclusion:\*\*',
+        r'\*\*Final Answer:\*\*',
+        r'### Final Response',
+        r'### Response',
+        r'### Answer'
+    ]
+    for marker in markers:
+        parts = re.split(marker, text, maxsplit=1, flags=re.IGNORECASE)
+        if len(parts) == 2 and parts[1].strip():
+            return clean_reasoning_text(parts[0]), clean_assistant_response(parts[1])
+
+    # 5. If the turn had no tool calls and didn't match markers:
+    # If text starts with a plan or analysis block, split off the answering body
+    lines = text.split('\n')
+    reasoning_lines = []
+    content_lines = []
+    in_analysis = False
+    reached_answer = False
+
+    for line in lines:
+        l_strip = line.strip()
+        if not l_strip:
+            if reached_answer:
+                content_lines.append(line)
+            else:
+                reasoning_lines.append(line)
+            continue
+
+        if any(tag in l_strip.upper() for tag in ["[PLAN]", "**ANALYSIS:", "**ANALYSIS**"]):
+            in_analysis = True
+            reasoning_lines.append(line)
+            continue
+
+        if in_analysis:
+            if l_strip.startswith(("- [", "* [", "- Step", "* Step")):
+                reasoning_lines.append(line)
+                continue
+            elif not l_strip.startswith(("-", "*", "[")) and len(l_strip) > 0:
+                in_analysis = False
+                reached_answer = True
+                content_lines.append(line)
+                continue
+
+        if reached_answer:
+            content_lines.append(line)
+        else:
+            reasoning_lines.append(line)
+
+    content_candidate = "\n".join(content_lines).strip()
+    reasoning_candidate = "\n".join(reasoning_lines).strip()
+
+    if content_candidate and (reasoning_candidate != content_candidate):
+        return clean_reasoning_text(reasoning_candidate), clean_assistant_response(content_candidate)
+
+    # If it's a direct natural language response with no plan/thinking tags
+    if not any(tag in text.upper() for tag in ["[PLAN]", "[THOUGHT]", "<THOUGHT>", "<THINK>"]):
+        return "", clean_assistant_response(text)
+
+    return clean_reasoning_text(text), ""
+
+def clean_final_content(text: str) -> str:
+    if not text:
+        return ""
+    text = re.sub(r'^(?:Agent\s+Reasoning\s*\(Turn\s*\d+\)\s*:|Agent\s+Conclusion\s*:)\s*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\n(?:Agent\s+Reasoning\s*\(Turn\s*\d+\)\s*:|Agent\s+Conclusion\s*:)\s*', '\n', text, flags=re.IGNORECASE)
+    return clean_reasoning_text(text)
+
+
+def extract_tool_calls_from_text(text: str, supported_names: set) -> list:
+    """
+    Fallback parser when local LLMs output tool calls in markdown or text
+    rather than structured JSON tool_calls in the API response.
+    """
+    import ast
+    if not text:
+        return []
+    tool_calls = []
+
+    # 1. <execute_tool>name{...}</execute_tool> or <execute_tool>{"name": ..., "arguments": ...}</execute_tool>
+    for m in re.finditer(r'<execute_tool>\s*(\w+)?\s*(\{[\s\S]*?\})\s*</execute_tool>', text, re.IGNORECASE):
+        fn_name, json_body = m.group(1), m.group(2)
+        try:
+            parsed = json.loads(json_body)
+        except Exception:
+            try:
+                parsed = ast.literal_eval(json_body)
+            except Exception:
+                continue
+        if not fn_name and isinstance(parsed, dict) and ('name' in parsed or 'tool' in parsed):
+            fn_name = parsed.get('name') or parsed.get('tool')
+            parsed = parsed.get('arguments') or parsed.get('parameters') or parsed
+        if fn_name and fn_name in supported_names:
+            tool_calls.append({
+                'id': f'call_text_{len(tool_calls)}',
+                'function': {'name': fn_name, 'arguments': parsed if isinstance(parsed, dict) else {}}
+            })
+
+    if tool_calls:
+        return tool_calls
+
+    # 2. Markdown or Python style: Execute name with ... or name(arg1=val1, ...)
+    for name in supported_names:
+        # Pattern 2a: name(arg=val, ...)
+        py_match = re.search(r'\b' + re.escape(name) + r'\s*\(([\s\S]*?)\)', text)
+        if py_match:
+            raw_args = py_match.group(1).strip()
+            args = {}
+            for kv in re.finditer(r'(\w+)\s*=\s*(?:(["\'])([\s\S]*?)\2|(\{[\s\S]*?\})|(\[[^\]]*?\])|([^\s,]+))', raw_args):
+                k = kv.group(1)
+                val = kv.group(3) if kv.group(3) is not None else (kv.group(4) or kv.group(5) or kv.group(6))
+                if val:
+                    val = val.strip()
+                    if val.startswith('{') or val.startswith('['):
+                        try:
+                            args[k] = json.loads(val)
+                        except Exception:
+                            try:
+                                args[k] = ast.literal_eval(val)
+                            except Exception:
+                                args[k] = val
+                    else:
+                        args[k] = val
+            if args:
+                tool_calls.append({
+                    'id': f'call_text_{len(tool_calls)}',
+                    'function': {'name': name, 'arguments': args}
+                })
+                return tool_calls
+
+        # Pattern 2b: Execute name with key: val, ...
+        exec_match = re.search(r'(?:Execute|Call)\s+`?' + re.escape(name) + r'`?\s+with\s*:?\s*([\s\S]+?)(?:\n\n|\Z)', text, re.IGNORECASE)
+        if exec_match:
+            raw_args = exec_match.group(1).strip()
+            args = {}
+            for kv in re.finditer(r'`?(\w+)`?\s*:\s*(?:(["\'])([\s\S]*?)\2|(\{[\s\S]*?\})|(\[[^\]]*?\])|([^\n,]+))', raw_args):
+                k = kv.group(1)
+                val = kv.group(3) if kv.group(3) is not None else (kv.group(4) or kv.group(5) or kv.group(6))
+                if val:
+                    val = val.strip()
+                    if val.startswith('{') or val.startswith('['):
+                        try:
+                            args[k] = json.loads(val)
+                        except Exception:
+                            try:
+                                args[k] = ast.literal_eval(val)
+                            except Exception:
+                                args[k] = val
+                    else:
+                        args[k] = val
+            if args:
+                tool_calls.append({
+                    'id': f'call_text_{len(tool_calls)}',
+                    'function': {'name': name, 'arguments': args}
+                })
+                return tool_calls
+
+    return tool_calls
+
+
+def clean_mimetype(filename: str, raw_mimetype: str = None) -> str:
+    """
+    Cleans and formats mimetype to be strictly compatible with the OnMyDisk frontend flat-file icon assets.
+    Replaces '/' with '-' and applies correct custom mappings for common formats.
+    """
+    import mimetypes
+    
+    # If raw_mimetype is a valid specific type, normalize it
+    if raw_mimetype and raw_mimetype not in ['unknown', 'application/octet-stream', 'application/x-zerosize', '']:
+        return str(raw_mimetype).replace('/', '-')
+        
+    ext = os.path.splitext(filename)[1].lstrip('.').lower()
+    
+    # Try guessing with Python's library first
+    mime_type, _ = mimetypes.guess_type(filename)
+    if not mime_type:
+        # Fallback map for common file types that might not be registered in system's mimetypes
+        fallback_map = {
+            'odt': 'application-vnd.oasis.opendocument.text',
+            'ods': 'application-vnd.oasis.opendocument.spreadsheet',
+            'odp': 'application-vnd.oasis.opendocument.presentation',
+            'md': 'text-x-markdown',
+            'sql': 'application-sql',
+            'xml': 'application-xml',
+            'json': 'application-json',
+            'php': 'application-x-php',
+            'py': 'application-x-python',
+            'js': 'application-x-javascript',
+            'css': 'text-css',
+            'txt': 'text-plain',
+            'pdf': 'application-pdf',
+            'docx': 'application-vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'xlsx': 'application-vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'pptx': 'application-vnd.openxmlformats-officedocument.presentationml.presentation',
+        }
+        mime_type = fallback_map.get(ext, 'unknown')
+        
+    return mime_type.replace('/', '-') if mime_type else 'unknown'
+
+def clean_assistant_response(text: str) -> str:
+    """
+    Cleans final assistant message without stripping numbered lists, bullet points, or steps.
+    Strips the specific [PLAN] checklists to prevent showing them to the user.
+    """
+    if not text:
+        return ""
+    # Strip channel markers
+    text = re.sub(r'<\|?channel\|?[^>\n]*>', '', text, flags=re.IGNORECASE)
+    # Strip thought tags
+    text = re.sub(r'</?(?:thought|think)>', '', text, flags=re.IGNORECASE)
+    # Remove any debug/agent labels
+    text = re.sub(r'^(?:Agent\s+Reasoning\s*\(Turn\s*\d+\)\s*:|Agent\s+Conclusion\s*:)\s*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\n(?:Agent\s+Reasoning\s*\(Turn\s*\d+\)\s*:|Agent\s+Conclusion\s*:)\s*', '\n', text, flags=re.IGNORECASE)
+    
+    # Strip the specific [PLAN] block from the final output, preserving other content
+    lines = text.split('\n')
+    cleaned_lines = []
+    in_plan_block = False
+    
+    for line in lines:
+        line_strip = line.strip()
+        if not line_strip:
+            cleaned_lines.append(line)
+            continue
+            
+        # Detect start of plan block
+        if "[PLAN]" in line_strip.upper() or "PLAN:" in line_strip.upper() or "CHECKLIST:" in line_strip.upper():
+            in_plan_block = True
+            continue
+            
+        if in_plan_block:
+            # Plan lines look like checkboxes or numbered steps: - [ ], - [x], - [1], Step 1:, 1. etc.
+            is_checkbox = re.match(r'^(?:-\s*\[\s*[\w\s-]*\s*\]\s*|Step\s*\d+|\d+\.\s+|Completed in previous turn|\(\s*Completed in previous turn\s*\))', line_strip, re.IGNORECASE)
+            # If we hit a non-plan line, terminate the plan block suppression
+            if not is_checkbox and not line_strip.startswith(("-", "*", "•")) and len(line_strip) > 0:
+                in_plan_block = False
+            else:
+                # Suppress the plan checkbox line
+                continue
+                
+        cleaned_lines.append(line)
+        
+    return "\n".join(cleaned_lines).strip()
+
+async def check_and_execute_mcp(ctx: UserContext, message: str, mode: str = "work", provided_history: list|None = None) -> AsyncGenerator[dict, None]:
+    # Clean the routing prefix / slash command from the beginning of the message to prevent LLM confusion
+    clean_message = message.strip()
+    if mode == "fun":
+        # An explicit tool command (/mcp, /tools, /doc…) overrides fun mode: the
+        # user asked for the agent on purpose. Without one, fun mode must still
+        # ANSWER — a bare `return` leaves the frontend spinning on 'executing'.
+        explicit = any(clean_message.lower().startswith(c) and
+                       (len(clean_message) == len(c) or clean_message[len(c)].isspace())
+                       for c in ("/mcp", "/tools", "/doc", "/docs"))
+        if not explicit:
+            logging.info("[MCP] content_mode=fun — tool agent skipped, telling the user")
+            ru = bool(re.search(r"[а-яё]", clean_message, re.IGNORECASE))
+            text = ("Режим Fun: файловый агент отключён, чтобы не ломать ролевую сцену. "
+                    "Переключи чат в режим Work — или вызови агента командой «/mcp …», "
+                    "и я сразу возьму документ."
+                    if ru else
+                    "Fun mode: the file agent is off to keep the roleplay intact. "
+                    "Switch the chat to Work mode — or call the agent explicitly with "
+                    "\"/mcp …\" and I will take the document right away.")
+            yield {"type": "result", "content": text}
+            return
+        logging.info("[MCP] fun mode + explicit tool command — running the agent anyway")
+    for cmd in ["/doc", "/mcp", "/generate", "/sign", "/help", "/forget", "/forget_all", "/chat", "/code", "/import"]:
+        if clean_message.lower().startswith(cmd) and (len(clean_message) == len(cmd) or clean_message[len(cmd)].isspace()):
+            clean_message = clean_message[len(cmd):].strip()
+            break
+            
+    todos = []
+    has_initialized_todos = False
+    changed_files = []
+    requires_read = False
+    was_write_planned = False
+    success = True
+    tool_error_msg = ""
+    final_agent_response = ""
+    streamed_to_user = False
+    # 1. Path Extraction Heuristic (Help the model find the path)
+    raw_paths = re.findall(r"(\/[\w\-\.\/]+)", clean_message)
+    potential_paths = []
+    
+    # List of known slash commands to exclude from path detection
+    slash_commands = {
+        "/doc", "/mcp", "/generate", "/sign", "/help", "/forget", "/forget_all", 
+        "/chat", "/code", "/import", "/show", "/view", "/imagine", "/learn", 
+        "/recognize", "/detect", "/think", "/explain", "/search", "/explore", "/exlore", "/research",  "/tools"
+    }
+    
+    for p in raw_paths:
+        p_clean = p.strip()
+        if p_clean.lower() in slash_commands:
+            continue
+        if p_clean.count("/") == 1 and clean_message.strip().startswith(p_clean):
+            continue
+        potential_paths.append(p_clean)
+        
+    path_hint = ""
+    
+    if potential_paths:
+        # Check if any path looks like a specific file with an extension
+        files = [p for p in potential_paths if any(p.lower().endswith(ext) for ext in [".odt", ".pdf", ".txt", ".docx", ".csv", ".xlsx", ".pptx", ".png", ".jpg", ".jpeg", ".html", ".css", ".js", ".cpp", ".py"])]
+        if files:
+            path_hint += f"\nSYSTEM HINT: Detected exact file paths: {', '.join(files)}. Access/read/write these files directly using appropriate tools. Do NOT use `list_omd_files` if you already know the exact file path."
+        else:
+            path_hint = f"\nSYSTEM HINT: Detected paths: {', '.join(potential_paths)}. \nSTRATEGY: You MUST use `list_omd_files` first to see what's inside before trying to read."
+    
+    logging.info(f"\n[MCP PATH HINT] {path_hint}")        
+
+    # 2. Native Tool Call Loop (Multi-Turn)
+    system_instruction = DEFAULT_MCP_INSTRUCTIONS
+    
+    # Inject username and current date
+    username = (ctx.settings.get("name") or ctx.settings.get("username") or "User") if ctx else "User"
+    current_date = datetime.now().strftime("%d.%m.%Y")
+    current_date_iso = datetime.now().strftime("%Y-%m-%d")
+    
+    system_instruction += f"\n\n- USERNAME: '{username}'"
+    system_instruction += f"\n- CURRENT DATE: {current_date} (ISO format: {current_date_iso})"
+    
+    # Inject assistant personality settings
+    if ctx:
+        assistant_name = ctx.settings.get("assistant_name", "").strip()
+        if assistant_name:
+            system_instruction += f"\n- ASSISTANT NAME: '{assistant_name}'"
+            
+        personality = ctx.settings.get("system_prompt", "").strip()
+        if personality:
+            system_instruction += f"\n- PERSONALITY:\n{personality}"
+    
+    if ctx and ctx.storage:
+        storage_id = ctx.storage.strip("/")
+        if storage_id:
+            storage_root = "/" + storage_id.split("/")[0] if "/" in storage_id else "/" + storage_id
+            system_instruction += f"\n\n- ACTIVE SESSION STORAGE ROOT: '{storage_root}'. All absolute paths you access, list, search inside, or write to MUST start with this root directory. Do NOT guess or use fake directories like '/OnMyDisk' or '/Linux-desktop'."
+
+    is_russian = bool(re.search(r"[а-яё]", clean_message, re.IGNORECASE))
+    if is_russian:
+        system_instruction += (
+            "\n\n- MANDATORY LANGUAGE LOCK: The user's request is in RUSSIAN. "
+            "You MUST formulate your thoughts and final answer in RUSSIAN (русский язык). "
+            "Even when reading English documents or templates, provide all your explanations, section listings, "
+            "and summaries in Russian. Only keep verbatim quotes in their original language if specifically requested."
+        )
+
+    has_plane_key = bool(
+        (ctx and hasattr(ctx, "mcp_keys") and ctx.mcp_keys and ctx.mcp_keys.get("plane"))
+        or os.environ.get("PLANE_API_KEY")
+        or os.environ.get("PLANE_TOKEN")
+    )
+    if has_plane_key or "plane" in clean_message.lower():
+        system_instruction += (
+            "\n\n- PLANE TASK IDENTIFIERS (CRITICAL): When listing, mentioning, or reporting Plane tasks/issues, "
+            "you MUST ALWAYS use their full project-scoped identifiers (e.g. `KVIK10-38`, `ONMYD-8`, `KVIK-1`), "
+            "NEVER plain numbers (like `#38` or `38`). Always output the identifier in format `[<PROJECT_IDENTIFIER>-<NUMBER>]` "
+            "or `<PROJECT_IDENTIFIER>-<NUMBER>` (e.g. `KVIK10-38`)."
+        )
+
+    # Initial Turn: Mandatory [PLAN] Phase
+    # We use a more permissive system prompt for the planning turn.
+    messages = [
+        {"role": "system", "content": system_instruction},
+        {"role": "user", "content": f"User Request: {clean_message}\n{path_hint}"}
+    ]
+    
+    all_tool_results = ""
+    max_turns = 8 # Increased for complex autonomous tasks
+    listed_paths = set()
+    known_files = set() # Strict cache of verified files
+    call_history = set() # Prevent repeated failed attempts
+    
+    has_read_file = False
+    last_listing = "" # For re-injection on errors
+    
+    # The agent is now autonomous and reasoning-based. 
+    # It will manage its own data extraction logic via the [PLAN] mandate.
+
+    
+    for turn in range(max_turns):
+        # Keep status as 'performing' throughout the turns
+        yield {"type": "status", "content": "performing"}
+        
+        # Dynamically determine if read or write tools were planned in todos
+        requires_read = any("read_omd_file" in str(t.get("content", "")) for t in todos) if todos else False
+        was_write_planned = any(k in str(t.get("content", "")) for t in todos for k in ("write_omd_file", "create_document_from_template")) if todos else False
+
+        # [TURN-SPECIFIC GUIDANCE]
+        guidance = "You are an autonomous agent. "
+        # [PROACTIVE DISCOVERY GATE]
+        # If Turn 0 and we have a path that looks like a directory, only allow list_omd_files
+        has_plane_key = bool(
+            (ctx and hasattr(ctx, "mcp_keys") and ctx.mcp_keys and ctx.mcp_keys.get("plane"))
+            or os.environ.get("PLANE_API_KEY")
+            or os.environ.get("PLANE_TOKEN")
+        )
+        is_plane_related = any("plane" in str(m.get("content", "")).lower() for m in messages[-3:])
+        if has_plane_key or is_plane_related:
+            available_tools = list(MCP_TOOLS) + list(PLANE_TOOLS)
+        else:
+            available_tools = list(MCP_TOOLS)
+        if turn == 0:
+             guidance += "MANDATORY: Analyze the request and create a detailed `[PLAN]` checklist. Your plan MUST cover every part of the user's request (e.g., if they ask to 'extract' or 'find amount', your plan MUST include `read_omd_file`). You may call the first tool in Turn 0 or execute it in Turn 1."
+             # [PROACTIVE DISCOVERY GATE]
+             if potential_paths and not known_files:
+                  is_dir_like = any(p.endswith("/") or not os.path.splitext(p)[1] for p in potential_paths)
+                  if is_dir_like:
+                       available_tools = [t for t in MCP_TOOLS if t["function"]["name"] == "find_omd_file" or t["function"]["name"] == "list_omd_files"]
+                       logging.info(f"[MCP] Enforcing Discovery Phase for: {potential_paths}")
+                       guidance += "\nDISCOVERY PHASE: You MUST use `find_omd_file` or `list_omd_files` first to find the file name."
+             
+        # Convert any role: "tool" to role: "user" in history for Ollama local model compatibility
+        converted_history = []
+        for m in messages[1:]:
+            if m.get("role") == "tool":
+                converted_history.append({
+                    "role": "user",
+                    "content": f"Tool Output:\n{m.get('content', '')}\n\nProceed with the next step of your plan."
+                })
+            else:
+                converted_history.append(m)
+
+        if turn == 0:
+             # Remove strict "Tool Only" constraint for turn 0
+             current_messages = [
+                 {"role": "system", "content": messages[0]["content"] + f"\n\nCURRENT GUIDANCE: {guidance}"}
+             ] + converted_history
+        else:
+             if was_write_planned and not changed_files:
+                  guidance = "Continue executing your `[PLAN]`. Use `create_document_from_template` (or `write_omd_file`) to create or save documents."
+             elif known_files or has_read_file:
+                  guidance = "Proceed executing your `[PLAN]`. All required file data has been retrieved. Now formulate your final comprehensive answer to the user in RUSSIAN (на русском языке)." if is_russian else "Proceed executing your `[PLAN]`. If all required data has been retrieved, formulate your final comprehensive answer to the user."
+             else:
+                  guidance += " Continue executing your `[PLAN]`. Mark steps as [x] once done."
+             
+             # Turn 1+: allow either tool calls or final answer
+             lang_instruction = "strictly in RUSSIAN (на русском языке)" if is_russian else "in the language of their prompt"
+             current_messages = [
+                 {
+                     "role": "system", 
+                     "content": (
+                         messages[0]["content"] + 
+                         f"\nGUIDELINES: If more file operations or tools are needed according to your plan, execute the next tool call. "
+                         f"If all required file tools have already been executed and you have obtained the needed file content or information, "
+                         f"provide your complete, detailed answer to the user {lang_instruction}. "
+                         f"You may write full natural language content, letters, and text inside the JSON arguments of your tool calls when modifying files.\n\n"
+                         f"CURRENT GUIDANCE: {guidance}"
+                     )
+                 }
+             ] + converted_history
+        
+        # General removal of search_memory if paths were provided
+        if potential_paths:
+             available_tools = [tool for tool in available_tools if tool["function"]["name"] != "search_memory"]
+            
+        payload = {
+            "model": MCP_MODEL,
+            "messages": current_messages,
+            "stream": True,
+            "tools": available_tools,
+            "options": {
+                "temperature": 0.0 # Deterministic
+            }
+        }
+        
+        raw_msg_content = ""
+        raw_msg_thinking = ""
+        tool_calls = []
+
+        # Can we stream content to the user in this turn?
+        # Turn 0 is strictly for [PLAN] checklist and initial tool call.
+        # Turns where mandatory file reading/writing hasn't happened yet should not stream to chat text.
+        can_stream_content = (turn > 0) and not (known_files and not has_read_file and requires_read) and not (was_write_planned and not changed_files)
+        stream_filter = McpStreamFilter(is_turn_zero=(turn == 0 or not can_stream_content))
+
+        async for chunk in llm_request_stream(payload):
+            if not isinstance(chunk, dict):
+                continue
+            msg_part = chunk.get("message", {})
+            th = msg_part.get("thinking")
+            cnt = msg_part.get("content")
+            tc = msg_part.get("tool_calls")
+
+            if th:
+                raw_msg_thinking += th
+                yield {
+                    "id": f"thought_turn_{turn}",
+                    "type": "reasoning",
+                    "delta": th
+                }
+
+            if cnt:
+                raw_msg_content += cnt
+                for ev_type, ev_text in stream_filter.feed(cnt):
+                    if ev_type == "reasoning":
+                        yield {
+                            "id": f"thought_turn_{turn}",
+                            "type": "reasoning",
+                            "delta": ev_text
+                        }
+                    elif ev_type == "content":
+                        streamed_to_user = True
+                        yield {
+                            "type": "content_delta",
+                            "delta": ev_text
+                        }
+
+            if tc:
+                tool_calls.extend(tc)
+
+        for ev_type, ev_text in stream_filter.flush():
+            if ev_type == "reasoning":
+                yield {
+                    "id": f"thought_turn_{turn}",
+                    "type": "reasoning",
+                    "delta": ev_text
+                }
+            elif ev_type == "content":
+                streamed_to_user = True
+                yield {
+                    "type": "content_delta",
+                    "delta": ev_text
+                }
+
+        if not raw_msg_content and not raw_msg_thinking and not tool_calls:
+            if was_write_planned and not changed_files and turn < max_turns - 1:
+                logging.warning(f"[MCP][Turn {turn+1}] Model returned empty output before document creation. Nudging.")
+                messages.append({
+                    "role": "user",
+                    "content": "Wait! You did not output a tool call. You MUST execute the next step: call `create_document_from_template` with template_path, target_path, and replacements. Output ONLY the tool call."
+                })
+                continue
+            break
+
+        if not tool_calls and (raw_msg_content or raw_msg_thinking):
+            supported_names = {t["function"]["name"] for t in available_tools}
+            combined_text = (raw_msg_content or "") + "\n" + (raw_msg_thinking or "")
+            text_tool_calls = extract_tool_calls_from_text(combined_text, supported_names)
+            if text_tool_calls:
+                logging.info(f"[MCP][Turn {turn+1}] Extracted tool call from text: {text_tool_calls}")
+                tool_calls = text_tool_calls
+
+        if len(tool_calls) > 1:
+            # Force pipelining: Only take the first tool call to avoid parallel execution conflicts
+            tool_calls = tool_calls[:1]
+
+        msg = {
+            "role": "assistant",
+            "content": raw_msg_content,
+            "thinking": raw_msg_thinking
+        }
+        if tool_calls:
+            msg["tool_calls"] = tool_calls
+
+        messages.append(msg)
+         
+
+        
+        # [REASONING CAPTURE]
+        # Ensure that plans, thoughts, and checklists are preserved and visible to the main assistant.
+        agent_text = msg.get("content", "").strip()
+        if not agent_text and msg.get("thinking"):
+            agent_text = msg.get("thinking", "").strip()
+        
+        # [REPETITIVE GENERATION GUARD]
+        # Detect token-looping issues in local LLM output (e.g., endlessly repeating templates/ or words)
+        is_looping = False
+        if len(agent_text) > 100:
+             # Look for consecutive repetitions of substrings of length 3 to 40
+             for length in range(3, 40):
+                  for i in range(len(agent_text) - length * 6):
+                       sub = agent_text[i:i+length]
+                       # If the substring repeats 6 or more times consecutively
+                       if agent_text[i:].startswith(sub * 6):
+                            logging.warning(f"[MCP LOOP DETECTED] LLM repeating '{sub}' infinitely. Breaking stream.")
+                            agent_text = agent_text[:i] + f"\n\n[System Alert: Generative loop cut off at '{sub}'].\n"
+                            msg["content"] = agent_text
+                            is_looping = True
+                            break
+                  if is_looping:
+                       break
+        
+        if is_looping:
+             all_tool_results += f"\n{agent_text}\n"
+             break
+
+        logging.info(f"[MCP] Agent Reasoning (Turn {turn+1}):\n{agent_text}")
+        if agent_text:
+             # [HALLUCINATION FILTER]
+             # Prevent the agent from "mimicking" system alerts in its reasoning.
+             filtered_lines = [
+                 line for line in agent_text.split("\n") 
+                 if not any(prefix in line.upper() for prefix in ["SYSTEM ALERT:", "SYSTEM NOTICE:", "SYSTEM ERROR:"])
+             ]
+             clean_agent_text = "\n".join(filtered_lines).strip()
+             
+             if clean_agent_text:
+                  # Separate thoughts from final answer using split_mcp_output
+                  reasoning_delta, final_candidate = split_mcp_output(clean_agent_text, has_tool_calls=bool(tool_calls))
+                  
+                  has_streamed_reasoning = bool(raw_msg_thinking) or bool(stream_filter.in_plan or stream_filter.in_thought)
+                  if reasoning_delta and not has_streamed_reasoning:
+                       all_tool_results += f"{reasoning_delta}\n\n"
+                       yield {
+                           "id": f"thought_turn_{turn}",
+                           "type": "reasoning",
+                           "delta": reasoning_delta
+                       }
+                  elif reasoning_delta or raw_msg_thinking:
+                       all_tool_results += f"{(reasoning_delta or raw_msg_thinking)}\n\n"
+                  
+                  if final_candidate:
+                       final_agent_response = final_candidate
+                  
+                  # Parse and initialize checklist todos on turn 0
+                  if turn == 0 and not has_initialized_todos:
+                       steps = extract_plan_steps(clean_agent_text)
+                       if steps:
+                            todos = [{"content": step, "status": "pending"} for step in steps]
+                            has_initialized_todos = True
+                            yield {
+                                "id": "mcp_todo",
+                                "type": "tool",
+                                "state": {
+                                    "status": "running",
+                                    "tool": "todo",
+                                    "input": {
+                                        "todos": todos
+                                    }
+                                },
+                                "action": "part_update"
+                            }
+                  elif todos and update_todos_from_text(todos, clean_agent_text):
+                       yield {
+                           "id": "mcp_todo",
+                           "type": "tool",
+                           "state": {
+                               "status": "running",
+                               "tool": "todo",
+                               "input": {
+                                   "todos": todos
+                               }
+                           },
+                           "action": "part_update"
+                       }
+                  
+                  # [PLAN LOGGING]
+                  if turn == 0:
+                       logging.info(f"\n{'='*20} [MCP] GENERATED PLAN {'='*20}\n{clean_agent_text}\n{'='*61}")
+                  else:
+                       logging.info(f"[MCP][Turn {turn+1}] Reasoning: {reasoning_delta[:80]}... | Final: {final_candidate[:80]}...")
+             
+             # [PLAN-BASED LOGGING]
+             # We log whether the agent's plan mentions reading, but we do NOT override requires_read.
+             # The user's intent (set at the start) is the source of truth.
+             if turn == 0:
+                  # [PLANNING GATE]
+                  has_plan_text = "[PLAN]" in agent_text or "checklist" in agent_text.lower() or len(todos) > 0
+                  
+                  if not has_plan_text and not tool_calls:
+                       logging.warning(f"[MCP] Turn 0 PLANNING GATE trigger: has_plan=False, has_tool_calls=False. Intercepting.")
+                       refusal_msg = (
+                            "Wait! You did NOT provide a detailed `[PLAN]` checklist or call any tools! "
+                            "To fulfill the request, you MUST start your response with a detailed `[PLAN]` checklist "
+                            "describing each step (using tool_name in parentheses). "
+                            "Do NOT output raw JSON data, markdown templates, or conversational text. Redo your response now."
+                       )
+                       messages.append({"role": "user", "content": refusal_msg})
+                       tool_calls = []
+                       msg["tool_calls"] = []
+                       continue
+                  elif has_plan_text and not tool_calls:
+                       logging.info(f"[MCP][Turn {turn+1}] Turn 0 generated plan. Continuing to execution in Turn 1.")
+                       messages.append({"role": "user", "content": "Plan accepted. Now execute the first tool call of your plan. Do NOT reply with conversational text, explanations, or apologies. Output ONLY the tool call."})
+                       tool_calls = []
+                       msg["tool_calls"] = []
+                       continue
+                  else:
+                       # Log whether the agent's plan includes read tools (for debugging)
+                       data_tools = ["read_omd_file", "search_memory", "search_web"]
+                       if any(tool in agent_text for tool in data_tools):
+                            logging.info("[MCP] Agent PLAN includes data tool.")
+                       else:
+                            logging.info("[MCP] Agent PLAN does NOT include data tool (user intent will override if needed).")
+
+             # [ODT WORKFLOW NUDGE] (Moved above)
+             pass
+
+             # [CONTINUITY NUDGE]
+             # Fire if discovery tools were used but read wasn't, and USER'S request implies reading.
+             has_discovered = "list_omd_files" in all_tool_results or "find_omd_file" in all_tool_results
+             if turn > 0 and not has_read_file and has_discovered and requires_read:
+                  # If we discovered a file but haven't read it, force the agent to read.
+                  messages.append({"role": "user", "content": "You identified a file. The user's request requires reading/extraction. You MUST call `read_omd_file` using the absolute path provided. Do NOT conclude yet."})
+                  logging.warning(f"[MCP][Turn {turn+1}] File discovered but not read (User Intent: READ). Injecting Continuity Nudge.")
+                  continue
+
+             # RECORD CONCLUSION ONLY IF NO TOOL CALLS
+             if not tool_calls and agent_text and agent_text != "NO_TOOL":
+                  # [STRICT STOP CHECK]
+                  # Block if user's request implied reading but we haven't read yet.
+                  if known_files and not has_read_file and requires_read:
+                       messages.append({"role": "user", "content": "Wait! The user asked to READ or EXTRACT data. You haven't read the file yet. You MUST call `read_omd_file` before finishing."})
+                       logging.warning(f"[MCP][Turn {turn+1}] Agent attempted to stop without reading (User Intent: READ). Blocking.")
+                       continue
+                  
+                  if was_write_planned and not changed_files and turn < max_turns - 1:
+                       messages.append({"role": "user", "content": "Wait! Your plan includes creating or modifying a document (`create_document_from_template` or `write_omd_file`), but no document has been created or saved yet. You MUST call `create_document_from_template` now with template_path, target_path, and replacements. Do NOT reply with conversational text or apologies. Output ONLY the tool call."})
+                       logging.warning(f"[MCP][Turn {turn+1}] Agent attempted to stop without writing document. Blocking.")
+                       continue
+                  
+                  if final_candidate:
+                       final_agent_response = final_candidate
+                       all_tool_results += f"\nFinal Response:\n{final_candidate}\n"
+                  else:
+                       final_agent_response = clean_agent_text
+                       all_tool_results += f"\n{clean_agent_text}\n"
+                  break
+
+
+            
+        # If there are no tool calls and no agent_text (e.g., just an empty message or "NO_TOOL" without content)
+        # or if the agent_text was just a plan on turn 0, handle it here.
+        if not tool_calls:
+            # Plan/Thought turn detection
+            content = msg.get("content", "").strip() # Redefine content for this block if agent_text was empty
+            if turn == 0 and ("[PLAN]" in content or "checklist" in content.lower()):
+                 logging.info(f"[MCP][Turn {turn+1}] First turn was for PLANNING. Continuing to execution.")
+                 # Add a system nudge to actually start tool calls if they haven't yet.
+                 messages.append({"role": "user", "content": "Plan received. Proceed with the first tool call now. Do NOT reply with conversational text or apologies. Output ONLY the tool call."})
+                 continue
+
+
+            if was_write_planned and not changed_files and turn < max_turns - 1:
+                 messages.append({"role": "user", "content": "Wait! You have not created the requested document yet. Execute the next step: call `create_document_from_template` with template_path, target_path, and replacements. Do NOT reply with conversational text or apologies. Output ONLY the tool call."})
+                 logging.warning(f"[MCP][Turn {turn+1}] Agent stopped with no tool calls before document creation. Nudging.")
+                 continue
+
+            # If we reach here and there are no tool calls, and it wasn't a plan on turn 0,
+            # then the agent is done or stuck. Break the loop.
+            break
+            
+        # Execute tool calls
+        found_new_info = False
+        
+        # [SEQUENTIAL ENFORCEMENT]
+        # We only take the FIRST tool call. This forces the agent to wait for results 
+        # before making the next logical jump (preventing hallucinations).
+        tool = tool_calls[0]
+        func = tool.get("function", {})
+        name = func.get("name")
+        args = func.get("arguments", {})
+        if isinstance(args, str):
+            try:
+                args = json.loads(args)
+            except Exception:
+                try:
+                    import ast
+                    args = ast.literal_eval(args)
+                except Exception:
+                    args = {}
+        if isinstance(args, dict):
+            for nested_key in ("parameters", "properties", "input"):
+                if nested_key in args and isinstance(args[nested_key], dict):
+                    args = {**args, **args[nested_key]}
+        call_id = tool.get("id")
+
+        # [STATUS YIELD]
+        # Map tool name to human-readable status
+        status_map = {
+            "list_omd_files": "listing",
+            "read_omd_file": "reading",
+            "find_omd_file": "searching",
+            "write_omd_file": "writing",
+            "create_document_from_template": "writing",
+            "search_web": "searching",
+            "search_memory": "searching",
+            "save_user_fact": "learning",
+            "list_plane_workspaces": "connecting",
+            "list_plane_projects": "listing",
+            "list_plane_issues": "listing",
+            "get_plane_issue_details": "reading",
+            "create_plane_issue": "writing",
+            "update_plane_issue_state": "writing",
+            "add_plane_issue_comment": "writing",
+        }
+        status_msg = status_map.get(name, "executing")
+        
+        # Extract arguments for localization
+        status_args = {}
+        if name == "list_omd_files":
+             status_args["path"] = os.path.basename(args.get('path', 'directory').rstrip('/'))
+        elif name == "read_omd_file":
+             status_args["path"] = os.path.basename(args.get('path', 'file'))
+        elif name == "find_omd_file":
+             status_args["path"] = os.path.basename(args.get('root_directory', 'root').rstrip('/'))
+        elif name == "write_omd_file":
+             status_args["path"] = os.path.basename(args.get('path', 'file'))
+        elif name == "create_document_from_template":
+             status_args["path"] = os.path.basename(args.get('target_path') or args.get('path') or 'document')
+        elif name == "search_web":
+             status_args["path"] = args.get('query', '')
+        elif name.startswith("list_plane_") or name.endswith("_plane_issue") or name.endswith("_plane_issue_comment") or name == "get_plane_issue_details":
+             status_args["path"] = args.get("name") or args.get("issue_id") or args.get("workspace") or "Plane"
+
+        # Yield status event
+        yield {"type": "status", "content": status_msg, "args": status_args}
+
+        # Update checklist todos
+        if todos:
+             matched = False
+             for t_item in todos:
+                 if t_item["status"] == "pending" and (name in t_item["content"] or status_msg in t_item["content"].lower()):
+                     t_item["status"] = "completed"
+                     matched = True
+                     break
+             if not matched:
+                 for t_item in todos:
+                     if t_item["status"] == "pending":
+                         t_item["status"] = "completed"
+                         break
+             yield {
+                 "id": "mcp_todo",
+                 "type": "tool",
+                 "state": {
+                     "status": "running",
+                     "tool": "todo",
+                     "input": {
+                         "todos": todos
+                     }
+                 },
+                 "action": "part_update"
+             }
+
+        # Yield tool start
+        yield {
+            "id": f"tool_turn_{turn}",
+            "type": "tool",
+            "state": {
+                "status": "running",
+                "tool": name,
+                "input": args
+            },
+            "action": "part_update"
+        }
+
+        # [DEBUG OUTPUT]
+        # User requested to see what is going on with tool calls
+        debug_info = f"[MCP][Turn {turn+1}] {name}({args})"
+        logging.info(f"--- TOOL CALL: {debug_info}")
+        # Also print to stdout for visibility in the terminal
+        print(f"\n>>> TURN {turn+1} TOOL CALL: {debug_info}\n")
+        
+        # [REPETITION BLOCK]
+        # Hash the call to check for duplication in this session
+        call_id_str = f"{name}:{json.dumps(args, sort_keys=True)}"
+        
+        if call_id_str in call_history:
+             # Model is looping. Inject a forceful mechanical block.
+             candidate_paths = sorted(list(known_files))
+             res = f"SYSTEM ERROR: You already called {name} with these arguments. DO NOT REPEAT. If you need data, call `read_omd_file` on one of these verified paths: {candidate_paths[:5]}"
+             logging.warning(f"[MCP] Blocked repeating tool call: {call_id_str}")
+        else:
+             call_history.add(call_id_str)
+             res = ""
+             
+             # [NUCLEAR PHASE 4: SEARCH WEB LOOP PREVENTION]
+             if name == "search_web":
+                  search_count = sum(1 for c in list(call_history) if c.startswith("search_web:"))
+                  if search_count >= 2:
+                       res = "SYSTEM ERROR: You have searched the web multiple times. Do NOT continue searching. If you cannot find the answer, explain what you found or state that information is missing. DO NOT CALL SEARCH AGAIN."
+                       logging.warning("[MCP] Blocked secondary web search to prevent loop.")
+             
+             if not res and name == "list_omd_files":
+                  path_arg = (args.get("path") or args.get("file_path") or args.get("filePath") or "").strip()
+                  
+                  # [LOOP PREVENTION]
+                  # Prevent recursive directory path loops (e.g. /Templates/Templates/Templates)
+                  if re.search(r"/([^/]+)/\1/\1", path_arg) or re.search(r"^([^/]+)/\1/\1", path_arg):
+                       res = f"ERROR: Recursion loop detected in path '{path_arg}'. Please list a different, non-repeating directory."
+                       logging.warning(f"[MCP PATH LOOP] Blocked recursive path: {path_arg}")
+                  elif path_arg.rstrip("/") in listed_paths:
+                       res = f"Note: You already listed '{path_arg}'. Use the information you already have or list a DIFFERENT directory."
+                       logging.info(f"[MCP] Blocked redundant list for {path_arg}")
+                  else:
+                       # [TURN LIMIT PROTECTION]
+                       if turn >= max_turns - 2 and not has_read_file:
+                            res = "CRITICAL ERROR: Operation limit reached. You have not successfully completed the data extraction. Please report what you found and state what is missing."
+                            logging.error(f"[MCP] Autonomous Agent Turn Limit: {turn+1}")
+                       else:
+                            res = await list_omd_files(ctx, path_arg)
+                            if not res.startswith("Error"):
+                                 listed_paths.add(path_arg.rstrip("/"))
+                                 last_listing = res # Cache for recovery
+                                 
+                                 # Populate known_files to prevent hallucinations
+                                 # Simple filename extractor from list output
+                                 # Extract absolute paths from format: "- [FILE] [ABS_PATH]: /path/to/file"
+                                 path_matches = re.findall(r'\[ABS_PATH\]: ([^\s\n|]+)', res)
+                                 for f in path_matches:
+                                      known_files.add(f.strip())
+                                 
+                                 # Also track sub-directories
+                                 dir_matches = re.findall(r'- \[DIRECTORY\] \[ABS_PATH\]: ([^\s\n|]+)', res)
+                                 for d in dir_matches:
+                                      listed_paths.add(d.strip())
+                                      
+                                 # [SYSTEM REDIRECT] 
+                                 # Inject a mandatory manifest into the tool result to prevent logic errors
+                                 res += f"\n\nSYSTEM NOTICE: You MUST use one of these [ABS_PATH] values exactly for your next tool call. Forbidden: guessing, relative paths, or reading directories."
+             
+             elif name == "read_omd_file":
+                 path_arg = (args.get("path") or args.get("template_path") or args.get("template") or args.get("templatePath") or args.get("file_path") or args.get("filePath") or "").strip()
+                 
+                 # [ANTI-HALLUCINATION] List before Read
+                 # We encourage the model to list first, but if it knows the file, we check our cache
+                 path_dir = path_arg.rstrip("/").rsplit("/", 1)[0]
+                 
+                 # [DIRECTORY BLOCK] - Prevent reading paths confirmed as directories
+                 if path_arg.rstrip("/") in listed_paths:
+                      # [PATH MISMATCH NUDGE]
+                      # Did the agent mention a file in its reasoning but call read on the directory?
+                      detected_file = ""
+                      for kf in known_files:
+                           if os.path.basename(kf) in agent_text or kf in agent_text:
+                                detected_file = kf
+                                break
+                      
+                      res = f"ERROR: '{path_arg}' is a DIRECTORY. You MUST use the [ABS_PATH] of a FILE from the listing instead."
+                      if detected_file:
+                           res = f"CRITICAL MISMATCH: You correctly identified '{detected_file}' in your reasoning, but wrongly called read_omd_file on the DIRECTORY '{path_arg}'.\n\nRETRY NOW: Call `read_omd_file` using the absolute path '{detected_file}' WITHOUT any modification."
+                      
+                      # Re-inject the listing to help it recover
+                      if last_listing:
+                           res += f"\n\n--- REFRESHED LISTING ---\n{last_listing}"
+                      
+                      logging.warning(f"[MCP] Blocked directory read and injected nudge/listing: {path_arg}")
+                 elif path_dir and path_dir.rstrip("/") in listed_paths and path_arg.rstrip("/") not in known_files:
+                      res = f"ERROR: Path '{path_arg}' not found in current manifest. Reference the [ABS_PATH] value EXACTLY as provided by the tool."
+                      logging.warning(f"[MCP] Blocked hallucinated/corrupted read: {path_arg}")
+                 else:
+                      res = await read_omd_file(ctx, path_arg)
+                      if not res.startswith("Error"):
+                           has_read_file = True
+                           known_files.add(path_arg)
+                      elif "DIRECTORY" in res:
+                           # If it failed because it was a directory, we need to mark it
+                           listed_paths.add(path_arg.rstrip("/"))
+             elif name == "find_omd_file":
+                  root_dir = args.get("root_directory", "").strip()
+                  cond = args.get("condition", "").strip()
+                  res = await find_omd_file(ctx, root_dir, cond)
+                  if res.startswith("[FILE]:"):
+                       # Extract only the path part, ignoring any SYSTEM NOTICE that might be appended
+                       raw_res = res.split("\n\nSYSTEM NOTICE:")[0]
+                       file_path = raw_res.replace("[FILE]:", "").strip()
+                       if file_path and not file_path.startswith("/"):
+                           file_path = "/" + file_path
+                       known_files.add(file_path)
+                       # Inject nudge
+                       
+             elif name == "write_omd_file":
+                 # [TURN 1 SHIELD]
+                 # Prevent early writes if source paths are mentioned but not yet processed.
+                 if turn == 0 and potential_paths:
+                      res = "Error: It is FORBIDDEN to write on Turn 1 when source paths are mentioned. You MUST use list_omd_files or read_omd_file first to gather data and avoid hallucination."
+                      logging.warning(f"[MCP] Turn 1 Write Blocked: {args.get('path')}")
+                 else:
+                     content = args.get("content", "")
+                     path_arg = (args.get("path") or args.get("file_path") or args.get("filePath") or "").strip()
+                     template_p = (args.get("template_path") or args.get("template") or "").strip()
+                     replacements = args.get("replacements") or {}
+                     
+                     # [ROBUST WRITE SHIELD]
+                     # Only reject if content is empty (and no template specified), an explicit error report, or a placeholder stub.
+                     stripped = content.strip()
+                     is_invalid = False
+                     if not stripped and not template_p:
+                         is_invalid = True
+                     elif stripped in ("...", "[...]", "TODO", "[TODO]"):
+                         is_invalid = True
+                     elif len(stripped) < 60 and stripped.startswith("[") and stripped.endswith("]"):
+                         is_invalid = True
+                     elif len(stripped) < 200 and stripped.lower().startswith(("error:", "failed to fetch", "access denied", "cannot read")):
+                         is_invalid = True
+                     
+                     # [DIRECTORY WRITE BLOCK]
+                     is_dir_write = path_arg.rstrip("/") in listed_paths
+                     
+                     if is_invalid:
+                          res = "Error: Do NOT use `write_omd_file` to save error messages, placeholders, or reports of failure. You must only write if you have successfully extracted the required data."
+                     elif is_dir_write:
+                          res = f"Error: '{path_arg}' is a confirmed DIRECTORY. You cannot write a file to this path. Use a full filename (e.g., {path_arg.rstrip('/')}/report.txt)."
+                     else:
+                          res = await write_omd_file(ctx, path_arg, content, template_path=template_p, replacements=replacements)
+                          if not res.startswith("Error") and not res.startswith("Exception"):
+                               changed_files.append(path_arg)
+             elif name == "create_document_from_template":
+                 tmpl_path = (args.get("template_path") or args.get("template") or args.get("source_path") or args.get("source") or "").strip()
+                 target_path = (args.get("target_path") or args.get("target") or args.get("path") or args.get("output_path") or args.get("file_path") or "").strip()
+                 replacements = args.get("replacements") or args.get("replace") or {}
+                 commands = args.get("commands") or []
+                 
+                 # [TURN 1 SHIELD]
+                 # Encourage reading the template file first if not yet read so model knows exact strings
+                 if turn == 0 and potential_paths and not has_read_file:
+                     res = "Error: You MUST call `read_omd_file` on the template file first to inspect its existing values, numbers, and dates before creating a document from it."
+                     logging.warning(f"[MCP] Turn 1 Template Creation Blocked: {tmpl_path}")
+                 elif not target_path or not tmpl_path:
+                     res = "Error: Both template_path and target_path are required."
+                 elif target_path.rstrip("/") in listed_paths:
+                     res = f"Error: '{target_path}' is a confirmed DIRECTORY. You cannot write a file to this path."
+                 else:
+                     res = await create_document_from_template(ctx, tmpl_path, target_path, replacements=replacements, commands=commands)
+                     if not res.startswith("Error") and not res.startswith("Exception"):
+                         real_target = target_path
+                         if tmpl_path and ("/" not in target_path.strip("/") or (ctx and ctx.storage and not target_path.startswith("/" + ctx.storage.strip("/").split("/")[0]))):
+                             parent_dir = tmpl_path.rsplit("/", 1)[0]
+                             filename = os.path.basename(target_path) if os.path.basename(target_path) else "new_document" + os.path.splitext(tmpl_path)[1]
+                             real_target = f"{parent_dir}/{filename}"
+                         changed_files.append(real_target)
+             elif name == "search_web":
+                 res = await search_web(ctx, args.get("query", ""))
+             elif name == "search_memory":
+                 # [TURN 1 SEARCH SHIELD]
+                 # Prevent using memory search on Turn 1 if user provided an explicit file path.
+                 if turn == 0 and potential_paths:
+                      res = "Error: A file path was provided. You MUST use list_omd_files or read_omd_file first. Do NOT use search_memory if you have a path to explore."
+                      logging.warning(f"[MCP] Turn 1 Search Blocked (Path present)")
+                 else:
+                     query = args.get("query", "")
+                     if query:
+                         res = await search_memory_tool(ctx, query)
+             elif name == "save_user_fact":
+                 fact = args.get("fact", "")
+                 if fact:
+                     try:
+                         logging.info(f"[MCP] Agent actively memorizing: {fact}")
+                         memorize(ctx, fact)
+                         res = f"Success. Memorized: {fact}"
+                     except Exception as e:
+                         res = f"Error saving memory: {e}"
+             elif name == "list_plane_workspaces":
+                 res = await plane_service.list_plane_workspaces(ctx, token=args.get("token"))
+             elif name == "list_plane_projects":
+                 res = await plane_service.list_plane_projects(ctx, workspace=args.get("workspace", ""), token=args.get("token"))
+             elif name == "list_plane_issues":
+                 res = await plane_service.list_plane_issues(ctx, workspace=args.get("workspace", ""), project_id=args.get("project_id", ""), state=args.get("state"), token=args.get("token"))
+             elif name == "get_plane_issue_details":
+                 res = await plane_service.get_plane_issue_details(ctx, workspace=args.get("workspace", ""), project_id=args.get("project_id", ""), issue_id=args.get("issue_id", ""), token=args.get("token"))
+             elif name == "create_plane_issue":
+                 res = await plane_service.create_plane_issue(ctx, workspace=args.get("workspace", ""), project_id=args.get("project_id", ""), name=args.get("name", ""), description=args.get("description", ""), priority=args.get("priority", "none"), state_name=args.get("state_name"), token=args.get("token"))
+             elif name == "update_plane_issue_state":
+                 res = await plane_service.update_plane_issue_state(ctx, workspace=args.get("workspace", ""), project_id=args.get("project_id", ""), issue_id=args.get("issue_id", ""), state_name=args.get("state_name", ""), token=args.get("token"))
+             elif name == "add_plane_issue_comment":
+                 res = await plane_service.add_plane_issue_comment(ctx, workspace=args.get("workspace", ""), project_id=args.get("project_id", ""), issue_id=args.get("issue_id", ""), comment=args.get("comment", ""), token=args.get("token"))
+             else:
+                   all_tools_reg = list(MCP_TOOLS) + list(PLANE_TOOLS)
+                   supported_names = [t["function"]["name"] for t in all_tools_reg]
+                   res = f"Error: Tool '{name}' is not supported. Supported tools are: {supported_names}. Please only call supported tools."
+                   logging.warning(f"[MCP HALLUCINATION GUARD] Blocked hallucinated tool: {name}")
+
+        if res:
+            all_tool_results += f"Tool Output ({name}):\n{res}\n\n"
+            if was_write_planned and not changed_files:
+                next_step_prompt = "Execute the next step of your plan: call `create_document_from_template` (or `write_omd_file`) with the required parameters. Do NOT reply with conversational text or apologies. Output ONLY the tool call."
+            elif was_write_planned and changed_files:
+                next_step_prompt = "All document creation steps are completed! Now formulate your final friendly and comprehensive response to the user."
+            else:
+                next_step_prompt = "Execute the next step of your plan, or formulate your final response if all required operations are complete."
+
+            msg_entry = {
+                "role": "user",
+                "content": f"Tool Output ({name}):\n{str(res)}\n\n{next_step_prompt}"
+            }
+            if call_id:
+                 msg_entry["tool_call_id"] = call_id
+            messages.append(msg_entry)
+            
+            # [RESULT DEBUG OUTPUT]
+            logging.info(f"--- TOOL RESULT ({name}): {str(res)[:100]}...")
+            print(f">>> TURN {turn+1} TOOL RESULT: {str(res)[:200]}...\n")
+            
+            found_new_info = True
+        else:
+            msg_entry = {
+                "role": "user",
+                "content": f"Tool Output ({name}): Error: Tool returned no result. Proceed with next step."
+            }
+            if call_id:
+                 msg_entry["tool_call_id"] = call_id
+            messages.append(msg_entry)
+
+        # Yield completion of the tool call part
+        res_str = str(res).strip() if res else ""
+        is_err = (
+            not res_str or
+            res_str.lower().startswith(("error", "exception", "failed")) or
+            "security error" in res_str.lower() or
+            "critical error" in res_str.lower() or
+            res_str.startswith("CRITICAL MISMATCH")
+        )
+        tool_status = "error" if is_err else "success"
+        clean_output = res_str if res_str else "Error: Tool returned no result."
+        if len(clean_output) > 2000:
+            clean_output = clean_output[:2000] + "\n... [Output truncated for length] ..."
+            
+        yield {
+            "id": f"tool_turn_{turn}",
+            "type": "tool",
+            "state": {
+                "status": tool_status,
+                "success": (tool_status == "success"),
+                "tool": name,
+                "input": args,
+                "output": clean_output
+            },
+            "success": (tool_status == "success"),
+            "action": "part_update"
+        }
+        # Tool execution finished for this turn: notify frontend that model is processing / typing
+        yield {"type": "status", "content": "typing"}
+
+        if tool_status == "error":
+             success = False
+             tool_error_msg = clean_output
+             break
+
+        if not found_new_info:
+            break
+            
+        # [TURN RESET]
+        # We break the tool list loop here (we only used one tool) and allow the 
+        # main 'turn' loop to call the model again with the new knowledge.
+
+    # Hallucination lockdown is now handled by the planning requirement and instructions.
+    
+    # Log final MCP conclusion
+    last_content = messages[-1].get("content", "").strip() if messages and messages[-1].get("role") == "assistant" else ""
+    if last_content:
+        logging.info(f"[MCP] Agent Conclusion: {last_content[:100]}...")
+    
+    # If the autonomous agent didn't produce any meaningful output, report failure
+    if not all_tool_results.strip():
+        all_tool_results = "Tool Output: No files were listed or read. The discovery phase returned no data."
+        logging.warning("[MCP] Autonomous loop finished with ZERO results.")
+    elif not has_read_file and "find_omd_file" in all_tool_results:
+        # Check if we were supposed to read but didn't
+        if requires_read:
+             all_tool_results += "\nSYSTEM NOTICE: Discovery succeeded, but no file content was read. The requested details (totals/items) are NOT in this tool output."
+        
+    # Strict validation: if document generation was planned or requested, but no files were actually modified, mark as failure.
+    was_write_planned = any(k in str(t.get("content", "")) for t in todos for k in ("write_omd_file", "create_document_from_template")) if todos else False
+    is_modify_attempted = "write_omd_file" in all_tool_results or "create_document_from_template" in all_tool_results
+    if (was_write_planned or is_modify_attempted) and not changed_files and success:
+        success = False
+        tool_error_msg = "The document was not modified or saved. Please ensure all required parameters are provided."
+
+    # Mark remaining todos completed when finished ONLY if successful
+    if todos:
+         todo_st = "success" if success else "error"
+         if success:
+              for t_item in todos:
+                   t_item["status"] = "completed"
+         yield {
+             "id": "mcp_todo",
+             "type": "tool",
+             "state": {
+                 "status": todo_st,
+                 "tool": "todo",
+                 "input": {
+                     "todos": todos
+                 }
+             },
+             "action": "part_update"
+         }
+
+    if not streamed_to_user:
+        yield {"type": "status", "content": "typing"}
+         
+    # Resolve final human response: prioritize agent's direct answer if generated
+    final_output = clean_assistant_response(final_agent_response.strip())
+    
+    # If the agent already provided a substantial response, use it
+    if not final_output:
+        error_context = f"\nCRITICAL: The operation failed with the following error:\n- {tool_error_msg}" if not success else ""
+        files_context = f"\nModified/Created files saved in OnMyDisk storage: {', '.join(changed_files)}" if changed_files else ""
+        tool_results_summary = all_tool_results[:3000] if all_tool_results else ""
+        
+        summary_prompt = (
+            "You are a helpful file system assistant. The requested file operations have finished.\n"
+            f"User's request was: '{clean_message}'\n"
+            f"Execution status: {'SUCCESS' if success else 'FAILED'}\n"
+            f"{error_context}\n"
+            f"{files_context}\n"
+            f"Tool execution results:\n{tool_results_summary}\n\n"
+            "Write a short, precise, task-focused response in Russian.\n"
+            "INSTRUCTIONS:\n"
+            "1. If the execution failed (FAILED status), you MUST clearly explain the error to the user in Russian, state exactly what went wrong, and ask how they want to proceed.\n"
+            "2. If everything was successful (SUCCESS status), answer the user's request directly based on the tool results or summarize what was done.\n"
+            "3. Never greet, apologize, introduce yourself or your persona, use emojis, exclamation marks or filler pleasantry. Go straight to the result of the task."
+        )
+        payload = {
+            "model": MCP_MODEL,
+            "messages": [
+                {"role": "system", "content": f"{BASE_SYSTEM_PROMPT}\n\n{summary_prompt}"}
+            ],
+            "stream": True,
+            "options": {"temperature": 0.5}
+        }
+        logging.info("[MCP] Generating dynamic human response via LLM (streaming)...")
+        raw_summary = ""
+        summary_filter = McpStreamFilter(is_turn_zero=False)
+        async for chunk in llm_request_stream(payload):
+            if not isinstance(chunk, dict):
+                continue
+            msg_part = chunk.get("message", {})
+            th = msg_part.get("thinking")
+            cnt = msg_part.get("content")
+            if th:
+                yield {
+                    "id": "thought_summary",
+                    "type": "reasoning",
+                    "delta": th
+                }
+            if cnt:
+                raw_summary += cnt
+                for ev_type, ev_text in summary_filter.feed(cnt):
+                    if ev_type == "reasoning":
+                        yield {
+                            "id": "thought_summary",
+                            "type": "reasoning",
+                            "delta": ev_text
+                        }
+                    elif ev_type == "content":
+                        streamed_to_user = True
+                        yield {
+                            "type": "content_delta",
+                            "delta": ev_text
+                        }
+        for ev_type, ev_text in summary_filter.flush():
+            if ev_type == "reasoning":
+                yield {
+                    "id": "thought_summary",
+                    "type": "reasoning",
+                    "delta": ev_text
+                }
+            elif ev_type == "content":
+                streamed_to_user = True
+                yield {
+                    "type": "content_delta",
+                    "delta": ev_text
+                }
+        if raw_summary:
+            final_output = clean_assistant_response(raw_summary.strip())
+            
+    # Safe technical fallback (strictly minimal and technical)
+    if not final_output:
+        if not success:
+            final_output = f"Error: {tool_error_msg}"
+        elif changed_files:
+            final_output = f"Success. Modified files: {changed_files}"
+        else:
+            final_output = "Completed successfully."
+
+    # Safety net: if user asked in Russian but the model output is purely in English without Russian letters,
+    # translate the response to Russian while preserving quoted verbatim excerpts.
+    if is_russian and final_output and not re.search(r"[а-яё]", final_output, re.IGNORECASE):
+        try:
+            logging.info("[MCP] Model responded in English to a Russian prompt. Translating response to Russian...")
+            translate_payload = {
+                "model": MCP_MODEL,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a professional assistant. Translate the following text into natural, fluent Russian. "
+                            "Do NOT translate exact quoted text inside quotation marks (keep original verbatim quotes intact). "
+                            "Translate all headings, bullet explanations, and conversational framing into Russian. "
+                            "Output ONLY the translated text without introductory remarks or small talk."
+                        )
+                    },
+                    {"role": "user", "content": final_output}
+                ],
+                "stream": False,
+                "options": {"temperature": 0.2}
+            }
+            trans_res = await llm_request(translate_payload)
+            if trans_res and "message" in trans_res and trans_res["message"].get("content"):
+                translated = trans_res["message"]["content"].strip()
+                if re.search(r"[а-яё]", translated, re.IGNORECASE):
+                    final_output = clean_assistant_response(translated)
+        except Exception as e:
+            logging.warning(f"[MCP] Auto-translation to Russian failed: {e}")
+
+    # Build changed & accessed files objects (sources for frontend chips)
+    temp_source_paths = []
+    if hasattr(ctx, "temp_sources") and isinstance(ctx.temp_sources, list):
+        for s in ctx.temp_sources:
+            if isinstance(s, dict):
+                p = s.get("path") or s.get("fullPath") or s.get("document_id")
+                if p:
+                    if not p.startswith("/"):
+                        p = "/" + p
+                    temp_source_paths.append(p)
+        ctx.temp_sources = []
+
+    all_accessed_paths = list(dict.fromkeys(changed_files + list(known_files) + temp_source_paths))
+    changed_objects = []
+    for path in all_accessed_paths:
+        filename = os.path.basename(path)
+        mimetype = clean_mimetype(filename)
+        
+        changed_objects.append({
+            "title": filename,
+            "owner": ctx.user_id,
+            "clickable": True,
+            "url": f"https://onmydisk.net{path}",
+            "fullPath": path,
+            "path": path,
+            "size": 0,
+            "mimetype": mimetype
+        })
+
+    logging.info(f"[MCP] Completed. Streamed={streamed_to_user}, Output len={len(final_output)}")
+    yield {
+        "type": "result",
+        "content": final_output,
+        "delta": final_output,
+        "streamed": streamed_to_user,
+        "changedFiles": changed_objects,
+        "sources": changed_objects
+    }
+
+
+# === Онбординг успешен - перенос песрональных данных ===
+def bind_account(ctx: UserContext, omd_key: str):
+    #check if already linked
+    #renaming user data folder 
+    if omd_key and not ctx.type == "omd" :
+        tmp_user_id = ctx.user_id
+        old_dir = os.path.join(USER_DATA_DIR, tmp_user_id)
+        ctx = user_context.bind(ctx, omd_key)
+        new_dir = os.path.join(USER_DATA_DIR, ctx.user_id)
+
+        if os.path.exists(old_dir):
+            # если у нового юзера ещё нет директории — просто переименуем
+            if not os.path.exists(new_dir):
+                os.rename(old_dir, new_dir)
+            else:
+                # если у нового юзера уже есть данные — можно смержить
+                # пока просто оставим старое и не трогаем
+                logging.warning(f"[bind_account] WARNING: {new_dir} already exists, skipping rename")
+
+    # === Проверяем storage и переносим данные ===
+    storage = ctx.storage
+    omd_key = ctx.omd_key
+    if ctx.type == "omd" and storage and omd_key:
+
+        # 1. Переносим чаты
+        chats_dir = os.path.join(USER_DATA_DIR, ctx.user_id, "chats")
+        if os.path.exists(chats_dir):
+            for file in os.listdir(chats_dir):
+                if not file.endswith(".json"):
+                    continue
+                local_path = os.path.join(chats_dir, file)
+                try:
+                    dest = f"{storage}/{ctx.user_id}/chats"
+                    upload_to_storage(omd_key, dest, file, local_path)
+                    logging.info(f"[bind_account] Chat {file} uploaded to {dest}")
+                except Exception as e:
+                    logging.error(f"[bind_account] Failed to upload chat {file}: {e}")
+
+        # 2. Персональная память
+        mem_path = os.path.join(USER_DATA_DIR, ctx.user_id,  "memory.jsonl")
+        if os.path.exists(mem_path):
+            try:
+                dest = f"{storage}/{ctx.user_id}"
+                upload_to_storage(omd_key, dest,"memory.jsonl", mem_path)
+                logging.info(f"[bind_account] Memory uploaded to {dest}")
+            except Exception as e:
+                logging.error(f"[bind_account] Failed to upload memory: {e}")
+
+    return ctx
+
+
+    
+
+def get_assistant_avatar_path(ctx: UserContext) -> str:
+    model = ctx.settings.get("assistant_model", "Domi")
+    return os.path.join(APP_ROOT_DIR, AVATAR_DIR, f"{model}.png")
+
+def get_model_avatar_path(model_name: str) -> str:
+    return os.path.join(APP_ROOT_DIR, AVATAR_DIR, f"{model_name}.png")
+
+
+def get_available_loras(ctx: UserContext = None, mode: str | None = None) -> list:
+    lora_file = WORKFLOW_PATH
+    if not os.path.exists(lora_file):
+        lora_file = os.path.join(os.path.dirname(__file__), WORKFLOW_PATH)
+    if os.path.exists(lora_file):
+        try:
+            with open(lora_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                
+            # Find Power Lora Loader node (ID 103 based on file inspection)
+            # Or search for class_type "Power Lora Loader (rgthree)"
+            loras = []
+            for key, node in data.items():
+                if node.get("class_type") == "Power Lora Loader (rgthree)":
+                    inputs = node.get("inputs", {})
+                    for input_key, input_val in inputs.items():
+                        if input_key.startswith("lora_") and isinstance(input_val, dict):
+                            if "name" in input_val:
+                                lora_mode = input_val.get("mode", input_val.get("nsfw", False))
+                                if isinstance(lora_mode, str):
+                                    lora_mode_str = lora_mode.lower()
+                                else:
+                                    lora_mode_str = "fun" if lora_mode else "work"
+
+                                # Filter out fun loras only when work mode is explicitly requested
+                                if mode is not None and mode.lower() == "work":
+                                    if lora_mode_str == "fun":
+                                        continue
+
+                                loras.append({
+                                    "name": input_val["name"],
+                                    "type": input_val.get("type", "character"),
+                                    "mode": lora_mode_str
+                                })
+            
+            # Sort by name
+            loras.sort(key=lambda x: x["name"])
+            return loras
+
+        except Exception as e:
+            logging.error(f"Error reading LoRA file: {e}")
+            return []
+    return []
+
+
+async def get_avatar_version(ctx: UserContext) -> str:
+    # 1. Check remote
+    if ctx.storage and ctx.omd_key:
+        try:
+            storage_id = ctx.storage
+            storage_key = ctx.omd_key
+            
+            base_url = GATEWAY_URL.rstrip("/")
+            clean_storage_id = storage_id.strip("/")
+            # Manual URL construction to ensure token is passed correctly
+            # Use GET instead of HEAD as HEAD might be blocked or malformed for this gateway
+            timestamp = str(int(time.time()))
+            url = f"{base_url}/{clean_storage_id}/avatar.png?_t={timestamp}"
+            avatar_headers = {"Authorization": f"token:{storage_key}"}
+            
+            #logging.info(f"[get_avatar_version] Checking remote (GET): {url}")
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=avatar_headers, timeout=5) as resp:
+                    #logging.info(f"[get_avatar_version] Response status: {resp.status}")
+                    if resp.status == 200:
+                        # Use ETag or Last-Modified
+                        etag = resp.headers.get("ETag")
+                        last_modified = resp.headers.get("Last-Modified")
+                        #logging.info(f"[get_avatar_version] ETag: {etag}, Last-Modified: {last_modified}")
+                        if etag:
+                            return etag.strip('"')
+                        if last_modified:
+                            # Simple hash of last modified string
+                            return str(hash(last_modified))
+        except Exception as e:
+            logging.warning(f"[get_avatar_version] Failed to get remote avatar version: {e}")
+
+    # 2. Fallback to local
+    try:
+        full_path = get_assistant_avatar_path(ctx)
+        if os.path.exists(full_path):
+            mtime = os.path.getmtime(full_path)
+
+            return str(int(mtime))
+    except Exception as e:
+        logging.warning(f"Failed to get local avatar version: {e}")
+        return str(int(time.time()))
+
+async def get_generated_avatars(ctx: UserContext) -> list:
+    avatars = []
+    # 1. Remote
+    if ctx.storage and ctx.omd_key:
+        try:
+            storage_id = ctx.storage
+            storage_key = ctx.omd_key
+            
+            base_url = GATEWAY_URL.rstrip("/")
+            clean_storage_id = storage_id.strip("/")
+            
+            # List generated/avatars folder
+            url = f"{base_url}/{clean_storage_id}/generated/avatars?list"
+            avatars_headers = {"Authorization": f"token:{storage_key}"}
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=avatars_headers, timeout=5) as resp:
+                    if resp.status == 200 or resp.status == 206:
+                        try:
+                            data = await resp.json()
+                        except Exception as e:
+                             text = await resp.text()
+                             try:
+                                 data = json.loads(text)
+                             except json.JSONDecodeError as je:
+                                 if "Extra data" in str(je):
+                                     data = json.loads(text[:je.pos])
+                                 else:
+                                     raise je
+                        
+                        items = []
+                        if "list" in data:
+                            items = data["list"]
+                        elif "result" in data:
+                            items = data["result"]
+                            
+                        for item in items:
+                            name = item.get("name", "")
+                            item_type = item.get("type", "")
+                            
+                            if item_type != "dir" and name.startswith("avatar"):
+                                    # Construct direct URL
+                                    file_url = f"{base_url}/{clean_storage_id}/generated/{name}?token={storage_key}"
+                                    avatars.append({
+                                        "name": name,
+                                        "url": file_url,
+                                        "date": item.get("date"),
+                                        "size": item.get("size")
+                                    })
+            return avatars
+        except Exception as e:
+            logging.warning(f"Failed to list remote avatars: {e}")
+            # Fallthrough to local if needed or just return empty?
+            # If storage is configured, we assume remote is source of truth.
+            return []
+
+    return []
+
+_comfy_last_check = 0.0
+_comfy_available_cache = False
+
+_krea_last_check = 0.0
+_krea_available_cache = False
+
+_vision_last_check = 0.0
+_vision_available_cache = False
+
+
+async def is_vision_available() -> bool:
+    """VISION_MODEL задан в конфиге И реально доступен в ollama (модель там есть).
+    Кэшируется на 30с, чтобы /assistant не дергал ollama на каждый запрос."""
+    global _vision_last_check, _vision_available_cache
+    model = (VISION_MODEL or "").strip()
+    if not model:
+        return False
+    now = time.time()
+    if now - _vision_last_check < 30.0:
+        return _vision_available_cache
+    base = model.split(":")[0]
+    available = False
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=2.0)) as session:
+            async with session.get(f"{OLLAMA_URL}/api/tags") as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    names = {m.get("name", "") for m in data.get("models", [])}
+                    available = bool(names) and (
+                        model in names or any(n.split(":")[0] == base for n in names if n)
+                    )
+    except Exception:
+        available = False
+    _vision_available_cache = available
+    _vision_last_check = now
+    return available
+
+
+async def is_comfy_available() -> bool:
+    global _comfy_last_check, _comfy_available_cache
+    if not COMFY_API_URL:
+        return False
+    now = time.time()
+    if now - _comfy_last_check < 30.0:
+        return _comfy_available_cache
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=2.0)) as session:
+            async with session.get(f"{COMFY_API_URL}/system_stats") as resp:
+                _comfy_available_cache = (resp.status == 200)
+    except Exception:
+        _comfy_available_cache = False
+    _comfy_last_check = now
+    return _comfy_available_cache
+
+
+async def is_krea_available(ctx=None) -> bool:
+    """Проверяет доступность моделей Krea 2 в ComfyUI (UNETLoader / diffusion_models).
+    Кэшируется на 30с."""
+    global _krea_last_check, _krea_available_cache
+    if not await is_comfy_available():
+        return False
+    now = time.time()
+    if now - _krea_last_check < 30.0:
+        return _krea_available_cache
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=2.0)) as session:
+            async with session.get(f"{COMFY_API_URL}/object_info/UNETLoader") as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    models = data.get("UNETLoader", {}).get("input", {}).get("required", {}).get("unet_name", [[]])[0]
+                    _krea_available_cache = any("krea" in str(m).lower() for m in models)
+                else:
+                    _krea_available_cache = False
+    except Exception:
+        _krea_available_cache = False
+    _krea_last_check = now
+    return _krea_available_cache
+
+
+async def check_krea_status(ctx=None) -> dict:
+    """Checks if Unified Creative Studio (Krea 2 / Anima or local SDXL) can be activated on this node."""
+    krea_ok = await is_krea_available(ctx)
+    sdxl_ok = await is_comfy_available()
+    if krea_ok or sdxl_ok:
+        return {
+            "allowed": True,
+            "tier": "owner",
+            "sdxl_allowed": sdxl_ok,
+            "krea_allowed": krea_ok,
+            "uncensored": True,
+            "krea_notice": "",
+        }
+    return {"allowed": False, "error": "Creative Studio requires ComfyUI on this node."}
+
+
+async def generate_image_workflow(workflow) -> bytes:
+    client_id = str(uuid.uuid4())
+    ws_url = f"{COMFY_API_URL.replace('http', 'ws')}/ws?clientId={client_id}"
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.ws_connect(ws_url) as ws:
+                # Send prompt
+                payload = {
+                    "prompt": workflow,
+                    "client_id": client_id
+                }
+                async with session.post(f"{COMFY_API_URL}/prompt", json=payload) as resp:
+                    resp_data = await resp.json()
+                    prompt_id = resp_data.get("prompt_id")
+                    logging.info(f"Prompt ID: {prompt_id}")
+                    if not prompt_id:
+                        err_msg = resp_data.get("error") or resp_data.get("node_errors") or "ComfyUI prompt submission failed"
+                        logging.error(f"Failed to submit prompt to ComfyUI: {err_msg}")
+                        return None, None
+
+                # Listen for messages
+                final_image_data = None
+                final_filename = None
+                
+                # Timeout safety
+                loop_start = time.time()
+                sampler_started = False
+
+                comfy_timeout = int(SETTINGS.get("COMFY_TIMEOUT", 300))
+                async for msg in ws:
+                    if time.time() - loop_start > comfy_timeout:
+                        logging.error("Timeout waiting for image generation")
+                        break
+
+                    if msg.type == aiohttp.WSMsgType.TEXT:
+                        data = json.loads(msg.data)
+                        msg_type = data.get("type")
+                        
+                        if msg_type == "executing":
+                            data_content = data.get("data") or {}
+                            # Log heartbeat or node executing
+                            if data_content.get("node") is None and data_content.get("prompt_id") == prompt_id:
+                                logging.info(f"Execution finished for prompt {prompt_id}")
+                                break
+                            elif data_content.get("prompt_id") == prompt_id:
+                                nid = str(data_content.get("node", ""))
+                                node_cls = str((workflow.get(nid) or {}).get("class_type", "")) if isinstance(workflow, dict) else ""
+                                if "Sampler" in node_cls:
+                                    sampler_started = True
+                                    await emit_generation_progress("generating", step=0)
+                                elif not sampler_started:
+                                    await emit_generation_progress("generating", phase="loading_models", step=0)
+                                elif "SaveImage" in node_cls or "PreviewImage" in node_cls:
+                                    await emit_generation_progress("saving")
+
+                        elif msg_type == "progress":
+                            data_content = data.get("data") or {}
+                            val = int(data_content.get("value", 0) or 0)
+                            mx = int(data_content.get("max", 0) or 0)
+                            if mx >= 4:
+                                sampler_started = True
+                                await emit_generation_progress("generating", step=val, total_steps=mx)
+                                
+                        elif msg_type == "executed":
+                            data_content = data.get("data") or {}
+                            if data_content.get("prompt_id") == prompt_id:
+                                outputs = data_content.get("output") or {}
+                                #logging.info(f"Outputs received: {outputs.keys()}")
+                                
+                                # outputs is directly the dictionary of outputs for the executed node
+                                if isinstance(outputs, dict) and "images" in outputs:
+                                    images = outputs.get("images") or []
+                                    #logging.info(f"Images found: {images}")
+                                    for image in images:
+                                        filename = image.get("filename")
+                                        subfolder = image.get("subfolder", "")
+                                        img_type = image.get("type", "output")
+                                        
+                                        #logging.info(f"Fetching image: {filename} [{img_type}]")
+                                        
+                                        params = {"filename": filename, "subfolder": subfolder, "type": img_type}
+                                        async with session.get(f"{COMFY_API_URL}/view", params=params) as img_resp:
+                                            if img_resp.status == 200:
+                                                final_image_data = await img_resp.read()
+                                                final_filename = filename
+                                                logging.info(f"Image fetched: {len(final_image_data)} bytes")
+                                                
+                                                # Clean up ComfyUI temp file so it doesn't linger on host disk
+                                                comfy_base = os.path.dirname(COMFY_OUTPUT_DIR) if COMFY_OUTPUT_DIR else ""
+                                                if comfy_base:
+                                                    for temp_cand in [os.path.join(comfy_base, "temp", filename), os.path.join("/tmp", filename)]:
+                                                        if os.path.isfile(temp_cand):
+                                                            try:
+                                                                os.remove(temp_cand)
+                                                                logging.info(f"Cleaned ComfyUI temp file: {temp_cand}")
+                                                            except Exception:
+                                                                pass
+                                            else:
+                                                logging.error(f"Failed to fetch image: {img_resp.status}")
+
+                        elif msg_type == "execution_error":
+                            err_data = data.get("data", {})
+                            if err_data.get("prompt_id") == prompt_id:
+                                exc_type = str(err_data.get("exception_type") or "ExecutionError")
+                                exc_msg = str(err_data.get("exception_message") or "").strip()
+                                node_id = err_data.get("node_id")
+                                node_type = err_data.get("node_type")
+                                logging.error(
+                                    f"[ComfyUI] execution_error on node {node_id} ({node_type}): "
+                                    f"{exc_type}: {exc_msg}"
+                                )
+                                if "OutOfMemory" in exc_type or "out of memory" in exc_msg.lower():
+                                    try:
+                                        async with session.post(
+                                            f"{COMFY_API_URL}/free",
+                                            json={"unload_models": True, "free_memory": True},
+                                        ) as _:
+                                            logging.info("[ComfyUI] Triggered /free after CUDA OOM")
+                                    except Exception:
+                                        pass
+                                break
+
+                        # Log other messages just in case
+                        # else:
+                        #     logging.debug(f"WS Message: {msg_type}")
+
+                    elif msg.type == aiohttp.WSMsgType.BINARY:
+                        # Preview image handling
+                        # First 4 bytes: integer type (1 = JPEG preview)
+                        if len(msg.data) > 4:
+                            event_type = int.from_bytes(msg.data[:4], 'big')
+                            if event_type == 1:
+                                logging.debug("Received binary preview image")
+                                # Only use binary preview if we don't have a high-res one yet, or as fallback
+                                if not final_image_data:
+                                    # Skip first 8 bytes? ComfyUI source:
+                                    # const view_metadata = new DataView(event.data.slice(0, 8)); ... 
+                                    # Actually python int.from_bytes is safe. 
+                                    # Standard preview is JPEG.
+                                    final_image_data = msg.data[8:] 
+                                    final_filename = f"preview_{uuid.uuid4()}.jpg"
+                                    logging.debug(f"Captured preview image: {len(final_image_data)} bytes")
+                            else:
+                                logging.debug(f"Received binary event type: {event_type}")
+
+                if not final_image_data:
+                     logging.warning("No image data captured during execution.")
+
+                return final_image_data, final_filename
+
+    except Exception as e:
+        logging.error(f"Error in generate_image_workflow: {e}")
+        return None, None
+
+    except Exception as e:
+        logging.error(f"Error in generate_image_workflow: {e}")
+        return None, None
+
+
+def extract_krea2_prompt_and_params(ctx: UserContext, prompt: str, is_character: bool = False) -> tuple[str, str, dict]:
+    """
+    Интеллектуальный разбор промпта и настроек чата для нативного движка Krea 2:
+    - Извлекает теги стиля (<anime>, <pinup>, <semireal>, <pixar>, <comic>, <midjourney>, <cinematic>, etc.)
+    - Извлекает архетипы персонажа (<domi>, <ada>, <brie>, <tifa>, <alt>, <influencer>, <june>)
+    - Для персонажных фото (is_character=True) подключает модель/внешность ассистента
+    - Очищает текст от тегов <...> для чистого естественного промпта Qwen3-VL
+    - Возвращает (clean_prompt, persona_prompt, sliders)
+    """
+    # 1. Извлекаем чистый текст, если пришел формат с заголовком (Title: ... \\n Image: ...)
+    clean_img_prompt, _ = extract_title_and_prompt(prompt) if ("Image:" in prompt or "Title:" in prompt) else (prompt, "")
+    clean_img_prompt = clean_img_prompt.strip()
+
+    STYLE_ALIASES = {
+        "anime": "anime",
+        "semireal": "semireal",
+        "art": "semireal",
+        "pinup": "pinup",
+        "retro": "pinup",
+        "pixar": "pixar",
+        "3d": "pixar",
+        "comic": "comic",
+        "midjourney": "midjourney",
+        "fantasy": "midjourney",
+        "photorealistic": "photorealistic",
+        "realistic": "photorealistic",
+        "cinematic": "cinematic",
+        "neon": "neon",
+        "cyberpunk": "neon",
+        "goth": "alt"
+    }
+
+    ARCHETYPE_ALIASES = {
+        "domi": "domi",
+        "june": "domi",
+        "default": "domi",
+        "ada": "ada",
+        "ada_wong": "ada",
+        "brie": "brie",
+        "kxbrie": "brie",
+        "tifa": "tifa",
+        "tifa_lockhart": "tifa",
+        "alt": "alt",
+        "goth": "alt",
+        "influencer": "influencer"
+    }
+
+    # 2. Ищем теги <...> в тексте
+    detected_style = None
+    detected_archetypes = []
+    custom_lora = None
+
+    raw_tags = re.findall(r"<([^>]+)>", clean_img_prompt)
+    for tag in raw_tags:
+        t_clean = tag.lower().strip()
+        if t_clean in STYLE_ALIASES:
+            if not detected_style:
+                detected_style = STYLE_ALIASES[t_clean]
+        elif t_clean in ARCHETYPE_ALIASES:
+            arch = ARCHETYPE_ALIASES[t_clean]
+            if arch not in detected_archetypes:
+                detected_archetypes.append(arch)
+        elif t_clean.endswith(".safetensors"):
+            custom_lora = tag.strip()
+
+    # 3. Если стиль не найден в тегах, смотрим настройки контекста
+    if not detected_style:
+        style_setting = (ctx.settings.get("style") or ctx.settings.get("style_lora") or ctx.settings.get("style_loras") or "").lower().strip("<> ")
+        if style_setting in STYLE_ALIASES:
+            detected_style = STYLE_ALIASES[style_setting]
+        elif style_setting:
+            for s_key, s_target in STYLE_ALIASES.items():
+                if s_key in style_setting:
+                    detected_style = s_target
+                    break
+
+    if not detected_style:
+        detected_style = "photorealistic"
+
+    # 4. Если это фото персонажа/ассистента или был запрос персонажа
+    persona_prompt = ""
+    if is_character or len(detected_archetypes) > 0:
+        if not detected_archetypes:
+            ast_model = (ctx.settings.get("assistant_model") or ctx.settings.get("character_lora") or "").lower().strip("<> ")
+            if ast_model:
+                arch = ARCHETYPE_ALIASES.get(ast_model)
+                if arch and arch not in detected_archetypes:
+                    detected_archetypes.append(arch)
+
+        # Подключаем словесный паспорт ассистента, если задан
+        ast_appearance = (ctx.settings.get("assistant_appearance") or ctx.settings.get("appearance_prompt") or "").strip()
+        if ast_appearance:
+            persona_prompt = ast_appearance
+
+    # 5. Очищаем текст от <...> тегов для качественного эмбеддинга Qwen3-VL
+    clean_text = re.sub(r"<[^>]+>", "", clean_img_prompt)
+    clean_text = re.sub(r"\s+", " ", clean_text).strip(" ,")
+
+    sliders = {
+        "style": detected_style,
+        "archetypes": detected_archetypes
+    }
+    if custom_lora:
+        sliders["lora"] = custom_lora
+
+    return clean_text, persona_prompt, sliders
+
+
+async def resolve_reference_image_bytes(ctx: UserContext, reference_image: str | None) -> bytes | None:
+    """Извлекает байты референсного изображения лица из Data URL, URL или локального файла."""
+    if not reference_image:
+        return None
+    try:
+        ref_str = str(reference_image).strip()
+        if ref_str.startswith("data:") and "," in ref_str:
+            _, b64_data = ref_str.split(",", 1)
+            return base64.b64decode(b64_data.strip())
+        if ref_str.startswith("http://") or ref_str.startswith("https://"):
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10.0)) as session:
+                async with session.get(ref_str) as resp:
+                    if resp.status == 200:
+                        return await resp.read()
+            return None
+        if "/personas/" in ref_str and ref_str.endswith("/avatar"):
+            parts = [p for p in ref_str.split("/") if p]
+            if "personas" in parts:
+                p_idx = parts.index("personas")
+                if p_idx + 1 < len(parts):
+                    p_id = parts[p_idx + 1]
+                    dirs = get_personas_dirs(ctx)
+                    for p_dir in dirs:
+                        cand = os.path.join(p_dir, f"{p_id}.png")
+                        if os.path.isfile(cand):
+                            with open(cand, "rb") as f:
+                                return f.read()
+        if ref_str.startswith("/assistant/avatar") or ref_str.startswith("assistant/avatar"):
+            av_path = get_assistant_avatar_path(ctx)
+            if av_path and os.path.isfile(av_path):
+                with open(av_path, "rb") as f:
+                    return f.read()
+            return None
+        if ref_str.startswith("/chat/image/") or ref_str.startswith("chat/image/") or ref_str.startswith("/p2p/"):
+            clean_ref = ref_str.split("?", 1)[0]
+            img_name = urllib.parse.unquote(os.path.basename(clean_ref))
+            for d in [
+                os.path.join(APP_ROOT_DIR, "generated"),
+                os.path.join(os.path.expanduser("~"), "Data", "generated"),
+                os.path.join(os.path.expanduser("~"), "Data", "onmychat", "generated"),
+                os.path.join(os.path.expanduser("~"), "OnMyChat", "generated"),
+                os.path.join(os.path.expanduser("~"), "Private", "OnMyChat", "generated"),
+                "/content/ComfyUI/output/generated",
+            ]:
+                cand = os.path.join(d, img_name)
+                if os.path.isfile(cand):
+                    with open(cand, "rb") as f:
+                        return f.read()
+            return None
+        if os.path.isfile(ref_str):
+            with open(ref_str, "rb") as f:
+                return f.read()
+        if len(ref_str) > 100:
+            try:
+                return base64.b64decode(ref_str)
+            except Exception:
+                pass
+    except Exception as e:
+        logging.warning(f"[Krea2] Error resolving reference image: {e}")
+    return None
+
+
+def get_personas_dirs(ctx: UserContext | None = None) -> list[str]:
+    """Возвращает список папок personas рядом с generated."""
+    home_dir = os.path.expanduser("~")
+    dirs = []
+
+    # 1. Если задано пользовательское хранилище в ctx
+    if ctx and ctx.storage:
+        clean_st = ctx.storage.replace("/generated", "").rstrip("/")
+        cand = os.path.join(clean_st, "personas")
+        if os.path.isdir(cand) and cand not in dirs:
+            dirs.append(cand)
+
+    # 2. Стандартные папки рядом с generated
+    for base_parent in [
+        os.path.join(home_dir, "Data", "onmychat"),
+        os.path.join(home_dir, "Data"),
+        os.path.join(home_dir, "Private", "OnMyChat"),
+        os.path.join(home_dir, "OnMyChat"),
+        "/content/ComfyUI/output",
+        APP_ROOT_DIR
+    ]:
+        p_dir = os.path.join(base_parent, "personas")
+        if os.path.isdir(p_dir) and p_dir not in dirs:
+            dirs.append(p_dir)
+
+    if not dirs:
+        fallback = os.path.join(home_dir, "Data", "onmychat", "personas")
+        os.makedirs(fallback, exist_ok=True)
+        dirs.append(fallback)
+
+    return dirs
+
+
+def save_persona_to_disk(persona_data: dict, ctx: UserContext | None = None) -> dict:
+    """Сохраняет персону (.json и .png) в папку personas рядом с generated."""
+    p_id = persona_data.get("id") or f"persona_{int(time.time()*1000)}"
+    persona_data["id"] = p_id
+
+    dirs = get_personas_dirs(ctx)
+    target_dir = dirs[0]
+    os.makedirs(target_dir, exist_ok=True)
+
+    # Сохраняем аватар как отдельный .png файл рядом с .json
+    avatar_data = persona_data.get("avatarData") or persona_data.get("avatar") or ""
+    if avatar_data:
+        try:
+            b64 = avatar_data.split("base64,", 1)[1] if "base64," in avatar_data else avatar_data
+            if len(b64) > 100:
+                img_bytes = base64.b64decode(b64)
+                img_path = os.path.join(target_dir, f"{p_id}.png")
+                with open(img_path, "wb") as f:
+                    f.write(img_bytes)
+                persona_data["avatar_url"] = f"/personas/{p_id}/avatar"
+                logging.info(f"[Personas] Saved avatar image: {img_path}")
+        except Exception as e:
+            logging.warning(f"[Personas] Failed to save persona avatar: {e}")
+
+    # Сохраняем компактный JSON (без тяжелого base64 avatarData и без чувствительных ключей)
+    json_obj = dict(persona_data)
+    json_obj.pop("avatarData", None)
+    json_obj.pop("omd_key", None)
+    json_obj.pop("save_local", None)
+    if json_obj.get("avatar", "").startswith("data:"):
+        json_obj["avatar"] = f"/personas/{p_id}/avatar"
+    if not json_obj.get("avatar_url") and os.path.isfile(os.path.join(target_dir, f"{p_id}.png")):
+        json_obj["avatar_url"] = f"/personas/{p_id}/avatar"
+
+    json_path = os.path.join(target_dir, f"{p_id}.json")
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(json_obj, f, indent=2, ensure_ascii=False)
+
+    # Mirror to ~/OnMyChat/personas if present so P2P Drive and AI Node share one source of truth
+    omc_personas = os.path.join(os.path.expanduser("~"), "OnMyChat", "personas")
+    if os.path.isdir(os.path.join(os.path.expanduser("~"), "OnMyChat")) and os.path.abspath(target_dir) != os.path.abspath(omc_personas):
+        try:
+            os.makedirs(omc_personas, exist_ok=True)
+            with open(os.path.join(omc_personas, f"{p_id}.json"), "w", encoding="utf-8") as f:
+                json.dump(json_obj, f, indent=2, ensure_ascii=False)
+            src_png = os.path.join(target_dir, f"{p_id}.png")
+            if os.path.isfile(src_png):
+                import shutil
+                shutil.copy2(src_png, os.path.join(omc_personas, f"{p_id}.png"))
+        except Exception as e:
+            logging.debug(f"[Personas] Mirror to OnMyChat/personas skipped: {e}")
+
+    logging.info(f"[Personas] Saved persona '{p_id}' to {json_path}")
+    return json_obj
+
+
+def load_personas_from_disk(ctx: UserContext | None = None) -> list[dict]:
+    """Считывает все персоны из папок personas рядом с generated."""
+    dirs = get_personas_dirs(ctx)
+    personas_map = {}
+
+    for p_dir in dirs:
+        if not os.path.isdir(p_dir):
+            continue
+        try:
+            for fname in os.listdir(p_dir):
+                if fname.endswith(".json"):
+                    p_path = os.path.join(p_dir, fname)
+                    try:
+                        with open(p_path, "r", encoding="utf-8") as f:
+                            p_obj = json.load(f)
+                            p_id = p_obj.get("id") or os.path.splitext(fname)[0]
+                            p_obj["id"] = p_id
+
+                            png_cand = os.path.join(p_dir, f"{p_id}.png")
+                            if os.path.isfile(png_cand):
+                                p_obj["avatar_url"] = f"/personas/{p_id}/avatar"
+                                if not p_obj.get("avatar"):
+                                    p_obj["avatar"] = f"/personas/{p_id}/avatar"
+
+                            if p_id not in personas_map or os.path.getmtime(p_path) > personas_map[p_id].get("_mtime", 0):
+                                p_obj["_mtime"] = os.path.getmtime(p_path)
+                                personas_map[p_id] = p_obj
+                    except Exception as e:
+                        logging.warning(f"[Personas] Failed to read persona file {p_path}: {e}")
+        except Exception as e:
+            logging.warning(f"[Personas] Error scanning personas dir {p_dir}: {e}")
+
+    out_list = list(personas_map.values())
+    for item in out_list:
+        item.pop("_mtime", None)
+    return out_list
+
+
+def delete_persona_from_disk(persona_id: str, ctx: UserContext | None = None) -> bool:
+    """Удаляет .json и .png персоны из папок personas."""
+    dirs = get_personas_dirs(ctx)
+    deleted = False
+    for p_dir in dirs:
+        for ext in [".json", ".png"]:
+            cand = os.path.join(p_dir, f"{persona_id}{ext}")
+            if os.path.isfile(cand):
+                try:
+                    os.remove(cand)
+                    deleted = True
+                    logging.info(f"[Personas] Removed {cand}")
+                except Exception as e:
+                    logging.warning(f"[Personas] Error removing {cand}: {e}")
+    return deleted
+
+
+_COMFY_REF_IMAGE_BYTES: dict[str, bytes] = {}
+
+
+def _cache_reference_image_bytes(name: str, data: bytes) -> None:
+    if not name or not data:
+        return
+    _COMFY_REF_IMAGE_BYTES[name] = data
+    while len(_COMFY_REF_IMAGE_BYTES) > 24:
+        oldest = next(iter(_COMFY_REF_IMAGE_BYTES))
+        _COMFY_REF_IMAGE_BYTES.pop(oldest, None)
+
+
+def get_cached_reference_image_bytes(filename: str) -> bytes | None:
+    """Возвращает байты загруженного референсного изображения для удаленных раннеров."""
+    if not filename:
+        return None
+    return _COMFY_REF_IMAGE_BYTES.get(filename) or _COMFY_REF_IMAGE_BYTES.get(os.path.basename(filename))
+
+
+async def upload_reference_image_to_comfy(img_bytes: bytes, filename: str | None = None) -> str | None:
+    """Загружает референсное изображение лица в ComfyUI (через API или напрямую в input/)."""
+    if not img_bytes:
+        return None
+    filename = filename or f"krea_ref_{uuid.uuid4().hex[:10]}.png"
+
+    # Нормализуем EXIF-ориентацию и RGB PNG, чтобы LoadImage в любом ComfyUI гарантированно проходил валидацию
+    try:
+        with Image.open(io.BytesIO(img_bytes)) as im:
+            im = ImageOps.exif_transpose(im).convert("RGB")
+            buf = io.BytesIO()
+            im.save(buf, format="PNG")
+            img_bytes = buf.getvalue()
+    except Exception as e:
+        logging.warning(f"[Krea2] Reference image PNG normalization warning: {e}")
+
+    _cache_reference_image_bytes(filename, img_bytes)
+
+    # 1. ComfyUI /upload/image API (работает локально и удаленно в Colab)
+    try:
+        data = aiohttp.FormData()
+        data.add_field("image", img_bytes, filename=filename, content_type="image/png")
+        data.add_field("overwrite", "true")
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10.0)) as session:
+            async with session.post(f"{COMFY_API_URL}/upload/image", data=data) as resp:
+                if resp.status == 200:
+                    resp_data = await resp.json()
+                    uploaded_name = resp_data.get("name", filename)
+                    _cache_reference_image_bytes(uploaded_name, img_bytes)
+                    logging.info(f"[Krea2] Uploaded reference image to ComfyUI input: {uploaded_name}")
+                    return uploaded_name
+    except Exception as e:
+        logging.warning(f"[Krea2] ComfyUI /upload/image failed: {e}")
+
+    # 2. Прямая запись в ComfyUI input директорию при локальной доступности
+    comfy_base = os.path.dirname(COMFY_OUTPUT_DIR) if COMFY_OUTPUT_DIR else ""
+    if comfy_base:
+        input_dir = os.path.join(comfy_base, "input")
+        if os.path.isdir(input_dir):
+            try:
+                target_path = os.path.join(input_dir, filename)
+                with open(target_path, "wb") as f:
+                    f.write(img_bytes)
+                logging.info(f"[Krea2] Saved reference image directly to input dir: {filename}")
+                return filename
+            except Exception as e:
+                logging.warning(f"[Krea2] Direct write to input dir failed: {e}")
+
+    # 3. Если настроен удаленный облачный раннер (Modal), возвращаем закэшированное имя файла
+    if bool(str(SETTINGS.get("MODAL_COMFY_URL") or "").strip()):
+        logging.info(f"[Krea2] Reference image '{filename}' cached in memory for remote ComfyUI runner")
+        return filename
+
+    return None
+
+
+KREA_PRESETS_FILE = os.path.join(os.path.dirname(__file__), "krea_presets.json")
+_KREA_PRESETS_CACHE = None
+_KREA_PRESETS_MTIME = 0
+
+_SDXL_FLOW_CACHE = None
+_SDXL_FLOW_MTIME = 0
+
+
+def _load_sdxl_flow_template() -> dict:
+    global _SDXL_FLOW_CACHE, _SDXL_FLOW_MTIME
+    try:
+        if os.path.isfile(WORKFLOW_PATH):
+            mtime = os.path.getmtime(WORKFLOW_PATH)
+            if _SDXL_FLOW_CACHE is not None and mtime <= _SDXL_FLOW_MTIME:
+                return _SDXL_FLOW_CACHE
+            with open(WORKFLOW_PATH, "r", encoding="utf-8") as f:
+                _SDXL_FLOW_CACHE = json.load(f)
+                _SDXL_FLOW_MTIME = mtime
+                return _SDXL_FLOW_CACHE
+    except Exception as e:
+        logging.warning(f"[SDXLPresets] Error reading {WORKFLOW_PATH}: {e}")
+    return _SDXL_FLOW_CACHE or {}
+
+
+_SDXL_ARCHETYPE_META = {
+    "judith": ("✨", "Natural beauty & expressive muse (Judith / June LoRA)"),
+    "domi": ("💎", "Charismatic brunette with piercing hazel gaze"),
+    "lana": ("🌸", "Radiant Slavic beauty with expressive features"),
+    "oriana": ("🔥", "Glamorous star with bold magnetic presence"),
+    "vera": ("🌹", "Sultry dark-haired allure"),
+    "bianca": ("👑", "Elegant poised blonde beauty"),
+    "beatrice": ("🎭", "Classic European charm & refined features"),
+    "minerva": ("🌙", "Mystical striking gaze & sculpted features"),
+}
+
+_SDXL_STYLE_LORA_META = {
+    "real_humans": ("📷", "Authentic natural skin texture & candid human proportions"),
+    "busty": ("🍒", "Curvy glamorous figure enhancement"),
+    "seductive": ("💋", "Expressive alluring poses & captivating gaze"),
+}
+
+
+def _load_base_krea_presets() -> dict:
+    global _KREA_PRESETS_CACHE, _KREA_PRESETS_MTIME
+    cand_paths = [
+        KREA_PRESETS_FILE,
+        "/content/onmychat/krea_presets.json",
+        os.path.join(APP_ROOT_DIR, "krea_presets.json"),
+    ]
+    for cp in cand_paths:
+        if os.path.isfile(cp):
+            try:
+                mtime = os.path.getmtime(cp)
+                if _KREA_PRESETS_CACHE is not None and mtime <= _KREA_PRESETS_MTIME:
+                    return _KREA_PRESETS_CACHE
+                with open(cp, "r", encoding="utf-8") as f:
+                    _KREA_PRESETS_CACHE = json.load(f)
+                    _KREA_PRESETS_MTIME = mtime
+                    return _KREA_PRESETS_CACHE
+            except Exception as e:
+                logging.warning(f"[KreaPresets] Error reading {cp}: {e}")
+    return _KREA_PRESETS_CACHE or {"art_styles": [], "archetypes": []}
+
+
+SDXL_BASE_MODELS = (
+    "sdxl",
+    "sdxl_realistic",
+    "sdxl_perfect",
+    "sdxl_fantasy",
+    "sdxl_tooned",
+    "realistic",
+    "perfect",
+    "fantasy",
+    "tooned",
+)
+
+
+def is_sdxl_base_model(base_model: str | None) -> bool:
+    """Проверяет, относится ли выбранная базовая модель к семейству локальных SDXL DMD2 чекпоинтов."""
+    return str(base_model or "").strip().lower() in SDXL_BASE_MODELS
+
+
+def get_krea_presets(include_fun: bool = False) -> dict:
+    """Единый реестр стилей и LoRA для универсальной Creative Studio (Krea 2 / Anima + локальный SDXL)."""
+    base = _load_base_krea_presets()
+    art_styles = list(base.get("art_styles") or [])
+    archetypes = list(base.get("archetypes") or [])
+    existing_style_ids = {str(s.get("id")) for s in art_styles if isinstance(s, dict)}
+    existing_arch_ids = {str(a.get("id")) for a in archetypes if isinstance(a, dict)}
+
+    # Динамические LoRA стилей и персонажей из flow.json (node "103").
+    # Базовые чекпоинты SDXL (Realistic / Perfect / Fantasy / Tooned) вынесены в карточку базовых моделей,
+    # поэтому в art_styles остаются только совместимые с SDXL стили!
+    flow_data = _load_sdxl_flow_template()
+    node_103 = (flow_data.get("103") or {}).get("inputs") if isinstance(flow_data, dict) else None
+    if isinstance(node_103, dict):
+        sdxl_styles_pending = []
+        sdxl_chars_pending = []
+        for lkey, val in node_103.items():
+            if not isinstance(val, dict) or not val.get("name") or not val.get("lora"):
+                continue
+            raw_name = str(val["name"]).strip()
+            slug = re.sub(r"[^a-z0-9]+", "_", raw_name.lower()).strip("_")
+            ltype = str(val.get("type") or "").lower()
+            lmode = str(val.get("mode") or "work").lower()
+            fname = str(val["lora"]).strip()
+            strength = float(val.get("strength", 1.0))
+
+            if ltype == "style":
+                if lmode == "fun" and not include_fun:
+                    continue
+                sid = f"sdxl_lora_{slug}"
+                if sid not in existing_style_ids:
+                    icon, desc = _SDXL_STYLE_LORA_META.get(slug, ("✨", f"SDXL Style LoRA ({raw_name})"))
+                    sdxl_styles_pending.append({
+                        "id": sid,
+                        "name": raw_name,
+                        "description": desc,
+                        "icon": icon,
+                        "filename": fname,
+                        "url": "",
+                        "trigger": f"<{raw_name}>",
+                        "strength": strength,
+                        "models": ["sdxl"],
+                        "_prio": 0 if lmode != "fun" else 1,
+                    })
+                    existing_style_ids.add(sid)
+            elif ltype == "character":
+                aid = f"sdxl_{slug}"
+                if aid not in existing_arch_ids:
+                    icon, desc = _SDXL_ARCHETYPE_META.get(slug, ("👤", f"SDXL Character LoRA ({raw_name})"))
+                    sdxl_chars_pending.append({
+                        "id": aid,
+                        "name": raw_name,
+                        "description": desc,
+                        "icon": icon,
+                        "filename": fname,
+                        "url": "",
+                        "trigger": f"<{raw_name}>",
+                        "strength": strength,
+                        "models": ["sdxl"],
+                        "_prio": 0 if slug == "judith" else (1 if slug == "domi" else 2),
+                    })
+                    existing_arch_ids.add(aid)
+
+        sdxl_styles_pending.sort(key=lambda x: x.get("_prio", 1))
+        insert_pos = 1 if (art_styles and art_styles[0].get("id") == "none") else 0
+        for st_item in sdxl_styles_pending:
+            st_item.pop("_prio", None)
+            art_styles.insert(insert_pos, st_item)
+            insert_pos += 1
+
+        sdxl_chars_pending.sort(key=lambda x: x.get("_prio", 2))
+        for ch in sdxl_chars_pending:
+            ch.pop("_prio", None)
+            archetypes.append(ch)
+
+    return {"art_styles": art_styles, "archetypes": archetypes}
+
+
+def get_krea_style_configs() -> dict[str, dict]:
+    """Возвращает словарь конфигураций стилей, сгенерированный из krea_presets.json + SDXL."""
+    presets = get_krea_presets(include_fun=True)
+    configs = {}
+    for item in presets.get("art_styles", []):
+        s_id = item.get("id")
+        if not s_id:
+            continue
+        configs[s_id] = {
+            "trigger": item.get("trigger", ""),
+            "lora": item.get("filename", ""),
+            "strength": float(item.get("strength", 0.85)),
+            "name": item.get("name", s_id),
+            "description": item.get("description", "")
+        }
+    return configs
+
+
+def get_krea_archetype_configs() -> dict[str, dict]:
+    """Возвращает словарь конфигураций архетипов персонажей из krea_presets.json + SDXL."""
+    presets = get_krea_presets(include_fun=True)
+    configs = {}
+    for item in presets.get("archetypes", []):
+        a_id = item.get("id")
+        if not a_id:
+            continue
+        configs[a_id] = {
+            "trigger": item.get("trigger", ""),
+            "lora": item.get("filename", ""),
+            "strength": float(item.get("strength", 0.8)),
+            "name": item.get("name", a_id),
+            "description": item.get("description", "")
+        }
+    return configs
+
+
+_SDXL_REACTOR_CACHE: dict | None = None
+
+
+async def _discover_sdxl_reactor_capabilities() -> dict:
+    """Проверяет доступность нод ReActor и лучших установленных моделей FaceSwap в локальном ComfyUI."""
+    global _SDXL_REACTOR_CACHE
+    if _SDXL_REACTOR_CACHE is not None:
+        return _SDXL_REACTOR_CACHE
+    caps = {
+        "available": False,
+        "has_opt": False,
+        "swap_model": "inswapper_128.onnx",
+        "face_restore_model": "none",
+        "ipadapter_available": False,
+        "clip_vision_model": "",
+        "ipadapter_face_model": "",
+    }
+    if not COMFY_API_URL:
+        return caps
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=2.5)) as session:
+            async with session.get(f"{COMFY_API_URL}/object_info") as resp:
+                if resp.status == 200:
+                    obj_info = await resp.json()
+                    has_base = "ReActorFaceSwap" in obj_info
+                    has_opt = ("ReActorFaceSwapOpt" in obj_info) and ("ReActorOptions" in obj_info)
+                    if has_base or has_opt:
+                        caps["available"] = True
+                        caps["has_opt"] = has_opt
+                        node_schema = obj_info.get("ReActorFaceSwapOpt" if has_opt else "ReActorFaceSwap", {})
+                        req_in = node_schema.get("input", {}).get("required", {})
+                        swap_models = (req_in.get("swap_model") or [[]])[0] or []
+                        for pref_swap in (
+                            "hyperswap_1a_256.onnx",
+                            "hyperswap_1c_256.onnx",
+                            "hyperswap_1b_256.onnx",
+                            "reswapper_256.onnx",
+                            "inswapper_128.onnx",
+                        ):
+                            if pref_swap in swap_models:
+                                caps["swap_model"] = pref_swap
+                                break
+                        else:
+                            if swap_models:
+                                caps["swap_model"] = swap_models[0]
+
+                        restore_models = (req_in.get("face_restore_model") or [[]])[0] or []
+                        for pref_rest in ("GFPGANv1.4.pth", "GFPGANv1.3.pth"):
+                            if pref_rest in restore_models:
+                                caps["face_restore_model"] = pref_rest
+                                break
+
+                    ipa_nodes = (
+                        "PrepImageForClipVision",
+                        "CLIPVisionLoader",
+                        "IPAdapterModelLoader",
+                        "IPAdapterAdvanced",
+                    )
+                    if all(n in obj_info for n in ipa_nodes):
+                        cv_models = (
+                            obj_info.get("CLIPVisionLoader", {})
+                            .get("input", {})
+                            .get("required", {})
+                            .get("clip_name", [[]])[0]
+                            or []
+                        )
+                        ipa_models = (
+                            obj_info.get("IPAdapterModelLoader", {})
+                            .get("input", {})
+                            .get("required", {})
+                            .get("ipadapter_file", [[]])[0]
+                            or []
+                        )
+                        chosen_cv = ""
+                        for pref_cv in (
+                            "clip_vision_h.safetensors",
+                            "CLIP-ViT-H-14-laion2B-s32B-b79K/pytorch_model.bin",
+                        ):
+                            if pref_cv in cv_models:
+                                chosen_cv = pref_cv
+                                break
+                        chosen_ipa = ""
+                        for pref_ipa in (
+                            "ip-adapter-plus-face_sdxl_vit-h.bin",
+                            "ip-adapter-plus_sdxl_vit-h.bin",
+                        ):
+                            if pref_ipa in ipa_models:
+                                chosen_ipa = pref_ipa
+                                break
+                        if chosen_cv and chosen_ipa:
+                            caps["ipadapter_available"] = True
+                            caps["clip_vision_model"] = chosen_cv
+                            caps["ipadapter_face_model"] = chosen_ipa
+
+                    if caps["available"] or caps["ipadapter_available"]:
+                        _SDXL_REACTOR_CACHE = caps
+    except Exception as e:
+        logging.warning(f"[SDXL Studio] ReActor capability check warning: {e}")
+    return caps
+
+
+_SDXL_INPAINT_CACHE: dict | None = None
+
+
+async def _discover_sdxl_inpaint_capabilities() -> dict:
+    """Проверяет наличие нод и моделей для SDXL Auto-Inpaint (YOLO person/face/hand + SAM + DifferentialDiffusion)."""
+    global _SDXL_INPAINT_CACHE
+    if _SDXL_INPAINT_CACHE is not None:
+        return _SDXL_INPAINT_CACHE
+    caps = {
+        "available": False,
+        "person_model": "",
+        "face_model": "",
+        "hand_model": "",
+        "sam_model": "",
+        "has_resize_plus": False,
+        "has_ordered_filter": False,
+        "has_diff_diffusion": False,
+    }
+    if not COMFY_API_URL:
+        return caps
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=2.5)) as session:
+            async with session.get(f"{COMFY_API_URL}/object_info") as resp:
+                if resp.status == 200:
+                    obj_info = await resp.json()
+                    req_nodes = (
+                        "UltralyticsDetectorProvider",
+                        "SegmDetectorSEGS",
+                        "SegsToCombinedMask",
+                        "InpaintModelConditioning",
+                        "ImageCompositeMasked",
+                        "GrowMask",
+                        "SubtractMask",
+                        "ImpactGaussianBlurMask",
+                    )
+                    if all(n in obj_info for n in req_nodes):
+                        ultra_in = (
+                            obj_info.get("UltralyticsDetectorProvider", {})
+                            .get("input", {})
+                            .get("required", {})
+                        )
+                        u_models = (ultra_in.get("model_name") or [[]])[0] or []
+                        person_m = next((m for m in u_models if "person" in m and "seg" in m), "")
+                        face_m = next((m for m in u_models if "face" in m), "")
+                        hand_m = next((m for m in u_models if "hand" in m), "")
+                        if person_m:
+                            caps["available"] = True
+                            caps["person_model"] = person_m
+                            caps["face_model"] = face_m
+                            caps["hand_model"] = hand_m
+                            caps["has_resize_plus"] = "ImageResize+" in obj_info
+                            caps["has_ordered_filter"] = "ImpactSEGSOrderedFilter" in obj_info
+                            caps["has_diff_diffusion"] = "DifferentialDiffusion" in obj_info
+                            if "SAMLoader" in obj_info and "SAMDetectorSegmented" in obj_info:
+                                sam_in = (
+                                    obj_info.get("SAMLoader", {})
+                                    .get("input", {})
+                                    .get("required", {})
+                                )
+                                sam_models = (sam_in.get("model_name") or [[]])[0] or []
+                                for pref_sam in ("sam_vit_b_01ec64.pth", "sam_vit_l_0b3195.pth"):
+                                    if pref_sam in sam_models:
+                                        caps["sam_model"] = pref_sam
+                                        break
+                                else:
+                                    if sam_models:
+                                        caps["sam_model"] = sam_models[0]
+                            _SDXL_INPAINT_CACHE = caps
+    except Exception as e:
+        logging.warning(f"[SDXL Studio] Auto-Inpaint capability check warning: {e}")
+    return caps
+
+
+def _crop_head_portrait_for_ipadapter(img_bytes: bytes) -> bytes:
+    """
+    Если референс — ростовое или дальнее фото, вырезает квадратный портрет головы с причёской (2.8× размера лица),
+    чтобы IP-Adapter Plus Face получал чёткие волосы, тон кожи и черты лица в окне CLIP-ViT-H.
+    Для крупных портретов возвращает исходные байты без потерь.
+    """
+    if not img_bytes:
+        return img_bytes
+    try:
+        from PIL import ImageOps
+        import face_engine
+        with Image.open(io.BytesIO(img_bytes)) as pil_im:
+            try:
+                pil_im = ImageOps.exif_transpose(pil_im)
+            except Exception:
+                pass
+            pil_rgb = pil_im.convert("RGB")
+            w, h = pil_rgb.size
+            faces = face_engine._get_app().get(np.array(pil_rgb))
+            if not faces:
+                return img_bytes
+            best = max(faces, key=lambda f: float((f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1])))
+            x1, y1, x2, y2 = [float(v) for v in best.bbox]
+            fw, fh = max(1.0, x2 - x1), max(1.0, y2 - y1)
+            box_side = int(max(fw, fh) * 2.8)
+            if box_side >= int(min(w, h) * 0.85):
+                return img_bytes
+            cx = int((x1 + x2) * 0.5)
+            cy = int((y1 + y2) * 0.5 - fh * 0.12)
+            half = box_side // 2
+            cx1 = max(0, min(w - box_side, cx - half))
+            cy1 = max(0, min(h - box_side, cy - half))
+            cx2 = min(w, cx1 + box_side)
+            cy2 = min(h, cy1 + box_side)
+            cropped = pil_rgb.crop((cx1, cy1, cx2, cy2))
+            buf = io.BytesIO()
+            cropped.save(buf, format="PNG")
+            return buf.getvalue()
+    except Exception as e:
+        logging.debug(f"[SDXL Studio] Head portrait crop skipped: {e}")
+        return img_bytes
+
+
+async def generate_sdxl_studio_image(
+    ctx: UserContext,
+    prompt: str,
+    persona_prompt: str = "",
+    persona_lora: str | None = None,
+    persona_id: str | None = None,
+    persona_name: str | None = None,
+    sliders: dict | None = None,
+    reference_image: str | None = None,
+    reference_images: list[str] | None = None,
+    width: int = 896,
+    height: int = 1152,
+    steps: int = 6,
+    cfg: float = 1.0,
+    seed: int | None = None,
+    save_local: bool = False,
+    **kwargs
+) -> tuple[str, str, str, bytes]:
+    """Рендерит кадр Creative Studio через локальный быстрый SDXL DMD2 пайплайн (flow.json)."""
+    sliders = sliders or {}
+
+    raw_refs: list[str] = []
+    if reference_images and isinstance(reference_images, list):
+        raw_refs.extend([r for r in reference_images if r])
+    elif reference_image:
+        raw_refs.append(reference_image)
+
+    if not prompt and not persona_prompt and not raw_refs:
+        raise Exception("Укажите промпт или выберите персону для генерации.")
+
+    comfy_ref_names: list[str] = []
+    comfy_ref_bytes: list[bytes] = []
+    for ref_item in raw_refs[:2]:
+        ref_bytes = await resolve_reference_image_bytes(ctx, ref_item)
+        if ref_bytes:
+            c_name = await upload_reference_image_to_comfy(ref_bytes)
+            if c_name:
+                comfy_ref_names.append(c_name)
+                comfy_ref_bytes.append(ref_bytes)
+
+    # Проверяем право на uncensored-режим (Owner / Club Member / Muse Pass на не-iOS)
+    is_uncensored = bool(getattr(ctx, "private_mode", False) or getattr(ctx, "trusted_owner", False))
+    try:
+        st = await check_krea_status(ctx)
+        if isinstance(st, dict) and "uncensored" in st:
+            is_uncensored = bool(st.get("uncensored"))
+    except Exception:
+        pass
+
+    no_signs_neg = (
+        "(english_text, print_shirt, graphic_tee, shirt_print, clothing_text, text_on_clothes, text, "
+        "logo, brand_logo, emblem, number_print, sign, signage, street_sign, shop_sign, neon_sign, "
+        "poster, placard, billboard, banner, graffiti, advertisement, lettering, typography, "
+        "written_words, inscription, gibberish, caption, subtitles, speech_bubble, label, watermark, signature, artist_name:2.0)"
+    )
+    negative_prompt = NEGATIVE_PROMPTS["base"]
+    if not is_uncensored:
+        negative_prompt = NEGATIVE_PROMPTS["fun"] + ", " + negative_prompt
+    if "print_shirt" not in negative_prompt[:180]:
+        negative_prompt = no_signs_neg + ", " + negative_prompt
+
+    with open(WORKFLOW_PATH, "r", encoding="utf-8") as f:
+        workflow_json = json.load(f)
+
+    # Собираем положительный промпт (сюжет + паспорт персоны + микро-слайдеры)
+    full_parts = []
+    if prompt and prompt.strip():
+        full_parts.append(prompt.strip())
+    if persona_prompt and persona_prompt.strip():
+        cleaned_persona = persona_prompt.strip()
+        if prompt and prompt.strip():
+            cleaned_persona = re.sub(
+                r"^(a\s+)?(portrait|close-up|headshot|bust\s+portrait)\s+of\s+",
+                "",
+                cleaned_persona,
+                flags=re.IGNORECASE,
+            )
+        full_parts.append(cleaned_persona)
+
+    detail_val = float(sliders.get("detail", 0.5))
+    if detail_val >= 0.7:
+        full_parts.append("ultra-detailed, natural skin pores, fine textures, sharp focus, 8k uhd")
+    elif detail_val <= 0.3:
+        full_parts.append("soft focus, subtle cinematic glow, smooth film look")
+
+    age_val = float(sliders.get("age", 0.0))
+    if age_val > 0.3:
+        full_parts.append("mature graceful woman")
+    elif age_val < -0.3:
+        full_parts.append("young adult vibrant look")
+
+    # Обрабатываем выбранные стили (чекпоинт SDXL + prompt-only триггеры + SDXL LoRA)
+    raw_styles = sliders.get("styles")
+    if isinstance(raw_styles, list):
+        selected_styles = [str(s).strip() for s in raw_styles if s and s != "none"]
+    elif sliders.get("style") and sliders.get("style") != "none":
+        selected_styles = [str(sliders.get("style")).strip()]
+    else:
+        selected_styles = []
+    style_weights = sliders.get("style_weights") if isinstance(sliders.get("style_weights"), dict) else {}
+
+    raw_archs = sliders.get("archetypes")
+    if isinstance(raw_archs, list):
+        selected_archs = [str(a).strip() for a in raw_archs if a and a != "none"]
+    elif sliders.get("archetype") and sliders.get("archetype") != "none":
+        selected_archs = [str(sliders.get("archetype")).strip()]
+    else:
+        selected_archs = []
+    arch_weights = sliders.get("archetype_weights") if isinstance(sliders.get("archetype_weights"), dict) else {}
+
+    ckpt_style_map = {
+        "sdxl_realistic": "realistic",
+        "realistic": "realistic",
+        "sdxl_perfect": "perfect",
+        "perfect": "perfect",
+        "sdxl_fantasy": "fantasy",
+        "fantasy": "fantasy",
+        "sdxl_tooned": "tooned",
+        "tooned": "tooned",
+    }
+    raw_base_m = str(sliders.get("base_model") or "").strip().lower()
+    chosen_ckpt_key = ckpt_style_map.get(raw_base_m)
+    style_cfgs = get_krea_style_configs()
+    for s_id in selected_styles:
+        if s_id.lower() in ckpt_style_map and chosen_ckpt_key is None:
+            chosen_ckpt_key = ckpt_style_map[s_id.lower()]
+            continue
+        scfg = style_cfgs.get(s_id)
+        if scfg and not scfg.get("lora") and scfg.get("trigger") and not scfg["trigger"].startswith("<"):
+            full_parts.append(scfg["trigger"])
+
+    combined_raw_text = ", ".join(full_parts)
+    inline_tags = re.findall(r"<([^>]+)>", combined_raw_text)
+    if chosen_ckpt_key is None:
+        for t in inline_tags:
+            tl = t.lower().strip()
+            if tl in STYLE_MODELS:
+                chosen_ckpt_key = tl
+                break
+    if chosen_ckpt_key is None:
+        chosen_ckpt_key = (ctx.settings.get("style") if ctx and isinstance(getattr(ctx, "settings", None), dict) else None) or "realistic"
+
+    ckpt_model = STYLE_MODELS.get(chosen_ckpt_key, STYLE_MODELS["realistic"])
+    workflow_json["127"]["inputs"]["ckpt_name"] = ckpt_model
+
+    # Карта LoRA в ноде "103" (Power Lora Loader)
+    lora_map: dict[str, str] = {}
+    lora_nodes: dict[str, dict] = {}
+    if "103" in workflow_json and "inputs" in workflow_json["103"]:
+        for key, value in workflow_json["103"]["inputs"].items():
+            if isinstance(value, dict) and "name" in value:
+                lora_nodes[key] = value
+                raw_name = str(value["name"]).lower().strip()
+                slug = re.sub(r"[^a-z0-9]+", "_", raw_name).strip("_")
+                for alias in (
+                    raw_name,
+                    slug,
+                    raw_name.replace(" ", "-"),
+                    raw_name.replace(" ", ""),
+                    f"sdxl_{slug}",
+                    f"sdxl_lora_{slug}",
+                ):
+                    lora_map[alias] = key
+                if value.get("lora"):
+                    lfn = str(value["lora"]).lower().strip()
+                    lora_map[lfn] = key
+                    lora_map[lfn.split(".")[0]] = key
+        if "domi" in lora_map:
+            lora_map.setdefault("june", lora_map["domi"])
+
+    active_lora_strengths: dict[str, float] = {}
+
+    def _activate_sdxl_lora(token_str: str, custom_weight=None):
+        cand = str(token_str or "").lower().strip("<> ")
+        if not cand:
+            return
+        lkey = (
+            lora_map.get(cand)
+            or lora_map.get(re.sub(r"[^a-z0-9]+", "_", cand).strip("_"))
+            or lora_map.get(cand.replace(" ", ""))
+        )
+        if not lkey or lkey not in lora_nodes:
+            return
+        node_entry = lora_nodes[lkey]
+        if str(node_entry.get("mode") or "work").lower() == "fun" and not is_uncensored:
+            return
+        default_str = float(node_entry.get("strength", 1.0))
+        if custom_weight is not None:
+            try:
+                w = round(max(0.0, min(1.8, float(custom_weight))), 2)
+            except Exception:
+                w = default_str
+        else:
+            w = default_str
+        if w > 0:
+            active_lora_strengths[lkey] = w
+
+    for s_id in selected_styles:
+        _activate_sdxl_lora(s_id, style_weights.get(s_id))
+    for a_id in selected_archs:
+        _activate_sdxl_lora(a_id, arch_weights.get(a_id))
+    if persona_lora:
+        _activate_sdxl_lora(persona_lora)
+    elif persona_name:
+        _activate_sdxl_lora(persona_name)
+    for t in inline_tags:
+        if ":" in t and t.lower().startswith("lora:"):
+            parts_t = t.split(":")
+            if len(parts_t) >= 2:
+                _activate_sdxl_lora(parts_t[1], parts_t[2] if len(parts_t) >= 3 else None)
+        else:
+            _activate_sdxl_lora(t)
+
+    for key, val in lora_nodes.items():
+        if key in active_lora_strengths:
+            val["on"] = True
+            val["strength"] = active_lora_strengths[key]
+            logging.info(f"[SDXL Studio] Activated LoRA {key} ({val.get('name')}) strength={val['strength']}")
+        else:
+            val["on"] = False
+
+    # Убираем служебные <теги> из положительного промпта перед CLIPTextEncode
+    clean_positive = re.sub(r"<[^>]+>", "", combined_raw_text)
+    clean_positive = re.sub(r"\s*,\s*,+", ", ", clean_positive).strip(" ,")
+    # Для DMD2 (1-CFG дистиллят) позитивные токены в 10 раз сильнее негативных:
+    # если пользователь явно не просил текст/принт/логотип, якорим однотонную ткань без принтов и чистые поверхности
+    wants_explicit_text = bool(
+        re.search(
+            r"\b(text|logo|sign|signage|print|printed|slogan|inscription|graffiti|poster|banner|надпис|принт|вывеск|лого|текст)\b",
+            str(prompt or ""),
+            flags=re.IGNORECASE,
+        )
+    )
+    if clean_positive and not wants_explicit_text:
+        clean_positive = f"{clean_positive}, plain unprinted clothing, solid unadorned fabric, clean background surfaces"
+    workflow_json["4"]["inputs"]["text"] = negative_prompt
+    workflow_json["85"]["inputs"]["text"] = (
+        f"{clean_positive}, {IMPROVEMENT_PROMPT}" if clean_positive else IMPROVEMENT_PROMPT
+    )
+    workflow_json["85"]["inputs"]["clip"] = ["103", 1]
+
+    # Разрешение и параметры сэмплера (DMD2 ускоритель работает оптимально на 4..12 шагах и cfg 1.0..2.0)
+    w_clamped = max(512, min(1536, (int(width or 896) // 8) * 8))
+    h_clamped = max(512, min(1536, (int(height or 1152) // 8) * 8))
+    if "6" in workflow_json and "inputs" in workflow_json["6"]:
+        workflow_json["6"]["inputs"]["width"] = w_clamped
+        workflow_json["6"]["inputs"]["height"] = h_clamped
+
+    eff_seed = int(seed) if (seed is not None and int(seed) > 0) else random.randint(1, 1125899906842624)
+    raw_steps_val = int(steps or 7)
+    eff_steps = 7 if raw_steps_val > 12 else max(4, raw_steps_val)
+    raw_cfg_val = float(cfg or 1.45)
+    # При cfg <= 1.05 ComfyUI пропускает negative_prompt; cfg 1.45 для DMD2 даёт уверенный отпор принтам/надписям без пережога
+    if raw_cfg_val <= 1.05 or raw_cfg_val > 2.2:
+        eff_cfg = 1.45
+        eff_steps = max(7, eff_steps)
+    else:
+        eff_cfg = raw_cfg_val
+    if "5" in workflow_json and "inputs" in workflow_json["5"]:
+        workflow_json["5"]["inputs"]["seed"] = eff_seed
+        workflow_json["5"]["inputs"]["steps"] = eff_steps
+        workflow_json["5"]["inputs"]["cfg"] = eff_cfg
+
+    # Подключаем работу с референсами в SDXL:
+    # 1) "faceswap" — перенос лица с референса в новую сцену (ReActor HyperSwap 256 + GFPGAN)
+    # 2) "inpaint"  — Auto-Inpaint по референсу: смена одежды ("outfit"), смена фона ("background") или силуэта ("person")
+    sdxl_ref_mode = str(sliders.get("sdxl_ref_mode") or "faceswap").strip().lower()
+    sdxl_face_target = str(sliders.get("sdxl_face_target") or "auto").strip().lower()
+    sdxl_inpaint_target = str(sliders.get("sdxl_inpaint_target") or "outfit").strip().lower()
+    faceswap_applied = False
+    inpaint_applied = False
+
+    if comfy_ref_names and sdxl_ref_mode in ("inpaint", "retouch", "outfit", "clothes"):
+        inpaint_caps = await _discover_sdxl_inpaint_capabilities()
+        if inpaint_caps.get("available"):
+            base_ref_fname = comfy_ref_names[0]
+            workflow_json["200"] = {"class_type": "LoadImage", "inputs": {"image": base_ref_fname}}
+            if inpaint_caps.get("has_resize_plus"):
+                workflow_json["201"] = {
+                    "class_type": "ImageResize+",
+                    "inputs": {
+                        "image": ["200", 0],
+                        "width": 1152,
+                        "height": 1152,
+                        "interpolation": "lanczos",
+                        "method": "keep proportion",
+                        "condition": "always",
+                        "multiple_of": 64,
+                    },
+                }
+            else:
+                workflow_json["201"] = {
+                    "class_type": "ImageScaleToTotalPixels",
+                    "inputs": {
+                        "image": ["200", 0],
+                        "upscale_method": "lanczos",
+                        "megapixels": 1.05,
+                    },
+                }
+
+            # 1) Сегментация человека на переднем плане
+            workflow_json["202"] = {
+                "class_type": "UltralyticsDetectorProvider",
+                "inputs": {"model_name": inpaint_caps["person_model"]},
+            }
+            workflow_json["203"] = {
+                "class_type": "SegmDetectorSEGS",
+                "inputs": {
+                    "segm_detector": ["202", 1],
+                    "image": ["201", 0],
+                    "threshold": 0.35,
+                    "dilation": 14 if sdxl_inpaint_target != "background" else 4,
+                    "crop_factor": 3.0,
+                    "drop_size": 16,
+                    "labels": "all",
+                },
+            }
+            person_segs_link = ["203", 0]
+            # Для одежды/силуэта берём главный передний план (чтобы не переодевать случайных людей в размытом фоне)
+            if inpaint_caps.get("has_ordered_filter") and sdxl_inpaint_target in ("outfit", "person"):
+                workflow_json["230"] = {
+                    "class_type": "ImpactSEGSOrderedFilter",
+                    "inputs": {
+                        "segs": ["203", 0],
+                        "target": "area(=w*h)",
+                        "order": True,
+                        "take_start": 0,
+                        "take_count": 1,
+                    },
+                }
+                person_segs_link = ["230", 0]
+
+            workflow_json["204"] = {
+                "class_type": "SegsToCombinedMask",
+                "inputs": {"segs": person_segs_link},
+            }
+
+            if sdxl_inpaint_target == "background":
+                workflow_json["209"] = {
+                    "class_type": "GrowMask",
+                    "inputs": {"mask": ["204", 0], "expand": 3, "tapered_corners": True},
+                }
+                workflow_json["210"] = {
+                    "class_type": "InvertMask",
+                    "inputs": {"mask": ["209", 0]},
+                }
+                workflow_json["211"] = {
+                    "class_type": "ImpactGaussianBlurMask",
+                    "inputs": {"mask": ["210", 0], "kernel_size": 15, "sigma": 6.0},
+                }
+            elif sdxl_inpaint_target == "person":
+                workflow_json["209"] = {
+                    "class_type": "GrowMask",
+                    "inputs": {"mask": ["204", 0], "expand": 16, "tapered_corners": True},
+                }
+                workflow_json["211"] = {
+                    "class_type": "ImpactGaussianBlurMask",
+                    "inputs": {"mask": ["209", 0], "kernel_size": 21, "sigma": 9.0},
+                }
+            else:
+                # Режим по умолчанию ("outfit"): меняем одежду/торс, защищая лицо, купол волос и кисти рук
+                workflow_json["209"] = {
+                    "class_type": "GrowMask",
+                    "inputs": {"mask": ["204", 0], "expand": 14, "tapered_corners": True},
+                }
+                protect_mask_link = None
+                if inpaint_caps.get("face_model"):
+                    workflow_json["205"] = {
+                        "class_type": "UltralyticsDetectorProvider",
+                        "inputs": {"model_name": inpaint_caps["face_model"]},
+                    }
+                    workflow_json["206"] = {
+                        "class_type": "BboxDetectorSEGS",
+                        "inputs": {
+                            "bbox_detector": ["205", 0],
+                            "image": ["201", 0],
+                            "threshold": 0.35,
+                            "dilation": 14,
+                            "crop_factor": 3.0,
+                            "drop_size": 10,
+                            "labels": "all",
+                        },
+                    }
+                    face_segs_link = ["206", 0]
+                    if inpaint_caps.get("has_ordered_filter"):
+                        workflow_json["231"] = {
+                            "class_type": "ImpactSEGSOrderedFilter",
+                            "inputs": {
+                                "segs": ["206", 0],
+                                "target": "area(=w*h)",
+                                "order": True,
+                                "take_start": 0,
+                                "take_count": 1,
+                            },
+                        }
+                        face_segs_link = ["231", 0]
+                    workflow_json["207"] = {
+                        "class_type": "SegsToCombinedMask",
+                        "inputs": {"segs": face_segs_link},
+                    }
+                    workflow_json["208"] = {
+                        "class_type": "GrowMask",
+                        "inputs": {"mask": ["207", 0], "expand": 18, "tapered_corners": True},
+                    }
+                    # Смещённый вверх широкий купол защищает макушку и причёску по бокам головы (безопасно при 0 лиц)
+                    workflow_json["220"] = {
+                        "class_type": "GrowMask",
+                        "inputs": {"mask": ["207", 0], "expand": 92, "tapered_corners": True},
+                    }
+                    workflow_json["221"] = {
+                        "class_type": "CropMask",
+                        "inputs": {"mask": ["220", 0], "x": 0, "y": 100, "width": 4096, "height": 4096},
+                    }
+                    workflow_json["222"] = {
+                        "class_type": "MaskComposite",
+                        "inputs": {
+                            "destination": ["208", 0],
+                            "source": ["221", 0],
+                            "x": 0,
+                            "y": 0,
+                            "operation": "or",
+                        },
+                    }
+                    protect_mask_link = ["222", 0]
+
+                if inpaint_caps.get("hand_model") and inpaint_caps.get("sam_model"):
+                    workflow_json["223"] = {
+                        "class_type": "UltralyticsDetectorProvider",
+                        "inputs": {"model_name": inpaint_caps["hand_model"]},
+                    }
+                    workflow_json["224"] = {
+                        "class_type": "BboxDetectorSEGS",
+                        "inputs": {
+                            "bbox_detector": ["223", 0],
+                            "image": ["201", 0],
+                            "threshold": 0.35,
+                            "dilation": 2,
+                            "crop_factor": 2.5,
+                            "drop_size": 10,
+                            "labels": "all",
+                        },
+                    }
+                    workflow_json["225"] = {
+                        "class_type": "SAMLoader",
+                        "inputs": {"model_name": inpaint_caps["sam_model"], "device_mode": "CPU"},
+                    }
+                    workflow_json["226"] = {
+                        "class_type": "SAMDetectorSegmented",
+                        "inputs": {
+                            "sam_model": ["225", 0],
+                            "segs": ["224", 0],
+                            "image": ["201", 0],
+                            "detection_hint": "center-1",
+                            "dilation": 2,
+                            "threshold": 0.88,
+                            "bbox_expansion": 6,
+                            "mask_hint_threshold": 0.7,
+                            "mask_hint_use_negative": "False",
+                        },
+                    }
+                    if protect_mask_link is not None:
+                        workflow_json["227"] = {
+                            "class_type": "MaskComposite",
+                            "inputs": {
+                                "destination": protect_mask_link,
+                                "source": ["226", 0],
+                                "x": 0,
+                                "y": 0,
+                                "operation": "or",
+                            },
+                        }
+                        protect_mask_link = ["227", 0]
+                    else:
+                        protect_mask_link = ["226", 0]
+
+                if protect_mask_link is not None:
+                    workflow_json["210"] = {
+                        "class_type": "SubtractMask",
+                        "inputs": {"mask1": ["209", 0], "mask2": protect_mask_link},
+                    }
+                    raw_inpaint_mask = ["210", 0]
+                else:
+                    raw_inpaint_mask = ["209", 0]
+
+                workflow_json["211"] = {
+                    "class_type": "ImpactGaussianBlurMask",
+                    "inputs": {"mask": raw_inpaint_mask, "kernel_size": 21, "sigma": 9.0},
+                }
+
+            model_for_inpaint = ["103", 0]
+            if inpaint_caps.get("has_diff_diffusion"):
+                workflow_json["214"] = {
+                    "class_type": "DifferentialDiffusion",
+                    "inputs": {"model": ["103", 0], "strength": 1.0},
+                }
+                model_for_inpaint = ["214", 0]
+
+            workflow_json["215"] = {
+                "class_type": "InpaintModelConditioning",
+                "inputs": {
+                    "positive": ["85", 0],
+                    "negative": ["4", 0],
+                    "vae": ["127", 2],
+                    "pixels": ["201", 0],
+                    "mask": ["211", 0],
+                    "noise_mask": True,
+                },
+            }
+
+            if "6" in workflow_json:
+                del workflow_json["6"]
+            inpaint_steps = max(7, eff_steps)
+            inpaint_cfg = max(1.2, eff_cfg)
+            try:
+                inpaint_denoise = round(max(0.45, min(0.98, float(sliders.get("inpaint_denoise", 0.94)))), 2)
+            except Exception:
+                inpaint_denoise = 0.94
+            workflow_json["5"]["inputs"]["model"] = model_for_inpaint
+            workflow_json["5"]["inputs"]["positive"] = ["215", 0]
+            workflow_json["5"]["inputs"]["negative"] = ["215", 1]
+            workflow_json["5"]["inputs"]["latent_image"] = ["215", 2]
+            workflow_json["5"]["inputs"]["steps"] = inpaint_steps
+            workflow_json["5"]["inputs"]["cfg"] = inpaint_cfg
+            workflow_json["5"]["inputs"]["denoise"] = inpaint_denoise
+
+            # Попиксельное сведение обратно поверх исходного кадра, чтобы немаскированный фон/лицо не теряли резкость в VAE
+            post_inpaint_link = ["41", 0]
+            if "123" in workflow_json and "inputs" in workflow_json["123"]:
+                workflow_json["123"]["inputs"]["image"] = ["41", 0]
+                post_inpaint_link = ["123", 0]
+            workflow_json["216"] = {
+                "class_type": "ImageCompositeMasked",
+                "inputs": {
+                    "destination": ["201", 0],
+                    "source": post_inpaint_link,
+                    "x": 0,
+                    "y": 0,
+                    "resize_source": True,
+                    "mask": ["211", 0],
+                },
+            }
+            final_inpaint_img = ["216", 0]
+
+            # Если прикреплён 2-й референс при замене силуэта ("person"), переносим волосы/типаж через IP-Adapter + лицо через ReActor
+            if len(comfy_ref_names) >= 2 and sdxl_inpaint_target == "person":
+                reactor_caps = await _discover_sdxl_reactor_capabilities()
+                try:
+                    raw_inpaint_ipa_w = float(sliders.get("ipadapter_weight", 0.62))
+                except Exception:
+                    raw_inpaint_ipa_w = 0.62
+                if reactor_caps.get("ipadapter_available") and len(comfy_ref_bytes) >= 2 and raw_inpaint_ipa_w > 0.02:
+                    inpaint_ipa_w = round(max(0.05, min(0.95, raw_inpaint_ipa_w)), 2)
+                    ipa_bytes_2 = await asyncio.to_thread(_crop_head_portrait_for_ipadapter, comfy_ref_bytes[1])
+                    ipa_name_2 = (
+                        await upload_reference_image_to_comfy(ipa_bytes_2)
+                        if ipa_bytes_2 is not comfy_ref_bytes[1]
+                        else comfy_ref_names[1]
+                    ) or comfy_ref_names[1]
+                    workflow_json["250"] = {"class_type": "LoadImage", "inputs": {"image": ipa_name_2}}
+                    workflow_json["251"] = {
+                        "class_type": "PrepImageForClipVision",
+                        "inputs": {
+                            "image": ["250", 0],
+                            "interpolation": "LANCZOS",
+                            "crop_position": "top",
+                            "sharpening": 0.05,
+                        },
+                    }
+                    workflow_json["252"] = {
+                        "class_type": "CLIPVisionLoader",
+                        "inputs": {"clip_name": reactor_caps["clip_vision_model"]},
+                    }
+                    workflow_json["253"] = {
+                        "class_type": "IPAdapterModelLoader",
+                        "inputs": {"ipadapter_file": reactor_caps["ipadapter_face_model"]},
+                    }
+                    workflow_json["254"] = {
+                        "class_type": "IPAdapterAdvanced",
+                        "inputs": {
+                            "model": ["103", 0],
+                            "ipadapter": ["253", 0],
+                            "clip_vision": ["252", 0],
+                            "image": ["251", 0],
+                            "weight": inpaint_ipa_w,
+                            "weight_type": "ease out",
+                            "combine_embeds": "concat",
+                            "start_at": 0.0,
+                            "end_at": 0.85,
+                            "embeds_scaling": "K+V",
+                        },
+                    }
+                    if "214" in workflow_json and "inputs" in workflow_json["214"]:
+                        workflow_json["214"]["inputs"]["model"] = ["254", 0]
+                    else:
+                        workflow_json["5"]["inputs"]["model"] = ["254", 0]
+                    workflow_json["5"]["inputs"]["cfg"] = max(1.35, inpaint_cfg)
+                if reactor_caps.get("available"):
+                    inpaint_swap_m = reactor_caps.get("swap_model", "inswapper_128.onnx")
+                    default_inp_vis = 0.30 if ("hyperswap" in inpaint_swap_m or "256" in inpaint_swap_m) else 0.75
+                    try:
+                        raw_inp_vis = float(sliders.get("face_restore_visibility", default_inp_vis))
+                    except Exception:
+                        raw_inp_vis = default_inp_vis
+                    inpaint_rest_model = (
+                        "none" if raw_inp_vis <= 0.02 else reactor_caps.get("face_restore_model", "none")
+                    )
+                    inpaint_rest_vis = round(max(0.05, min(0.90, raw_inp_vis)), 2) if raw_inp_vis > 0.02 else 0.1
+                    workflow_json["240"] = {"class_type": "LoadImage", "inputs": {"image": comfy_ref_names[1]}}
+                    if reactor_caps.get("has_opt"):
+                        workflow_json["241"] = {
+                            "class_type": "ReActorOptions",
+                            "inputs": {
+                                "input_faces_order": "large-small",
+                                "input_faces_index": "0",
+                                "detect_gender_input": "no",
+                                "source_faces_order": "large-small",
+                                "source_faces_index": "0",
+                                "detect_gender_source": "no",
+                                "console_log_level": 1,
+                            },
+                        }
+                        workflow_json["242"] = {
+                            "class_type": "ReActorFaceSwapOpt",
+                            "inputs": {
+                                "enabled": True,
+                                "input_image": final_inpaint_img,
+                                "source_image": ["240", 0],
+                                "options": ["241", 0],
+                                "swap_model": inpaint_swap_m,
+                                "facedetection": "retinaface_resnet50",
+                                "face_restore_model": inpaint_rest_model,
+                                "face_restore_visibility": inpaint_rest_vis,
+                                "codeformer_weight": 0.5,
+                            },
+                        }
+                        final_inpaint_img = ["242", 0]
+                        faceswap_applied = True
+
+            if "131" in workflow_json and "inputs" in workflow_json["131"]:
+                workflow_json["131"]["inputs"]["images"] = final_inpaint_img
+            inpaint_applied = True
+            logging.info(
+                f"[SDXL Studio] Injected Auto-Inpaint (target={sdxl_inpaint_target}, "
+                f"steps={inpaint_steps}, cfg={inpaint_cfg}, denoise={inpaint_denoise}, second_ref_face={faceswap_applied})"
+            )
+        else:
+            logging.warning("[SDXL Studio] Auto-Inpaint requested, but segmentation nodes are unavailable; falling back to FaceSwap")
+            sdxl_ref_mode = "faceswap"
+
+    if comfy_ref_names and not inpaint_applied and sdxl_ref_mode in ("faceswap", "face", ""):
+        reactor_caps = await _discover_sdxl_reactor_capabilities()
+        has_char_lora = any(
+            str(lora_nodes.get(k, {}).get("type") or "").lower() == "character"
+            for k in active_lora_strengths
+        )
+        try:
+            raw_ipa_weight = float(sliders.get("ipadapter_weight", 0.65))
+        except Exception:
+            raw_ipa_weight = 0.65
+        ipadapter_applied = False
+        if (
+            reactor_caps.get("ipadapter_available")
+            and len(comfy_ref_names) == 1
+            and sdxl_face_target in ("auto", "both")
+            and not has_char_lora
+            and comfy_ref_bytes
+            and raw_ipa_weight > 0.02
+        ):
+            ipa_crop_bytes = await asyncio.to_thread(_crop_head_portrait_for_ipadapter, comfy_ref_bytes[0])
+            ipa_ref_fname = (
+                await upload_reference_image_to_comfy(ipa_crop_bytes)
+                if ipa_crop_bytes is not comfy_ref_bytes[0]
+                else comfy_ref_names[0]
+            ) or comfy_ref_names[0]
+            ipa_weight = round(max(0.05, min(0.95, raw_ipa_weight)), 2)
+            workflow_json["250"] = {"class_type": "LoadImage", "inputs": {"image": ipa_ref_fname}}
+            workflow_json["251"] = {
+                "class_type": "PrepImageForClipVision",
+                "inputs": {
+                    "image": ["250", 0],
+                    "interpolation": "LANCZOS",
+                    "crop_position": "top",
+                    "sharpening": 0.05,
+                },
+            }
+            workflow_json["252"] = {
+                "class_type": "CLIPVisionLoader",
+                "inputs": {"clip_name": reactor_caps["clip_vision_model"]},
+            }
+            workflow_json["253"] = {
+                "class_type": "IPAdapterModelLoader",
+                "inputs": {"ipadapter_file": reactor_caps["ipadapter_face_model"]},
+            }
+            workflow_json["254"] = {
+                "class_type": "IPAdapterAdvanced",
+                "inputs": {
+                    "model": workflow_json["5"]["inputs"]["model"],
+                    "ipadapter": ["253", 0],
+                    "clip_vision": ["252", 0],
+                    "image": ["251", 0],
+                    "weight": ipa_weight,
+                    "weight_type": "ease out",
+                    "combine_embeds": "concat",
+                    "start_at": 0.0,
+                    "end_at": 0.85,
+                    "embeds_scaling": "K+V",
+                },
+            }
+            workflow_json["5"]["inputs"]["model"] = ["254", 0]
+            eff_steps = max(7, eff_steps)
+            eff_cfg = max(1.35, eff_cfg)
+            workflow_json["5"]["inputs"]["steps"] = eff_steps
+            workflow_json["5"]["inputs"]["cfg"] = eff_cfg
+            ipadapter_applied = True
+            logging.info(
+                f"[SDXL Studio] Injected IP-Adapter Plus Face ({reactor_caps['ipadapter_face_model']}, "
+                f"weight={ipa_weight}, steps={eff_steps}, cfg={eff_cfg})"
+            )
+
+        if reactor_caps.get("available"):
+            swap_model = reactor_caps.get("swap_model", "inswapper_128.onnx")
+            default_restore_vis = 0.30 if ("hyperswap" in swap_model or "256" in swap_model) else 0.75
+            try:
+                raw_restore_vis = float(sliders.get("face_restore_visibility", default_restore_vis))
+            except Exception:
+                raw_restore_vis = default_restore_vis
+            restore_model = (
+                "none" if raw_restore_vis <= 0.02 else reactor_caps.get("face_restore_model", "none")
+            )
+            restore_vis = round(max(0.05, min(0.90, raw_restore_vis)), 2) if raw_restore_vis > 0.02 else 0.1
+
+            prev_img_link = ["41", 0]
+            if len(comfy_ref_names) >= 2:
+                swap_specs = [
+                    (comfy_ref_names[0], "left-right", "0"),
+                    (comfy_ref_names[1], "left-right", "1"),
+                ]
+            else:
+                target_map = {
+                    "left": ("left-right", "0"),
+                    "right": ("right-left", "0"),
+                    "second": ("large-small", "1"),
+                    "both": ("large-small", "0,1"),
+                    "auto": ("large-small", "0"),
+                }
+                t_order, t_idx = target_map.get(sdxl_face_target, ("large-small", "0"))
+                swap_specs = [(comfy_ref_names[0], t_order, t_idx)]
+
+            for idx_ref, (ref_fname, faces_order_str, faces_idx_str) in enumerate(swap_specs):
+                load_nid = str(201 + idx_ref * 3)
+                opt_nid = str(202 + idx_ref * 3)
+                swap_nid = str(203 + idx_ref * 3)
+                workflow_json[load_nid] = {
+                    "class_type": "LoadImage",
+                    "inputs": {"image": ref_fname},
+                }
+                if reactor_caps.get("has_opt"):
+                    workflow_json[opt_nid] = {
+                        "class_type": "ReActorOptions",
+                        "inputs": {
+                            "input_faces_order": faces_order_str,
+                            "input_faces_index": faces_idx_str,
+                            "detect_gender_input": "no",
+                            "source_faces_order": "large-small",
+                            "source_faces_index": "0",
+                            "detect_gender_source": "no",
+                            "console_log_level": 1,
+                        },
+                    }
+                    workflow_json[swap_nid] = {
+                        "class_type": "ReActorFaceSwapOpt",
+                        "inputs": {
+                            "enabled": True,
+                            "input_image": prev_img_link,
+                            "source_image": [load_nid, 0],
+                            "options": [opt_nid, 0],
+                            "swap_model": swap_model,
+                            "facedetection": "retinaface_resnet50",
+                            "face_restore_model": restore_model,
+                            "face_restore_visibility": restore_vis,
+                            "codeformer_weight": 0.5,
+                        },
+                    }
+                else:
+                    workflow_json[swap_nid] = {
+                        "class_type": "ReActorFaceSwap",
+                        "inputs": {
+                            "enabled": True,
+                            "input_image": prev_img_link,
+                            "source_image": [load_nid, 0],
+                            "swap_model": swap_model,
+                            "facedetection": "retinaface_resnet50",
+                            "face_restore_model": restore_model,
+                            "face_restore_visibility": restore_vis,
+                            "codeformer_weight": 0.5,
+                            "detect_gender_input": "no",
+                            "detect_gender_source": "no",
+                            "input_faces_index": faces_idx_str,
+                            "source_faces_index": "0",
+                            "console_log_level": 1,
+                        },
+                    }
+                prev_img_link = [swap_nid, 0]
+
+            if "123" in workflow_json and "inputs" in workflow_json["123"]:
+                workflow_json["123"]["inputs"]["image"] = prev_img_link
+            elif "131" in workflow_json and "inputs" in workflow_json["131"]:
+                workflow_json["131"]["inputs"]["images"] = prev_img_link
+            faceswap_applied = True
+            logging.info(
+                f"[SDXL Studio] Injected ReActor FaceSwap ({swap_model} + {restore_model}, "
+                f"refs={len(swap_specs)}, target={sdxl_face_target})"
+            )
+        else:
+            logging.warning("[SDXL Studio] Reference image provided, but ReActor nodes not available in ComfyUI")
+
+    clean_user_prompt = (prompt or persona_prompt or "").strip()
+    custom_title = str(kwargs.get("custom_title") or "").strip()
+    custom_description = str(kwargs.get("custom_description") or "").strip()
+
+    logging.info(
+        f"[SDXL Studio] Generating on local ComfyUI with {ckpt_model} "
+        f"(steps={eff_steps}, cfg={eff_cfg}, size={w_clamped}x{h_clamped}, "
+        f"loras={list(active_lora_strengths.keys())}, inpaint={inpaint_applied}, faceswap={faceswap_applied})"
+    )
+    img_data, orig_filename = await generate_image_workflow(workflow_json)
+    if not img_data:
+        raise Exception("SDXL image generation failed")
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    raw_prefix = str(kwargs.get("filename_prefix") or "").strip()
+    safe_prefix = re.sub(r"[^a-zA-Z0-9_-]", "", raw_prefix)[:32]
+    match = re.search(r"_(\d{5})_\.png$", orig_filename or "")
+    base_fn = f"SDXL_{match.group(1)}_{timestamp}.png" if match else f"SDXL_{timestamp}.png"
+    filename = f"{safe_prefix}_{base_fn}" if safe_prefix else base_fn
+
+    raw_subfolder = str(kwargs.get("subfolder") or "").strip()
+    safe_subfolder = sanitize_story_slug(raw_subfolder) if raw_subfolder else ""
+
+    neutral_title, neutral_description = "", ""
+    if custom_title or custom_description:
+        neutral_title = custom_title
+        neutral_description = custom_description
+    elif clean_user_prompt:
+        try:
+            neutral_title, neutral_description = await asyncio.wait_for(
+                generate_neutral_description_and_title(ctx, clean_user_prompt),
+                timeout=6.0,
+            )
+        except Exception as e:
+            logging.warning(f"[SDXL Studio] generate_neutral_description_and_title timed out or failed: {e}")
+
+    if not neutral_description:
+        sentences = [s.strip() for s in clean_user_prompt.split(".") if s.strip()]
+        neutral_description = sentences[0] if sentences else (clean_user_prompt[:120] or "Generated image")
+
+    if neutral_title:
+        img_title = neutral_title
+    else:
+        words = [w for w in neutral_description.replace("<", "").replace(">", "").split() if not w.startswith("<")]
+        img_title = _clean_fallback_title(words, max_words=4) or "SDXL Creation"
+
+    readme_content = f"# {img_title}\n\n{neutral_description}\n"
+    if clean_user_prompt:
+        readme_content += f"\n<!-- prompt: {clean_user_prompt} -->\n"
+
+    if save_local:
+        try:
+            rel_gen = f"generated/{safe_subfolder}" if safe_subfolder else "generated"
+            target_dir = resolve_local_target_dir(ctx, rel_gen)
+            os.makedirs(target_dir, exist_ok=True)
+            target_img_path = os.path.join(target_dir, filename)
+            with open(target_img_path, "wb") as f:
+                f.write(img_data)
+            base_name = os.path.splitext(filename)[0]
+            with open(os.path.join(target_dir, f"{base_name}.Readme.md"), "w", encoding="utf-8") as f:
+                f.write(readme_content)
+            logging.info(f"[SDXL Studio] Saved generated image locally on AI node: {target_img_path}")
+
+            home_dir = os.path.expanduser("~")
+            omc_dir = os.path.join(home_dir, "OnMyChat", *rel_gen.split("/"))
+            if os.path.isdir(os.path.join(home_dir, "OnMyChat")) and os.path.abspath(target_dir) != os.path.abspath(omc_dir):
+                os.makedirs(omc_dir, exist_ok=True)
+                with open(os.path.join(omc_dir, filename), "wb") as f:
+                    f.write(img_data)
+                with open(os.path.join(omc_dir, f"{base_name}.Readme.md"), "w", encoding="utf-8") as f:
+                    f.write(readme_content)
+        except Exception as e:
+            logging.warning(f"[SDXL Studio] Local file save failed: {e}")
+
+    return filename, img_title, neutral_description, img_data
+
+
+async def generate_krea2_image(
+    ctx: UserContext,
+    prompt: str,
+    persona_prompt: str = "",
+    persona_lora: str | None = None,
+    persona_id: str | None = None,
+    persona_name: str | None = None,
+    force_avatar_ref: bool = False,
+    sliders: dict | None = None,
+    reference_image: str | None = None,
+    reference_images: list[str] | None = None,
+    width: int = 896,
+    height: int = 1152,
+    steps: int = 6,
+    cfg: float = 1.0,
+    seed: int | None = None,
+    upload_storage: bool = True,
+    save_local: bool = False,
+    **kwargs
+) -> tuple[str, str, str, bytes]:
+    """Генерация изображения через универсальный пайплайн Creative Studio (Krea 2 / Anima или локальный SDXL)."""
+    has_any_ref = bool(reference_image or (isinstance(reference_images, list) and any(reference_images)))
+    if not prompt and not persona_prompt and not has_any_ref:
+        raise Exception("Укажите промпт или выберите персону для генерации.")
+
+    if isinstance(sliders, dict) and is_sdxl_base_model(sliders.get("base_model")):
+        return await generate_sdxl_studio_image(
+            ctx=ctx,
+            prompt=prompt,
+            persona_prompt=persona_prompt,
+            persona_lora=persona_lora,
+            persona_id=persona_id,
+            persona_name=persona_name,
+            sliders=sliders,
+            reference_image=reference_image,
+            reference_images=reference_images,
+            width=width,
+            height=height,
+            steps=steps,
+            cfg=cfg,
+            seed=seed,
+            save_local=save_local,
+            **kwargs,
+        )
+
+    # Разрешаем список референсных изображений (до 2 штук)
+    raw_refs = []
+    if reference_images and isinstance(reference_images, list):
+        raw_refs.extend([r for r in reference_images if r])
+    elif reference_image:
+        raw_refs.append(reference_image)
+
+    comfy_ref_names = []
+    for ref_item in raw_refs[:2]:
+        ref_bytes = await resolve_reference_image_bytes(ctx, ref_item)
+        if ref_bytes:
+            c_name = await upload_reference_image_to_comfy(ref_bytes)
+            if c_name:
+                comfy_ref_names.append(c_name)
+
+    comfy_ref_name = comfy_ref_names[0] if comfy_ref_names else None
+
+    # Объединяем сюжет и словесный паспорт персоны.
+    # Промпт сюжета (ракурс, сцена, динамика) ставим ПЕРВЫМ, чтобы композиция кадра
+    # определяла начальный латентный шум и не схлопывалась в крупный портрет.
+    full_parts = []
+    if prompt and prompt.strip():
+        full_parts.append(prompt.strip())
+    if persona_prompt and persona_prompt.strip():
+        # Срезаем префиксы "portrait of / headshot of / close-up of" из паспорта,
+        # если задан сюжетный промпт, чтобы сохранить масштаб и ракурс сцены
+        cleaned_persona = persona_prompt.strip()
+        if prompt and prompt.strip():
+            cleaned_persona = re.sub(r'^(a\s+)?(portrait|close-up|headshot|bust\s+portrait)\s+of\s+', '', cleaned_persona, flags=re.IGNORECASE)
+        full_parts.append(cleaned_persona)
+
+    # Применяем микро-слайдеры параметров
+    sliders = sliders or {}
+    detail_val = float(sliders.get("detail", 0.5))
+    if detail_val >= 0.7:
+        full_parts.append("ultra-detailed, natural skin pores, fine textures, sharp focus, 8k uhd")
+    elif detail_val <= 0.3:
+        full_parts.append("soft focus, subtle cinematic glow, smooth film look")
+
+    age_val = float(sliders.get("age", 0.0))
+    if age_val > 0.3:
+        full_parts.append("mature look, elegant distinguished presence")
+    elif age_val < -0.3:
+        full_parts.append("youthful appearance, fresh vibrant look")
+
+    weight_val = float(sliders.get("weight", 0.0))
+    if weight_val > 0.3:
+        full_parts.append("curvy figure, athletic build")
+    elif weight_val < -0.3:
+        full_parts.append("slender build, delicate silhouette")
+
+    style_preset = sliders.get("style", "photorealistic")
+    active_lora = None
+    lora_strength = 0.8
+
+    target_loras = []
+
+    # 1. Art Styles (Loaded dynamically from krea_presets.json)
+    STYLE_CONFIGS = get_krea_style_configs()
+
+    style_aliases = {"art": "semireal", "3d": "pixar", "cyberpunk": "neon"}
+
+    if "styles" in sliders and sliders["styles"] is not None:
+        raw_styles = sliders["styles"]
+    else:
+        raw_styles = sliders.get("style") or []
+    if isinstance(raw_styles, str):
+        style_list = [s.strip() for s in raw_styles.split(",") if s.strip()]
+    elif isinstance(raw_styles, (list, tuple)):
+        style_list = [str(s).strip() for s in raw_styles if str(s).strip()]
+    else:
+        style_list = []
+
+    style_list = [style_aliases.get(s, s) for s in style_list if s and s != "none"]
+    style_weights = sliders.get("style_weights") if isinstance(sliders.get("style_weights"), dict) else {}
+
+    for st_id in style_list:
+        if st_id in STYLE_CONFIGS:
+            cfg_style = STYLE_CONFIGS[st_id]
+            if cfg_style.get("trigger") and cfg_style["trigger"] not in full_parts:
+                full_parts.append(cfg_style["trigger"])
+            if cfg_style.get("lora"):
+                if st_id in style_weights and style_weights[st_id] is not None:
+                    s_weight = float(style_weights[st_id])
+                elif sliders.get("style_strength") is not None:
+                    s_weight = float(sliders.get("style_strength"))
+                else:
+                    s_weight = float(cfg_style.get("strength", 0.8))
+                target_loras.append((cfg_style["lora"], s_weight))
+                logging.info(f"[Krea2] Applying Style LoRA: {st_id} ({cfg_style['lora']}, weight={s_weight})")
+
+    # 2. Character Archetypes & Likeness LoRAs (Loaded dynamically from krea_presets.json)
+    ARCHETYPE_CONFIGS = get_krea_archetype_configs()
+    archetype_weights = sliders.get("archetype_weights") if isinstance(sliders.get("archetype_weights"), dict) else {}
+
+    if "archetypes" in sliders and sliders["archetypes"] is not None:
+        raw_archetypes = sliders["archetypes"]
+    else:
+        raw_archetypes = sliders.get("archetype") or []
+    if isinstance(raw_archetypes, str):
+        archetype_list = [a.strip() for a in raw_archetypes.split(",") if a.strip()]
+    elif isinstance(raw_archetypes, (list, tuple)):
+        archetype_list = [str(a).strip() for a in raw_archetypes if str(a).strip()]
+    else:
+        archetype_list = []
+
+    # Parse LoRA tags and archetypes directly from prompt text
+    # 1. Standard WebUI syntax: <lora:name:weight> or <lora:name>
+    lora_syntax_matches = re.findall(r"<lora:([^:>]+)(?::([0-9.]+))?>", prompt or "", flags=re.IGNORECASE)
+    for lora_match_name, lora_match_weight in lora_syntax_matches:
+        w = float(lora_match_weight) if lora_match_weight else 0.8
+        target_loras.append((lora_match_name.strip(), w))
+        logging.info(f"[Krea2] Extracted LoRA from prompt syntax: '{lora_match_name.strip()}' (weight={w})")
+
+    # 2. Archetype and style tags: <ada>, <domi>, <anime>, <pinup>, etc.
+    general_tags = re.findall(r"<([^>:]+)>", prompt or "")
+    for tag in general_tags:
+        t_clean = tag.strip().lower()
+        if t_clean in STYLE_CONFIGS and t_clean not in style_list:
+            style_list.append(t_clean)
+            cfg_style = STYLE_CONFIGS[t_clean]
+            if cfg_style.get("trigger") and cfg_style["trigger"] not in full_parts:
+                full_parts.append(cfg_style["trigger"])
+            if cfg_style.get("lora"):
+                s_weight = float(style_weights[t_clean]) if (t_clean in style_weights and style_weights[t_clean] is not None) else float(cfg_style.get("strength", 0.8))
+                target_loras.append((cfg_style["lora"], s_weight))
+            logging.info(f"[Krea2] Extracted style from prompt tag <{t_clean}>: {cfg_style['lora']}")
+        elif t_clean in ARCHETYPE_CONFIGS and t_clean not in archetype_list:
+            archetype_list.append(t_clean)
+            logging.info(f"[Krea2] Extracted archetype from prompt tag <{t_clean}>")
+        elif t_clean in ["ada_wong", "ada"] and "ada" not in archetype_list:
+            archetype_list.append("ada")
+            logging.info(f"[Krea2] Extracted archetype <ada> from tag <{t_clean}>")
+        elif t_clean in ["domi", "domik", "june"] and "domi" not in archetype_list:
+            archetype_list.append("domi")
+            logging.info(f"[Krea2] Extracted archetype <domi> from tag <{t_clean}>")
+        elif t_clean.endswith(".safetensors"):
+            target_loras.append((t_clean, 0.8))
+            logging.info(f"[Krea2] Extracted custom LoRA file tag <{t_clean}>")
+
+    # Also support style_preset as archetype for backward compatibility
+    for st in list(style_list):
+        if st in ARCHETYPE_CONFIGS and st not in archetype_list:
+            archetype_list.append(st)
+        elif st in ["goth"] and "alt" not in archetype_list:
+            archetype_list.append("alt")
+
+    # target_loras already contains any active style LoRAs, append archetypes
+    for arch_id in archetype_list:
+        if arch_id in ARCHETYPE_CONFIGS:
+            cfg_arch = ARCHETYPE_CONFIGS[arch_id]
+            if cfg_arch.get("trigger") and cfg_arch["trigger"] not in full_parts:
+                full_parts.append(cfg_arch["trigger"])
+            if cfg_arch.get("lora"):
+                if arch_id in archetype_weights and archetype_weights[arch_id] is not None:
+                    a_weight = float(archetype_weights[arch_id])
+                elif sliders.get("archetype_strength") is not None:
+                    a_weight = float(sliders.get("archetype_strength"))
+                else:
+                    a_weight = float(cfg_arch.get("strength", 0.8))
+                target_loras.append((cfg_arch["lora"], a_weight))
+                logging.info(f"[Krea2] Applying Character Archetype: {arch_id} ({cfg_arch['lora']}, weight={a_weight})")
+
+    # Persona LoRA if requested explicitly
+    if persona_lora and str(persona_lora).strip():
+        plora = str(persona_lora).strip()
+        if not any(t[0] == plora for t in target_loras):
+            target_loras.append((plora, 0.8))
+            logging.info(f"[Krea2] Applying Persona LoRA: {plora} (weight=0.8)")
+
+    # Custom persona LoRA if requested explicitly
+    if sliders.get("lora"):
+        custom_lora = sliders.get("lora")
+        custom_weight = float(sliders.get("lora_weight", 0.7))
+        target_loras.append((custom_lora, custom_weight))
+        logging.info(f"[Krea2] Applying Custom Slider LoRA: {custom_lora} (weight={custom_weight})")
+
+    positive_text = ", ".join(full_parts)
+    no_signs_krea = (
+        "text, english text, print shirt, printed clothes, graphic tee, shirt print, text on clothes, "
+        "logo, brand logo, sign, signage, street sign, shop sign, storefront sign, neon sign, poster, "
+        "placard, billboard, banner, graffiti, advertisement, lettering, typography, written words, inscription, "
+        "gibberish text, garbled letters, caption, subtitles, speech bubble, label, watermark, signature"
+    )
+    negative_text = f"{no_signs_krea}, wet skin, blurry, bad anatomy, bad hands, low quality, distorted, extra limbs, artifacts"
+
+    if seed is None:
+        seed = random.randint(1, 1125899906842624)
+
+    unet_model = SETTINGS.get("KREA_MODEL", "CyberRealistic_Krea2_V4.0_BF16.safetensors")
+    clip_model = SETTINGS.get("KREA_CLIP", "qwen3-vl-4b-heretic.safetensors")
+    vae_model = SETTINGS.get("KREA_VAE", "qwen_image_vae.safetensors")
+
+    available_loras = []
+    use_remote_modal = bool(str(SETTINGS.get("MODAL_COMFY_URL") or "").strip())
+    global _krea_model_cache
+    if "_krea_model_cache" not in globals():
+        _krea_model_cache = None
+
+    if not use_remote_modal and _krea_model_cache is None:
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=2.0)) as session:
+                async with session.get(f"{COMFY_API_URL}/object_info") as resp:
+                    if resp.status == 200:
+                        obj_info = await resp.json()
+                        unets = obj_info.get("UNETLoader", {}).get("input", {}).get("required", {}).get("unet_name", [[]])[0]
+                        detected_unet = next((u for u in unets if "krea" in str(u).lower()), unet_model)
+                        clips = obj_info.get("CLIPLoader", {}).get("input", {}).get("required", {}).get("clip_name", [[]])[0]
+                        if "qwen3-vl-4b-heretic.safetensors" in clips:
+                            detected_clip = "qwen3-vl-4b-heretic.safetensors"
+                        elif any("qwen" in str(c).lower() for c in clips):
+                            detected_clip = next(c for c in clips if "qwen" in str(c).lower())
+                        else:
+                            detected_clip = clip_model
+                        loras = obj_info.get("LoraLoader", {}).get("input", {}).get("required", {}).get("lora_name", [[]])[0]
+
+                        has_krea2_edit = ("Krea2EditModelPatch" in obj_info) and ("Krea2EditGroundedEncode" in obj_info)
+
+                        _krea_model_cache = {
+                            "unets": unets or [],
+                            "clip": detected_clip,
+                            "loras": loras or [],
+                            "has_krea2_edit": has_krea2_edit
+                        }
+        except Exception:
+            pass
+
+    available_unets = (_krea_model_cache.get("unets", []) if (_krea_model_cache and not use_remote_modal) else [])
+    if _krea_model_cache and not use_remote_modal:
+        clip_model = _krea_model_cache.get("clip", clip_model)
+        available_loras = _krea_model_cache.get("loras", [])
+
+    requested_base = (sliders.get("base_model") or sliders.get("model_mode") or "realism").lower() if sliders else "realism"
+    explicit_cfg = sliders.get("cfg") if isinstance(sliders, dict) and sliders.get("cfg") is not None else (cfg if cfg is not None and float(cfg) != 1.0 else None)
+    explicit_steps = sliders.get("steps") if isinstance(sliders, dict) and sliders.get("steps") is not None else (steps if steps is not None and int(steps) != 6 else None)
+    clip_type = "krea2"
+    sampler_name = "euler"
+    scheduler = "simple"
+    if requested_base in ["anima", "cyberrealistic_anima", "animaturbo", "anime"]:
+        matched_unet = next((u for u in available_unets if "aesthetic" in str(u).lower()), None)
+        if not matched_unet:
+            matched_unet = next((u for u in available_unets if "anima" in str(u).lower()), "anima_aestheticV11.safetensors")
+        unet_model = matched_unet
+        clip_model = "cyberrealisticAnima_v70Turbo_txt.safetensors"
+        clip_type = "qwen_image"
+        sampler_name = "er_sde"
+        scheduler = "simple"
+        cfg = float(explicit_cfg) if explicit_cfg is not None and float(explicit_cfg) >= 1.0 else 3.0
+        steps = int(explicit_steps) if explicit_steps is not None and int(explicit_steps) >= 8 else 25
+        logging.info(f"[Krea2] Base model: Official Anima Aesthetic (Model: {unet_model}, sampler={sampler_name}, steps={steps}, cfg={cfg})")
+    elif requested_base in ["semi_realism", "muse", "semirealism", "semi-realism", "yogi"]:
+        matched_unet = next((u for u in available_unets if "muse" in str(u).lower() or "yogi" in str(u).lower()), "museByStableYogi_v35Int8Extended.safetensors")
+        unet_model = matched_unet
+        sampler_name = "euler"
+        scheduler = "simple"
+        cfg = float(explicit_cfg) if explicit_cfg is not None and float(explicit_cfg) >= 1.0 else 2.0
+        steps = int(explicit_steps) if explicit_steps is not None and int(explicit_steps) >= 4 else 12
+        logging.info(f"[Krea2] Base model: Semi-Realism (Muse by Stable Yogi: {unet_model}, sampler={sampler_name}, steps={steps}, cfg={cfg})")
+    else:
+        matched_unet = next((u for u in available_unets if "cyber" in str(u).lower() or "realistic" in str(u).lower()), "CyberRealistic_Krea2_V4.0_BF16.safetensors")
+        unet_model = matched_unet
+        sampler_name = "euler"
+        scheduler = "simple"
+        cfg = float(explicit_cfg) if explicit_cfg is not None and float(explicit_cfg) >= 1.0 else 1.5
+        steps = int(explicit_steps) if explicit_steps is not None and int(explicit_steps) >= 4 else 12
+        logging.info(f"[Krea2] Base model: Realism (CyberRealistic: {unet_model}, sampler={sampler_name}, steps={steps}, cfg={cfg})")
+
+    # Match target_loras against available_loras
+    resolved_lora_chain = []
+    for lora_file, strength in target_loras:
+        matched = None
+        for al in available_loras:
+            if lora_file.lower() in str(al).lower():
+                matched = al
+                break
+        if matched:
+            resolved_lora_chain.append((matched, strength))
+        elif not available_loras:
+            # Running remotely via Modal or headless runner without local object_info discovery
+            resolved_lora_chain.append((lora_file, strength))
+            logging.info(f"[Krea2] Passing LoRA '{lora_file}' directly (strength={strength}) to remote ComfyUI")
+        else:
+            logging.warning(f"[Krea2] LoRA '{lora_file}' not found in ComfyUI available LoRAs — skipping LoraLoader node.")
+
+    is_anima_base = requested_base in ["anima", "cyberrealistic_anima", "animaturbo", "anime"]
+    has_krea2_edit = (
+        False
+        if is_anima_base
+        else (_krea_model_cache.get("has_krea2_edit", False) if _krea_model_cache else use_remote_modal)
+    )
+
+    # Если есть референсное лицо и доступен krea2-identity-edit, подключаем его родную LoRA
+    if comfy_ref_name and has_krea2_edit:
+        lora_pool = available_loras or (_krea_model_cache.get("loras", []) if _krea_model_cache else [])
+        id_lora = next((al for al in lora_pool if "identity_edit" in str(al).lower() or ("identity" in str(al).lower() and "krea" in str(al).lower())), None)
+        if not id_lora and use_remote_modal:
+            id_lora = "krea2_identity_edit_v1_2.safetensors"
+        if id_lora and not any(id_lora == l[0] for l in resolved_lora_chain):
+            resolved_lora_chain.append((id_lora, 1.0))
+
+    # Base models
+    current_model_link = ["1", 0]
+    current_clip_link = ["2", 0]
+
+    # Build sequential LoraLoader nodes starting from node id 100 to avoid ID clashes
+    lora_nodes = {}
+    for i, (lora_name, lora_str) in enumerate(resolved_lora_chain):
+        node_id = str(100 + i)
+        lora_nodes[node_id] = {
+            "class_type": "LoraLoader",
+            "inputs": {
+                "lora_name": lora_name,
+                "strength_model": float(lora_str),
+                "strength_clip": float(lora_str),
+                "model": current_model_link,
+                "clip": current_clip_link
+            }
+        }
+        current_model_link = [node_id, 0]
+        current_clip_link = [node_id, 1]
+
+    face_ref_nodes = {}
+    active_model_link = current_model_link
+
+    if comfy_ref_names and has_krea2_edit:
+        ref_boost_val = float(sliders.get("ref_boost", 4.0))
+        comfy_ref_name_a = comfy_ref_names[0]
+        comfy_ref_name_b = comfy_ref_names[1] if len(comfy_ref_names) > 1 else None
+
+        logging.info(f"[Krea2] Injecting native Krea2 Identity Edit (multi-ref): ref_a='{comfy_ref_name_a}', ref_b='{comfy_ref_name_b}', ref_boost={ref_boost_val}")
+        face_ref_nodes["72"] = {
+            "class_type": "LoadImage",
+            "inputs": {
+                "image": comfy_ref_name_a
+            }
+        }
+        face_ref_nodes["73"] = {
+            "class_type": "VAEEncode",
+            "inputs": {
+                "pixels": ["72", 0],
+                "vae": ["3", 0]
+            }
+        }
+        patch_inputs = {
+            "model": current_model_link,
+            "source_latent": ["73", 0],
+            "vae": ["3", 0],
+            "source_image": ["72", 0],
+            "target_latent": ["6", 0],
+            "ref_boost": ref_boost_val,
+            "ref_boost_a": 1.0,
+            "fit_mode": "fit"
+        }
+        pos_inputs = {
+            "clip": current_clip_link,
+            "prompt": positive_text,
+            "image": ["72", 0],
+            "grounding_px": 768
+        }
+        neg_inputs = {
+            "clip": current_clip_link,
+            "prompt": negative_text,
+            "image": ["72", 0],
+            "grounding_px": 768
+        }
+        if comfy_ref_name_b:
+            face_ref_nodes["74"] = {
+                "class_type": "LoadImage",
+                "inputs": {
+                    "image": comfy_ref_name_b
+                }
+            }
+            patch_inputs["source_image_b"] = ["74", 0]
+            pos_inputs["image_b"] = ["74", 0]
+            neg_inputs["image_b"] = ["74", 0]
+
+        face_ref_nodes["79"] = {
+            "class_type": "Krea2EditModelPatch",
+            "inputs": patch_inputs
+        }
+        active_model_link = ["79", 0]
+
+        pos_node = {
+            "class_type": "Krea2EditGroundedEncode",
+            "inputs": pos_inputs
+        }
+        neg_node = {
+            "class_type": "Krea2EditGroundedEncode",
+            "inputs": neg_inputs
+        }
+    else:
+        if comfy_ref_name:
+            logging.info(f"[Krea2] One-shot reference image uploaded ({comfy_ref_name}), verbal passport & prompt active.")
+        pos_node = {
+            "class_type": "CLIPTextEncode",
+            "inputs": {
+                "text": positive_text,
+                "clip": current_clip_link
+            }
+        }
+        if requested_base in ["anima", "cyberrealistic_anima", "animaturbo", "anime"]:
+            model_neg = f"{no_signs_krea}, worst quality, low quality, artist name, (lowres:1.2), (worst quality:1.4), (low quality:1.4), (bad anatomy:1.4), bad hands, multiple views, jpeg artifacts, patreon logo, patreon username, web address, censored, mosaic censoring"
+        elif requested_base in ["semi_realism", "muse", "semirealism", "semi-realism", "yogi"]:
+            model_neg = f"{no_signs_krea}, worst quality, low quality, (bad anatomy:1.2), (bad hands:1.2), missing fingers, extra digits, deformed, 3d model render, flat, blurry, bad eyes, crossed eyes, oversaturated"
+        else:
+            model_neg = f"{no_signs_krea}, worst quality, low quality, (bad anatomy:1.2), (bad hands:1.2), missing fingers, extra digits, deformed, 3d render, cgi, cartoon, anime, illustration, painting, drawing, plastic skin, airbrushed, doll, fake, oversaturated, overexposed, blurry"
+
+        neg_node = {
+            "class_type": "CLIPTextEncode",
+            "inputs": {
+                "text": model_neg,
+                "clip": current_clip_link
+            }
+        }
+
+    krea_workflow = {
+        "1": {
+            "class_type": "UNETLoader",
+            "inputs": {
+                "unet_name": unet_model,
+                "weight_dtype": "default"
+            }
+        },
+        "2": {
+            "class_type": "CLIPLoader",
+            "inputs": {
+                "clip_name": clip_model,
+                "type": clip_type
+            }
+        },
+        "3": {
+            "class_type": "VAELoader",
+            "inputs": {
+                "vae_name": vae_model
+            }
+        },
+        "4": pos_node,
+        "5": neg_node,
+        "6": {
+            "class_type": "EmptySD3LatentImage",
+            "inputs": {
+                "width": int(width),
+                "height": int(height),
+                "batch_size": 1
+            }
+        },
+        "7": {
+            "class_type": "KSampler",
+            "inputs": {
+                "seed": seed,
+                "steps": int(steps),
+                "cfg": float(cfg),
+                "sampler_name": sampler_name,
+                "scheduler": scheduler,
+                "denoise": 1.0,
+                "model": active_model_link,
+                "positive": ["4", 0],
+                "negative": ["5", 0],
+                "latent_image": ["6", 0]
+            }
+        },
+        "8": {
+            "class_type": "VAEDecode",
+            "inputs": {
+                "samples": ["7", 0],
+                "vae": ["3", 0]
+            }
+        },
+        "9": {
+            "class_type": "SaveImage",
+            "inputs": {
+                "filename_prefix": "generated/krea",
+                "images": ["8", 0]
+            }
+        }
+    }
+    krea_workflow.update(lora_nodes)
+    krea_workflow.update(face_ref_nodes)
+
+    clean_user_prompt = (prompt or persona_prompt or "").strip()
+    custom_title = str(kwargs.get("custom_title") or "").strip()
+    custom_description = str(kwargs.get("custom_description") or "").strip()
+
+    desc_task = None
+    if not (custom_title or custom_description) and clean_user_prompt:
+        desc_task = asyncio.create_task(generate_neutral_description_and_title(ctx, clean_user_prompt))
+
+    logging.info(f"[Krea2] Generating with {unet_model} + {clip_model} (steps={steps}, size={width}x{height}, ref={bool(comfy_ref_name)})")
+    try:
+        img_data, filename = await generate_image_workflow(krea_workflow)
+    except Exception:
+        if desc_task and not desc_task.done():
+            desc_task.cancel()
+        raise
+    if not img_data:
+        if desc_task and not desc_task.done():
+            desc_task.cancel()
+        raise Exception("Krea 2 image generation failed")
+
+    orig_filename = filename
+
+    # Форматируем имя файла (с поддержкой префикса сцены и подпапки истории)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    raw_prefix = str(kwargs.get("filename_prefix") or "").strip()
+    safe_prefix = re.sub(r"[^a-zA-Z0-9_-]", "", raw_prefix)[:32]
+    match = re.search(r"_(\d{5})_\.png$", filename or "")
+    if match:
+        index = match.group(1)
+        base_fn = f"KREA_{index}_{timestamp}.png"
+    else:
+        base_fn = f"KREA_{timestamp}.png"
+    filename = f"{safe_prefix}_{base_fn}" if safe_prefix else base_fn
+
+    raw_subfolder = str(kwargs.get("subfolder") or "").strip()
+    safe_subfolder = sanitize_story_slug(raw_subfolder) if raw_subfolder else ""
+
+    neutral_title, neutral_description = "", ""
+    if custom_title or custom_description:
+        neutral_title = custom_title
+        neutral_description = custom_description
+    elif desc_task is not None:
+        try:
+            neutral_title, neutral_description = await asyncio.wait_for(desc_task, timeout=6.0)
+        except Exception as e:
+            logging.warning(f"[Krea2] generate_neutral_description_and_title timed out or failed: {e}")
+
+    if not neutral_description:
+        sentences = [s.strip() for s in clean_user_prompt.split(".") if s.strip()]
+        neutral_description = sentences[0] if sentences else (clean_user_prompt[:120] or "Generated image")
+
+    if neutral_title:
+        img_title = neutral_title
+    else:
+        words = [w for w in neutral_description.replace("<", "").replace(">", "").split() if not w.startswith("<")]
+        img_title = _clean_fallback_title(words, max_words=4) or "Krea Creation"
+
+    readme_content = f"# {img_title}\n\n{neutral_description}\n"
+    if clean_user_prompt:
+        readme_content += f"\n<!-- prompt: {clean_user_prompt} -->\n"
+
+    # Случай 1: Владелец ноды выбрал сохранение на этой ноде (save_local=True)
+    target_img_path = None
+    if save_local:
+        try:
+            rel_gen = f"generated/{safe_subfolder}" if safe_subfolder else "generated"
+            target_dir = resolve_local_target_dir(ctx, rel_gen)
+            os.makedirs(target_dir, exist_ok=True)
+            target_img_path = os.path.join(target_dir, filename)
+            with open(target_img_path, "wb") as f:
+                f.write(img_data)
+            base_name = os.path.splitext(filename)[0]
+            target_readme_path = os.path.join(target_dir, f"{base_name}.Readme.md")
+            with open(target_readme_path, "w", encoding="utf-8") as f:
+                f.write(readme_content)
+            logging.info(f"[Krea2] Saved generated image locally on AI node: {target_img_path}")
+
+            home_dir = os.path.expanduser("~")
+            omc_dir = os.path.join(home_dir, "OnMyChat", *rel_gen.split("/"))
+            if os.path.isdir(os.path.join(home_dir, "OnMyChat")) and os.path.abspath(target_dir) != os.path.abspath(omc_dir):
+                os.makedirs(omc_dir, exist_ok=True)
+                with open(os.path.join(omc_dir, filename), "wb") as f:
+                    f.write(img_data)
+                with open(os.path.join(omc_dir, f"{base_name}.Readme.md"), "w", encoding="utf-8") as f:
+                    f.write(readme_content)
+                logging.info(f"[Krea2] Also mirrored generated image to OnMyChat: {omc_dir}/{filename}")
+        except Exception as e:
+            logging.warning(f"[Krea2] Local file save failed: {e}")
+
+    # Очищаем сырой временный вывод ComfyUI
+    if orig_filename:
+        for old_cand in [
+            os.path.join("/content/ComfyUI/output", orig_filename),
+            os.path.join("/content/ComfyUI/output", os.path.basename(orig_filename)),
+            os.path.join(os.path.expanduser("~"), "Data", "generated", os.path.basename(orig_filename)),
+            os.path.join(os.path.expanduser("~"), "Data", "generated", orig_filename),
+            os.path.join(APP_ROOT_DIR, "generated", os.path.basename(orig_filename)),
+        ]:
+            if os.path.exists(old_cand):
+                try:
+                    os.remove(old_cand)
+                    logging.info(f"[Krea2] Cleaned up temporary ComfyUI output: {old_cand}")
+                except Exception as e:
+                    logging.debug(f"[Krea2] Could not remove old file {old_cand}: {e}")
+
+    return filename, img_title, neutral_description, img_data
+
+
+# === MINIMAX-H3 OMNI-MODAL VIDEO + STEREO AUDIO (ComfyUI) ===
+
+def align_minimax_h3_frames(duration_sec: float = 5.0) -> int:
+    """Snaps requested seconds (at 24 fps) to MiniMax-H3's native 17k+5 frame grid."""
+    n = max(5, round(float(duration_sec or 5.0) * 24.0))
+    while n % 17 != 5:
+        n += 1
+    return n
+
+
+def adapt_minimax_h3_canvas(width: int = 1344, height: int = 768, quality: str = "hd") -> tuple[int, int]:
+    """
+    Computes MiniMax-H3 canvas dimensions (multiples of 32).
+    - 'fast' / '480p': ~480px short edge (~0.42MP, fast preview)
+    - 'hd' / '768p': 768px short edge capped at 768x1344 (~1.03MP, official H3 canvas)
+    """
+    import math
+    w_in = max(64, int(width or 1344))
+    h_in = max(64, int(height or 768))
+    ratio = w_in / float(h_in)
+
+    q = str(quality or "hd").strip().lower()
+    if q in ("fast", "std", "standard", "480p", "sd"):
+        short_edge = 480.0
+        max_pixels = 480 * 864
+    else:
+        short_edge = 768.0
+        max_pixels = 768 * 1344
+
+    if ratio >= 1.0:
+        nom_w, nom_h = short_edge * ratio, short_edge
+    else:
+        nom_w, nom_h = short_edge, short_edge / ratio
+
+    if nom_w * nom_h > max_pixels:
+        scale = math.sqrt(max_pixels / (nom_w * nom_h))
+        nom_w, nom_h = nom_w * scale, nom_h * scale
+
+    out_w = max(32, round(nom_w / 32.0) * 32)
+    out_h = max(32, round(nom_h / 32.0) * 32)
+    return int(out_w), int(out_h)
+
+
+def _probe_video_bytes_meta(video_bytes: bytes) -> dict:
+    """Probes width, height, duration, and audio presence of MP4 bytes via ffprobe."""
+    if not video_bytes:
+        return {"duration": 0.0, "width": 0, "height": 0, "has_audio": False}
+    import tempfile
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tf:
+            tf.write(video_bytes)
+            tmp_path = tf.name
+        res = subprocess.run(
+            [
+                "ffprobe", "-v", "error",
+                "-show_entries", "format=duration:stream=codec_type,width,height",
+                "-of", "json",
+                tmp_path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        info = json.loads(res.stdout or "{}")
+        streams = info.get("streams") or []
+        v_stream = next((s for s in streams if s.get("codec_type") == "video"), {})
+        has_audio = any(s.get("codec_type") == "audio" for s in streams)
+        dur = float((info.get("format") or {}).get("duration") or 0.0)
+        return {
+            "duration": dur,
+            "width": int(v_stream.get("width") or 0),
+            "height": int(v_stream.get("height") or 0),
+            "has_audio": has_audio,
+        }
+    except Exception as e:
+        logging.debug(f"[MiniMax-H3] _probe_video_bytes_meta warning: {e}")
+        return {"duration": 0.0, "width": 0, "height": 0, "has_audio": False}
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
+
+
+async def resolve_reference_video_bytes(ctx: UserContext, video_ref: str | None) -> bytes | None:
+    """ Resolves source MP4 bytes from data URL, HTTP URL, /chat/image/ ephemeral cache, or local generated folder. """
+    if not video_ref:
+        return None
+    try:
+        v_str = str(video_ref).strip()
+        if v_str.startswith("data:") and "," in v_str:
+            _, b64_data = v_str.split(",", 1)
+            return base64.b64decode(b64_data.strip())
+        if v_str.startswith("http://") or v_str.startswith("https://"):
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20.0)) as session:
+                async with session.get(v_str) as resp:
+                    if resp.status == 200:
+                        return await resp.read()
+            return None
+
+        clean_ref = v_str.split("?", 1)[0].strip("/")
+        vid_name = urllib.parse.unquote(os.path.basename(clean_ref))
+        # Check in-memory ephemeral store first if available
+        try:
+            import api as _api_mod
+            if hasattr(_api_mod, "get_ephemeral_image") and vid_name:
+                eph = _api_mod.get_ephemeral_image(vid_name)
+                if eph:
+                    return eph
+        except Exception:
+            pass
+
+        rel_candidates = [vid_name]
+        if "/" in clean_ref:
+            for prefix in ("chat/image/", "generated/", "p2p/"):
+                if clean_ref.startswith(prefix):
+                    rel_sub = urllib.parse.unquote(clean_ref[len(prefix):])
+                    if rel_sub and rel_sub not in rel_candidates:
+                        rel_candidates.insert(0, rel_sub)
+
+        search_roots = []
+        try:
+            loc_gen = resolve_local_target_dir(ctx, "generated")
+            if loc_gen and os.path.isdir(loc_gen):
+                search_roots.append(loc_gen)
+        except Exception:
+            pass
+        for d in [
+            os.path.join(APP_ROOT_DIR, "generated"),
+            os.path.join(os.path.expanduser("~"), "Data", "generated"),
+            os.path.join(os.path.expanduser("~"), "Data", "onmychat", "generated"),
+            os.path.join(os.path.expanduser("~"), "OnMyChat", "generated"),
+            os.path.join(os.path.expanduser("~"), "Private", "OnMyChat", "generated"),
+            "/content/ComfyUI/output/generated",
+        ]:
+            if d not in search_roots:
+                search_roots.append(d)
+
+        for root_d in search_roots:
+            for rel_c in rel_candidates:
+                cand = os.path.join(root_d, rel_c)
+                if os.path.isfile(cand):
+                    with open(cand, "rb") as f:
+                        return f.read()
+            if vid_name and os.path.isdir(root_d):
+                for sub_entry in os.listdir(root_d):
+                    sub_cand = os.path.join(root_d, sub_entry, vid_name)
+                    if os.path.isfile(sub_cand):
+                        with open(sub_cand, "rb") as f:
+                            return f.read()
+
+        if os.path.isfile(v_str):
+            with open(v_str, "rb") as f:
+                return f.read()
+        if len(v_str) > 256:
+            try:
+                return base64.b64decode(v_str)
+            except Exception:
+                pass
+    except Exception as e:
+        logging.warning(f"[MiniMax-H3] resolve_reference_video_bytes warning: {e}")
+    return None
+
+
+async def generate_video_workflow(
+    workflow: dict,
+    extend_video: dict | None = None,
+) -> tuple[bytes | None, str | None, bytes | None]:
+    """
+    Executes a ComfyUI video workflow (MiniMax-H3 SaveVideo) against local ComfyUI.
+    Returns (video_bytes, filename, cover_jpeg_bytes).
+    Overridden by private Cloud GPU extension hook when Modal Video GPU is enabled.
+    """
+    local_wf = json.loads(json.dumps(workflow))
+    # Graceful fallback if local ComfyUI does not have Ref2VAVSAGatePatch installed
+    if "2_vsa" in local_wf:
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=3.0)) as sess:
+                async with sess.get(f"{COMFY_API_URL}/object_info/Ref2VAVSAGatePatch") as r:
+                    has_vsa = (r.status == 200) and bool(await r.json())
+            if not has_vsa:
+                local_wf.pop("2_vsa", None)
+                if "2_shift" in local_wf:
+                    local_wf["2_shift"]["inputs"]["model"] = ["2", 0]
+        except Exception:
+            pass
+
+    video_bytes, filename = await generate_image_workflow(local_wf)
+    return video_bytes, filename, None
+
+
+def _fit_keyframe_to_canvas(img_bytes: bytes, target_w: int, target_h: int) -> bytes:
+    """
+    Center-fits a keyframe image to match (target_w / target_h) aspect ratio so
+    ComfyUI's MiniMaxH3ImageToVideo (which uses crop='disabled') never stretches
+    or squishes faces/proportions when canvas aspect differs from source image.
+    """
+    if not img_bytes or target_w <= 0 or target_h <= 0:
+        return img_bytes
+    try:
+        from PIL import Image, ImageOps
+        with Image.open(io.BytesIO(img_bytes)) as im:
+            im = ImageOps.exif_transpose(im).convert("RGB")
+            src_ratio = im.width / float(max(1, im.height))
+            dst_ratio = target_w / float(max(1, target_h))
+            if abs(src_ratio - dst_ratio) / max(dst_ratio, 1e-6) <= 0.012:
+                return img_bytes
+            fitted = ImageOps.fit(
+                im,
+                (target_w, target_h),
+                method=Image.Resampling.LANCZOS,
+                centering=(0.5, 0.35),
+            )
+            buf = io.BytesIO()
+            fitted.save(buf, format="PNG")
+            return buf.getvalue()
+    except Exception as e:
+        logging.warning(f"[MiniMax-H3] Keyframe aspect fit warning: {e}")
+        return img_bytes
+
+
+async def generate_krea_video(
+    ctx: UserContext,
+    prompt: str,
+    persona_prompt: str = "",
+    persona_name: str | None = None,
+    reference_image: str | None = None,
+    reference_images: list[str] | None = None,
+    width: int = 1344,
+    height: int = 768,
+    duration: float = 5.0,
+    quality: str = "hd",
+    steps: int = 8,
+    seed: int | None = None,
+    save_local: bool = False,
+    **kwargs,
+) -> tuple[str, str, str, bytes, bytes | None]:
+    """
+    Generates a MiniMax-H3 omni-modal MP4 video with synchronized stereo audio via ComfyUI + FastH3 VSA:
+    - VSA Acceleration: 75% Visual Sparse Attention (comfy-kitchen sol_attn CUDA + fasth3_vsa_gate)
+      with 100% dense multimodal prefix for text, audio, keyframes, and character references.
+    - Modes:
+      * 0 refs: Text-to-Video + Audio (t2va)
+      * Subject / Persona Ref (video_ref_mode='subject' or auto Persona avatar): Ref2VA (<Picture 1..3>)
+        keeping exact character face/identity across arbitrary camera angles, poses, and settings.
+      * Keyframe Animation (video_ref_mode='keyframe'): FL2VA First-Frame (<Picture 1>) or
+        First->Last Transition (<Picture 1> -> <Picture 2>).
+      * Multi-Segment Long Video (10s / 15s): Native AV latent-tail chaining (22-frame hidden overlap)
+        in a single warm ComfyUI graph with zero VAE seam.
+      * Extend Video (+5s, extend_video): Anchors the 22-frame tail + stereo audio of any existing MP4
+        and seamlessly stitches +5.0s (119 new frames) onto the original clip.
+    Returns (mp4_filename, title, description, mp4_bytes, cover_jpeg_bytes).
+    """
+    raw_extend_ref = str(kwargs.get("extend_video") or "").strip()
+    persona_id = str(kwargs.get("persona_id") or "").strip()
+    req_ref_mode = str(kwargs.get("video_ref_mode") or "auto").strip().lower()
+    # Keep VSA gate transplant opt-in (default False): fasth3_vsa_gate's 4x4x4 (64x64px)
+    # coarse-pooled branch was co-trained with FastVideo's own backbone LoRA, so transplanting
+    # it onto LightX2V 768p Turbo LoRAs causes 64x64px translucent block halos around high-contrast
+    # light sources (windows, lamps). Native Hopper FlashAttention-3 / cuDNN SDPA on H100 is clean & fast.
+    use_vsa = bool(kwargs.get("use_vsa", False))
+
+    raw_refs: list[str] = []
+    if reference_images and isinstance(reference_images, list):
+        raw_refs.extend([r for r in reference_images if r])
+    elif reference_image:
+        raw_refs.append(reference_image)
+
+    # Auto-attach active Studio Persona portrait as <Picture 1> in Ref2VA mode when no manual ref is given
+    auto_persona_ref = False
+    if not raw_refs and persona_id and req_ref_mode != "keyframe":
+        auto_avatar_ref = f"/personas/{persona_id}/avatar"
+        probe_av = await resolve_reference_image_bytes(ctx, auto_avatar_ref)
+        if probe_av:
+            raw_refs.append("data:image/png;base64," + base64.b64encode(probe_av).decode("ascii"))
+            auto_persona_ref = True
+
+    has_any_ref = bool(raw_refs)
+    clean_prompt = (prompt or "").strip()
+    if not clean_prompt and not persona_prompt and not has_any_ref and not raw_extend_ref:
+        raise Exception("Укажите сценарий движения/звука или выберите кадр для оживления.")
+
+    # Resolve optional source video for +5s Continuity Extension
+    extend_payload: dict | None = None
+    ext_source_bytes: bytes | None = None
+    if raw_extend_ref:
+        ext_source_bytes = await resolve_reference_video_bytes(ctx, raw_extend_ref)
+        if not ext_source_bytes:
+            raise Exception("Не удалось загрузить исходное видео для продолжения сцены.")
+        ext_meta = _probe_video_bytes_meta(ext_source_bytes)
+        if ext_meta["width"] > 0 and ext_meta["height"] > 0:
+            width, height = ext_meta["width"], ext_meta["height"]
+
+    out_w, out_h = adapt_minimax_h3_canvas(width, height, quality=quality)
+
+    # Normalize mode aliases ('subject'/'ref2va'/'persona' vs 'keyframe'/'fl2va')
+    if req_ref_mode in ("ref2va", "persona", "character"):
+        req_ref_mode = "subject"
+    elif req_ref_mode in ("fl2va", "frame"):
+        req_ref_mode = "keyframe"
+
+    # Decide Ref2VA (subject/character identity) vs FL2VA (exact keyframe / pure T2VA)
+    if len(raw_refs) >= 2 and req_ref_mode == "keyframe":
+        use_ref2va = False
+    elif req_ref_mode == "subject" or auto_persona_ref:
+        use_ref2va = bool(raw_refs)
+    elif req_ref_mode == "keyframe":
+        use_ref2va = False
+    elif len(raw_refs) >= 2:
+        # Backwards-compatible 2-image default = First -> Last keyframe transition unless subject mode requested
+        use_ref2va = False
+    elif len(raw_refs) == 1 and ext_source_bytes is not None:
+        use_ref2va = True
+    else:
+        use_ref2va = False
+
+    max_refs = 3 if use_ref2va else 2
+    comfy_ref_names: list[str] = []
+    first_ref_raw_bytes: bytes | None = None
+    for idx_r, ref_item in enumerate(raw_refs[:max_refs]):
+        ref_bytes = await resolve_reference_image_bytes(ctx, ref_item)
+        if ref_bytes:
+            upload_bytes = ref_bytes if use_ref2va else _fit_keyframe_to_canvas(ref_bytes, out_w, out_h)
+            if idx_r == 0:
+                first_ref_raw_bytes = upload_bytes
+            c_name = await upload_reference_image_to_comfy(upload_bytes)
+            if c_name:
+                comfy_ref_names.append(c_name)
+
+    if use_ref2va and not comfy_ref_names:
+        use_ref2va = False
+
+    # Segment planning:
+    # - Single-pass: <= 8.5s (124 frames = 5.2s, 192 frames = 8.0s)
+    # - 10s multi-segment: 124 + 119 = 243 frames (10.1s) via 22-frame native AV latent tail overlap
+    # - 15s multi-segment: 124 + 119 + 119 = 362 frames (15.1s) via 2x 22-frame native AV latent tail overlap
+    # - Extend (+5s): 141-frame window (22 overlap + 119 new) anchored to existing MP4 tail
+    overlap_frames = 22
+    extension_frames = 119
+    if ext_source_bytes is not None:
+        num_segments = 1
+        seg1_frames = overlap_frames + extension_frames  # 141 frames
+        total_planned_frames = seg1_frames
+        tail_fn = f"krea_tail_{uuid.uuid4().hex[:10]}.mp4"
+        extend_payload = {
+            "source_b64": base64.b64encode(ext_source_bytes).decode("ascii"),
+            "tail_filename": tail_fn,
+            "overlap_frames": overlap_frames,
+        }
+    else:
+        dur_clamped = max(3.0, min(16.0, float(duration or 5.0)))
+        if dur_clamped >= 12.5:
+            num_segments = 3
+            seg1_frames = 124
+            total_planned_frames = 124 + 2 * extension_frames  # 362 frames (~15.1s)
+        elif dur_clamped >= 9.0:
+            num_segments = 2
+            seg1_frames = 124
+            total_planned_frames = 124 + extension_frames  # 243 frames (~10.1s)
+        else:
+            num_segments = 1
+            seg1_frames = align_minimax_h3_frames(dur_clamped)
+            total_planned_frames = seg1_frames
+
+    req_steps = int(steps or 8)
+    is_fast_q = str(quality or "hd").strip().lower() in ("fast", "std", "standard", "480p", "sd")
+    eff_steps = 4 if (req_steps <= 4 or is_fast_q) else 8
+
+    # Mixed-aspect-ratio LightX2V Turbo LoRAs (shift 12.0 / 3.0 + res_multistep):
+    # Note: the '*_768p' LoRA variants were distilled exclusively on horizontal 1344x768 (shift 6/3)
+    # and cause high-frequency vertical camera oscillation on portrait/square aspect ratios (e.g. 768x992)
+    # when paired with 1st-order euler. Using the mixed-aspect v1.0 / v0.1 checkpoints at native H3
+    # shift (12.0 / 3.0) + 2nd-order res_multistep yields zero frame-to-frame camera jitter on all ratios.
+    if use_ref2va:
+        unet_name = "minimax_h3_ref2va_pruned_int8_convrot.safetensors"
+        turbo_lora = "minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors"
+        eff_steps = 4
+        shift_video, shift_audio = 12.0, 3.0
+    else:
+        unet_name = "minimax_h3_fl2va_pruned_int8_convrot.safetensors"
+        turbo_lora = "minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"
+        shift_video, shift_audio = 12.0, 3.0
+
+    if seed is None or int(seed) < 0:
+        import random
+        seed = random.randint(1, 2**48 - 1)
+    else:
+        seed = int(seed)
+
+    cleaned_persona = ""
+    if persona_prompt and persona_prompt.strip():
+        cleaned_persona = re.sub(
+            r"^(a\s+)?(portrait|close-up|headshot|bust\s+portrait)\s+of\s+",
+            "",
+            persona_prompt.strip(),
+            flags=re.IGNORECASE,
+        )
+
+    def _ensure_audio_block(p_txt: str) -> str:
+        low = p_txt.lower()
+        if "audio:" not in low and "soundscape" not in low:
+            return (
+                p_txt
+                + "\n\nAudio: Realistic natural ambient room tone and environmental stereo foley synchronized with every movement, subtle fabric rustle and natural breathing. No background music, no text, no watermarks."
+            )
+        return p_txt
+
+    # Build Segment 1 prompt
+    prompt_blocks: list[str] = []
+    subj_def_header = ""
+    if use_ref2va and comfy_ref_names:
+        subj_lines = []
+        for r_idx in range(len(comfy_ref_names)):
+            pic_tag = f"<Picture {r_idx + 1}>"
+            subj_tag = f"<Subject {r_idx + 1}>"
+            if r_idx == 0 and (persona_name or cleaned_persona):
+                desc_hint = f" ({cleaned_persona[:200]})" if cleaned_persona else ""
+                subj_lines.append(
+                    f"{subj_tag} is {persona_name or 'the main character'} in {pic_tag}{desc_hint}, preserving exact facial features, hair, proportions, and identity."
+                )
+            else:
+                subj_lines.append(
+                    f"{subj_tag} is the subject in {pic_tag}, preserving exact facial features, hair, outfit, and visual identity."
+                )
+        subj_def_header = "subject_definitions:\n" + "\n".join(subj_lines)
+
+        if extend_payload is not None:
+            overlap_sec = round(overlap_frames / 24.0, 2)
+            next_act = clean_prompt or "Continue the same uninterrupted live-action shot naturally with fluid motion, natural expressions, and consistent camera flow."
+            prompt_blocks.append(subj_def_header)
+            prompt_blocks.append(
+                f"detailed_description:\nThe opening {overlap_sec}s is overlapping context from the end of the preceding shot. Weld seamlessly to that tail in appearance, pose, lighting, camera motion, and sound. After the overlap, <Subject 1> continues: {next_act}"
+            )
+        elif not clean_prompt:
+            prompt_blocks.append(subj_def_header)
+            prompt_blocks.append(
+                "detailed_description:\nPhotorealistic live-action cinema. <Subject 1> moves naturally in a rich, atmospheric cinematic scene with expressive eyes, natural breathing, fluid hair and fabric physics, and smooth handheld camera push-in."
+            )
+        elif "subject_definitions:" in clean_prompt.lower() or "<picture 1>" in clean_prompt.lower():
+            prompt_blocks.append(clean_prompt)
+        else:
+            prompt_blocks.append(subj_def_header)
+            prompt_blocks.append(f"detailed_description:\nIn one continuous live-action shot featuring <Subject 1> from <Picture 1>: {clean_prompt}")
+    elif extend_payload is not None:
+        overlap_sec = round(overlap_frames / 24.0, 2)
+        next_act = clean_prompt or "Continue the same uninterrupted live-action shot naturally, preserving exact character identity, wardrobe, lighting, camera momentum, and synchronized sound."
+        prompt_blocks.append(
+            f"The opening {overlap_sec}s is overlapping context from the end of the preceding shot. Weld seamlessly to that tail in subject identity, pose, lighting, camera, and sound. After the overlap, next action: {next_act}"
+        )
+    elif comfy_ref_names:
+        if not clean_prompt:
+            if len(comfy_ref_names) >= 2 and num_segments == 1:
+                prompt_blocks.append(
+                    "Smooth, natural cinematic live-action motion transitioning seamlessly from <Picture 1> to <Picture 2>, preserving exact character identity, facial features, wardrobe, and lighting."
+                )
+            else:
+                prompt_blocks.append(
+                    "The scene opens on <Picture 1>, preserving exact character identity, facial features, wardrobe, and lighting. Subtle, natural live-action movement, gentle breathing, natural eye and hair motion as the camera performs a slow cinematic push-in."
+                )
+        else:
+            if "<picture 1>" not in clean_prompt.lower():
+                prompt_blocks.append(f"Starting from <Picture 1>, {clean_prompt}")
+            else:
+                prompt_blocks.append(clean_prompt)
+    else:
+        if clean_prompt:
+            prompt_blocks.append(clean_prompt)
+        if cleaned_persona:
+            prompt_blocks.append(cleaned_persona)
+
+    final_video_prompt = _ensure_audio_block("\n\n".join(prompt_blocks).strip())
+
+    extra_nodes: dict = {}
+    ref_image_inputs: dict = {}
+    for idx_r, c_name in enumerate(comfy_ref_names):
+        nid_img = f"ref_img_{idx_r}"
+        extra_nodes[nid_img] = {
+            "class_type": "LoadImage",
+            "inputs": {"image": c_name},
+        }
+        if use_ref2va:
+            ref_image_inputs[f"ref_images.ref_image_{idx_r}"] = [nid_img, 0]
+
+    sampled_model_ref = ["2_shift", 0]
+    video_workflow: dict = {
+        "1": {
+            "class_type": "UNETLoader",
+            "inputs": {
+                "unet_name": unet_name,
+                "weight_dtype": "default",
+            },
+        },
+        "2": {
+            "class_type": "LoraLoaderModelOnly",
+            "inputs": {
+                "model": ["1", 0],
+                "lora_name": turbo_lora,
+                "strength_model": 1.0,
+            },
+        },
+        "2_shift": {
+            "class_type": "MiniMaxH3SigmaShift",
+            "inputs": {
+                "model": ["2_vsa", 0] if use_vsa else ["2", 0],
+                "shift_video": shift_video,
+                "shift_audio": shift_audio,
+            },
+        },
+        "3": {
+            "class_type": "CLIPLoader",
+            "inputs": {
+                "clip_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+                "type": "minimax",
+                "device": "default",
+            },
+        },
+        "4": {
+            "class_type": "VAELoader",
+            "inputs": {
+                "vae_name": "minimax_h3_video_vae_int8_convrot.safetensors",
+            },
+        },
+        "5": {
+            "class_type": "VAELoader",
+            "inputs": {
+                "vae_name": "minimax_h3_audio_vae_fp32.safetensors",
+            },
+        },
+        "10": {
+            "class_type": "KSamplerSelect",
+            "inputs": {
+                "sampler_name": "res_multistep",
+            },
+        },
+    }
+
+    if use_vsa:
+        video_workflow["2_vsa"] = {
+            "class_type": "Ref2VAVSAGatePatch",
+            "inputs": {
+                "model": ["2", 0],
+                "gate_file": "fasth3_vsa_gate.safetensors",
+                "sparsity": 0.75,
+            },
+        }
+
+    # Segment 1 conditioning
+    if use_ref2va:
+        video_workflow["8"] = {
+            "class_type": "MiniMaxH3ReferenceToVideo",
+            "inputs": {
+                "clip": ["3", 0],
+                "vae": ["4", 0],
+                "audio_vae": ["5", 0],
+                "prompt": final_video_prompt,
+                "width": out_w,
+                "height": out_h,
+                "length": seg1_frames,
+                "ref_image_size": "match",
+                **ref_image_inputs,
+            },
+        }
+    else:
+        i2v_inputs: dict = {
+            "clip": ["3", 0],
+            "vae": ["4", 0],
+            "prompt": final_video_prompt,
+            "width": out_w,
+            "height": out_h,
+            "length": seg1_frames,
+        }
+        if extend_payload is None:
+            if len(comfy_ref_names) >= 1:
+                i2v_inputs["first_frame"] = ["ref_img_0", 0]
+            if len(comfy_ref_names) >= 2 and num_segments == 1:
+                i2v_inputs["last_frame"] = ["ref_img_1", 0]
+        video_workflow["8"] = {
+            "class_type": "MiniMaxH3ImageToVideo",
+            "inputs": i2v_inputs,
+        }
+
+    seg1_cond_ref = ["8", 0]
+    if extend_payload is not None:
+        video_workflow["8_vid"] = {
+            "class_type": "LoadVideo",
+            "inputs": {"file": extend_payload["tail_filename"]},
+        }
+        video_workflow["8_comp"] = {
+            "class_type": "GetVideoComponents",
+            "inputs": {"video": ["8_vid", 0]},
+        }
+        video_workflow["8_guide"] = {
+            "class_type": "MiniMaxH3AddGuide",
+            "inputs": {
+                "positive": ["8", 0],
+                "vae": ["4", 0],
+                "audio_vae": ["5", 0],
+                "latent": ["8", 1],
+                "image": ["8_comp", 0],
+                "audio": ["8_comp", 1],
+                "frame_idx": 0,
+            },
+        }
+        seg1_cond_ref = ["8_guide", 0]
+
+    video_workflow["9"] = {
+        "class_type": "RandomNoise",
+        "inputs": {"noise_seed": seed},
+    }
+    video_workflow["11"] = {
+        "class_type": "BasicScheduler",
+        "inputs": {
+            "model": sampled_model_ref,
+            "scheduler": "simple",
+            "steps": eff_steps,
+            "denoise": 1.0,
+        },
+    }
+    video_workflow["12"] = {
+        "class_type": "BasicGuider",
+        "inputs": {
+            "model": sampled_model_ref,
+            "conditioning": seg1_cond_ref,
+        },
+    }
+    video_workflow["13"] = {
+        "class_type": "SamplerCustomAdvanced",
+        "inputs": {
+            "noise": ["9", 0],
+            "guider": ["12", 0],
+            "sampler": ["10", 0],
+            "sigmas": ["11", 0],
+            "latent_image": ["8", 1],
+        },
+    }
+
+    # Optional Segment 2..N Native AV Latent-Tail Continuation (10s / 15s)
+    final_latent_ref = ["13", 0]
+    for seg_i in range(2, num_segments + 1):
+        overlap_sec = round(overlap_frames / 24.0, 2)
+        act_body = clean_prompt or "Continue the uninterrupted live-action performance with fluid natural movement, consistent lighting, and realistic camera flow."
+        if use_ref2va and subj_def_header:
+            cont_prompt = _ensure_audio_block(
+                f"{subj_def_header}\n\ndetailed_description:\nThe opening {overlap_sec}s is overlapping context from the preceding segment. Weld seamlessly to that tail in subject appearance, motion velocity, lighting, camera, and sound. After the overlap, <Subject 1> continues the uninterrupted shot: {act_body}"
+            )
+            extra_nodes[f"c{seg_i}_cond"] = {
+                "class_type": "MiniMaxH3ReferenceToVideo",
+                "inputs": {
+                    "clip": ["3", 0],
+                    "vae": ["4", 0],
+                    "audio_vae": ["5", 0],
+                    "prompt": cont_prompt,
+                    "width": out_w,
+                    "height": out_h,
+                    "length": overlap_frames + extension_frames,
+                    "ref_image_size": "match",
+                    **ref_image_inputs,
+                },
+            }
+        else:
+            cont_prompt = _ensure_audio_block(
+                f"The opening {overlap_sec}s is overlapping context from the preceding segment. Weld seamlessly to that tail in character identity, wardrobe, motion velocity, lighting, camera, and stereo sound. After the overlap, continue the uninterrupted shot: {act_body}"
+            )
+            c_i2v_in: dict = {
+                "clip": ["3", 0],
+                "vae": ["4", 0],
+                "prompt": cont_prompt,
+                "width": out_w,
+                "height": out_h,
+                "length": overlap_frames + extension_frames,
+            }
+            if seg_i == num_segments and len(comfy_ref_names) >= 2:
+                c_i2v_in["last_frame"] = ["ref_img_1", 0]
+            extra_nodes[f"c{seg_i}_cond"] = {
+                "class_type": "MiniMaxH3ImageToVideo",
+                "inputs": c_i2v_in,
+            }
+
+        extra_nodes[f"c{seg_i}_win"] = {
+            "class_type": "OMC_H3ContinuationWindow",
+            "inputs": {
+                "previous_av_latent": final_latent_ref,
+                "overlap_frames": overlap_frames,
+                "extension_frames": extension_frames,
+            },
+        }
+        extra_nodes[f"c{seg_i}_tail"] = {
+            "class_type": "OMC_H3LatentTailGuide",
+            "inputs": {
+                "positive": [f"c{seg_i}_cond", 0],
+                "previous_av_latent": final_latent_ref,
+                "overlap_video_tokens": [f"c{seg_i}_win", 2],
+                "overlap_audio_tokens": [f"c{seg_i}_win", 3],
+            },
+        }
+        extra_nodes[f"c{seg_i}_noise"] = {
+            "class_type": "RandomNoise",
+            "inputs": {"noise_seed": seed + seg_i * 10007},
+        }
+        extra_nodes[f"c{seg_i}_sched"] = {
+            "class_type": "BasicScheduler",
+            "inputs": {
+                "model": sampled_model_ref,
+                "scheduler": "simple",
+                "steps": eff_steps,
+                "denoise": 1.0,
+            },
+        }
+        extra_nodes[f"c{seg_i}_guider"] = {
+            "class_type": "BasicGuider",
+            "inputs": {
+                "model": sampled_model_ref,
+                "conditioning": [f"c{seg_i}_tail", 0],
+            },
+        }
+        extra_nodes[f"c{seg_i}_sample"] = {
+            "class_type": "SamplerCustomAdvanced",
+            "inputs": {
+                "noise": [f"c{seg_i}_noise", 0],
+                "guider": [f"c{seg_i}_guider", 0],
+                "sampler": ["10", 0],
+                "sigmas": [f"c{seg_i}_sched", 0],
+                "latent_image": [f"c{seg_i}_win", 0],
+            },
+        }
+        extra_nodes[f"c{seg_i}_append"] = {
+            "class_type": "OMC_H3AppendContinuation",
+            "inputs": {
+                "previous_av_latent": final_latent_ref,
+                "sampled_window": [f"c{seg_i}_sample", 0],
+                "overlap_video_tokens": [f"c{seg_i}_win", 2],
+                "overlap_audio_tokens": [f"c{seg_i}_win", 3],
+            },
+        }
+        final_latent_ref = [f"c{seg_i}_append", 0]
+
+    video_workflow["14"] = {
+        "class_type": "VAEDecode",
+        "inputs": {
+            "samples": final_latent_ref,
+            "vae": ["4", 0],
+        },
+    }
+    video_workflow["15"] = {
+        "class_type": "VAEDecodeAudio",
+        "inputs": {
+            "samples": final_latent_ref,
+            "vae": ["5", 0],
+        },
+    }
+    video_workflow["16"] = {
+        "class_type": "CreateVideo",
+        "inputs": {
+            "images": ["14", 0],
+            "audio": ["15", 0],
+            "fps": 24.0,
+        },
+    }
+    video_workflow["17"] = {
+        "class_type": "SaveVideo",
+        "inputs": {
+            "video": ["16", 0],
+            "filename_prefix": "video/MiniMax_H3",
+            "format": "auto",
+        },
+    }
+    video_workflow.update(extra_nodes)
+
+    clean_user_prompt = (clean_prompt or persona_prompt or ("Extended scene" if extend_payload else "Animated scene")).strip()
+    custom_title = str(kwargs.get("custom_title") or "").strip()
+    custom_description = str(kwargs.get("custom_description") or "").strip()
+
+    desc_task = None
+    if not (custom_title or custom_description) and clean_user_prompt:
+        desc_task = asyncio.create_task(generate_neutral_description_and_title(ctx, clean_user_prompt))
+
+    mode_tag = "Ref2VA" if use_ref2va else "FL2VA"
+    if extend_payload:
+        mode_tag += "+Extend"
+    elif num_segments > 1:
+        mode_tag += f"x{num_segments}Seg"
+    logging.info(
+        f"[MiniMax-H3] Generating {mode_tag} ({out_w}x{out_h}, frames={total_planned_frames} (~{round(total_planned_frames/24.0, 1)}s), "
+        f"steps={eff_steps}x{num_segments}, vsa={use_vsa}, refs={len(comfy_ref_names)})"
+    )
+    try:
+        video_data, raw_fn, cover_bytes = await generate_video_workflow(video_workflow, extend_video=extend_payload)
+    except Exception:
+        if desc_task and not desc_task.done():
+            desc_task.cancel()
+        raise
+
+    if not video_data:
+        if desc_task and not desc_task.done():
+            desc_task.cancel()
+        raise Exception("MiniMax-H3 video generation failed")
+
+    if not cover_bytes and first_ref_raw_bytes:
+        try:
+            from PIL import Image
+            import io as _io
+            im = Image.open(_io.BytesIO(first_ref_raw_bytes)).convert("RGB")
+            buf = _io.BytesIO()
+            im.save(buf, format="JPEG", quality=86)
+            cover_bytes = buf.getvalue()
+        except Exception:
+            pass
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    raw_prefix = str(kwargs.get("filename_prefix") or "").strip()
+    safe_prefix = re.sub(r"[^a-zA-Z0-9_-]", "", raw_prefix)[:32]
+    base_fn = f"H3_{timestamp}.mp4"
+    filename = f"{safe_prefix}_{base_fn}" if safe_prefix else base_fn
+
+    raw_subfolder = str(kwargs.get("subfolder") or "").strip()
+    safe_subfolder = sanitize_story_slug(raw_subfolder) if raw_subfolder else ""
+
+    neutral_title, neutral_description = "", ""
+    if custom_title or custom_description:
+        neutral_title = custom_title
+        neutral_description = custom_description
+    elif desc_task is not None:
+        try:
+            neutral_title, neutral_description = await asyncio.wait_for(desc_task, timeout=6.0)
+        except Exception as e:
+            logging.warning(f"[MiniMax-H3] generate_neutral_description_and_title warning: {e}")
+
+    if not neutral_description:
+        sentences = [s.strip() for s in clean_user_prompt.split(".") if s.strip()]
+        neutral_description = sentences[0] if sentences else (clean_user_prompt[:120] or "MiniMax-H3 Video")
+
+    if neutral_title:
+        vid_title = neutral_title
+    else:
+        words = [w for w in neutral_description.replace("<", "").replace(">", "").split() if not w.startswith("<")]
+        vid_title = _clean_fallback_title(words, max_words=4) or "H3 Motion Clip"
+
+    readme_content = f"# {vid_title}\n\n{neutral_description}\n"
+    if final_video_prompt:
+        readme_content += f"\n<!-- prompt: {final_video_prompt} -->\n"
+
+    if save_local:
+        try:
+            rel_gen = f"generated/{safe_subfolder}" if safe_subfolder else "generated"
+            target_dir = resolve_local_target_dir(ctx, rel_gen)
+            os.makedirs(target_dir, exist_ok=True)
+            base_name = os.path.splitext(filename)[0]
+            with open(os.path.join(target_dir, filename), "wb") as f:
+                f.write(video_data)
+            with open(os.path.join(target_dir, f"{base_name}.Readme.md"), "w", encoding="utf-8") as f:
+                f.write(readme_content)
+            if cover_bytes:
+                with open(os.path.join(target_dir, f"{base_name}.cover.jpg"), "wb") as f:
+                    f.write(cover_bytes)
+            logging.info(f"[MiniMax-H3] Saved generated video locally: {target_dir}/{filename}")
+
+            home_dir = os.path.expanduser("~")
+            omc_dir = os.path.join(home_dir, "OnMyChat", *rel_gen.split("/"))
+            if os.path.isdir(os.path.join(home_dir, "OnMyChat")) and os.path.abspath(target_dir) != os.path.abspath(omc_dir):
+                os.makedirs(omc_dir, exist_ok=True)
+                with open(os.path.join(omc_dir, filename), "wb") as f:
+                    f.write(video_data)
+                with open(os.path.join(omc_dir, f"{base_name}.Readme.md"), "w", encoding="utf-8") as f:
+                    f.write(readme_content)
+                if cover_bytes:
+                    with open(os.path.join(omc_dir, f"{base_name}.cover.jpg"), "wb") as f:
+                        f.write(cover_bytes)
+        except Exception as e:
+            logging.warning(f"[MiniMax-H3] Local video file save failed: {e}")
+
+    return filename, vid_title, neutral_description, video_data, cover_bytes
+
+
+
+# === RAG ===
+def get_file_icon(filename: str) -> str:
+    ext = filename.split(".")[-1].lower() if "." in filename else ""
+    icon_map = {
+        "pdf": "file-pdf",
+        "doc": "file-word", "docx": "file-word", "odt": "file-word",
+        "xls": "file-excel", "xlsx": "file-excel", "ods": "file-excel",
+        "ppt": "file-powerpoint", "pptx": "file-powerpoint",
+        "jpg": "file-image", "jpeg": "file-image", "png": "file-image", "gif": "file-image", "svg": "file-image",
+        "mp4": "file-video", "mkv": "file-video", "avi": "file-video",
+        "mp3": "file-audio", "wav": "file-audio",
+        "zip": "file-archive", "rar": "file-archive", "7z": "file-archive", "tar": "file-archive", "gz": "file-archive",
+        "md": "file-markdown", "txt": "file-text",
+        "html": "file-code", "js": "file-code", "css": "file-code", "py": "file-code", "cpp": "file-code", "h": "file-code"
+    }
+    return icon_map.get(ext, "file")
+
+async def get_source_metadata(ctx: UserContext, owner: str, path: str) -> dict:
+    """Запрашивает метаданные источника с учетом прав доступа."""
+    import aiohttp
+    gateway_url = SETTINGS.get("GATEWAY_URL", "https://onmydisk.net").rstrip("/")
+    item_path = path.lstrip("/")
+    
+    CRAWLER_TOKEN = "mypears-4204"
+    
+    metadata = {
+        "mimetype": None,
+        "url": None,
+        "clickable": False,
+        "fullPath": f"/{owner}/{item_path}" # Default full path
+    }
+    
+    async with aiohttp.ClientSession() as session:
+        # 1. Пробуем получить атрибуты с ключом текущего пользователя (User Mode)
+        if ctx.omd_key:
+            user_headers = {
+                "Authorization": f"token:{ctx.omd_key}",
+                "Content-Type": "application/json"
+            }
+            try:
+                user_target_url = f"{gateway_url}/{item_path}"
+                full_item_path = "/" + item_path
+                attr_payload = {"action": "getAttributes", "item": full_item_path}
+                async with session.post(user_target_url, json=attr_payload, headers=user_headers, timeout=5) as resp:
+                    if resp.status == 200:
+                        data = await resp.json(content_type=None)
+                        result = data.get("result", {})
+                        success = data.get("success") or result.get("success")
+                        mimetype = result.get("mimetype") or data.get("mimetype")
+                        
+                        if success and mimetype:
+                            metadata["mimetype"] = clean_mimetype(item_path, mimetype)
+                            metadata["clickable"] = True
+                            metadata["url"] = f"{gateway_url}/{owner}/{item_path}"
+                            metadata["fullPath"] = f"/{owner}/{item_path}"
+                            return metadata
+            except Exception as e:
+                logging.error(f"User access check failed for {path}: {e}")
+        
+        # 2. Если не удалось или нет ключа, пробуем через мастер-токен (Master Mode)
+        master_target_url = f"{gateway_url}/{owner}/{item_path}"
+        master_token = f"{CRAWLER_TOKEN}:{owner}"
+        master_headers = {
+            "Authorization": f"token:{master_token}",
+            "Content-Type": "application/json"
+        }
+        try:
+            full_item_path = "/" + item_path
+            attr_payload = {"action": "getAttributes", "item": full_item_path}
+            async with session.post(master_target_url, json=attr_payload, headers=master_headers, timeout=5) as resp:
+                if resp.status == 200:
+                    data = await resp.json(content_type=None)
+                    result = data.get("result", {})
+                    success = data.get("success") or result.get("success")
+                    mimetype = result.get("mimetype") or data.get("mimetype")
+                    
+                    if success and mimetype:
+                        metadata["mimetype"] = clean_mimetype(item_path, mimetype)
+                        metadata["clickable"] = True
+                        metadata["url"] = f"{gateway_url}/{owner}/{item_path}"
+                        metadata["fullPath"] = f"/{owner}/{item_path}"
+                        return metadata
+        except Exception as e:
+            logging.error(f"Master access check failed for {path}: {e}")
+
+    return metadata
+
+def _extract_hashtags(text: str, limit: int = 7) -> list:
+    """Извлекает хештеги #omd, #docs из текста промпта. Возвращает ['omd', 'docs']."""
+    tags = []
+    for m in re.findall(r"#([\w\-]+)", text or ""):
+        t = m.strip().lstrip("#").lower()
+        if t and t not in tags:
+            tags.append(t)
+        if len(tags) >= limit:
+            break
+    return tags
+
+
+async def _inject_hub_card_fallback(ctx, doc_filter: str, facts: list, sources_map: dict, tag: str, limit: int = 600) -> bool:
+    """Фолбэк для гостевых /learn и attach: карточка живёт в GunDB-хабе,
+    в ChromaDB её нет (raw импорт stateless). Ищем по document_id или имени
+    файла и инжектим аннотацию как факт + source-запись. Явно упомянутый
+    документ должен попадать в ответ независимо от семантической близости."""
+    if not doc_filter or not ctx.omd_key:
+        return False
+    try:
+        hub_cards = await _fetch_all_knowledge_from_hub(_simple_hash(ctx.omd_key))
+    except Exception as e:
+        logging.warning(f"[inject_facts] hub cards fetch error: {e}")
+        return False
+    want_fn = re.sub(r'^\s*#+\s*', '', (doc_filter or "").split("/")[-1]).strip()
+    for card in hub_cards:
+        if not isinstance(card, dict):
+            continue
+        card_doc = str(card.get("document_id") or card.get("docId") or "").strip()
+        card_fn = card_doc.split("/")[-1] if card_doc else ""
+        if card_doc != doc_filter and card_fn != want_fn:
+            continue
+        body = str(card.get("text") or card.get("annotation") or "").strip()
+        if not body:
+            body = " ".join(str(c.get("text", "")) for c in (card.get("chunks") or []) if isinstance(c, dict)).strip()
+        if not body:
+            # Хаб отдаёт карточки без текста (только title/tags/document_id) —
+            # контент может привезти только клиент через provided_knowledge.
+            logging.info(f"[inject_facts] hub card matched but body is empty: {doc_filter}")
+            continue
+        clean_body = re.sub(r'^\s*#+\s*', '', body).strip()
+        full_path = doc_filter if doc_filter.startswith("/") or doc_filter.startswith("http") else f"/{doc_filter}"
+        facts.append(f"• [File: {full_path}] {clean_body[:limit]}")
+        key = f"{tag}:{doc_filter}"
+        if key not in sources_map:
+            card_title = str(card.get("title") or want_fn).strip()
+            sources_map[key] = {
+                "title":       card_title,
+                "owner":       ctx.user_id or user_context.node_owner(),
+                "clickable":   True,
+                "document_id": doc_filter,
+                "fullPath":    full_path,
+                "path":        full_path,
+                "url":         f"https://onmydisk.net{full_path}" if not full_path.startswith("http") else full_path,
+            }
+        logging.info(f"[inject_facts] card from hub ({tag}): {doc_filter} ({len(clean_body)} chars)")
+        return True
+    return False
+
+
+async def inject_facts(ctx: UserContext, query: str, collection: str = "", mem_id="", provided_knowledge: list|None = None, skip_db: bool = False, focus: dict|None = None, attached_docs: list|None = None) -> tuple[list[str], list[dict]]:
+    facts = []
+    sources_map = {}
+
+    rag_top_k = int(SETTINGS.get("RAG_TOP_K", "15"))
+
+    # /learn focus: граничим факты конкретно этим путём/файлом/карточкой
+    focus_doc = ""
+    if isinstance(focus, dict):
+        focus_doc = (focus.get("docId") or focus.get("document_id") or "").strip()
+    if focus_doc:
+        logging.info(f"[memory] inject_facts focus: {focus_doc}")
+
+    # /learn attached docs: документы, пинутные к чату (персистятся в чате).
+    # Пока карточка активна — инжектим их факты БЕЗУСЛОВНО во все ответы.
+    attached_list = []
+    if attached_docs:
+        for ad in attached_docs:
+            if not isinstance(ad, dict):
+                continue
+            doc = (ad.get("docId") or ad.get("document_id") or "").strip()
+            if not doc:
+                continue
+            title = (ad.get("title") or "").strip() or doc.split("/")[-1]
+            attached_list.append({"doc_id": doc, "title": title})
+        if attached_list:
+            logging.info(f"[memory] inject_facts attached_docs: {[a['doc_id'] for a in attached_list]}")
+
+    # Fun mode: skip DB entirely, use only frontend-provided facts
+    if ctx.settings.get("content_mode", "work") == "fun":
+        logging.info("[memory] Fun mode: skipping DB search, using provided knowledge only.")
+        skip_db = True
+
+    # 1. Карточки памяти, переданные фронтендом (из GunDB)
+    if provided_knowledge is not None:
+        # 1.0 /learn focus: оставляем только карточки с совпадающим document_id
+        if focus_doc:
+            focus_base = focus_doc.split("/")[-1]
+            focused = []
+            for m in provided_knowledge:
+                doc_id = m.get("document_id") if isinstance(m, dict) else None
+                if doc_id and (doc_id == focus_doc or doc_id.split("/")[-1] == focus_base):
+                    focused.append(m)
+            if focused:
+                provided_knowledge = focused
+                logging.info(f"[inject_facts] focus filter: kept {len(focused)} provided cards for {focus_doc}")
+        # 1a. Backend-side relevance: фильтруем по annotation_embedding через hub (только при поиске по базе)
+        filtered_knowledge = list(provided_knowledge)
+        if not skip_db and provided_knowledge and ctx.omd_key and query:
+            try:
+                token_hash = _simple_hash(ctx.omd_key)
+                query_emb = unified_memory.embed(query)
+                # Получаем annotation_embedding для всех карточек с хаба
+                hub_cards = await _fetch_all_knowledge_from_hub(token_hash)
+                emb_map = {}
+                for hc in hub_cards:
+                    mid = hc.get("memoryId", "")
+                    emb = hc.get("annotation_embedding")
+                    if mid and emb:
+                        emb_map[mid] = emb
+                # Фильтруем по cosine similarity: абсолютный пол + относительный
+                # отсекатель (0.55×best) + максимум 3 карточки.
+                # Явная карточка focus (/learn) в scoringе не участвует — она
+                # уже выбрана пользователем и должна попасть в facts всегда.
+                sim_floor = float(SETTINGS.get("KNOWLEDGE_RELEVANCE_THRESHOLD", "0.25"))
+                relative_ratio = float(SETTINGS.get("KNOWLEDGE_RELATIVE_RATIO", "0.55"))
+                forced = focused if focus_doc else []
+                forced_keys = {
+                    (m.get("id") or m.get("memory_id") or m.get("document_id") or "")
+                    for m in forced if isinstance(m, dict)
+                }
+                scored = []
+                for m in provided_knowledge:
+                    mid = m.get("id") or m.get("memory_id") if isinstance(m, dict) else ""
+                    if mid and mid in forced_keys:
+                        continue
+                    emb = emb_map.get(mid) if mid else None
+                    if emb and isinstance(emb, list):
+                        score = sum(q * e for q, e in zip(query_emb, emb))
+                        norm_q = sum(q * q for q in query_emb) ** 0.5
+                        norm_e = sum(e * e for e in emb) ** 0.5
+                        sim = score / (norm_q * norm_e) if norm_q * norm_e > 0 else 0
+                        if sim >= sim_floor:
+                            scored.append((m, sim))
+                scored.sort(key=lambda x: x[1], reverse=True)
+                rel_cutoff = (scored[0][1] * relative_ratio) if scored else 0
+                filtered_knowledge = forced + [m for m, s in scored if s >= rel_cutoff][:max(0, 3 - len(forced))]
+                if forced:
+                    logging.info(f"[inject_facts] focus forced {len(forced)} provided card(s) past the relevance filter")
+                logging.info(
+                    f"[inject_facts] relevance filter: {len(provided_knowledge)} → {len(filtered_knowledge)} cards "
+                    f"(floor={sim_floor}, relative_cutoff={rel_cutoff:.3f})"
+                )
+            except Exception as e:
+                logging.warning(f"[inject_facts] relevance filter error: {e}")
+
+        # 1b. attached docs: карточки приаттаченных к чату документов НЕ выкидываем
+        #     релевантностным фильтром — они инжектятся во все ответы безусловно
+        if attached_list:
+            try:
+                base_mids = {a["doc_id"].split("/")[-1] for a in attached_list}
+                attached_mids = set()
+                for m in provided_knowledge:
+                    if not isinstance(m, dict):
+                        continue
+                    doc_id = (m.get("document_id") or "").strip()
+                    if doc_id and (doc_id in {a["doc_id"] for a in attached_list} or doc_id.split("/")[-1] in base_mids):
+                        mid = m.get("id") or m.get("memory_id")
+                        if mid:
+                            attached_mids.add(mid)
+                if attached_mids:
+                    present = {m.get("id") or m.get("memory_id") for m in filtered_knowledge if isinstance(m, dict)}
+                    for m in provided_knowledge:
+                        mid = m.get("id") or m.get("memory_id") if isinstance(m, dict) else ""
+                        if mid in attached_mids and mid not in present:
+                            filtered_knowledge.append(m)
+                            present.add(mid)
+                    logging.info(
+                        f"[inject_facts] attached docs preserved: {len([1 for m in filtered_knowledge if (m.get('id') or m.get('memory_id')) in attached_mids])} cards"
+                    )
+            except Exception as e:
+                logging.warning(f"[inject_facts] attached docs preserve error: {e}")
+
+        for m in filtered_knowledge:
+            text = m.get("text", "") if isinstance(m, dict) else str(m)
+            if text:
+                doc_id = m.get("document_id") if isinstance(m, dict) else None
+                clean_text = re.sub(r'^\s*#+\s*', '', text).strip()
+                # Явно выбранный /learn документ не режем до 300 символов:
+                # для гостевых импортов аннотация — единственный текст, и
+                # обрезание ломало ответ на полслове ("... AI Gateway/Node ...").
+                focus_max = max(0, 6000)
+                is_focus_record = bool(
+                    focus_doc and doc_id and
+                    (doc_id == focus_doc or doc_id.split("/")[-1] == focus_doc.split("/")[-1])
+                )
+                max_len = focus_max if is_focus_record else 300
+                if len(clean_text) > max_len:
+                    clean_text = clean_text[:max_len - 3] + "..."
+                clean_doc_id = str(doc_id).strip() if doc_id else ""
+                full_path = clean_doc_id if clean_doc_id.startswith("/") or clean_doc_id.startswith("http") else (f"/{clean_doc_id}" if clean_doc_id else "")
+                fn = clean_doc_id.split("/")[-1] if clean_doc_id else (m.get("title") if isinstance(m, dict) else "")
+                fn = re.sub(r'^\s*#+\s*', '', fn).strip() if fn else ""
+                file_ref = full_path or fn
+                if file_ref:
+                    facts.append(f"• [File: {file_ref}] {clean_text}")
+                else:
+                    facts.append(f"• {clean_text}")
+
+                if doc_id:
+                    key = f"provided:{doc_id}"
+                    if key not in sources_map:
+                        clean_doc_id = str(doc_id).strip()
+                        clickable = clean_doc_id.startswith("/") or clean_doc_id.startswith("http") or ("." in clean_doc_id and "/" in clean_doc_id)
+                        full_path = clean_doc_id if clean_doc_id.startswith("/") or clean_doc_id.startswith("http") else f"/{clean_doc_id}"
+                        card_title = ((m.get("title") or "").strip() if isinstance(m, dict) else "")
+                        card_title = re.sub(r'^\s*#+\s*', '', card_title).strip()
+                        if not card_title and isinstance(m, dict):
+                            card_title = clean_text[:48]
+                        src_title = fn if (fn and "." in fn) else (card_title or fn or clean_doc_id.split("/")[-1])
+                        sources_map[key] = {
+                            "title":       src_title,
+                            "owner":       ctx.user_id or user_context.node_owner(),
+                            "clickable":   True,
+                            "document_id": full_path,
+                            "fullPath":    full_path,
+                            "path":        full_path,
+                            "url":         f"https://onmydisk.net{full_path}" if not full_path.startswith("http") else full_path,
+                        }
+
+        # 1b. Chunk-level relevance: fetch chunks from hub for top cards (только при поиске по базе)
+        if not skip_db and ctx.omd_key:
+            token_hash = _simple_hash(ctx.omd_key)
+            for m in filtered_knowledge[:3]:  # top 3 cards only
+                if not isinstance(m, dict):
+                    continue
+                mid = m.get("id") or m.get("memory_id")
+                if not mid:
+                    continue
+                chunks = await _fetch_chunks_from_hub(token_hash, mid)
+                if not chunks:
+                    continue
+                # Embed query, find most relevant chunk
+                try:
+                    query_emb = unified_memory.embed(query)
+                    chunk_texts = [c.get("text", "") for c in chunks if c.get("text")]
+                    if not chunk_texts:
+                        continue
+                    chunk_embs = unified_memory.get_model().encode(chunk_texts, show_progress_bar=False).tolist()
+                    best_score = -1
+                    best_chunk = ""
+                    for ct, ce in zip(chunk_texts, chunk_embs):
+                        score = sum(q * c for q, c in zip(query_emb, ce))
+                        norm_q = sum(q * q for q in query_emb) ** 0.5
+                        norm_c = sum(c * c for c in ce) ** 0.5
+                        sim = score / (norm_q * norm_c) if norm_q * norm_c > 0 else 0
+                        if sim > best_score:
+                            best_score = sim
+                            best_chunk = ct
+                    if best_chunk and best_score > 0.3:
+                        title = m.get("title", "document")
+                        facts.append(f"• [Relevant chunk from {title}]: {best_chunk}")
+                        logging.info(f"[inject_facts] chunk-level: card={mid} score={best_score:.3f}")
+                except Exception as e:
+                    logging.warning(f"[inject_facts] chunk relevance error: {e}")
+
+    # 2. Поиск по unified ChromaDB (если не пропускаем)
+    if not skip_db:
+        try:
+            # Хештеги из промпта переопределяют дефолтный фильтр
+            prompt_tags = _extract_hashtags(query)
+            db_results = unified_memory.search_for_rag(
+                query,
+                private_mode=ctx.private_mode,
+                top_k=rag_top_k,
+                tags_filter=prompt_tags or None,
+                document_id=focus_doc or None,
+            )
+            ctx.temp_search_distance = min((r.get("distance", 1.0) for r in db_results), default=1.0)
+            for r in db_results:
+                if not ctx.private_mode and not unified_memory._is_record_allowed_public(r):
+                    continue
+                rec_type  = r.get("type", "")
+                doc_id    = r.get("document_id", "")
+                raw_title = r.get("title", doc_id.split("/")[-1] if doc_id else "")
+                title     = re.sub(r'^\s*#+\s*', '', raw_title).strip()
+                owner_val = r.get("owner", ctx.user_id or user_context.node_owner())
+                clean_doc_id = str(doc_id).strip() if doc_id else ""
+                full_path = clean_doc_id if clean_doc_id.startswith("/") or clean_doc_id.startswith("http") else (f"/{clean_doc_id}" if clean_doc_id else "")
+                if not ctx.private_mode and full_path:
+                    stripped_p = unified_memory._strip_device_namespace(full_path)
+                    if stripped_p:
+                        full_path = stripped_p
+                fn        = full_path.split("/")[-1] if full_path else title
+                fn        = re.sub(r'^\s*#+\s*', '', fn).strip()
+                file_ref  = full_path or fn
+
+                raw_text   = (r.get("text") or "").strip()
+                clean_text = re.sub(r'^\s*#+\s*', '', raw_text).strip()
+
+                # Чанки фокусного документа — основное содержание ответа на
+                # /learn-вопрос; 400 символов срезали яд, оставляя огрызок.
+                chunk_limit = 1500 if (focus_doc and doc_id == focus_doc) else 400
+
+                if rec_type == "file_chunk":
+                    line = f"• [File: {full_path}]" if full_path else (f"• [File: {fn}]" if fn else "• [File]")
+                    if clean_text:
+                        line += f"\n  {clean_text[:chunk_limit]}"
+                    facts.append(line)
+                else:
+                    if full_path:
+                        facts.append(f"• [File: {full_path}] {clean_text[:chunk_limit]}")
+                    elif fn:
+                        facts.append(f"• [File: {fn}] {clean_text[:chunk_limit]}")
+                    else:
+                        facts.append(f"• {clean_text[:chunk_limit]}")
+
+                if doc_id:
+                    key = f"{owner_val}:{doc_id}"
+                    if key not in sources_map:
+                        clean_doc_id = str(doc_id).strip()
+                        if clean_doc_id.startswith("http://") or clean_doc_id.startswith("https://"):
+                            src_full_path = clean_doc_id
+                            clickable = True
+                        else:
+                            src_full_path = clean_doc_id if clean_doc_id.startswith("/") else f"/{clean_doc_id}"
+                            if not ctx.private_mode:
+                                stripped_p = unified_memory._strip_device_namespace(src_full_path)
+                                if stripped_p:
+                                    src_full_path = stripped_p
+                            clickable = bool(ctx.private_mode and clean_doc_id and not clean_doc_id.startswith("user:note:") and not clean_doc_id.startswith("kb:"))
+                        src_title = fn if (fn and "." in fn) else (title or fn or src_full_path.split("/")[-1])
+                        sources_map[key] = {
+                            "title":       src_title,
+                            "owner":       owner_val if ctx.private_mode else "",
+                            "clickable":   clickable,
+                            "document_id": src_full_path,
+                            "fullPath":    src_full_path,
+                            "path":        src_full_path,
+                            "url":         src_full_path,
+                        }
+        except Exception as e:
+            logging.error(f"[memory] unified search error in inject_facts: {e}")
+
+        # 2b. Focus-фолбэк по карточкам hub: гостевой /learn (raw импорт)
+        #     stateless — в ChromaDB его нет. Если по focus_doc из базы
+        #     извлечь нечего, тянем карточку из хаба по document_id.
+        if focus_doc and not db_results:
+            await _inject_hub_card_fallback(ctx, focus_doc, facts, sources_map, "hub")
+
+    # 3. Attached docs: релевантные чанки приаттаченных к чату документов
+    #    (ChromaDB, owner-пути). Не инжектим при skip_db (напр. обычный чат).
+    if not skip_db and attached_list and ctx.settings.get("content_mode", "work") != "fun":
+        try:
+            for adoc in attached_list:
+                doc_filter = adoc["doc_id"]
+                if not (doc_filter.startswith("/") or doc_filter.startswith("http")):
+                    continue
+                attach_results = unified_memory.search_for_rag(
+                    query,
+                    private_mode=ctx.private_mode,
+                    top_k=3,
+                    tags_filter=None,
+                    document_id=doc_filter,
+                )
+                for r in attach_results:
+                    if not ctx.private_mode and not unified_memory._is_record_allowed_public(r):
+                        continue
+                    text = r.get("text", "")
+                    title = r.get("title") or adoc["title"]
+                    rec_type = r.get("type", "")
+                    clean_doc_id = str(doc_id).strip() if doc_id else ""
+                    full_path = clean_doc_id if clean_doc_id.startswith("/") or clean_doc_id.startswith("http") else (f"/{clean_doc_id}" if clean_doc_id else "")
+                    file_ref = full_path or title
+                    if text:
+                        if rec_type == "file_chunk":
+                            facts.append(f"• [Attached file: {file_ref}] {text}")
+                        else:
+                            facts.append(f"• [Attached: {file_ref}] {text}")
+                    doc_id = r.get("document_id") or doc_filter
+                    if doc_id:
+                        key = f"attached:{doc_id}"
+                        if key not in sources_map:
+                            clean_doc_id = str(doc_id).strip()
+                            if clean_doc_id.startswith("http://") or clean_doc_id.startswith("https://"):
+                                full_path = clean_doc_id
+                                clickable = True
+                            else:
+                                full_path = clean_doc_id if clean_doc_id.startswith("/") else f"/{clean_doc_id}"
+                                clickable = bool(clean_doc_id)
+                            sources_map[key] = {
+                                "title":       title,
+                                "owner":       r.get("owner") or ctx.user_id or user_context.node_owner(),
+                                "clickable":   True,
+                                "document_id": full_path,
+                                "fullPath":    full_path,
+                                "path":        full_path,
+                                "url":         full_path,
+                            }
+                logging.info(f"[inject_facts] attached chunks for {doc_filter}: {len(attach_results)}")
+                if not attach_results:
+                    await _inject_hub_card_fallback(ctx, doc_filter, facts, sources_map, "attached-hub")
+        except Exception as e:
+            logging.error(f"[inject_facts] attached docs chunk error: {e}")
+
+    # Дедикат фраз (один и тот же чанк может попасть из общего поиска и attached)
+    seen = set()
+    dedup = []
+    for f in facts:
+        if f not in seen:
+            seen.add(f)
+            dedup.append(f)
+    return dedup, list(sources_map.values())
+
+# === Ollama запрос ===
+async def llm_request_stream(payload: dict, headers: dict = None):
+    """Stream LLM response with hard timeout protection.
+    LLM_STREAM_TIMEOUT = total wall-clock limit. Prevents ollama from hanging indefinitely.
+    """
+    if "options" not in payload or not isinstance(payload["options"], dict):
+        payload["options"] = {}
+    if "num_ctx" not in payload["options"]:
+        payload["options"]["num_ctx"] = LLM_NUM_CTX
+    if "keep_alive" not in payload:
+        payload["keep_alive"] = LLM_KEEP_ALIVE
+
+    try:
+        timeout = aiohttp.ClientTimeout(
+            total=LLM_STREAM_TIMEOUT,
+            connect=30,
+            sock_read=LLM_STREAM_TIMEOUT,  # allow full time window for heavy models (e.g. 31B) to prefill
+        )
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(
+                f"{OLLAMA_URL}/api/chat",
+                headers=headers or {"Content-Type": "application/json"},
+                json=payload
+            ) as resp:
+                async for line in resp.content:
+                    if not line.strip():
+                        continue
+                    try:
+                        data = json.loads(line.decode("utf-8"))
+                        if data.get("error") and "does not support thinking" in str(data.get("error")) and payload.get("think") is not None:
+                            logging.warning(f"Ollama returned thinking error ({data['error']}), retrying without 'think' parameter...")
+                            retry_payload = {k: v for k, v in payload.items() if k != "think"}
+                            async for retry_item in llm_request_stream(retry_payload, headers=headers):
+                                yield retry_item
+                            return
+                        yield data
+                    except Exception as e:
+                        logging.error(f"Stream parse error: {e}")
+    except aiohttp.ServerTimeoutError as e:
+        logging.error(f"LLM stream TIMEOUT after {LLM_STREAM_TIMEOUT}s — ollama may be stuck: {e}")
+        yield {"error": "⏱️ Response timeout. The model took too long to respond.", "done": True}
+    except Exception as e:
+        logging.error(f"LLM error: {e}")
+
+
+async def llm_request(payload: dict, headers: dict = None):
+    """Blocking LLM request with hard timeout protection.
+    LLM_REQUEST_TIMEOUT = total limit. Prevents ollama from freezing the event loop.
+    """
+    if "options" not in payload or not isinstance(payload["options"], dict):
+        payload["options"] = {}
+    if "num_ctx" not in payload["options"]:
+        payload["options"]["num_ctx"] = LLM_NUM_CTX
+    if "keep_alive" not in payload:
+        payload["keep_alive"] = LLM_KEEP_ALIVE
+    try:
+        timeout = aiohttp.ClientTimeout(total=LLM_REQUEST_TIMEOUT, connect=30)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(
+                f"{OLLAMA_URL}/api/chat",
+                headers=headers or {"Content-Type": "application/json"},
+                json=payload
+            ) as resp:
+                if "application/json" in resp.headers.get("Content-Type", "").lower():
+                    res_json = await resp.json()
+                    if isinstance(res_json, dict) and res_json.get("error"):
+                        err_msg = str(res_json.get("error"))
+                        if "does not support thinking" in err_msg and payload.get("think") is not None:
+                            logging.warning(f"Ollama error ({err_msg}), retrying without 'think'...")
+                            retry_payload = {k: v for k, v in payload.items() if k != "think"}
+                            return await llm_request(retry_payload, headers=headers)
+                        if "not found" in err_msg.lower():
+                            target_model = payload.get("model", "")
+                            fallback_candidates = [DEFAULT_MODEL, "gemma4:latest", "gemma4-work:latest", "gemma4:12b", "qwen3.5-32k:latest"]
+                            for alt in fallback_candidates:
+                                if alt and alt != target_model:
+                                    logging.warning(f"Ollama model '{target_model}' not found, falling back to '{alt}'...")
+                                    retry_payload = {**payload, "model": alt}
+                                    return await llm_request(retry_payload, headers=headers)
+                    return res_json
+                else:
+                    text = await resp.text()
+                    logging.error(f"LLM error: Unexpected content type {resp.headers.get('Content-Type')}. Body: {text[:200]}")
+                    return None
+    except aiohttp.ServerTimeoutError as e:
+        logging.error(f"LLM request TIMEOUT after {LLM_REQUEST_TIMEOUT}s — ollama may be stuck: {e}")
+        return None
+    except Exception as e:
+        logging.error(f"LLM request exception: {e}")
+        return None
+
+
+
+
+
+
+# === Чат ===
+async def _perform_prompt_gen(ctx: UserContext,
+                         instruction: str,
+                         message: str,
+                         search_query: str|None = None,
+                         is_rag: bool=False,
+                         chat: str = "default",
+                         mem_id: str = None,
+                         img_source: str = None,
+                         stream: bool = False,
+                         intent: str = "chat",
+                         event: str = None,
+                         provided_history: list = None,
+                         provided_knowledge: list = None,
+                         chat_summary: str = None,
+                         total_message_count: int = None,
+                         rag_focus: dict = None,
+                         attached_docs: list = None) -> AsyncGenerator:
+
+    mode = ctx.settings.get("content_mode", "work")
+    model = get_llm_model(ctx, mode)
+    fun_mode = mode == "fun"
+    b64_image = None
+    
+    # Internal flags
+    is_rag = intent in ["explain", "think", "search", "explore"]
+
+    # History is derived from provided_history or managed via frontend OrbitDB sync.
+    if chat == "default":
+        history = []
+    
+    history = provided_history or []
+    
+    system_prompt = ""
+    # === ВСПОМНИМ ФАКТЫ ===
+    strict_fact = ""
+    facts_text = ""
+    # RAG 3.0: kb_id — это тег в unified index, не отдельная база
+    kb_tag = ctx.settings.get("kb_id", "omd")
+    rag_top_k = int(SETTINGS.get("RAG_TOP_K", "15"))
+    rag_query = (search_query or message).strip()
+    logging.debug(f"Loading facts: tag={kb_tag} is_rag={is_rag} rag_query={rag_query}")
+    import time as _time
+    _t0 = _time.time()
+    # === Facts injection ===
+    if intent == "chat":
+        # Для простого чата не ищем в базе — инжектим только то, что явно передано в контексте
+        if provided_knowledge:
+            facts, sources = await inject_facts(ctx, rag_query, kb_tag, mem_id, provided_knowledge=provided_knowledge, skip_db=True, focus=rag_focus, attached_docs=None)
+            logging.info(f"[inject_facts] context cards done in {_time.time()-_t0:.3f}s: {len(facts)} facts, {len(sources)} sources")
+        else:
+            facts, sources = [], []
+    elif intent in ("view", "show"):
+        # Plain scene generation doesn't need RAG file search
+        facts, sources = await inject_facts(ctx, rag_query, kb_tag, mem_id, provided_knowledge=provided_knowledge, skip_db=True, focus=rag_focus, attached_docs=attached_docs)
+        logging.info(f"[inject_facts] done in {_time.time()-_t0:.3f}s: {len(facts)} facts, {len(sources)} sources (query='{rag_query}')")
+    else:
+        facts, sources = await inject_facts(ctx, rag_query, kb_tag, mem_id, provided_knowledge=provided_knowledge, focus=rag_focus, attached_docs=attached_docs)
+
+        # Web fallback for search intent: если внутренняя база пуста или хиты слабые
+        if intent == "search":
+            best_distance = getattr(ctx, "temp_search_distance", 1.0)
+            internal_found = best_distance < 1.0
+            internal_strong = internal_found and best_distance <= KNOWLEDGE_STRONG_DISTANCE
+            if not internal_strong:
+                logging.info(
+                    f"Internal search {'empty' if not internal_found else f'weak (best distance {best_distance:.2f})'}"
+                    f" for '{rag_query}'. Trying web search."
+                )
+                yield {"status": "searching"}
+                web_results = await search_web(ctx, rag_query)
+                if web_results and "No results found" not in web_results and not web_results.startswith("Error"):
+                    if internal_found:
+                        sources = []  # ответ будет из веба, не показывать внутренние источники
+                    facts.append(web_results)
+        logging.info(f"[inject_facts] done in {_time.time()-_t0:.3f}s: {len(facts)} facts, {len(sources)} sources (query='{rag_query}')")
+    
+    # Yield sources immediately for the frontend widget
+    if sources:
+        yield {"sources": sources, "done": False}
+
+    # Имя пользователя и дата — в начало секции Known facts (если есть факты или не чат)
+    username = ctx.settings.get("name") or ctx.settings.get("username") or "User"
+    if facts:
+        facts_text += "\n\n*Known facts:*\n"
+        facts_text += f"- User name: {username}\n"
+        facts_text += f"- Current date and time: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
+        facts_text += "\n" + "\n".join(facts)
+    elif intent != "chat":
+        facts_text += "\n\n*Known facts:*\n"
+        facts_text += f"- User name: {username}\n"
+        facts_text += f"- Current date and time: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
+    if is_rag:
+        # === ПОДГОТОВИТЕЛЬНЫЙ RAG-ЗАПРОС ===
+        logging.info(f"RAG request: tag={kb_tag}")
+        yield {"status": "summarizing"}
+        await asyncio.sleep(0.02)
+        prep_prompt = (
+            "You are a fact-checking and retrieval assistant. Based on *Known facts*, extract and summarize ALL relevant facts, files, and candidates that answer or relate to the user's question.\n\n"
+            "RETRIEVAL & MATCHING RULES:\n"
+            "- When listing files, photos, or documents, include their exact full path without extra markdown formatting.\n"
+            "- Format each file item simply as: `• /path/to/filename.ext: Description`.\n"
+            "  Example: `• /Device/Photos/IMG_20260918_134813.jpg: Visiting a city art gallery...`\n"
+            "- Include ALL files matching the requested topic, location, event, or timeframe.\n"
+            "- When searching for photos or media of a person (e.g. by name such as 'Наташа' or 'Алексей') in a place or event: include BOTH exact name mentions AND candidate photos depicting a matching person (e.g. 'woman', 'girl', 'portrait of woman', 'man', etc.) in that requested location, setting, or timeframe. Do NOT omit relevant candidate photos just because the caption uses generic terms like 'woman' or 'portrait' instead of the specific name.\n"
+            "- Be comprehensive: do NOT arbitrarily truncate or drop relevant candidate photos or files found in *Known facts*. List all matching items.\n"
+            "- Do NOT add bold, stars, or markdown headers around filenames or paths in the facts summary.\n"
+            "- NEVER output bare filenames without their full directory path.\n"
+            "- If nothing relevant is found at all, reply with 'No information'."
+        )
+
+        rag_system_prompt = prep_prompt
+
+        if facts_text:
+            rag_system_prompt += facts_text
+
+        is_gemma4 = "gemma4" in model.lower() or "gemma-4" in model.lower()
+        if is_gemma4:
+            rag_system_prompt = f"<|nothink|>\n{rag_system_prompt}"
+
+        prep_messages = [
+            {"role": "system", "content": rag_system_prompt},
+            {"role": "user", "content": message}
+        ]
+        prep_payload = {
+            "messages": prep_messages,
+            "model": model,
+            "stream": False,
+            "keep_alive": LLM_KEEP_ALIVE,
+            "options": {
+               "temperature": 0.1,
+               "num_ctx": LLM_NUM_CTX,
+               "num_predict": LLM_NUM_PREDICT,
+            }
+        }
+        data = await llm_request(prep_payload)
+        if not data:
+            yield {"error": "⚠️ RAG query failed.", "done": True}
+            return
+        
+        rag_resp = data["message"]["content"].strip()
+        if rag_resp and not rag_resp.lower().startswith("no information"):
+            strict_fact = rag_resp
+        elif facts:
+            # Мелкая модель не справилась с prep-запросом — не теряем retrieved-факты:
+            # strict fact = релевантные чанки из индекса (факты уже содержат текст)
+            strict_fact = "\n".join(f[:600] for f in facts[:rag_top_k])
+
+        # Инжект фактов и источников в system prompt
+        if strict_fact:
+            # Strip any accidental heading marks inside bullet points (e.g. '• # Title' -> '• Title')
+            strict_fact = re.sub(r'([•\-\*]\s*)#+\s*', r'\1', strict_fact)
+            # Strip redundant asterisks and doubled slashes from filenames/paths (e.g. '• ****//path**: desc' -> '• /path: desc')
+            strict_fact = re.sub(r'([•\-\*]\s*)\*+\/*([^*:\n]+?)\*+:\s*(.*)', r'\1/\2: \3', strict_fact)
+            strict_fact = re.sub(r'([•\-\*]\s*)\*+\/*([^*\n]+?)\*+', r'\1/\2', strict_fact)
+            strict_fact = re.sub(r'(?<=[\s•\-\*])/{2,}(?=[a-zA-Z0-9_])', '/', strict_fact)
+            strict_fact = re.sub(r'([•\-\*]\s*)(/[^:\n]+?)\*+:\s*', r'\1\2: ', strict_fact)
+            facts_text += f"\n\n*Strict facts:*\n{strict_fact}"
+
+        yield {"status": "typing"}
+        await asyncio.sleep(0.02)
+        
+    if fun_mode:
+        prephase = get_fun_prephase(ctx) if callable(get_fun_prephase) else FUN_PREPHASE
+        system_prompt = f"{prephase}\n{BASE_SYSTEM_PROMPT}"
+    else:  
+        system_prompt = f"{BASE_SYSTEM_PROMPT}"
+
+
+    # Check if the user is new or recurrent one, and prepare chat info
+    _t1 = _time.time()
+    chat_info = await ensure_chat(ctx, chat, message)
+    chat_name = chat_info.get("name", chat or "default")
+    logging.info(f"[ensure_chat] done in {_time.time()-_t1:.3f}s: name={chat_name}")
+
+    # [LEGACY HISTORY] Backend-side history saving removed - handled by frontend/OrbitDB
+    chat_name = chat_info.get("name", chat or "default")
+
+    # Персонализация
+    if fun_mode:
+        user_fun_prompt = (ctx.settings.get("fun_system_prompt") or "").strip()
+        if user_fun_prompt:
+            system_prompt += f"\n\n*Fun Guidelines:*\n{user_fun_prompt}"
+            personality_src = "fun_system_prompt"
+        else:
+            # В fun-режиме НЕ подставляем work-персонажа (дефолт "sales assistant") —
+            # он конфликтует с FUN_PREPHASE и тянет модель в саппортовый тон.
+            personality_src = "none"
+        logging.info(
+            f"[prompt] fun_mode: fun_system_prompt={'SET' if user_fun_prompt else 'EMPTY'} | "
+            f"personality_source={personality_src} | "
+            f"client_keys={sorted(ctx.settings.keys())}"
+        )
+    else:
+        if ctx.settings.get("system_prompt"):
+            system_prompt += "\n\n*Personality:*\n" + ctx.settings.get("system_prompt", "")
+
+    system_prompt += "\n\n*Appearance:*\n" + ctx.settings.get("assistant_appearance", user_context.DEFAULT_ASSISTANT_APPEARANCE)
+    logging.info(f"Model: {model}\nMode: {mode}\nUser: {username}")
+
+    # Факты
+    if facts_text:
+        logging.info(facts_text)
+        system_prompt += facts_text
+
+    # Инструкция
+    instruction_prompt = "*Instruction:*\n" + instruction
+
+    if facts_text:
+        instruction_prompt += (
+            "\n\nCRITICAL MANDATORY RULES FOR FILES AND PHOTOS:\n"
+            "1. When listing, describing, or referring to ANY file, photo, or document, you MUST ONLY mention files listed in the current *Strict facts* / *Known facts* above. NEVER mention or re-use filenames from previous conversation history or your memory!\n"
+            "2. You MUST ALWAYS write its EXACT FULL PATH in bold (e.g. `**/beelink/Data/Phone/IMG_20260926_175706.jpg**: description`).\n"
+            "3. NEVER output bare filenames without their full directory path!\n"
+            "4. NEVER invent files or mention files that are not explicitly present in current *Strict facts*."
+        )
+
+    user_lang = ctx.settings.get("language")
+    if user_lang:
+        instruction_prompt += f"\nPrefer user's language ({user_lang}) for generating responses."
+
+    if not fun_mode:
+        instruction_prompt += "\nThe conversation is continuous; avoid redundancy. Use the provided tool results as the absolute source of truth."
+        
+        # [HALLUCINATION SHIELD]
+        instruction_prompt += "\nCRITICAL: NEVER generate fake tool results. Do NOT use `tool_code` or `*System Tool Output:\n*` blocks yourself. Only the system provides tool results. If tools find nothing, state that it was not found. Do NOT invent content. Do NOT pretend to run actions like saving files by inventing system logs."
+
+    if fun_mode:
+        instruction_prompt += "\n\n*Hint:*\nYou are allowed and welcome to respond in more relaxed, fun mode"
+
+    # === Conversational Voice Mode (Spoken response optimization) ===
+    if ctx.settings.get("voice_mode") or ctx.settings.get("voice_stream"):
+        logging.info("[prompt] Injecting Conversational Voice Mode guidelines")
+        instruction_prompt += (
+            "\n\n*Voice & Conversational Guidelines (Spoken Mode)*:\n"
+            "- You are engaged in an interactive voice conversation with the user. Write as if you are speaking out loud directly to them, NOT composing a formal essay or written documentation.\n"
+            "- Keep responses natural, concise, and lively (typically 1 to 4 conversational sentences per turn unless deep detail is explicitly requested).\n"
+            "- Use natural spoken discourse markers, brief reflections, or subtle hesitation when appropriate (e.g. 'Hmm, let's see...', 'Oh, got it!', 'Well, the trick is...', 'Haha, that's interesting!').\n"
+            "- Use em-dashes ('—') or ellipses ('...') to create natural spoken pauses and rhythm in speech.\n"
+            "- Absolutely DO NOT use markdown headers, bullet lists, asterisks lists, or tables. Express points in fluent, spoken prose with verbal transitions ('First...', 'Also...', 'And best of all...').\n"
+            "- Do NOT paste code blocks or raw URLs. Explain ideas verbally in plain words and mention that details are visible in the chat."
+        )
+
+
+    # === Gemma 4 Thinking Mode ===
+    is_gemma4 = "gemma4" in model.lower() or "gemma-4" in model.lower()
+    thinking_intents = ["explain", "think"]
+    allow_thinking = (not fun_mode) and (intent in thinking_intents)
+
+    if is_gemma4:
+        # Включаем режим размышлений только для think и explain в work режиме (в fun режиме всегда выключено)
+        if allow_thinking:
+            logging.info(f"Enabling Gemma 4 Thinking Mode for intent: {intent} (mode: {mode})")
+            system_prompt = f"<|think|>\n{system_prompt}"
+        else:
+            logging.info(f"Disabling Gemma 4 Thinking Mode for intent: {intent} (mode: {mode})")
+            system_prompt = f"<|nothink|>\n{system_prompt}"
+
+    if allow_thinking:
+        instruction_prompt += (
+            "\n\nTHINKING GUIDELINES:\n"
+            "- Your internal thoughts must focus strictly on analyzing the user's inquiry, verifying facts, and technical logic.\n"
+            "- Absolutely DO NOT analyze, rehearse, or describe your persona, name, or roleplay character rules in your thoughts. Your personality is innate and natural — never mention 'June persona', 'acting charming', or roleplay instructions inside the thinking block."
+        )
+    else:
+        instruction_prompt += "\nCRITICAL: Respond directly to the user. Do NOT output any internal thinking process, reasoning steps, or analysis preamble."
+
+    # === ОСНОВНОЙ ЗАПРОС ===
+    # Merge instruction_prompt directly into the initial system_prompt so there is only one system message at the start.
+    system_prompt += "\n\n" + instruction_prompt
+
+    # Вставляем суммари чата между system prompt и историей
+    if chat_summary:
+        system_prompt += f"\n\n*Conversation summary:*\n{chat_summary}"
+        # При наличии суммари берём только хвост истории
+        messages = [{"role": "system", "content": system_prompt}] + history[-SUMMARY_TAIL_LIMIT:]
+    else:
+        messages = [{"role": "system", "content": system_prompt}] + history[-HISTORY_LIMIT:]
+
+    # Добавляем новый запрос
+    user_message = {
+        "role": "user",
+        "content": message,
+    }
+
+    if img_source:
+        b64_image = await get_image_from_source(ctx, img_source)    
+
+    if b64_image:
+        user_message["images"] = [b64_image]
+        model = VISION_MODEL
+        if img_source.startswith("/"):
+            user_message["image"] = {"path": img_source}
+
+    if mem_id:
+       user_message["mem_id"] = mem_id
+
+    # logging.info(f"Starting main request:{model} {think} {img_source} {mem_id}")
+
+    # Добавляем пользовательский промпт
+    messages.append(user_message)
+
+    main_payload = {
+        "messages": messages,
+        "model": model,
+        "stream": stream,
+        "keep_alive": LLM_KEEP_ALIVE,
+        "options": {
+            "temperature": FUN_TEMPERATURE if fun_mode else TEMPERATURE,
+            "top_p": FUN_TOP_P if fun_mode else TOP_P,
+            "frequency_penalty": FUN_FREQUENCY_PENALTY if fun_mode else FREQUENCY_PENALTY,
+            "presence_penalty": FUN_PRESENCE_PENALTY if fun_mode else PRESENCE_PENALTY,
+            "repeat_penalty": FUN_REPEAT_PENALTY if fun_mode else REPEAT_PENALTY,
+            "repeat_last_n": FUN_REPEAT_LAST_N if fun_mode else REPEAT_LAST_N,
+            "num_ctx": LLM_NUM_CTX,
+            "num_predict": LLM_NUM_PREDICT,  # hard cap on output tokens — prevents runaway generation
+        }
+    }
+
+    #post-processing of response
+    async def process_response(data) -> dict: 
+        logging.info(data)
+        llm_response = data["message"]["content"]
+        llm_response = clean_response(llm_response)
+        llm_think_response = None
+        if data["message"].get("thinking") and allow_thinking:
+            llm_think_response = data["message"]["thinking"]
+
+        # result object
+        response = {}
+        response["content"] = llm_response.strip()
+        # sources уже отправлены early-событием (yield {"sources": ...}) —
+        # не дублируем их в финальном ответе, иначе widget получит двойной список
+        if strict_fact:    
+            response["facts"] = strict_fact
+        if llm_think_response and allow_thinking:    
+            response["thinking"] = llm_think_response
+        # History entries are now managed via frontend OrbitDB sync.
+        # We still return the assistant response for the client to process.
+        if True: # Always process response, skip_history is redundant
+            # Re-load history to get the latest (including the user message we just saved + any parallel ones)
+            try:
+                history = provided_history or []
+            except Exception as e:
+                logging.error(f"Failed to reload history before saving assistant response: {e}")
+                # We can't yield here as we are in process_response, but we should at least not save if loading failed.
+                # Actually, process_response is called from sync and async contexts.
+                # Let's re-raise and handle in the caller.
+                raise e
+
+            history_entry = {
+                "role": "assistant", 
+                "content": llm_response
+            }     
+            if strict_fact:    
+                history_entry["facts"] = strict_fact
+            if sources:
+                history_entry["sources"] = sources
+            if llm_think_response and allow_thinking:    
+                history_entry["thinking"] = llm_think_response
+
+            history.append(history_entry)
+
+            # [LEGACY HISTORY] Save history removed - handled by frontend/OrbitDB
+            pass
+
+        # === ГЕНЕРАЦИЯ СУММАРИ КАЖДЫЕ N СООБЩЕНИЙ ===
+        # Используем total_message_count (реальное кол-во сообщений) вместо len(history)
+        effective_count = total_message_count if total_message_count is not None else len(history)
+        if effective_count > 0 and effective_count % SUMMARY_THRESHOLD == 0:
+            try:
+                model = get_llm_model(ctx)
+                # Кумулятивное суммари: старое суммари + текущий хвост → новое суммари
+                if chat_summary:
+                    summary_input = f"Previous summary:\n{chat_summary}\n\nRecent messages:\n"
+                    for msg in history:
+                        role = msg.get("role", "unknown")
+                        content = msg.get("content", "")
+                        if content and role in ("user", "assistant"):
+                            summary_input += f"{role}: {content[:500]}\n"
+                else:
+                    summary_input = None
+                new_summary = await generate_chat_summary(history, model, previous_summary=chat_summary)
+                if new_summary:
+                    response["summary"] = new_summary
+                    # Обновляем титл чата на основе нового суммари
+                    new_title = await generate_updated_title(new_summary, model)
+                    if new_title:
+                        response["new_title"] = new_title
+                        chat_info["title"] = new_title
+                    logging.info(f"Chat summary generated for {chat_name}: {new_summary[:100]}...")
+            except Exception as e:
+                logging.warning(f"Failed to generate chat summary: {e}")
+
+        response["chatinfo"] = chat_info
+        return response
+
+
+    if stream:
+        async def gen():
+            if strict_fact:
+                yield {"facts": strict_fact, "done": False, "event": event}
+            accumulated_response = ""
+            accumulated_thinking = ""
+            
+            class StreamParser:
+                def __init__(self):
+                    self.buffer = ""
+                    self.thinking = False
+
+                def feed(self, delta: str) -> list[dict]:
+                    self.buffer += delta
+                    events = []
+                    OPEN_TAG = "<|channel>thought\n"
+                    CLOSE_TAG = "<channel|>"
+                    while True:
+                        if not self.thinking:
+                            idx = self.buffer.find(OPEN_TAG)
+                            if idx != -1:
+                                content = self.buffer[:idx]
+                                if content:
+                                    events.append({"type": "content", "text": content})
+                                self.thinking = True
+                                self.buffer = self.buffer[idx + len(OPEN_TAG):]
+                                continue
+                            else:
+                                longest_prefix = 0
+                                for i in range(1, len(OPEN_TAG)):
+                                    prefix = OPEN_TAG[:i]
+                                    if self.buffer.endswith(prefix):
+                                        longest_prefix = i
+                                safe_len = len(self.buffer) - longest_prefix
+                                if safe_len > 0:
+                                    content = self.buffer[:safe_len]
+                                    events.append({"type": "content", "text": content})
+                                    self.buffer = self.buffer[safe_len:]
+                                break
+                        else:
+                            idx = self.buffer.find(CLOSE_TAG)
+                            if idx != -1:
+                                thought = self.buffer[:idx]
+                                if thought:
+                                    events.append({"type": "thought", "text": thought})
+                                self.thinking = False
+                                self.buffer = self.buffer[idx + len(CLOSE_TAG):]
+                                continue
+                            else:
+                                longest_prefix = 0
+                                for i in range(1, len(CLOSE_TAG)):
+                                    prefix = CLOSE_TAG[:i]
+                                    if self.buffer.endswith(prefix):
+                                        longest_prefix = i
+                                safe_len = len(self.buffer) - longest_prefix
+                                if safe_len > 0:
+                                    thought = self.buffer[:safe_len]
+                                    events.append({"type": "thought", "text": thought})
+                                    self.buffer = self.buffer[safe_len:]
+                                break
+                    return events
+
+                def flush(self) -> list[dict]:
+                    events = []
+                    if self.buffer:
+                        if self.thinking:
+                            events.append({"type": "thought", "text": self.buffer})
+                        else:
+                            events.append({"type": "content", "text": self.buffer})
+                        self.buffer = ""
+                    return events
+
+            parser = StreamParser()
+
+            # AI Inference Provider routing
+            is_horde_request = (AI_PROVIDER == "horde") or (AI_PROVIDER == "hybrid" and fun_mode)
+            client_provider = ctx.settings.get("ai_provider")
+            if client_provider == "horde":
+                is_horde_request = True
+            elif client_provider == "local":
+                is_horde_request = False
+
+            if is_horde_request:
+                h_model = ctx.settings.get("horde_model", HORDE_MODEL)
+                h_key = ctx.settings.get("horde_api_key", HORDE_API_KEY)
+                logging.info(f"Requesting AI Horde stream: model={h_model}")
+                stream_source = horde_client.horde_generate_stream(
+                    main_payload,
+                    api_key=h_key,
+                    preferred_model=h_model
+                )
+            else:
+                logging.info(f"Requesting LLM {model}")
+                stream_source = llm_request_stream(main_payload)
+
+            async for data in stream_source:
+                if data.get("status"):
+                    yield {"status": data["status"]}
+                    continue
+                if data.get("done"):  
+                    done_reason = data.get("done_reason", "unknown")
+                    eval_count = data.get("eval_count", "?")
+                    logging.info(f"[stream] done_reason={done_reason}, eval_count={eval_count}, accumulated_len={len(accumulated_response)}")
+                    # flush remaining bytes in parser
+                    for ev in parser.flush():
+                        if ev["type"] == "content":
+                            accumulated_response += ev["text"]
+                            yield {"delta": ev["text"], "done": False}
+                        elif allow_thinking:
+                            accumulated_thinking += ev["text"]
+                            yield {"thought_delta": ev["text"], "done": False}
+                        else:
+                            accumulated_thinking += ev["text"]
+                            
+                    # финал: собираем response на основе всего текста
+                    final_content = accumulated_response
+                    if not final_content.strip() and accumulated_thinking and not allow_thinking:
+                        # Fallback if model put everything in thought tag
+                        final_content = accumulated_thinking
+                    full_data = {
+                        "message": {
+                            "role": "assistant",
+                            "content": final_content
+                        }
+                    }
+                    if accumulated_thinking and allow_thinking:
+                        full_data["message"]["thinking"] = accumulated_thinking
+                    response = await process_response(full_data)
+                    response["done"] = True
+                    response["event"] = event
+                    yield response
+                elif data.get("message"):   
+                    if data["message"].get("thinking"):
+                        delta = data["message"]["thinking"]
+                        accumulated_thinking += delta
+                        if allow_thinking:
+                            yield {"thought_delta": delta, "done": False}
+                        continue
+
+                    delta = data["message"].get("content", "")
+                    if not delta:
+                        continue
+
+                    # Feed parser and process events
+                    suppress_stream = False
+                    for ev in parser.feed(delta):
+                        if ev["type"] == "content":
+                            accumulated_response += ev["text"]
+                            yield {"delta": ev["text"], "done": False}
+                            
+                            # Only check hallucination if NOT in thinking mode
+                            if re.search(r'(?i)\*?System Tool Output', accumulated_response):
+                                 logging.warning("Hallucinated Tool block encountered in stream, suppressing remainder.")
+                                 suppress_stream = True
+                                 break
+                        elif allow_thinking:
+                            accumulated_thinking += ev["text"]
+                            yield {"thought_delta": ev["text"], "done": False}
+                        else:
+                            accumulated_thinking += ev["text"]
+                    
+                    if suppress_stream:
+                        # Send done so the client doesn't hang
+                        response = await process_response({
+                            "message": {"role": "assistant", "content": accumulated_response}
+                        })
+                        response["done"] = True
+                        response["event"] = event
+                        yield response
+                        break
+                elif data.get("error"):    
+                    logging.warning(f"{data['error']}")
+                    yield {"error": data["error"], "done": True, "event": event}
+                else:
+                    logging.warning("Empty response")
+                    yield {"error": "Empty response", "done": True, "event": event}
+        async for item in gen():
+            yield item
+        return    
+    else:
+        is_horde_request = (AI_PROVIDER == "horde") or (AI_PROVIDER == "hybrid" and fun_mode)
+        client_provider = ctx.settings.get("ai_provider")
+        if client_provider == "horde":
+            is_horde_request = True
+        elif client_provider == "local":
+            is_horde_request = False
+
+        if is_horde_request:
+            h_model = ctx.settings.get("horde_model", HORDE_MODEL)
+            h_key = ctx.settings.get("horde_api_key", HORDE_API_KEY)
+            logging.info(f"Requesting AI Horde (blocking): model={h_model}")
+            full_content = ""
+            async for chunk in horde_client.horde_generate_stream(
+                main_payload,
+                api_key=h_key,
+                preferred_model=h_model
+            ):
+                if chunk.get("message", {}).get("content"):
+                    full_content += chunk["message"]["content"]
+            data = {"message": {"role": "assistant", "content": full_content}}
+        else:
+            logging.info(f"Requesting LLM {model}")
+            data = await llm_request(main_payload)
+
+        if not data:
+            yield {"error": "⚠️ Request to LLM failed.", "done": True}
+            return
+        response = await process_response(data)
+        yield response
+        return
+
+async def perform_prompt(
+    ctx: UserContext,
+    instruction: str,
+    message: str,
+    search_query: str|None=None,
+    chat: str="default", 
+    intent: str|None=None,
+    mem_id: str|None=None,
+    img_source: str|None=None,
+    event: str|None=None,
+    stream: bool=False,
+    provided_history: list|None=None,
+    provided_knowledge: list|None=None,
+    chat_summary: str|None=None,
+    total_message_count: int|None=None,
+    rag_focus: dict|None=None,
+    attached_docs: list|None=None
+) -> str | AsyncGenerator:
+    """Wrapper for _perform_prompt_gen to maintain backward compatibility."""
+    
+    gen = _perform_prompt_gen(
+        ctx=ctx,
+        instruction=instruction,
+        message=message,
+        search_query=search_query,
+        chat=chat,
+        intent=intent,
+        mem_id=mem_id,
+        img_source=img_source,
+        event=event,
+        stream=stream,
+        provided_history=provided_history,
+        provided_knowledge=provided_knowledge,
+        chat_summary=chat_summary,
+        total_message_count=total_message_count,
+        rag_focus=rag_focus,
+        attached_docs=attached_docs
+    )
+    
+    if stream:
+        return gen
+    else:
+        # Consume the generator and return the final result
+        final_result = None
+        async for item in gen:
+            # We skip 'status' updates in non-streaming mode
+            if item.get("status"):
+                continue
+            
+            if item.get("error"):
+                 return item["error"]
+            
+            # The final yield in non-stream mode is the response dict
+            final_result = item
+            
+        if final_result:
+            return final_result
+        return "⚠️ Unknown error (empty response)"
+
+# === Генерация картинок ===
+
+# === Chats naming ==== #
+# Emoji enforcement for chat titles
+_CHAT_EMOJI_RE = re.compile(
+    r'[\u2190-\u2BFF\u2600-\u27BF\uFE0F\u200D\U0001F000-\U0001FAFF\U0001FB00-\U0001FFFD]'
+)
+_CHAT_EMOJI_START_RE = re.compile(
+    r'^[\u2190-\u2BFF\u2600-\u27BF\uFE0F\u200D\U0001F000-\U0001FAFF\U0001FB00-\U0001FFFD]'
+)
+
+_TITLE_EMOJI_MAP = {
+    "code": "💻", "program": "💻", "python": "💻", "javascript": "💻", "script": "💻",
+    "bug": "🐛", "error": "⚠️", "debug": "🐛", "exception": "⚠️", "crash": "💥",
+    "write": "✍️", "draft": "✍️", "document": "📄", "letter": "📄", "report": "📊",
+    "translate": "🌍", "language": "🌍",
+    "meeting": "📅", "plan": "🗓️", "schedule": "🗓️", "calendar": "📅",
+    "todo": "✅", "task": "✅", "list": "📝",
+    "travel": "✈️", "trip": "🧳", "flight": "✈️",
+    "recipe": "🍳", "cook": "🍳", "food": "🍔", "coffee": "☕",
+    "photo": "📷", "picture": "🖼️", "image": "🖼️", "video": "🎬", "music": "🎵",
+    "install": "🔧", "setup": "🔧", "config": "⚙️", "settings": "⚙️", "network": "🌐",
+    "security": "🔒", "password": "🔑", "encrypt": "🔒",
+    "hello": "👋", "привет": "👋", "greet": "👋", "help": "🆘", "помощь": "🆘",
+    "idea": "💡", "brainstorm": "💡", "research": "🔬", "study": "📚", "learn": "📚", "book": "📚",
+    "price": "💰", "budget": "💰", "shopping": "🛒", "buy": "🛒",
+    "weather": "🌤️", "health": "🍀", "doctor": "🩺", "sport": "🏋️",
+    "server": "🖥️", "docker": "🐳", "database": "🗄️",
+}
+
+
+def title_starts_with_emoji(text: str) -> bool:
+    return bool(_CHAT_EMOJI_START_RE.match(text or ""))
+
+
+def pick_title_emoji(message: str) -> str:
+    low = (message or "").lower()
+    for kw, emo in _TITLE_EMOJI_MAP.items():
+        if re.search(r'\b' + re.escape(kw), low):
+            return emo
+    return "💬"
+
+
+async def generate_chat_title(message: str, model: str) -> str:
+    """
+    Спросить у LLM короткое имя для чата.
+    Гарантирует, что заголовок начинается с эмодзи, даже если модель
+    его не вернула: emoji добавляется в коде по ключевым словам
+    первого сообщения (💬 по умолчанию).
+    """
+    prompt = (
+        "Generate a short (2-3 words) title for a chat conversation based on the first message. "
+        "The title MUST be in the same language as the first message (e.g. Russian, English). "
+        "The title MUST start with a suitable emoji followed by space and then a short text (2-3 words). "
+        "Format: [emoji] [text]\n"
+        "Example: 🚀 Launching project\n\n"
+        "Return ONLY the title, no quotes, no explanations.\n\n"
+        f"Message: {message}"
+    )
+
+    payload = {
+        "messages": [
+            {"role": "system", "content": "You are a naming assistant."},
+            {"role": "user", "content": prompt}
+        ],
+        "model": model,
+        "stream": False,
+        "options": {"temperature": 0.3}
+    }
+
+    data = await llm_request(payload)
+    title = data["message"]["content"].strip() if data else ""
+    # models sometimes wrap the title in quotes
+    title = title.strip().strip('"').strip("'")
+    if not title:
+        return "💬 New chat"
+    if not title_starts_with_emoji(title):
+        # drop an emoji that the model placed mid-title so we keep exactly one leading one
+        title = _CHAT_EMOJI_RE.sub('', title, count=1) if _CHAT_EMOJI_RE.search(title[:3]) else title
+        title = f"{pick_title_emoji(message)} {title.strip()}"
+    return title
+
+
+
+async def generate_chat_summary(history: list, model: str, previous_summary: str = None) -> str:
+    """
+    Сгенерировать краткое суммари чата. Если есть previous_summary — делаем кумулятивное суммари.
+    """
+    if not history or len(history) < 2:
+        return previous_summary or ""
+
+    # Формируем текст истории для суммаризации
+    history_text = ""
+    for msg in history:
+        role = msg.get("role", "unknown")
+        content = msg.get("content", "")
+        if content and role in ("user", "assistant"):
+            # Обрезаем длинные сообщения
+            truncated = content[:500] + "..." if len(content) > 500 else content
+            history_text += f"{role}: {truncated}\n"
+
+    if not history_text.strip():
+        return previous_summary or ""
+
+    if previous_summary:
+        user_content = (
+            f"Previous summary:\n{previous_summary}\n\n"
+            f"New messages since last summary:\n\n{history_text}\n\n"
+            f"Create an updated cumulative summary that incorporates both the previous summary and the new messages. "
+            f"Keep it concise (3-5 sentences). Focus on the most important information."
+        )
+    else:
+        user_content = f"Chat conversation:\n\n{history_text}"
+
+    payload = {
+        "messages": [
+            {"role": "system", "content": CHAT_SUMMARY_PROMPT},
+            {"role": "user", "content": user_content}
+        ],
+        "model": model,
+        "stream": False,
+        "keep_alive": LLM_KEEP_ALIVE,
+        "options": {"temperature": 0.3, "num_ctx": LLM_NUM_CTX, "num_predict": 512}
+    }
+
+    data = await llm_request(payload)
+    if not data:
+        return previous_summary or ""
+    return data["message"]["content"].strip() or previous_summary or ""
+
+
+async def generate_updated_title(summary: str, model: str) -> str:
+    """
+    Обновить титл чата на основе суммари (когда чат уже не про первую тему).
+    """
+    if not summary:
+        return ""
+
+    prompt = (
+        "Generate a short (2-3 words) title for a chat conversation based on this summary. "
+        "The title MUST start with a suitable emoji followed by space and then a short text. "
+        "Format: [emoji] [text]\n"
+        "Return ONLY the title, no quotes, no explanations.\n\n"
+        f"Summary: {summary}"
+    )
+
+    payload = {
+        "messages": [
+            {"role": "system", "content": "You are a naming assistant."},
+            {"role": "user", "content": prompt}
+        ],
+        "model": model,
+        "stream": False,
+        "keep_alive": LLM_KEEP_ALIVE,
+        "options": {"temperature": 0.3, "num_predict": 20}
+    }
+
+    data = await llm_request(payload)
+    if not data:
+        return ""
+    return data["message"]["content"].strip() or ""
+
+
+def slugify(text):
+    # Lowercase, remove special characters, replace spaces with underscores
+    text = text.lower()
+    # Remove emoji and most non-ascii characters (basic)
+    text = re.sub(r'[^\w\s]', '', text)
+    # Replace spaces and multiple underscores with single underscore
+    text = re.sub(r'[\s_]+', '_', text)
+    return text.strip('_')
+
+async def ensure_chat(ctx: UserContext, chat: str, first_message: str = None) -> dict:
+    # [LEGACY HISTORY] Backend-side chats index removed - handled by frontend/OrbitDB
+    if not chat or chat in ["default", "newchat"]:
+        # 1. Try to generate a nice title from first message first
+        chat_title = "New chat"
+        if first_message:
+            try:
+                model = get_llm_model(ctx)
+                chat_title = await generate_chat_title(first_message, model)
+            except Exception as e:
+                logging.warning(f"Failed to generate chat title: {e}")
+                chat_title = (first_message[:30] + "..." if len(first_message) > 30 else first_message)
+                chat_title = f"{pick_title_emoji(first_message)} {chat_title}"
+                
+        # 2. Generate new chat name (ID) using slugified title
+        title_slug = slugify(chat_title)
+        if not title_slug or title_slug == "new_chat":
+             title_slug = "chat"
+             
+        # Use a shorter unique suffix instead of a long timestamp if needed, 
+        # but let's try to keep it as clean as possible.
+        unique_suffix = str(uuid.uuid4())[:4]
+        chat_name = f"{title_slug}_{unique_suffix}"
+        
+        return {
+            "name": chat_name,
+            "title": chat_title,
+            "file": f"{chat_name}.json",
+            "created": datetime.now(timezone.utc).isoformat(),
+            "updated": datetime.now(timezone.utc).isoformat()
+        }
+        
+    return {
+        "name": chat,
+        "title": chat,
+        "file": f"{chat}.json",
+        "created": datetime.now(timezone.utc).isoformat(),
+        "updated": datetime.now(timezone.utc).isoformat()
+    }
+
+
+# === Intent ===
+def parse_intent_and_query(raw_response: str, default_prompt: str = "") -> tuple[str, str]:
+    """
+    Parses intent classification output from LLM.
+    Returns (intent, search_query).
+    """
+    def _storage_keyword_fallback():
+        p_lower = default_prompt.lower()
+        if any(k in p_lower for k in ("хранилищ", "файл", "документ", "фотк", "фотограф", "диск", "папк")) and any(a in p_lower for a in ("найди", "поищи", "покажи", "где", "есть ли", "find", "search", "where")):
+            return "explore", default_prompt
+        return "chat", default_prompt
+
+    if not raw_response or not raw_response.strip():
+        return _storage_keyword_fallback()
+
+    lines = [line.strip() for line in raw_response.strip().split("\n") if line.strip()]
+    if not lines:
+        return _storage_keyword_fallback()
+
+    first_line = lines[0].strip().lower()
+    allowed_intents = ["show", "view", "explain", "recognize", "import", "chat", "search", "explore", "think", "tools", "doc", "generate"]
+    
+    base_intent = "chat"
+    raw_arg = ""
+    for allowed in allowed_intents:
+        if first_line.startswith(allowed) or f"intent: {allowed}" in first_line or f"intent is {allowed}" in first_line:
+            base_intent = allowed
+            if ":" in lines[0] and not first_line.startswith("intent:"):
+                parts = lines[0].split(":", 1)
+                raw_arg = parts[1].strip()
+            break
+
+    # If first line didn't match, check other lines for intent
+    if base_intent == "chat":
+        for l in lines:
+            ll = l.strip().lower()
+            for allowed in allowed_intents:
+                if ll.startswith(allowed) or f"intent: {allowed}" in ll or f"intent is {allowed}" in ll:
+                    base_intent = allowed
+                    break
+            if base_intent != "chat":
+                break
+
+    # If still chat, check for strong storage/file keywords
+    if base_intent == "chat":
+        kw_intent, _ = _storage_keyword_fallback()
+        if kw_intent != "chat":
+            base_intent = kw_intent
+
+    # Backward compatibility: map legacy 'doc' to 'tools'
+    if base_intent == "doc":
+        base_intent = "tools"
+
+    # Anti-hallucination validation for arguments (paths/URLs):
+    # Only keep the path if it or its basename is actually present in default_prompt
+    if raw_arg:
+        clean_arg = raw_arg.strip("'\"")
+        basename = os.path.basename(clean_arg.rstrip("/\\"))
+        prompt_lower = default_prompt.lower()
+        is_in_prompt = (clean_arg.lower() in prompt_lower) or (bool(basename) and basename.lower() in prompt_lower)
+        if not is_in_prompt:
+            logging.info(f"[parse_intent] Stripping hallucinated path '{raw_arg}' from intent '{base_intent}'")
+            raw_arg = ""
+
+    if raw_arg and base_intent in ("recognize", "import", "tools"):
+        intent = f"{base_intent}:{raw_arg}"
+    else:
+        intent = base_intent
+
+    query = ""
+    for line in lines[1:]:
+        m = re.match(r'^(?:query|search|keywords|search_query|запрос|ключевые слова):\s*(.+)$', line, re.IGNORECASE)
+        if m:
+            val = m.group(1).strip()
+            if val.lower() not in ("none", "null", "n/a", "no", "false", "-", "none."):
+                query = val
+            break
+
+    # If no Query: line matched and intent is a search/RAG intent, fallback to default_prompt
+    if not query and intent in ("explain", "search", "explore", "think"):
+        query = default_prompt
+
+    return intent, query
+
+
+async def classify_user_intent(ctx: UserContext, prompt: str, chat: str = "default", provided_history: list|None = None) -> str:
+    chat = chat or "default"
+    active_intent_prompt = get_prompt("intent.txt") or INTENT_PROMPT
+    system_prompt = (
+        f"<|nothink|>\n{active_intent_prompt}\n\n"
+        "CRITICAL: Follow the exact 3-line format: <intent> on line 1, Query: <search terms or 'none'> on line 2, Reason: <brief explanation> on line 3. "
+        "Do NOT repeat the instructions or the system prompt itself."
+    )
+    
+    # Get last 2 messages from history
+    try:
+        if provided_history is not None:
+             history = provided_history
+        else:
+             history = []
+        
+        last_messages = history[-2:] if history else []
+        if last_messages:
+            history_text = "\nChat History (last 2 messages):\n"
+            for msg in last_messages:
+                role = msg.get("role", "unknown")
+                content = msg.get("content", "")
+                if content:
+                    history_text += f"{role}: {content}\n"
+            
+            system_prompt += f"\n\n{history_text}\n"
+    except Exception as e:
+        logging.warning(f"Failed to load history for intent classification: {e}")
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": prompt}
+    ]
+    
+    request_payload = {
+        "messages": messages,
+        "model": get_llm_model(ctx),
+        "stream": False,
+        "think": False,
+        "options": {
+            "temperature": 0.0, 
+        }
+    }
+    
+    data = await llm_request(request_payload)
+    
+    if data and "message" in data:
+        content = (data["message"].get("content") or "").strip()
+        if not content and data["message"].get("thinking"):
+            content = data["message"]["thinking"].strip()
+        if content:
+            return content
+    
+    logging.warning(f"Classification failed, response: {data}")
+    p_lower = prompt.lower()
+    if any(k in p_lower for k in ("хранилищ", "файл", "документ", "фотк", "фотограф", "диск", "папк")) and any(a in p_lower for a in ("найди", "поищи", "покажи", "где", "есть ли", "find", "search", "where")):
+        return f"explore\nQuery: {prompt}\nReason: Storage keywords fallback"
+    return "chat\nFallback" 
+
+
+async def check_prompt_safety(ctx: UserContext, prompt: str) -> str:
+    system_prompt = CONTENT_FILTER_PROMPT
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": prompt}
+    ]
+    
+    request_payload = {
+        "messages": messages,
+        "model": get_llm_model(ctx),
+        "stream": False,
+        "options": {
+            "temperature": 0.1,
+        }
+    }
+    
+    data = await llm_request(request_payload)
+    
+    if data and "message" in data and "content" in data["message"]:
+        return data["message"]["content"]
+    
+    return "SAFE" # Default fallback
+
+async def generate_image_prompt(ctx: UserContext, instruction: str, prompt: str, chat = "default", history: list = None) -> str:
+    chat = chat or "default"
+    appearance = ctx.settings.get("assistant_appearance") or user_context.DEFAULT_ASSISTANT_APPEARANCE
+    
+    # Extract tags (like <dream>, <Minerva>) from prompt and appearance so LLM tokenizer/special tokens are not confused
+    tags_in_prompt = re.findall(r"<[^>]+>", prompt)
+    tags_in_appearance = re.findall(r"<[^>]+>", appearance)
+    all_tags = list(dict.fromkeys(tags_in_prompt + tags_in_appearance)) # Deduplicate preserving order
+    
+    # Clean tags from the text sent to the LLM
+    clean_prompt_text = re.sub(r"<[^>]+>", "", prompt).strip()
+    clean_appearance_text = re.sub(r"<[^>]+>", "", appearance).strip()
+
+    # Clean prompt from slash commands
+    clean_prompt = re.sub(r'^/(?:show|view|imagine|generate|recognize|detect|think|explain|search|import|learn)\s*', '', clean_prompt_text).strip()
+    if not clean_prompt:
+        clean_prompt = clean_prompt_text
+
+    # Extract user profile / system prompt so image tagger knows who the user is
+    user_prompt = (ctx.settings.get("fun_system_prompt") if (ctx.settings.get("content_mode") == "fun") else None) or ctx.settings.get("system_prompt") or ""
+    username = ctx.settings.get("name") or ctx.settings.get("username") or ""
+    user_info_parts = []
+    if username:
+        user_info_parts.append(f"Name: {username}")
+    if user_prompt.strip():
+        user_info_parts.append(user_prompt.strip())
+    user_info_text = "\n".join(user_info_parts) if user_info_parts else "Not specified"
+
+    # Generate image prompt with clean context
+    format_kwargs = {
+        "prompt": clean_prompt,
+        "appearance": clean_appearance_text,
+        "user_info": user_info_text,
+    }
+    try:
+        instruction_text = instruction.format(**format_kwargs)
+    except KeyError:
+        instruction_text = instruction.format(prompt=clean_prompt, appearance=clean_appearance_text)
+
+    logging.info(f"[img_prompt] instruction_text:\n{instruction_text}")
+    system_parts = ["You are an image tag generator. Follow instructions exactly."]
+    if ctx.private_mode and ctx.settings.get("content_mode", "work") == "fun":
+        system_parts.append(get_image_fun(ctx) if callable(get_image_fun) else IMAGE_PROMPT_FUN)
+    system_prompt = "\n".join(system_parts)
+    image_instruction = instruction_text
+
+
+
+    # Format history as a structured text block instead of active chat messages to prevent model roleplay priming
+    history_text = ""
+    if history:
+        history_text = "\n\n=== RECENT CONVERSATION HISTORY (extract from this: location, outfit, pose/action, atmosphere, objects) ===\n"
+        for msg in history[-4:]:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            if isinstance(content, str):
+                 history_text += f"{role.upper()}: {content}\n"
+        history_text += "========================================================\n"
+
+    messages = [
+        {"role": "system", "content": system_prompt + history_text},
+        {"role": "user", "content": image_instruction}
+    ]
+
+
+    request_payload = {
+        "messages": messages,
+        "model": IMAGE_TAG_MODEL,
+        "stream": False,
+        "options": {
+            "temperature": 0.2,
+            "top_p": 0.9,
+            "frequency_penalty": 0.5,
+            "presence_penalty": 0.5,
+        }
+    }
+
+    logging.info(f"[img_prompt] LLM request system:\n{messages[0]['content'][:500]}")
+    logging.info(f"[img_prompt] LLM request user:\n{messages[1]['content'][:500]}")
+
+    data = await llm_request(request_payload)
+
+    if data and "message" in data and "content" in data["message"]:
+        response = data["message"]["content"]
+    elif data:
+        response = data.get("content") or str(data)
+    else:
+        logging.error(f"[image_prompt] LLM returned None/empty response")
+        response = ""
+
+    logging.info(f"[img_prompt] RAW LLM response:\n{response}")
+    logging.info(f"[img_prompt] History used: {len(history) if history else 0} messages, last {min(len(history) if history else 0, 4)} shown")
+
+    # [LEGACY HISTORY] Save history removed - handled by frontend/OrbitDB
+
+    final_prompt = response.strip()
+
+    # 1. Fallback for empty Image: content (only for assistant/character image)
+    if instruction == SYSTEM_INSTRUCTION_CHARACTER:
+        clean_meta_regex = r'^(?:sdxl\s+pony|sdxl|pony\s+tags?|pose\s+action|action\s+pose|required\s+tags?)\b[\s,:;-]*'
+        def _sanitize_tags(text: str) -> str:
+            text = re.sub(clean_meta_regex, '', text, flags=re.IGNORECASE).strip()
+            # Strip parenthetical narratives e.g. "kissing (June kisses Alexey's neck...)"
+            # while keeping SD weights like "(red dress:1.2)" or simple single-word emphasis
+            def _filter_paren(m):
+                content = m.group(1).strip()
+                if re.search(r':\d+(?:\.\d+)?$', content):
+                    return f"({content})"
+                if " " not in content and len(content) < 15:
+                    return f"({content})"
+                return ""
+            text = re.sub(r'\(([^)]+)\)', _filter_paren, text)
+            text = re.sub(r'\s*,\s*', ', ', text)
+            text = re.sub(r'(?:,\s*)+', ', ', text).strip(', ')
+            return text.strip()
+
+        if "Image:" in final_prompt:
+            parts = final_prompt.split("Image:", 1)
+            prompt_content = _sanitize_tags(parts[1])
+            if not prompt_content or len(prompt_content) < 5:
+                prompt_content = f"{clean_appearance_text}, {clean_prompt}"
+            final_prompt = f"{parts[0]}Image: {prompt_content}"
+        else:
+            final_prompt = _sanitize_tags(final_prompt)
+            if len(final_prompt) < 10:
+                final_prompt = f"{clean_appearance_text}, {clean_prompt}"
+
+    # 2. Collect all style and model/LoRA tags to append to the end of the prompt
+    # No automatic style injection — only tags explicitly set by the user
+    # (style_lora(s) in settings or typed on the client side)
+    tags_to_add = []
+
+    # Add model/LoRA tags (only for assistant/character image)
+    if instruction == SYSTEM_INSTRUCTION_CHARACTER:
+        # Assistant persona: new clients set assistant_model; character_lora is
+        # a legacy alias kept by old frontend settings blobs — never send both
+        assistant_model = ctx.settings.get("assistant_model") or ctx.settings.get("character_lora") or user_context.DEFAULT_ASSISTANT_MODEL
+        if assistant_model.lower() == "june":
+            assistant_model = user_context.DEFAULT_ASSISTANT_MODEL
+        model_tag = assistant_model if assistant_model.startswith("<") else f"<{assistant_model}>"
+        if model_tag not in tags_to_add:
+            tags_to_add.append(model_tag)
+
+    # Style LoRAs explicitly set by the user in settings
+    for sk in ("style_lora", "style_loras"):
+        val = ctx.settings.get(sk)
+        if val:
+            items = val if isinstance(val, list) else [x.strip() for x in str(val).split(",")]
+            for item in items:
+                itag = item if item.startswith("<") else f"<{item}>"
+                if itag not in tags_to_add:
+                    tags_to_add.append(itag)
+
+    # Merge in any raw tags extracted from the prompt/settings
+    for tag in all_tags:
+        if tag not in tags_to_add:
+            tags_to_add.append(tag)
+
+    # 3. Append the tags to the prompt
+    if tags_to_add:
+        # Remove tags we are re-appending ourselves (LLM may have copied them
+        # from history earlier or into the refined text) to avoid duplicates
+        for t in tags_to_add:
+            t_name = re.escape(t.strip("<>"))
+            final_prompt = re.sub(rf"\s*<{t_name}>", "", final_prompt, flags=re.IGNORECASE)
+        tag_suffix = " " + " ".join(tags_to_add)
+        if "Image:" in final_prompt:
+             lines = final_prompt.split("\n")
+             for idx, line in enumerate(lines):
+                  if line.strip().startswith("Image:"):
+                       lines[idx] = line.rstrip() + tag_suffix
+                       break
+             final_prompt = "\n".join(lines)
+        else:
+             final_prompt += tag_suffix
+
+    return final_prompt
+
+
+# Generate character image, returns full path for further sending or conversion
+async def generate_character_image_prompt(ctx: UserContext, prompt, chat="default", history: list = None) -> str:
+    if not prompt:
+        raise Exception("Please explain what do you want to see.")
+
+    #Улучшаем промпт
+    return await generate_image_prompt(ctx,  SYSTEM_INSTRUCTION_CHARACTER, prompt, chat, history)
+
+
+# Generate general image, returns full path for further sending or conversion
+async def generate_general_image_prompt(ctx: UserContext, prompt, chat="default", history: list = None) -> str:
+    if not prompt:
+        raise Exception("Please explain what do you want to see.")
+
+    #Улучшаем промпт
+    return await generate_image_prompt(ctx, SYSTEM_INSTRUCTION_GENERAL, prompt, chat, history)
+
+
+DYNAMIC_COMPOSITIONS = [
+    {
+        "framing": "cinematic wide full-body shot",
+        "description": "Show the subject's entire body from head to shoes fully immersed within a vast, highly detailed physical environment or architecture."
+    },
+    {
+        "framing": "dynamic action shot in motion",
+        "description": "Capture the subject mid-movement with kinetic body posture: walking briskly, running, turning sharply, leaping, or navigating obstacles."
+    },
+    {
+        "framing": "dramatic low-angle ground perspective",
+        "description": "Camera positioned at foot or ground level looking upward, creating a towering heroic perspective against soaring architecture, trees, or sky."
+    },
+    {
+        "framing": "overhead high-angle crane shot",
+        "description": "Artistic bird's-eye perspective looking down from above, capturing the subject amidst intricate geometric floor patterns, stairs, and long shadows."
+    },
+    {
+        "framing": "candid storytelling scene",
+        "description": "Subject deeply absorbed in an intricate physical activity, craft, mechanical repair, navigation, or expedition, completely unposed and not looking at camera."
+    },
+    {
+        "framing": "cinematic Dutch angle frame",
+        "description": "Tilted dynamic framing with dramatic diagonal lines, foreground environmental layers, and deep three-dimensional space."
+    },
+    {
+        "framing": "three-quarter cowboy shot from knees up",
+        "description": "Framed from mid-thigh up with active hand gestures, interacting with tools, machinery, vehicles, architectural elements, or props."
+    },
+    {
+        "framing": "grand environmental panoramic shot",
+        "description": "Subject integrated into a majestic grand scale landscape, urban crosswalk, monumental bridge, or dramatic natural phenomenon."
+    }
+]
+
+
+LANDSCAPE_COMPOSITIONS = [
+    {
+        "framing": "sweeping panoramic establishing landscape",
+        "description": "Grand panoramic horizon with deep atmospheric layers, monumental geological scale, and dramatic natural lighting."
+    },
+    {
+        "framing": "dramatic low-angle nature perspective",
+        "description": "Camera positioned low to ground level looking across geological textures toward towering peaks, ancient trees, or sky."
+    },
+    {
+        "framing": "atmospheric aerial drone perspective",
+        "description": "High-altitude cinematic bird's-eye perspective revealing intricate natural topography, river deltas, or coastlines."
+    },
+    {
+        "framing": "deep layered telephoto landscape",
+        "description": "Compressed distance layers showing atmospheric haze and glowing sunlight between receding mountain ridges."
+    },
+    {
+        "framing": "cinematic wide-angle environmental vista",
+        "description": "Vibrant foreground details like reflections on water, wild flora, or carved rocks leading into a grand distant panorama."
+    }
+]
+
+
+async def generate_random_creative_prompt(
+    ctx: UserContext,
+    persona_name: str = "",
+    persona_prompt: str = "",
+    persona_lora: str = "",
+    style: str = "",
+    keywords: str = "",
+    archetypes: str = "",
+    loras: str = "",
+    **kwargs
+) -> str:
+    """Generate a truly creative, imaginative, dynamic and evocative visual prompt for Krea 2 using LLM."""
+    model = get_fast_model(ctx)
+    has_character = bool(persona_name or persona_prompt or persona_lora or archetypes)
+
+    if not has_character:
+        # PURE LANDSCAPE / ENVIRONMENT MODE — strictly no humans or character figures!
+        comp = random.choice(LANDSCAPE_COMPOSITIONS)
+        system_instruction = (
+            "You are a master nature photographer and cinematic landscape director for state-of-the-art diffusion models.\n"
+            "Your mission is to invent a breathtaking, majestic, awe-inspiring landscape, natural scenery, or atmospheric architectural vista.\n\n"
+            "CRITICAL MANDATES:\n"
+            "1. NO PEOPLE: STRICTLY FORBIDDEN to include any humans, people, persons, figures, silhouettes, faces, or character subjects. The scenery must be completely focused on nature, terrain, weather, atmosphere, or grand architecture.\n"
+            f"2. COMPOSITION MANDATE: Frame the scene with: '{comp['framing']}'. {comp['description']}\n"
+            "3. RICH VISUAL ATMOSPHERE: Include vivid environmental textures (geological formations, reflections on water, morning mist, storm clouds, foliage, lighting interaction).\n"
+            "4. DENSE & CONCISE: 1 to 2 complete visual sentences (around 30 to 45 words maximum). Finish with a period.\n"
+            "5. NO META/BUZZWORDS: Do not use 'photorealistic, 8k, masterpiece', and NEVER start with 'A photo of'. Start directly with the scenery, terrain, lighting, and atmosphere.\n"
+            "6. OUTPUT ONLY the prompt text. No quotes, no intro, no labels."
+        )
+        user_parts = [
+            f"Framing: {comp['framing']}."
+        ]
+        if style:
+            user_parts.append(f"Visual style: {style}.")
+        if loras:
+            clean_loras = loras.strip()
+            if clean_loras:
+                user_parts.append(f"Visual motifs: {clean_loras}.")
+        clean_kw = (keywords or "").strip()
+        words = clean_kw.split()
+        if 0 < len(words) <= 4 and not any(p in clean_kw for p in [".", "!", "?", "\n"]):
+            user_parts.append(f"Scenery theme: {clean_kw}.")
+        else:
+            user_parts.append("Invent a majestic, completely original natural landscape or atmospheric architectural vista.")
+    else:
+        # CHARACTER MODE
+        comp = random.choice(DYNAMIC_COMPOSITIONS)
+        system_instruction = (
+            "You are an avant-garde film director and AI cinematographer for state-of-the-art diffusion models.\n"
+            "Your mission is to invent a dynamic, unexpected, visually breathtaking cinematic scene from scratch.\n\n"
+            "CRITICAL COMPOSITION & DYNAMICS RULES:\n"
+            "1. STRICTLY FORBIDDEN: Static boring headshots, passport photos, simple bust studio portraits, or character staring passively at the camera.\n"
+            f"2. COMPOSITION MANDATE: You MUST build the scene around this exact framing: '{comp['framing']}'. {comp['description']}\n"
+            "3. ACTIVE DYNAMICS: The subject must be actively DOING something physical or exploring the world (walking briskly, repairing machinery, running through rain, climbing, painting, navigating, inspecting artifacts), fully integrated into a rich setting.\n"
+            "4. DENSE & CONCISE: 1 to 2 complete visual sentences (around 30 to 45 words maximum). Finish with a period.\n"
+            "5. NO META/BUZZWORDS: Do not use 'photorealistic, 8k, masterpiece', and NEVER start with 'A photo of' or 'Capture the essence of'. Start directly with the subject, action, and shot framing.\n"
+            "6. OUTPUT ONLY the prompt text. No quotes, no intro, no labels."
+        )
+        user_parts = [
+            f"Framing: {comp['framing']}."
+        ]
+        if archetypes:
+            user_parts.append(
+                f"The image MUST feature and portray the character archetype(s): {archetypes}. "
+                "Incorporate their distinctive aesthetic, hair, styling, and presence into the scene."
+            )
+        if persona_name or persona_prompt:
+            char_desc = persona_name
+            if persona_prompt:
+                char_desc += f" ({persona_prompt})"
+            user_parts.append(f"Depict character identity: {char_desc}.")
+        elif persona_lora:
+            clean_lora = persona_lora.replace(".safetensors", "").replace("_", " ")
+            user_parts.append(f"Depict character features matching {clean_lora}.")
+        if style:
+            user_parts.append(f"Visual style: {style}.")
+        if loras:
+            clean_loras = loras.strip()
+            if clean_loras:
+                user_parts.append(f"Visual motifs: {clean_loras}.")
+        clean_kw = (keywords or "").strip()
+        words = clean_kw.split()
+        if 0 < len(words) <= 4 and not any(p in clean_kw for p in [".", "!", "?", "\n"]):
+            user_parts.append(f"Incorporate user theme: {clean_kw}.")
+        else:
+            user_parts.append("Invent a fresh, completely original scene with rich visual atmosphere and cinematic lighting.")
+
+    user_content = " ".join(user_parts)
+
+    payload = {
+        "messages": [
+            {"role": "system", "content": system_instruction},
+            {"role": "user", "content": user_content}
+        ],
+        "model": model,
+        "stream": False,
+        "think": False,
+        "options": {
+            "temperature": 1.0,
+            "top_p": 0.95,
+            "presence_penalty": 1.1,
+            "frequency_penalty": 1.1,
+            "num_predict": 250
+        }
+    }
+
+    try:
+        data = await llm_request(payload)
+        prompt = ""
+        if data and "message" in data and "content" in data["message"]:
+            prompt = data["message"]["content"].strip()
+        elif data and isinstance(data, dict):
+            prompt = data.get("content", "").strip()
+
+        if prompt:
+            # Clean up potential LLM prefixes or quotation marks
+            prompt = re.sub(r'^(Prompt|Image|Description):\s*', '', prompt, flags=re.IGNORECASE).strip('"\n ')
+            prompt = re.sub(r'^(Capture\s+the\s+essence\s+of|A\s+(cinematic\s+)?(photo|photograph|shot)\s+of)\s+', '', prompt, flags=re.IGNORECASE)
+            # Strip any accidental seed mentions if LLM hallucinates it
+            prompt = re.sub(r'\b(in\s+seed\s*\d+|seed\s*\d+)\b', '', prompt, flags=re.IGNORECASE).strip(' ,')
+            # If the prompt was abruptly truncated mid-sentence, trim back to the last complete sentence
+            if prompt and prompt[-1] not in ".!?":
+                last_punct = max(prompt.rfind("."), prompt.rfind("!"), prompt.rfind("?"))
+                if last_punct > 25:
+                    prompt = prompt[:last_punct + 1].strip()
+                else:
+                    prompt = prompt.rstrip(" ,-—:") + "."
+            return prompt
+    except Exception as e:
+        logging.error(f"[generate_random_creative_prompt] LLM failed: {e}")
+
+    # Rich procedural fallback if LLM is completely unavailable
+    lighting_list = [
+        "bathed in warm golden hour rim lighting that casts long cinematic shadows",
+        "illuminated by cool moody neon hues reflecting off slick wet surfaces",
+        "soft diffuse morning skylight highlighting natural textures",
+        "dramatic chiaroscuro lighting with deep rich blacks and vibrant warm highlights",
+        "dappled sunlight filtering through lush tree canopy with subtle lens flare",
+        "dim atmospheric twilight lighting creating an intimate serene warmth"
+    ]
+    camera_list = [
+        "sweeping panoramic establishing shot, majestic scale, 28mm lens",
+        "dramatic low-angle ground perspective looking across sculpted geology toward the sky",
+        "high-angle crane shot looking down across deep environmental layers",
+        "cinematic wide-angle view, deep atmospheric backdrop, crystal clear horizon"
+    ]
+    extra_keywords = f", {keywords.strip()}" if (keywords and keywords.strip()) else ""
+    extra_style = f", {style} aesthetic" if style else ""
+
+    if not has_character:
+        landscape_scenes = [
+            "Towering jagged alpine mountain peaks rising above a mirror-like turquoise glacial lake, morning mist weaving through pine forests",
+            "A dramatic wind-swept coastal cliff overlooking churning ocean waves crashing against dark volcanic sea stacks",
+            "Vast rolling desert sand dunes rippled by the wind, casting deep golden shadows under a twilight sky with a crescent moon",
+            "An ancient mystical moss-covered redwood forest, ethereal god rays piercing through dense canopy illuminating a winding river",
+            "A majestic northern lights aurora dancing in vibrant green and violet ribbons across a starry Arctic sky over snow-covered fjords",
+            "A deep sandstone slot canyon with sculpted undulating orange rock walls, warm ambient light glowing from above",
+            "A tranquil secluded tropical cove with turquoise water gently lapping against powdery white sand, framed by wild lush cliffs",
+            "Panoramic view of a sprawling neon-lit metropolis in twilight rain, towering glass spires reflecting amber sunset glow"
+        ]
+        return f"{random.choice(landscape_scenes)}, {random.choice(lighting_list)}, {random.choice(camera_list)}{extra_style}{extra_keywords}."
+
+    char_lead = f"{persona_name}, " if persona_name else ""
+    if not char_lead and archetypes:
+        char_lead = f"{archetypes}, "
+
+    dynamic_actions = [
+        "running swiftly across rain-slicked neon cobblestones, trench coat billowing in the wind",
+        "stepping purposefully down a monumental concrete spiral staircase in a brutalist art museum",
+        "kneeling on one knee to inspect intricate antique clockwork gears on a subterranean vault floor",
+        "leaning against the fender of a vintage roadster parked on an open coastal cliff overlooking crashing waves",
+        "walking full-stride through an overgrown sunlit botanical atrium surrounded by towering palms and ferns",
+        "working intently at a cluttered wooden workbench, soldering glowing vacuum tubes in a dimly lit workshop",
+        "leaping gracefully across an industrial rooftop gap against a panoramic twilight skyline",
+        "sitting cross-legged on a patterned kilim rug on an open desert terrace examining ancient star charts",
+        "perched casually on the stone balustrade of a bridge spanning a misty river in early morning light",
+        "hiking with dynamic energy along a wind-swept rocky mountain ridge as low clouds drift through the peaks",
+        "striding purposefully through a crowded neon-lit market alley under heavy rain with a transparent umbrella",
+        "skating fluidly down an oceanfront boulevard between swaying palm trees in warm afternoon light"
+    ]
+    return f"{char_lead}{random.choice(dynamic_actions)}, {random.choice(lighting_list)}, {random.choice(camera_list)}{extra_style}{extra_keywords}."
+
+
+_CYR_TRANSLIT = {
+    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "yo", "ж": "zh",
+    "з": "z", "и": "i", "й": "y", "к": "k", "л": "l", "м": "m", "н": "n", "о": "o",
+    "п": "p", "р": "r", "с": "s", "т": "t", "у": "u", "ф": "f", "х": "kh", "ц": "ts",
+    "ч": "ch", "ш": "sh", "щ": "shch", "ъ": "", "ы": "y", "ь": "", "э": "e", "ю": "yu", "я": "ya",
+}
+
+
+def sanitize_story_slug(raw_slug: str) -> str:
+    """Converts a Russian or English story title/slug into a clean filesystem-safe folder name."""
+    if not raw_slug:
+        return ""
+    s = str(raw_slug).strip().lower()
+    out = []
+    for ch in s:
+        if ch in _CYR_TRANSLIT:
+            out.append(_CYR_TRANSLIT[ch])
+        elif ch.isascii() and (ch.isalnum() or ch in ("_", "-")):
+            out.append(ch)
+        elif ch in (" ", ".", "/", "\\", ":", ";", ","):
+            out.append("_")
+    slug = re.sub(r"_+", "_", "".join(out)).strip("_-")
+    return slug[:48] or f"story_{datetime.now().strftime('%Y%m%d_%H%M')}"
+
+
+def _extract_json_object(raw_text: str) -> dict | None:
+    """Extracts a JSON object robustly from LLM output (handles <think>, code fences, trailing commas)."""
+    if not raw_text:
+        return None
+    cleaned = re.sub(r"<think>[\s\S]*?</think>", "", raw_text).strip()
+    fence_match = re.search(r"```(?:json)?\s*([\s\S]*?)```", cleaned, flags=re.IGNORECASE)
+    candidate = fence_match.group(1).strip() if fence_match else cleaned
+    for text_try in (candidate, cleaned):
+        start = text_try.find("{")
+        end = text_try.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            snippet = text_try[start:end + 1]
+            try:
+                return json.loads(snippet)
+            except Exception:
+                # Remove trailing commas before } or ]
+                fixed = re.sub(r",\s*([}\]])", r"\1", snippet)
+                try:
+                    return json.loads(fixed)
+                except Exception:
+                    pass
+    return None
+
+
+def _get_director_model() -> str:
+    """Uses the uncensored creative FUN_MODEL when configured, falling back to DEFAULT_MODEL."""
+    return (FUN_MODEL or DEFAULT_MODEL or "gemma4:latest").strip()
+
+
+_DIRECTOR_LANG_NAMES = {
+    "en": "English",
+    "ru": "Russian",
+    "sl": "Slovenian",
+    "de": "German",
+    "es": "Spanish",
+    "fr": "French",
+    "it": "Italian",
+    "nl": "Dutch",
+    "pl": "Polish",
+    "pt": "Portuguese",
+    "tr": "Turkish",
+    "uk": "Ukrainian",
+    "hr": "Croatian",
+    "sr": "Serbian",
+    "sk": "Slovak",
+    "zh_cn": "Simplified Chinese",
+    "zh_tw": "Traditional Chinese",
+    "he": "Hebrew",
+    "fa": "Persian",
+}
+
+
+def _detect_is_russian(text: str, ctx: UserContext | None = None) -> bool:
+    if text and re.search(r"[А-Яа-яЁё]", text):
+        return True
+    if ctx and getattr(ctx, "settings", None):
+        lang = str(ctx.settings.get("language") or ctx.settings.get("locale") or "").lower()
+        if lang.startswith("ru"):
+            return True
+    return False
+
+
+def _resolve_director_language(text: str, ctx: UserContext | None = None) -> tuple[str, bool]:
+    """Returns (english_language_name_for_llm, is_ru) respecting user's active UI locale and text script."""
+    ui_code = ""
+    if ctx and getattr(ctx, "settings", None):
+        raw_code = str(ctx.settings.get("language") or ctx.settings.get("locale") or "").lower().strip().replace("-", "_")
+        if raw_code in _DIRECTOR_LANG_NAMES:
+            ui_code = raw_code
+        else:
+            prim = raw_code.split("_")[0]
+            if prim in _DIRECTOR_LANG_NAMES:
+                ui_code = prim
+    if text and re.search(r"[А-Яа-яЁё]", text):
+        if ui_code in ("uk", "sr"):
+            return _DIRECTOR_LANG_NAMES[ui_code], False
+        return "Russian", True
+    if ui_code:
+        return _DIRECTOR_LANG_NAMES[ui_code], (ui_code == "ru")
+    return "English", False
+
+
+_CIVITAI_URL_RE = re.compile(
+    r"https?://(?:www\.)?civitai\.(?:com|red)/(images|posts)/(\d+)(?:[/?#][^\s]*)?",
+    re.IGNORECASE,
+)
+def _norm_lora_key(val: str) -> str:
+    if not val:
+        return ""
+    base = os.path.basename(str(val).strip().replace("\\", "/"))
+    if base.lower().endswith((".safetensors", ".ckpt", ".pt", ".bin")):
+        base = os.path.splitext(base)[0]
+    return re.sub(r"[^a-z0-9]", "", base.lower())
+
+
+def _extract_user_mcp_civitai_entries(ctx: UserContext | None) -> list[tuple[str, str, str]]:
+    """
+    Extracts all CivitAI API key entries from the user's E2EE MCP keys payload.
+    Returns list of (app_id, display_name, token).
+    """
+    if not ctx:
+        return []
+    entries: list[tuple[str, str, str]] = []
+    seen_tokens: set[str] = set()
+    sources = (
+        getattr(ctx, "mcp_keys", None),
+        (ctx.settings.get("mcp_keys") if isinstance(getattr(ctx, "settings", None), dict) else None),
+    )
+    for src in sources:
+        if not isinstance(src, dict):
+            continue
+        for raw_id, raw_val in src.items():
+            app_id = str(raw_id or "").strip()
+            if not app_id or app_id.endswith(("_url", "_name")):
+                continue
+            low_id = app_id.lower()
+            token = ""
+            name_hint = ""
+            url_hint = ""
+            if isinstance(raw_val, dict):
+                token = str(raw_val.get("key") or "").strip()
+                name_hint = str(raw_val.get("name") or "").strip()
+                url_hint = str(raw_val.get("url") or "").strip()
+            elif isinstance(raw_val, str):
+                token = raw_val.strip()
+                name_hint = str(src.get(f"{app_id}_name") or "").strip()
+                url_hint = str(src.get(f"{app_id}_url") or "").strip()
+            if not token or token in seen_tokens:
+                continue
+            is_civitai = (
+                low_id == "civitai"
+                or low_id.startswith(("civitai_", "civitai-"))
+                or "civitai." in url_hint.lower()
+                or "civitai" in name_hint.lower()
+            )
+            if is_civitai:
+                seen_tokens.add(token)
+                entries.append((app_id, name_hint, token))
+    return entries
+
+
+def _resolve_civitai_token(ctx: UserContext | None = None) -> str:
+    """Resolves CivitAI API token from user's MCP keys, or standard CIVITAI_API_KEY config if set."""
+    user_entries = _extract_user_mcp_civitai_entries(ctx)
+    if user_entries:
+        return user_entries[0][2]
+
+    val = (SETTINGS.get("CIVITAI_API_KEY") or os.environ.get("CIVITAI_API_KEY") or "").strip()
+    return val
+
+
+def _compact_diffusion_prompt(raw_prompt: str) -> str:
+    """Strips inline <lora:...> syntax and collapses double-spaced lines into clean readable text."""
+    if not raw_prompt:
+        return ""
+    cleaned = re.sub(r"<lora:[^>]+>", "", raw_prompt, flags=re.IGNORECASE)
+    lines = [ln.strip() for ln in cleaned.replace("\r\n", "\n").split("\n") if ln.strip()]
+    if not lines:
+        return ""
+    out_parts = []
+    for ln in lines:
+        if not out_parts:
+            out_parts.append(ln)
+        elif out_parts[-1].endswith((",", ";", ".", ":")):
+            out_parts.append(" " + ln)
+        else:
+            out_parts.append(", " + ln)
+    joined = "".join(out_parts)
+    joined = re.sub(r"\s*,\s*,+", ", ", joined)
+    joined = re.sub(r"\s{2,}", " ", joined).strip(" ,")
+    return joined
+
+
+def _extract_comfy_graph_data(comfy_obj: dict | str | None) -> dict:
+    """Extracts prompt, negative_prompt, steps, cfg, seed, sampler, width, height, model, and LoRAs from raw ComfyUI workflow/prompt JSON."""
+    res = {
+        "prompt": "",
+        "negative_prompt": "",
+        "steps": None,
+        "cfg": None,
+        "seed": None,
+        "sampler": None,
+        "width": None,
+        "height": None,
+        "models": [],
+        "loras": [],
+    }
+    if not comfy_obj:
+        return res
+    if isinstance(comfy_obj, str):
+        try:
+            comfy_obj = json.loads(comfy_obj)
+        except Exception:
+            return res
+    if not isinstance(comfy_obj, dict):
+        return res
+
+    prompt_graph = comfy_obj.get("prompt") if isinstance(comfy_obj.get("prompt"), dict) else comfy_obj
+    if not isinstance(prompt_graph, dict):
+        return res
+
+    positive_node_ids = set()
+    negative_node_ids = set()
+    for nid, node in prompt_graph.items():
+        if not isinstance(node, dict):
+            continue
+        ctype = str(node.get("class_type") or "").lower()
+        inputs = node.get("inputs") if isinstance(node.get("inputs"), dict) else {}
+
+        if "ksampler" in ctype or "samplercustom" in ctype or "basicscheduler" in ctype or "randomnoise" in ctype or "ksamplerselect" in ctype:
+            if inputs.get("steps") is not None and res["steps"] is None:
+                try:
+                    res["steps"] = int(inputs["steps"])
+                except Exception:
+                    pass
+            if inputs.get("cfg") is not None and res["cfg"] is None:
+                try:
+                    res["cfg"] = float(inputs["cfg"])
+                except Exception:
+                    pass
+            raw_seed = inputs.get("seed") if inputs.get("seed") is not None else inputs.get("noise_seed")
+            if raw_seed is not None and res["seed"] is None and not isinstance(raw_seed, (list, dict)):
+                try:
+                    res["seed"] = int(raw_seed)
+                except Exception:
+                    pass
+            raw_sampler = inputs.get("sampler_name")
+            if isinstance(raw_sampler, str) and raw_sampler.strip() and not res["sampler"]:
+                res["sampler"] = raw_sampler.strip()
+            pos_ref = inputs.get("positive")
+            if isinstance(pos_ref, list) and pos_ref:
+                positive_node_ids.add(str(pos_ref[0]))
+            neg_ref = inputs.get("negative")
+            if isinstance(neg_ref, list) and neg_ref:
+                negative_node_ids.add(str(neg_ref[0]))
+
+        if "emptylatent" in ctype or "emptysd3latent" in ctype or "latentimage" in ctype or "minimaxh3" in ctype:
+            if inputs.get("width") and inputs.get("height") and not res["width"]:
+                try:
+                    res["width"] = int(inputs["width"])
+                    res["height"] = int(inputs["height"])
+                except Exception:
+                    pass
+
+        if "unetloader" in ctype or "checkpointloader" in ctype:
+            mname = inputs.get("unet_name") or inputs.get("ckpt_name")
+            if isinstance(mname, str) and mname.strip():
+                res["models"].append(mname.strip())
+
+        if "lora" in ctype:
+            lname = inputs.get("lora_name")
+            if isinstance(lname, str) and lname.strip():
+                w = inputs.get("strength_model", inputs.get("strength", 0.8))
+                try:
+                    w = float(w)
+                except Exception:
+                    w = 0.8
+                res["loras"].append({"name": lname.strip(), "weight": w})
+            for k, v in inputs.items():
+                if k.startswith("lora_") and isinstance(v, dict) and v.get("on") and v.get("lora"):
+                    try:
+                        w = float(v.get("strength", 0.8))
+                    except Exception:
+                        w = 0.8
+                    res["loras"].append({"name": str(v["lora"]).strip(), "weight": w})
+
+    # Extract positive and negative texts
+    pos_texts = []
+    neg_texts = []
+    fallback_texts = []
+    for nid, node in prompt_graph.items():
+        if not isinstance(node, dict):
+            continue
+        ctype = str(node.get("class_type") or "").lower()
+        inputs = node.get("inputs") if isinstance(node.get("inputs"), dict) else {}
+        if "textencode" in ctype or "prompt" in ctype or "minimaxh3" in ctype:
+            txt = inputs.get("text") or inputs.get("prompt") or inputs.get("positive")
+            if isinstance(txt, str) and len(txt.strip()) > 3:
+                if str(nid) in negative_node_ids:
+                    neg_texts.append(txt.strip())
+                    continue
+                if len(txt.strip()) <= 10:
+                    continue
+                low = txt.lower()
+                if "worst quality" in low and "low quality" in low and "watermark" in low and len(txt) < 350:
+                    neg_texts.append(txt.strip())
+                    continue
+                if str(nid) in positive_node_ids:
+                    pos_texts.append(txt.strip())
+                else:
+                    fallback_texts.append(txt.strip())
+
+    chosen_texts = pos_texts or fallback_texts
+    if chosen_texts:
+        res["prompt"] = max(chosen_texts, key=len)
+    if neg_texts:
+        res["negative_prompt"] = max(neg_texts, key=len)
+    return res
+
+
+async def extract_civitai_image_preset(ctx: UserContext | None, text: str) -> tuple[dict | None, str]:
+    """
+    Detects a CivitAI image/post URL (civitai.com or civitai.red) in `text`, fetches its ComfyUI/generation
+    metadata using the user's or server's CivitAI token, and maps base model, Style LoRAs, Archetype LoRAs,
+    weights, steps, CFG, and aspect ratio onto Creative Studio presets.
+    Returns `(imported_dict, remaining_text)` or `(None, text)` when no URL is present.
+    """
+    if not text:
+        return None, ""
+    m = _CIVITAI_URL_RE.search(text)
+    if not m:
+        return None, text
+
+    kind = m.group(1).lower()
+    raw_id = m.group(2)
+    source_url = m.group(0)
+
+    remaining = (text[:m.start()] + " " + text[m.end():]).strip()
+    remaining = re.sub(r"^[\s,;:—–\-]+", "", remaining).strip()
+
+    token = _resolve_civitai_token(ctx)
+    headers = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) CreativeStudio/2.0"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    import urllib.parse
+    timeout = aiohttp.ClientTimeout(total=12.0)
+
+    async def _fetch_json(session: aiohttp.ClientSession, urls: list[str]) -> dict | None:
+        for u in urls:
+            try:
+                async with session.get(u, headers=headers) as resp:
+                    if resp.status == 200:
+                        data = await resp.json(content_type=None)
+                        if isinstance(data, dict):
+                            return data
+            except Exception as e:
+                logging.debug(f"[CivitAI Import] Fetch note for {u}: {e}")
+        return None
+
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        image_id = raw_id
+        v1_item = None
+        if kind == "posts":
+            post_data = await _fetch_json(session, [
+                f"https://civitai.com/api/v1/images?postId={raw_id}&nsfw=true&limit=1",
+                f"https://civitai.red/api/v1/images?postId={raw_id}&nsfw=true&limit=1",
+            ])
+            items = (post_data or {}).get("items") or []
+            if not items:
+                raise ValueError(f"Не удалось найти изображения в посте CivitAI #{raw_id} (проверьте ссылку или токен CivitAI).")
+            v1_item = items[0]
+            image_id = str(v1_item.get("id") or raw_id)
+
+        trpc_input = urllib.parse.quote(json.dumps({"json": {"id": int(image_id), "authed": True}}))
+        trpc_urls = [
+            f"https://civitai.com/api/trpc/image.getGenerationData?input={trpc_input}",
+            f"https://civitai.red/api/trpc/image.getGenerationData?input={trpc_input}",
+        ]
+        v1_urls = [
+            f"https://civitai.com/api/v1/images?imageId={image_id}&nsfw=true",
+            f"https://civitai.red/api/v1/images?imageId={image_id}&nsfw=true",
+        ]
+
+        if v1_item is not None:
+            trpc_resp = await _fetch_json(session, trpc_urls)
+            v1_resp = None
+        else:
+            trpc_resp, v1_resp = await asyncio.gather(
+                _fetch_json(session, trpc_urls),
+                _fetch_json(session, v1_urls),
+            )
+            items = (v1_resp or {}).get("items") or []
+            if items:
+                v1_item = items[0]
+
+    gen_json = (((trpc_resp or {}).get("result") or {}).get("data") or {}).get("json") or {}
+    gen_meta = gen_json.get("meta") if isinstance(gen_json.get("meta"), dict) else {}
+    v1_meta = (v1_item or {}).get("meta") if isinstance((v1_item or {}).get("meta"), dict) else {}
+    comfy_parsed = _extract_comfy_graph_data(gen_meta.get("comfy") or v1_meta.get("comfy"))
+
+    raw_prompt = (
+        str(gen_meta.get("prompt") or "").strip()
+        or str(v1_meta.get("prompt") or "").strip()
+        or str(comfy_parsed.get("prompt") or "").strip()
+    )
+    if not raw_prompt and not v1_item and not gen_json:
+        raise ValueError(
+            f"Не удалось получить данные кадра CivitAI #{image_id}. Проверьте ссылку или добавьте токен CivitAI в настройках ключей."
+        )
+    if not raw_prompt:
+        raise ValueError(
+            f"У кадра CivitAI #{image_id} автор скрыл промпт и метаданные генерации (Generation Data отсутствует)."
+        )
+
+    inline_loras = re.findall(r"<lora:([^:>]+)(?::([\-0-9.]+))?>", raw_prompt, flags=re.IGNORECASE)
+    clean_prompt = _compact_diffusion_prompt(raw_prompt)
+
+    # Collect LoRA weights & identifiers across all CivitAI / ComfyUI metadata sources
+    weight_by_vid: dict[str, float] = {}
+    weight_by_norm: dict[str, float] = {}
+    discovered_loras: list[dict] = []
+
+    def _record_lora(name: str = "", vid: str = "", weight=None, base_hint: str = ""):
+        w_val = None
+        if weight is not None:
+            try:
+                w_val = round(float(weight), 2)
+            except Exception:
+                w_val = None
+        vid_s = str(vid).strip() if vid else ""
+        n_key = _norm_lora_key(name)
+        if vid_s and w_val is not None:
+            weight_by_vid[vid_s] = w_val
+        if n_key and w_val is not None:
+            weight_by_norm[n_key] = w_val
+        discovered_loras.append({
+            "name": str(name or "").strip(),
+            "norm": n_key,
+            "vid": vid_s,
+            "weight": w_val,
+            "base": str(base_hint or "").strip(),
+        })
+
+    for ar in (gen_meta.get("additionalResources") or v1_meta.get("additionalResources") or []):
+        if isinstance(ar, dict) and str(ar.get("type") or "lora").lower() in ("lora", "locon", "dora"):
+            _record_lora(name=ar.get("name") or "", vid=ar.get("modelVersionId") or "", weight=ar.get("strength", ar.get("weight")))
+
+    for cr in (gen_meta.get("civitaiResources") or v1_meta.get("civitaiResources") or []):
+        if isinstance(cr, dict) and str(cr.get("type") or "").lower() in ("lora", "locon", "dora"):
+            _record_lora(name=cr.get("modelVersionName") or cr.get("modelName") or "", vid=cr.get("modelVersionId") or "", weight=cr.get("weight", cr.get("strength")))
+
+    for mr in (gen_meta.get("resources") or v1_meta.get("resources") or []):
+        if isinstance(mr, dict) and str(mr.get("type") or "").lower() in ("lora", "locon", "dora"):
+            _record_lora(name=mr.get("name") or "", vid=mr.get("modelVersionId") or "", weight=mr.get("weight", mr.get("strength")))
+
+    for cl in (comfy_parsed.get("loras") or []):
+        _record_lora(name=cl.get("name") or "", weight=cl.get("weight"))
+
+    for il_name, il_w in inline_loras:
+        _record_lora(name=il_name, weight=il_w or 0.8)
+
+    checkpoint_hints: list[str] = []
+    checkpoint_vids: set[str] = set()
+    for tr_res in (gen_json.get("resources") or []):
+        if not isinstance(tr_res, dict):
+            continue
+        mtype = str(tr_res.get("modelType") or "").upper()
+        vid = str(tr_res.get("modelVersionId") or tr_res.get("versionId") or "").strip()
+        mname = str(tr_res.get("modelName") or "").strip()
+        vname = str(tr_res.get("versionName") or "").strip()
+        bmodel = str(tr_res.get("baseModel") or "").strip()
+        if mtype == "CHECKPOINT":
+            if vid:
+                checkpoint_vids.add(vid)
+            checkpoint_hints.extend([mname, vname, bmodel])
+        elif mtype in ("LORA", "LOCON", "DORA"):
+            _record_lora(name=mname, vid=vid, weight=tr_res.get("strength"), base_hint=bmodel)
+
+    if v1_item and v1_item.get("baseModel"):
+        checkpoint_hints.append(str(v1_item["baseModel"]))
+    for mk in ("Model", "model"):
+        if gen_meta.get(mk):
+            checkpoint_hints.append(str(gen_meta[mk]))
+        if v1_meta.get(mk):
+            checkpoint_hints.append(str(v1_meta[mk]))
+    for m_entry in (gen_meta.get("models") or []) + (comfy_parsed.get("models") or []):
+        if m_entry:
+            checkpoint_hints.append(str(m_entry))
+
+    # Index Creative Studio presets from krea_presets.json + SDXL flow.json
+    presets = get_krea_presets(include_fun=True)
+    def _build_preset_index(items: list[dict]) -> list[dict]:
+        indexed = []
+        for it in (items or []):
+            pid = str(it.get("id") or "").strip()
+            if not pid or pid == "none":
+                continue
+            url = str(it.get("url") or "")
+            vid_m = re.search(r"/models/(\d+)", url)
+            vid = vid_m.group(1) if vid_m else ""
+            fname = str(it.get("filename") or "")
+            indexed.append({
+                "id": pid,
+                "name": str(it.get("name") or pid),
+                "vid": vid,
+                "norm_file": _norm_lora_key(fname),
+                "norm_name": _norm_lora_key(it.get("name") or ""),
+                "norm_id": _norm_lora_key(pid),
+                "default_strength": float(it.get("strength", 0.8) or 0.8),
+                "models": it.get("models") or ["all"],
+                "has_lora": bool(fname),
+            })
+        return indexed
+
+    style_index = _build_preset_index(presets.get("art_styles") or [])
+    arch_index = _build_preset_index(presets.get("archetypes") or [])
+
+    # Check if caller has Cloud GPU (Krea/Anima) entitlement; if Guest/SDXL-only, map onto SDXL
+    caller_krea_allowed = True
+    try:
+        st_check = await check_krea_status(ctx)
+        if isinstance(st_check, dict) and "krea_allowed" in st_check:
+            caller_krea_allowed = bool(st_check.get("krea_allowed"))
+    except Exception:
+        pass
+
+    # Determine base_model ("sdxl" | "anima" | "semi_realism" | "realism")
+    joined_hints = " ".join(checkpoint_hints).lower()
+    lora_base_hints = " ".join(d["base"] for d in discovered_loras).lower()
+    detected_base = None
+    if not caller_krea_allowed:
+        detected_base = "sdxl"
+    elif ("3126581" in checkpoint_vids or "3287420" in checkpoint_vids
+            or any(k in joined_hints for k in ("anima", "niji", "wai"))
+            or "anima" in lora_base_hints):
+        detected_base = "anima"
+    elif "3258954" in checkpoint_vids or any(k in joined_hints for k in ("muse", "yogi", "semi_realism", "semireal")):
+        detected_base = "semi_realism"
+    elif "3357068" in checkpoint_vids or any(k in joined_hints for k in ("krea", "flux", "qwen")):
+        detected_base = "realism"
+    elif any(k in joined_hints for k in ("sdxl", "xl 1.0", "pony", "illustrious")) or any(k in lora_base_hints for k in ("sdxl", "pony", "illustrious")):
+        detected_base = "sdxl"
+    elif "cyberrealistic" in joined_hints:
+        detected_base = "realism"
+
+    # Match discovered LoRAs to Studio styles & archetypes
+    matched_styles: list[str] = []
+    style_weights: dict[str, float] = {}
+    matched_style_labels: list[str] = []
+
+    matched_archetypes: list[str] = []
+    archetype_weights: dict[str, float] = {}
+    matched_archetype_labels: list[str] = []
+
+    unmatched_lora_names: list[str] = []
+    matched_norms_or_vids: set[str] = set()
+
+    def _find_preset_matches(dl: dict, index_list: list[dict]) -> list[dict]:
+        found = []
+        for p in index_list:
+            if not p["has_lora"]:
+                continue
+            if dl["vid"] and p["vid"] and dl["vid"] == p["vid"]:
+                found.append(p)
+            elif dl["norm"] and p["norm_file"] and dl["norm"] == p["norm_file"]:
+                found.append(p)
+            elif dl["norm"] and len(dl["norm"]) >= 4 and (dl["norm"] == p["norm_name"] or dl["norm"] == p["norm_id"]):
+                found.append(p)
+        return found
+
+    def _resolve_preset_weight(p: dict, dl: dict) -> float:
+        if dl["weight"] is not None:
+            return dl["weight"]
+        if p["vid"] and p["vid"] in weight_by_vid:
+            return weight_by_vid[p["vid"]]
+        if p["norm_file"] and p["norm_file"] in weight_by_norm:
+            return weight_by_norm[p["norm_file"]]
+        if p["norm_name"] and p["norm_name"] in weight_by_norm:
+            return weight_by_norm[p["norm_name"]]
+        return round(float(p["default_strength"]), 2)
+
+    for dl in discovered_loras:
+        st_matches = _find_preset_matches(dl, style_index)
+        if st_matches:
+            for st_match in st_matches:
+                pid = st_match["id"]
+                w = _resolve_preset_weight(st_match, dl)
+                if pid not in matched_styles:
+                    matched_styles.append(pid)
+                style_weights[pid] = w
+                if st_match["norm_file"]:
+                    matched_norms_or_vids.add(f"n:{st_match['norm_file']}")
+                if detected_base is None:
+                    if "anima" in st_match["models"]:
+                        detected_base = "anima"
+                    elif "sdxl" in st_match["models"]:
+                        detected_base = "sdxl"
+            if dl["vid"]:
+                matched_norms_or_vids.add(f"v:{dl['vid']}")
+            if dl["norm"]:
+                matched_norms_or_vids.add(f"n:{dl['norm']}")
+            continue
+
+        ar_matches = _find_preset_matches(dl, arch_index)
+        if ar_matches:
+            for ar_match in ar_matches:
+                pid = ar_match["id"]
+                w = _resolve_preset_weight(ar_match, dl)
+                if pid not in matched_archetypes:
+                    matched_archetypes.append(pid)
+                archetype_weights[pid] = w
+                if ar_match["norm_file"]:
+                    matched_norms_or_vids.add(f"n:{ar_match['norm_file']}")
+                if detected_base is None:
+                    if "anima" in ar_match["models"]:
+                        detected_base = "anima"
+                    elif "sdxl" in ar_match["models"]:
+                        detected_base = "sdxl"
+            if dl["vid"]:
+                matched_norms_or_vids.add(f"v:{dl['vid']}")
+            if dl["norm"]:
+                matched_norms_or_vids.add(f"n:{dl['norm']}")
+
+    if detected_base is None:
+        if not caller_krea_allowed:
+            detected_base = "sdxl"
+        else:
+            detected_base = "anima" if ("1girl" in clean_prompt.lower() or "1woman" in clean_prompt.lower() and "masterpiece" in clean_prompt.lower()) else "realism"
+
+    target_cat = "sdxl" if is_sdxl_base_model(detected_base) else ("anima" if detected_base == "anima" else "krea2")
+    style_by_id = {p["id"]: p for p in style_index}
+    arch_by_id = {p["id"]: p for p in arch_index}
+
+    # Auto-pick matching SDXL base model (Realistic / Perfect / Fantasy / Tooned) when importing onto SDXL
+    if is_sdxl_base_model(detected_base):
+        sdxl_ckpt_pick = "sdxl_realistic"
+        if any(k in joined_hints for k in ("illustrious", "noob", "anime", "wai")):
+            sdxl_ckpt_pick = "sdxl_fantasy"
+        elif "semi" in joined_hints:
+            sdxl_ckpt_pick = "sdxl_tooned"
+        elif "pony" in joined_hints:
+            sdxl_ckpt_pick = "sdxl_perfect"
+        detected_base = sdxl_ckpt_pick
+
+    matched_styles = [
+        sid for sid in matched_styles
+        if sid not in style_by_id or "all" in style_by_id[sid]["models"] or target_cat in style_by_id[sid]["models"]
+    ]
+    style_weights = {sid: style_weights[sid] for sid in matched_styles if sid in style_weights}
+    matched_style_labels = [
+        f"{style_by_id[sid]['name']} ({style_weights.get(sid, style_by_id[sid]['default_strength'])})"
+        if sid in style_by_id else sid
+        for sid in matched_styles
+    ]
+
+    matched_archetypes = [
+        aid for aid in matched_archetypes
+        if "all" in arch_by_id[aid]["models"] or target_cat in arch_by_id[aid]["models"]
+    ]
+    archetype_weights = {aid: archetype_weights[aid] for aid in matched_archetypes if aid in archetype_weights}
+    matched_archetype_labels = [f"{arch_by_id[aid]['name']} ({archetype_weights.get(aid, arch_by_id[aid]['default_strength'])})" for aid in matched_archetypes]
+
+    # Collect unmatched non-utility LoRAs (for transparent reporting)
+    utility_keywords = ("highres", "hires", "upscale", "detail", "lightning", "hyper", "lcm", "turbo", "slider", "dmd2")
+    seen_unmatched = set()
+    for dl in discovered_loras:
+        if (dl["vid"] and f"v:{dl['vid']}" in matched_norms_or_vids) or (dl["norm"] and f"n:{dl['norm']}" in matched_norms_or_vids):
+            continue
+        disp = os.path.splitext(dl["name"])[0].strip()
+        if not disp or disp.lower() in seen_unmatched:
+            continue
+        if any(uk in disp.lower() for uk in utility_keywords):
+            continue
+        seen_unmatched.add(disp.lower())
+        unmatched_lora_names.append(disp)
+
+    # Steps, CFG, and Aspect Ratio
+    raw_steps = gen_meta.get("steps") or v1_meta.get("steps") or comfy_parsed.get("steps")
+    raw_cfg = gen_meta.get("cfgScale") or gen_meta.get("cfg") or v1_meta.get("cfgScale") or comfy_parsed.get("cfg")
+
+    if is_sdxl_base_model(detected_base):
+        # Local SDXL runs with DMD2 4-step LCM accelerator (optimal at 6 steps, CFG 1.0)
+        final_steps = 6
+        final_cfg = 1.0
+    else:
+        default_steps = 25 if detected_base == "anima" else 12
+        default_cfg = 3.0 if detected_base == "anima" else (2.0 if detected_base == "semi_realism" else 1.5)
+        try:
+            final_steps = max(4, min(40, int(raw_steps))) if raw_steps is not None else default_steps
+        except Exception:
+            final_steps = default_steps
+        try:
+            final_cfg = round(max(1.0, min(7.0, float(raw_cfg))), 1) if raw_cfg is not None else default_cfg
+        except Exception:
+            final_cfg = default_cfg
+
+    w = gen_meta.get("width") or (v1_item or {}).get("width") or comfy_parsed.get("width")
+    h = gen_meta.get("height") or (v1_item or {}).get("height") or comfy_parsed.get("height")
+    if not (w and h):
+        sz = str(gen_meta.get("Size") or v1_meta.get("Size") or "")
+        if "x" in sz:
+            try:
+                w, h = [int(x) for x in sz.lower().split("x", 1)]
+            except Exception:
+                pass
+    aspect = "896x1152"
+    aspect_human = "3:4"
+    try:
+        if w and h and int(h) > 0:
+            ratio = float(w) / float(h)
+            if ratio > 1.14:
+                aspect = "1152x896"
+                aspect_human = "4:3"
+            elif ratio >= 0.88:
+                aspect = "1024x1024"
+                aspect_human = "1:1"
+    except Exception:
+        pass
+
+    applied_settings = {
+        "base_model": detected_base,
+        "styles": matched_styles,
+        "style_weights": style_weights,
+        "archetypes": matched_archetypes,
+        "archetype_weights": archetype_weights,
+        "steps": final_steps,
+        "cfg": final_cfg,
+        "aspect": aspect,
+    }
+
+    meta_summary = {
+        "image_id": str(image_id),
+        "source_url": source_url,
+        "base_model": detected_base,
+        "matched_styles": matched_style_labels,
+        "matched_archetypes": matched_archetype_labels,
+        "unmatched_loras": unmatched_lora_names[:4],
+        "steps": final_steps,
+        "cfg": final_cfg,
+        "aspect": aspect,
+        "aspect_label": aspect_human,
+    }
+
+    logging.info(
+        f"[CivitAI Import] Extracted #{image_id}: model={detected_base}, "
+        f"styles={matched_style_labels}, archetypes={matched_archetype_labels}, "
+        f"steps={final_steps}, cfg={final_cfg}, aspect={aspect}"
+    )
+
+    return {
+        "prompt": clean_prompt,
+        "applied_settings": applied_settings,
+        "meta_summary": meta_summary,
+        "matched_style_labels": matched_style_labels,
+        "matched_archetype_labels": matched_archetype_labels,
+    }, remaining
+
+
+_civitai_me_cache: dict[str, tuple[float, dict]] = {}
+
+_BUILTIN_CHECKPOINT_VIDS: dict[str, tuple[int, str]] = {
+    _norm_lora_key("CyberRealistic_Krea2_V4.0_BF16.safetensors"): (3357068, "CyberRealistic Krea 2 V4.0"),
+    _norm_lora_key("museByStableYogi_v35Int8Extended.safetensors"): (3258954, "Muse Krea 2 v3.5"),
+    _norm_lora_key("cyberrealisticAnima_v70Turbo_bf16.safetensors"): (3287420, "CyberRealistic Anima V7.0"),
+    _norm_lora_key("anima_aestheticV11.safetensors"): (3126581, "Anima Aesthetic V1.1"),
+    _norm_lora_key("minimax_h3_fl2va_pruned_int8_convrot.safetensors"): (3216500, "MiniMax H3"),
+    _norm_lora_key("minimax_h3_t2va_pruned_int8_convrot.safetensors"): (3216500, "MiniMax H3"),
+}
+
+_BUILTIN_UTILITY_LORA_VIDS: dict[str, tuple[int, str]] = {
+    _norm_lora_key("minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors"): (3202732, "MiniMax H3 Turbo 4-step"),
+    _norm_lora_key("minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"): (3454204, "MiniMax H3 Turbo 8-step"),
+}
+
+
+def _is_civitai_server_owner(ctx: UserContext | None) -> bool:
+    if not ctx:
+        return False
+    if getattr(ctx, "trusted_owner", False) or getattr(ctx, "type", "") == "owner":
+        return True
+    try:
+        from auth_helpers import validated_node_owner
+        return bool(validated_node_owner(ctx))
+    except Exception:
+        return False
+
+
+async def _fetch_civitai_me(token: str) -> dict | None:
+    if not token:
+        return None
+    import hashlib
+    h = hashlib.sha256(token.encode("utf-8")).hexdigest()[:24]
+    now = time.time()
+    cached = _civitai_me_cache.get(h)
+    if cached and (now - cached[0]) < 3600:
+        return cached[1]
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 (compatible; OnMyChatStudio/1.0)",
+    }
+    timeout = aiohttp.ClientTimeout(total=7)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        for base in ("https://civitai.com", "https://civitai.red"):
+            try:
+                async with session.get(f"{base}/api/v1/me", headers=headers) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        if isinstance(data, dict) and data.get("username"):
+                            info = {
+                                "id": data.get("id"),
+                                "username": str(data.get("username")),
+                            }
+                            _civitai_me_cache[h] = (now, info)
+                            return info
+            except Exception:
+                continue
+    return None
+
+
+async def list_civitai_publish_accounts(ctx: UserContext | None) -> list[dict]:
+    """Returns user's CivitAI publishing accounts from E2EE MCP keys (IDs + resolved @usernames, NEVER raw tokens)."""
+    user_entries = _extract_user_mcp_civitai_entries(ctx)
+    if not user_entries:
+        return []
+
+    me_results = await asyncio.gather(*[_fetch_civitai_me(tok) for (_aid, _nm, tok) in user_entries], return_exceptions=True)
+    accounts: list[dict] = []
+    for (acc_id, display_name, _tok), me in zip(user_entries, me_results):
+        uname = ""
+        uid = None
+        if isinstance(me, dict):
+            uname = me.get("username") or ""
+            uid = me.get("id")
+        clean_name = (display_name or "").strip()
+        if uname:
+            norm_name = clean_name.lower()
+            redundant_names = {"", "civitai", f"@{uname.lower()}", uname.lower(), f"civitai @{uname.lower()}", f"civitai ({uname.lower()})"}
+            label = f"@{uname}" if norm_name in redundant_names else f"@{uname} ({clean_name})"
+        else:
+            label = clean_name or acc_id
+        accounts.append({
+            "id": acc_id,
+            "username": uname,
+            "user_id": uid,
+            "role": clean_name or "MCP",
+            "label": label,
+        })
+    return accounts
+
+
+def _resolve_civitai_publish_token(
+    ctx: UserContext | None,
+    account_id: str = "",
+    custom_token: str = "",
+    persona_id: str = "",
+) -> tuple[str, str]:
+    """Resolves (token, account_id_used) for publishing to CivitAI from user's MCP keys or custom_token."""
+    if custom_token and custom_token.strip():
+        return custom_token.strip(), "custom"
+
+    user_entries = _extract_user_mcp_civitai_entries(ctx)
+    by_id: dict[str, str] = {aid.lower(): tok for (aid, _nm, tok) in user_entries}
+    orig_id: dict[str, str] = {aid.lower(): aid for (aid, _nm, _tok) in user_entries}
+
+    acc = (account_id or "").strip().lower()
+
+    if (not acc or acc == "auto") and persona_id and _is_civitai_server_owner(ctx):
+        try:
+            for p in load_personas_from_disk(ctx):
+                if str(p.get("id") or "") == str(persona_id):
+                    bound = str(p.get("civitai_account") or "").strip().lower()
+                    if bound and bound in by_id:
+                        acc = bound
+                    break
+        except Exception:
+            pass
+
+    if acc and acc in by_id:
+        return by_id[acc], orig_id[acc]
+
+    if acc == "mcp" and "civitai" in by_id:
+        return by_id["civitai"], orig_id["civitai"]
+
+    if user_entries:
+        return user_entries[0][2], user_entries[0][0]
+
+    raise ValueError("Не найден API-ключ CivitAI. Добавьте ключ в Настройках → MCP API Keys или выберите «+ Другой API-ключ...» в окне публикации.")
+
+
+def _resolve_civitai_publish_image_file(ctx: UserContext | None, item_spec: dict) -> tuple[bytes, str, str]:
+    """Returns (img_bytes, filename, readme_text) from either data_b64 or local generated directory."""
+    raw_name = os.path.basename(str(item_spec.get("image_name") or item_spec.get("name") or "creation.png").strip()) or "creation.png"
+    readme_text = str(item_spec.get("readme_text") or "").strip()
+
+    b64_str = str(item_spec.get("data_b64") or "").strip()
+    if b64_str:
+        if "," in b64_str and b64_str.startswith("data:"):
+            b64_str = b64_str.split(",", 1)[1]
+        img_bytes = base64.b64decode(b64_str)
+        if img_bytes:
+            return img_bytes, raw_name, readme_text
+
+    if not _is_civitai_server_owner(ctx):
+        raise ValueError(f"Файл {raw_name} не передан с клиентского хранилища.")
+
+    rel_candidates: list[str] = []
+    raw_path = str(item_spec.get("image_path") or item_spec.get("path") or "").strip().lstrip("/")
+    if raw_path:
+        for pref in ("OnMyChat/generated/", "generated/"):
+            if raw_path.startswith(pref):
+                rel_candidates.append(raw_path[len(pref):])
+        rel_candidates.append(raw_path)
+    story_slug = str(item_spec.get("story_slug") or "").strip()
+    if story_slug and raw_name:
+        rel_candidates.append(f"{sanitize_story_slug(story_slug)}/{raw_name}")
+    if raw_name:
+        rel_candidates.append(raw_name)
+
+    base_dirs = [resolve_local_target_dir(ctx, "generated")]
+    home_omc = os.path.join(os.path.expanduser("~"), "OnMyChat", "generated")
+    if os.path.isdir(home_omc) and os.path.abspath(home_omc) not in [os.path.abspath(d) for d in base_dirs]:
+        base_dirs.append(home_omc)
+
+    for bdir in base_dirs:
+        if not os.path.isdir(bdir):
+            continue
+        bdir_abs = os.path.abspath(bdir)
+        for rel in rel_candidates:
+            cand = os.path.abspath(os.path.join(bdir_abs, rel))
+            try:
+                if os.path.commonpath([bdir_abs, cand]) != bdir_abs:
+                    continue
+            except Exception:
+                continue
+            if os.path.isfile(cand):
+                with open(cand, "rb") as f:
+                    img_bytes = f.read()
+                if not readme_text:
+                    rm_cand = os.path.splitext(cand)[0] + ".Readme.md"
+                    if os.path.isfile(rm_cand):
+                        try:
+                            with open(rm_cand, "r", encoding="utf-8") as rf:
+                                readme_text = rf.read()
+                        except Exception:
+                            pass
+                return img_bytes, os.path.basename(cand), readme_text
+
+    raise ValueError(f"Не удалось найти файл изображения '{raw_name}' на диске.")
+
+
+def _probe_video_for_civitai(video_bytes: bytes, filename: str = "") -> tuple[int, int, float, bool, str, dict]:
+    """Probes an MP4/WebM/MOV byte buffer via ffprobe, returning (width, height, duration, has_audio, mime_type, format_tags)."""
+    import subprocess
+    import tempfile
+
+    ext = os.path.splitext(filename or "")[1].lower()
+    if ext == ".webm" or video_bytes[:4] == b"\x1a\x45\xdf\xa3":
+        mime_type = "video/webm"
+        suffix = ".webm"
+    elif ext == ".mov":
+        mime_type = "video/quicktime"
+        suffix = ".mov"
+    else:
+        mime_type = "video/mp4"
+        suffix = ".mp4"
+
+    width, height, duration, has_audio = 768, 992, 5.0, False
+    format_tags: dict = {}
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            vp = os.path.join(td, f"probe{suffix}")
+            with open(vp, "wb") as vf:
+                vf.write(video_bytes)
+            cmd = [
+                "ffprobe", "-v", "error",
+                "-show_entries", "stream=codec_type,width,height:format=duration:format_tags",
+                "-of", "json",
+                vp,
+            ]
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+            if proc.returncode == 0 and proc.stdout.strip():
+                pdata = json.loads(proc.stdout)
+                for st in (pdata.get("streams") or []):
+                    ctype = str(st.get("codec_type") or "").lower()
+                    if ctype == "video":
+                        if st.get("width") and st.get("height"):
+                            width = int(st["width"])
+                            height = int(st["height"])
+                    elif ctype == "audio":
+                        has_audio = True
+                fmt_obj = pdata.get("format") or {}
+                if fmt_obj.get("duration"):
+                    try:
+                        duration = round(float(fmt_obj["duration"]), 2)
+                    except Exception:
+                        pass
+                if isinstance(fmt_obj.get("tags"), dict):
+                    format_tags = fmt_obj["tags"]
+    except Exception as e:
+        logging.warning(f"[CivitAI Video Probe] ffprobe fallback warning: {e}")
+
+    return width, height, duration, has_audio, mime_type, format_tags
+
+
+def _is_video_asset(data_bytes: bytes, filename: str = "") -> bool:
+    ext = os.path.splitext(filename or "")[1].lower()
+    if ext in (".mp4", ".webm", ".mov", ".m4v"):
+        return True
+    if len(data_bytes) >= 12 and data_bytes[4:8] == b"ftyp":
+        return True
+    if len(data_bytes) >= 4 and data_bytes[:4] == b"\x1a\x45\xdf\xa3":
+        return True
+    return False
+
+
+def _build_civitai_image_meta(
+    img_bytes: bytes,
+    readme_text: str = "",
+    explicit_prompt: str = "",
+    include_meta: bool = True,
+    filename: str = "",
+) -> tuple[int, int, str, str, dict | None, dict | None, int | None, list[str]]:
+    """
+    Inspects PNG/JPEG/WebP OR MP4/WebM/MOV bytes & embedded ComfyUI workflow, returning:
+    (width, height, mime_type, media_type, video_metadata, civitai_meta_dict, primary_checkpoint_vid, linked_resource_labels).
+    """
+    from PIL import Image
+    import io
+
+    is_video = _is_video_asset(img_bytes, filename)
+    media_type = "video" if is_video else "image"
+    video_metadata: dict | None = None
+
+    if is_video:
+        width, height, duration, has_audio, mime_type, png_info = _probe_video_for_civitai(img_bytes, filename)
+        video_metadata = {
+            "size": len(img_bytes),
+            "width": width,
+            "height": height,
+            "duration": duration,
+            "audio": has_audio,
+        }
+    else:
+        with Image.open(io.BytesIO(img_bytes)) as im:
+            width, height = im.size
+            fmt = (im.format or "PNG").upper()
+            mime_type = "image/jpeg" if fmt in ("JPEG", "JPG") else ("image/webp" if fmt == "WEBP" else "image/png")
+            png_info = dict(im.info or {})
+
+    if not include_meta:
+        return width, height, mime_type, media_type, video_metadata, None, None, []
+
+    raw_comfy_prompt = png_info.get("prompt")
+    comfy_graph_dict = None
+    if isinstance(raw_comfy_prompt, str) and raw_comfy_prompt.strip().startswith("{"):
+        try:
+            comfy_graph_dict = json.loads(raw_comfy_prompt)
+        except Exception:
+            comfy_graph_dict = None
+    elif isinstance(raw_comfy_prompt, dict):
+        comfy_graph_dict = raw_comfy_prompt
+
+    parsed = _extract_comfy_graph_data(comfy_graph_dict) if comfy_graph_dict else {}
+
+    prompt_val = (parsed.get("prompt") or "").strip()
+    if not prompt_val and readme_text:
+        m_pr = re.search(r"<!--\s*prompt:\s*([\s\S]*?)-->", readme_text, re.IGNORECASE)
+        if m_pr:
+            prompt_val = m_pr.group(1).strip()
+    if not prompt_val and explicit_prompt:
+        prompt_val = explicit_prompt.strip()
+    prompt_val = _compact_diffusion_prompt(prompt_val) if prompt_val else ""
+
+    civitai_resources: list[dict] = []
+    seen_vids: set[int] = set()
+    linked_labels: list[str] = []
+    primary_checkpoint_vid: int | None = None
+
+    for m_fname in (parsed.get("models") or []):
+        nk = _norm_lora_key(m_fname)
+        if nk in _BUILTIN_CHECKPOINT_VIDS:
+            vid, label = _BUILTIN_CHECKPOINT_VIDS[nk]
+            if vid not in seen_vids:
+                seen_vids.add(vid)
+                primary_checkpoint_vid = primary_checkpoint_vid or vid
+                civitai_resources.append({"type": "checkpoint", "modelVersionId": vid})
+                linked_labels.append(label)
+
+    # Fallback model link for H3_* videos if container tags were stripped
+    if is_video and not primary_checkpoint_vid and os.path.basename(filename or "").upper().startswith("H3_"):
+        primary_checkpoint_vid = 3216500
+        seen_vids.add(3216500)
+        civitai_resources.append({"type": "checkpoint", "modelVersionId": 3216500})
+        linked_labels.append("MiniMax H3")
+
+    presets = get_krea_presets()
+    lora_vid_map: dict[str, tuple[int, str]] = dict(_BUILTIN_UTILITY_LORA_VIDS)
+    for cat_key in ("art_styles", "archetypes"):
+        for it in (presets.get(cat_key) or []):
+            fname = str(it.get("filename") or "").strip()
+            url = str(it.get("url") or "").strip()
+            if not fname or not url:
+                continue
+            vm = re.search(r"/models/(\d+)", url)
+            if vm:
+                lora_vid_map[_norm_lora_key(fname)] = (int(vm.group(1)), str(it.get("name") or fname))
+
+    for l_entry in (parsed.get("loras") or []):
+        nk = _norm_lora_key(l_entry.get("name") or "")
+        if nk and nk in lora_vid_map:
+            vid, label = lora_vid_map[nk]
+            if vid not in seen_vids:
+                seen_vids.add(vid)
+                w = round(float(l_entry.get("weight", 0.8) or 0.8), 2)
+                civitai_resources.append({"type": "lora", "modelVersionId": vid, "weight": w})
+                linked_labels.append(f"{label} ({w})")
+
+    meta: dict = {}
+    if prompt_val:
+        meta["prompt"] = prompt_val
+    if parsed.get("negative_prompt"):
+        meta["negativePrompt"] = parsed["negative_prompt"]
+    if parsed.get("steps") is not None:
+        meta["steps"] = int(parsed["steps"])
+    if parsed.get("cfg") is not None:
+        meta["cfgScale"] = float(parsed["cfg"])
+    if parsed.get("sampler"):
+        meta["sampler"] = str(parsed["sampler"])
+    if parsed.get("seed") is not None:
+        meta["seed"] = int(parsed["seed"])
+    if civitai_resources:
+        meta["civitaiResources"] = civitai_resources
+    if isinstance(comfy_graph_dict, dict):
+        serialized_comfy = json.dumps({"prompt": comfy_graph_dict}, ensure_ascii=False)
+        if len(serialized_comfy) < 500_000:
+            meta["comfy"] = {"prompt": comfy_graph_dict}
+
+    return width, height, mime_type, media_type, video_metadata, (meta if meta else None), primary_checkpoint_vid, linked_labels
+
+
+async def publish_to_civitai(
+    ctx: UserContext | None,
+    images: list[dict],
+    title: str = "",
+    detail: str = "",
+    tags: list[str] | str | None = None,
+    publish: bool = True,
+    include_meta: bool = True,
+    account_id: str = "",
+    custom_token: str = "",
+    persona_id: str = "",
+) -> dict:
+    """
+    Uploads 1..20 images or videos directly to CivitAI via /api/v1/image-upload + S3 PUT
+    and creates/publishes a post via /api/trpc/post.createWithImages under the chosen API key's account.
+    """
+    if not images:
+        raise ValueError("Нет медиафайлов для публикации.")
+    if len(images) > 20:
+        raise ValueError("В один пост CivitAI можно добавить максимум 20 файлов.")
+
+    token, resolved_acc_id = _resolve_civitai_publish_token(
+        ctx=ctx,
+        account_id=account_id,
+        custom_token=custom_token,
+        persona_id=persona_id,
+    )
+
+    me_info = await _fetch_civitai_me(token)
+    username = (me_info or {}).get("username") or ""
+
+    auth_headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 (compatible; OnMyChatStudio/1.0)",
+    }
+
+    prepared_images: list[dict] = []
+    all_linked_labels: list[str] = []
+    post_model_version_id: int | None = None
+
+    timeout = aiohttp.ClientTimeout(total=180)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        for idx, item_spec in enumerate(images):
+            img_bytes, fname, readme_text = _resolve_civitai_publish_image_file(ctx, item_spec)
+            explicit_pr = str(item_spec.get("prompt") or "").strip()
+            width, height, mime_type, media_type, video_metadata, meta_dict, ckpt_vid, linked_labels = _build_civitai_image_meta(
+                img_bytes=img_bytes,
+                readme_text=readme_text,
+                explicit_prompt=explicit_pr,
+                include_meta=include_meta,
+                filename=fname,
+            )
+            if ckpt_vid and not post_model_version_id:
+                post_model_version_id = ckpt_vid
+            for lbl in linked_labels:
+                if lbl not in all_linked_labels:
+                    all_linked_labels.append(lbl)
+
+            async with session.post(
+                "https://civitai.com/api/v1/image-upload",
+                headers=auth_headers,
+                json={
+                    "filename": fname,
+                    "type": media_type,
+                    "metadata": video_metadata or {},
+                },
+            ) as up_req:
+                if up_req.status == 401:
+                    raise ValueError("CivitAI отклонил API-ключ (401 Unauthorized). Проверьте токен аккаунта.")
+                if up_req.status != 200:
+                    err_body = (await up_req.text())[:300]
+                    raise ValueError(f"Ошибка подготовки загрузки на CivitAI (HTTP {up_req.status}): {err_body}")
+                up_data = await up_req.json()
+
+            upload_uuid = up_data.get("id")
+            upload_url = up_data.get("uploadURL")
+            if not upload_uuid or not upload_url:
+                raise ValueError(f"CivitAI image-upload не вернул uploadURL: {up_data}")
+
+            put_ok = False
+            last_put_status = 0
+            last_put_err = ""
+            for put_headers in ({"Content-Type": mime_type}, {}):
+                async with session.put(upload_url, data=img_bytes, headers=put_headers) as put_resp:
+                    last_put_status = put_resp.status
+                    if 200 <= put_resp.status < 300:
+                        put_ok = True
+                        break
+                    last_put_err = (await put_resp.text())[:250]
+                    if put_resp.status not in (400, 403):
+                        break
+            if not put_ok:
+                raise ValueError(f"Не удалось загрузить файл '{fname}' в хранилище CivitAI (HTTP {last_put_status}): {last_put_err}")
+
+            img_entry: dict = {
+                "url": str(upload_uuid),
+                "index": idx,
+                "name": fname,
+                "width": width,
+                "height": height,
+                "mimeType": mime_type,
+                "type": media_type,
+            }
+            if video_metadata:
+                img_entry["metadata"] = video_metadata
+            if meta_dict:
+                img_entry["meta"] = meta_dict
+            if ckpt_vid:
+                img_entry["modelVersionId"] = ckpt_vid
+            prepared_images.append(img_entry)
+
+        tag_list: list[str] = []
+        if isinstance(tags, str):
+            tag_list = [t.strip().lower() for t in tags.split(",") if t.strip()]
+        elif isinstance(tags, list):
+            tag_list = [str(t).strip().lower() for t in tags if str(t).strip()]
+
+        post_input: dict = {
+            "publish": bool(publish),
+            "images": prepared_images,
+        }
+        if title and title.strip():
+            post_input["title"] = title.strip()[:255]
+        if detail and detail.strip():
+            post_input["detail"] = detail.strip()
+        if post_model_version_id:
+            post_input["modelVersionId"] = post_model_version_id
+        if tag_list:
+            post_input["tags"] = tag_list[:15]
+
+        async with session.post(
+            "https://civitai.com/api/trpc/post.createWithImages",
+            headers=auth_headers,
+            json={"json": post_input},
+        ) as create_resp:
+            resp_text = await create_resp.text()
+            try:
+                resp_json = json.loads(resp_text)
+            except Exception:
+                resp_json = {}
+
+            if create_resp.status >= 400 or "error" in resp_json:
+                err_obj = resp_json.get("error") or {}
+                err_msg = (
+                    (err_obj.get("json") or {}).get("message")
+                    or err_obj.get("message")
+                    or resp_text[:300]
+                )
+                raise ValueError(f"Ошибка создания поста на CivitAI: {err_msg}")
+
+            res_data = ((resp_json.get("result") or {}).get("data") or {})
+            post_obj = res_data.get("json") if isinstance(res_data, dict) and "json" in res_data else res_data
+            post_id = post_obj.get("id") if isinstance(post_obj, dict) else None
+            if not post_id:
+                raise ValueError(f"CivitAI создал ответ без ID поста: {resp_text[:300]}")
+
+    post_url = f"https://civitai.com/posts/{post_id}" if publish else f"https://civitai.com/posts/{post_id}/edit"
+    logging.info(
+        f"[CivitAI Publish] Published post #{post_id} (publish={publish}, images={len(prepared_images)}, "
+        f"account=@{username or resolved_acc_id}, resources={all_linked_labels})"
+    )
+    return {
+        "ok": True,
+        "post_id": post_id,
+        "post_url": post_url,
+        "edit_url": f"https://civitai.com/posts/{post_id}/edit",
+        "published": bool(publish),
+        "account_id": resolved_acc_id,
+        "username": username,
+        "image_count": len(prepared_images),
+        "linked_resources": all_linked_labels,
+    }
+
+
+async def delete_from_civitai(
+    post_id: int | str,
+    custom_token: str = "",
+    ctx: UserContext | None = None,
+    account_id: str = "",
+    persona_id: str = "",
+) -> dict:
+    """
+    Deletes a published CivitAI post (and any associated images) via /api/trpc/post.delete
+    using the bot/account Bearer token.
+    """
+    raw_pid = str(post_id or "").strip()
+    m = re.search(r"/posts/(\d+)", raw_pid)
+    if m:
+        pid = int(m.group(1))
+    elif raw_pid.isdigit():
+        pid = int(raw_pid)
+    else:
+        raise ValueError(f"Некорректный ID поста CivitAI: {post_id}")
+
+    token, resolved_acc_id = _resolve_civitai_publish_token(
+        ctx=ctx,
+        account_id=account_id,
+        custom_token=custom_token,
+        persona_id=persona_id,
+    )
+
+    auth_headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 (compatible; OnMyChatStudio/1.0)",
+    }
+
+    post_image_ids: list[int] = []
+    timeout = aiohttp.ClientTimeout(total=30)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        # 1. Best-effort lookup of image IDs inside the post before deleting the post
+        try:
+            async with session.get(
+                f"https://civitai.com/api/v1/images?postId={pid}&nsfw=X",
+                headers=auth_headers,
+            ) as img_resp:
+                if img_resp.status == 200:
+                    img_json = await img_resp.json()
+                    for item in (img_json.get("items") or []):
+                        if isinstance(item, dict) and item.get("id"):
+                            post_image_ids.append(int(item["id"]))
+        except Exception as e:
+            logging.debug(f"[CivitAI Delete] Could not pre-fetch image IDs for post #{pid}: {e}")
+
+        # 2. Delete the post via tRPC post.delete
+        already_gone = False
+        async with session.post(
+            "https://civitai.com/api/trpc/post.delete",
+            headers=auth_headers,
+            json={"json": {"id": pid}},
+        ) as del_resp:
+            resp_text = await del_resp.text()
+            try:
+                resp_json = json.loads(resp_text)
+            except Exception:
+                resp_json = {}
+
+            if del_resp.status == 404:
+                already_gone = True
+            elif del_resp.status >= 400 or "error" in resp_json:
+                err_obj = resp_json.get("error") or {}
+                err_msg = (
+                    (err_obj.get("json") or {}).get("message")
+                    or err_obj.get("message")
+                    or resp_text[:300]
+                )
+                if "not found" in str(err_msg).lower() or "not_found" in str(err_msg).lower():
+                    already_gone = True
+                else:
+                    raise ValueError(f"Ошибка удаления поста #{pid} на CivitAI: {err_msg}")
+
+        # 3. Best-effort cleanup of any attached images if still present
+        deleted_images = 0
+        for img_id in post_image_ids:
+            try:
+                async with session.post(
+                    "https://civitai.com/api/trpc/image.delete",
+                    headers=auth_headers,
+                    json={"json": {"id": int(img_id)}},
+                ) as idel_resp:
+                    if 200 <= idel_resp.status < 300:
+                        deleted_images += 1
+            except Exception:
+                pass
+
+    logging.info(
+        f"[CivitAI Delete] Deleted post #{pid} (already_gone={already_gone}, images_cleaned={deleted_images})"
+    )
+    return {
+        "ok": True,
+        "post_id": pid,
+        "already_gone": already_gone,
+        "deleted_images": deleted_images,
+        "account_id": resolved_acc_id,
+    }
+
+
+def _format_civitai_import_badge(meta_summary: dict, is_ru: bool = True) -> str:
+    model_names = {
+        "anima": "Anima V1.1",
+        "semi_realism": "Muse Semi-Real",
+        "realism": "Krea 2 Realism",
+        "sdxl": "SDXL Realistic",
+        "sdxl_realistic": "SDXL Realistic",
+        "sdxl_perfect": "SDXL Perfect",
+        "sdxl_fantasy": "SDXL Fantasy",
+        "sdxl_tooned": "SDXL Tooned",
+    }
+    m_label = model_names.get(meta_summary.get("base_model") or "", "Krea 2")
+    loras = (meta_summary.get("matched_styles") or []) + (meta_summary.get("matched_archetypes") or [])
+    lora_part = f" • LoRA: {', '.join(loras)}" if loras else ""
+    step_lbl = "ш." if is_ru else "steps"
+    prefix = f"📥 CivitAI #{meta_summary.get('image_id')}:"
+    line = f"{prefix} {m_label}{lora_part} • {meta_summary.get('steps')} {step_lbl} / {meta_summary.get('cfg')} cfg • {meta_summary.get('aspect_label', '3:4')}"
+    unmatched = meta_summary.get("unmatched_loras") or []
+    if unmatched:
+        skip_note = f" (внешние LoRA пропущены: {', '.join(unmatched)})" if is_ru else f" (skipped external LoRAs: {', '.join(unmatched)})"
+        line += skip_note
+    return line
+
+
+async def krea_director_rewrite_prompt(
+    ctx: UserContext,
+    instruction: str,
+    current_prompt: str = "",
+    base_model: str = "realism",
+    persona_name: str = "",
+    persona_prompt: str = "",
+    persona_personality: str = "",
+    styles: str = "",
+    archetypes: str = "",
+    history: list[dict] | None = None,
+) -> dict:
+    """
+    AI Director's Chair — Prompt Co-Pilot.
+    Creates or surgically edits complex Krea 2 / Muse / Anima diffusion prompts from plain natural language
+    using local uncensored FUN_MODEL, and auto-extracts prompt + LoRA/model settings when given a CivitAI URL.
+    """
+    instruction = (instruction or "").strip()
+    current_prompt = (current_prompt or "").strip()
+    reply_lang, is_ru = _resolve_director_language(instruction or current_prompt, ctx)
+    if not instruction and not current_prompt:
+        raise ValueError(
+            "Введите пожелание для Режиссёра, ссылку на CivitAI или вставьте промпт в композер."
+            if is_ru
+            else "Enter a direction for the AI Director, paste a CivitAI link, or type a prompt in the composer."
+        )
+
+    # Auto-detect CivitAI image/post URL in Director instruction (or bare URL in current_prompt)
+    civitai_imported = None
+    if _CIVITAI_URL_RE.search(instruction):
+        civitai_imported, instruction = await extract_civitai_image_preset(ctx, instruction)
+    elif _CIVITAI_URL_RE.search(current_prompt):
+        civitai_imported, leftover_cp = await extract_civitai_image_preset(ctx, current_prompt)
+        if leftover_cp and not instruction:
+            instruction = leftover_cp
+
+    reply_lang, is_ru = _resolve_director_language(instruction or current_prompt, ctx)
+    model = _get_director_model()
+
+    applied_settings = None
+    civitai_meta = None
+    import_badge_text = ""
+
+    if civitai_imported:
+        current_prompt = civitai_imported["prompt"]
+        applied_settings = civitai_imported["applied_settings"]
+        civitai_meta = civitai_imported["meta_summary"]
+        base_model = applied_settings["base_model"]
+        styles = ", ".join(civitai_imported["matched_style_labels"])
+        archetypes = ", ".join(civitai_imported["matched_archetype_labels"])
+        import_badge_text = _format_civitai_import_badge(civitai_meta, is_ru=is_ru)
+
+        # Fast-path: bare CivitAI URL without extra edit instructions and no active Persona override -> instant import!
+        if not instruction and not (persona_name or persona_prompt):
+            fast_reply = (
+                f"{import_badge_text}\nГотово — промпт и настройки перенесены в Студию!"
+                if is_ru
+                else f"{import_badge_text}\nDone — prompt and preset settings applied to Studio!"
+            )
+            return {
+                "prompt": current_prompt,
+                "reply": fast_reply,
+                "model": "civitai-direct",
+                "applied_settings": applied_settings,
+                "civitai_import": civitai_meta,
+            }
+
+        if not instruction and (persona_name or persona_prompt):
+            instruction = (
+                "Adapt this imported scene naturally for the active Studio Persona while preserving the exact pose, outfit, camera framing, lighting, and environment."
+            )
+
+    # Preserve explicit <lora:...> or <tag> tokens from current_prompt unless user asks to remove them
+    preserved_tags = re.findall(r"<[^>]+>", current_prompt) if current_prompt else []
+
+    base_lower = str(base_model or "").lower()
+    is_video_h3 = base_lower in ("minimax_h3", "video", "h3")
+    is_anima = base_lower in ("anima", "anime", "cyberrealistic_anima", "animaturbo")
+    is_sdxl = is_sdxl_base_model(base_lower)
+    if is_video_h3:
+        model_guidance = (
+            "TARGET DIFFUSION ENGINE: MiniMax-H3 Omni-Modal Video + Stereo Audio (Qwen3-VL-32B, 24fps, FL2VA + Ref2VA).\n"
+            "- MiniMax-H3 jointly generates live-action cinematic motion AND synchronized stereo sound (up to 15s multi-segment or +5s scene extensions).\n"
+            "- If animating a reference frame or character reference, reference '<Picture 1>' (and '<Picture 2>' if two refs are present), preserving exact face, hair, and identity while describing fluid physical motion, micro-expressions, hair/fabric physics, and camera choreography (push-in, slow orbit, handheld tracking, or timed shots like [0s-5s] / [5s-10s]).\n"
+            "- Spoken dialogue can be written cleanly inside '<d>[Language] Dialogue text.</d>' (e.g. '<d>[Russian] Привет, идём за мной!</d>' or '<d>[English] Come with me.</d>').\n"
+            "- ALWAYS include a dedicated 'Audio:' paragraph at the end describing synchronized stereo foley, room/outdoor ambience, breathing, footsteps, fabric rustle, and any spoken dialogue. Default to 'No background music.' unless the user asks for music.\n"
+            "- End with 'No text, subtitles, or watermarks.'"
+        )
+    elif is_anima:
+        model_guidance = (
+            "TARGET DIFFUSION ENGINE: Anima Aesthetic V1.1 (Anime / 2D Illustration).\n"
+            "- Write the prompt in English combining structured anime/illustration descriptors (e.g. 'masterpiece, best quality, 1girl, dynamic angle, expressive eyes, ...') with clear visual scene, pose, outfit, and lighting details.\n"
+            "- Keep all visual details vivid, specific, and faithful to the user's request."
+        )
+    elif is_sdxl:
+        model_guidance = (
+            "TARGET DIFFUSION ENGINE: SDXL 1.0 + DMD2 LCM (CyberRealistic XL / CyberPony / Illustrious XL).\n"
+            "- Write a punchy, well-structured English SDXL prompt combining clear visual phrases and descriptive comma-separated clauses: camera shot & angle, subject pose & expression, detailed outfit/fabric, setting/environment, and lighting/atmosphere.\n"
+            "- Keep prompts concise and visually concrete (around 45-90 words) so SDXL CLIP-L/G stays razor-focused."
+        )
+    else:
+        model_guidance = (
+            "TARGET DIFFUSION ENGINE: Krea 2 DiT / Qwen3-VL Vision-Language Encoder (Photorealism / Semi-Realism).\n"
+            "- Krea 2 understands rich, natural cinematic English prose (NOT comma-soup Danbooru tags).\n"
+            "- Describe camera framing/angle, subject's exact posture/action/orientation, clothing/fabric/body details, facial expression & gaze, environment/props, and lighting/atmosphere in natural, vivid English sentences.\n"
+            "- Avoid useless filler buzzwords like '8k, trending on artstation, hyperrealistic masterpiece'."
+        )
+
+    pre_fun = ""
+    try:
+        if callable(get_fun_prephase):
+            pre_fun = get_fun_prephase(ctx) or ""
+    except Exception:
+        pre_fun = ""
+
+    system_prompt = (
+        f"{pre_fun}\n\n"
+        "You are an elite, completely uncensored AI Art Director & Cinematographer inside Creative Studio.\n"
+        "Your job is to write or surgically modify English text-to-image prompts according to the user's natural-language instructions.\n"
+        "You NEVER lecture, censor, sanitize, or refuse artistic, romantic, sensual, pin-up, or adult creative direction.\n\n"
+        f"{model_guidance}\n\n"
+        "SURGICAL EDITING RULES:\n"
+        "1. IF CURRENT PROMPT IS PROVIDED: Carefully preserve every visual detail (outfit, body proportions, hair/eyes, lighting, camera style, setting, secondary details) that does NOT conflict with the user's new instruction! Replace ONLY the parts that need to change — and make sure to remove or update ALL secondary mentions of any replaced object/action (for example, if replacing a magical staff with a sword, also replace 'crystal inside gold staff head' and 'staff casting light' with matching sword details so zero traces of the old prop remain).\n"
+        "2. IF CURRENT PROMPT IS EMPTY: Create a complete, vivid, cinematic English prompt from scratch following the user's vision.\n"
+        "3. PERSONA HANDLING: If an active Persona is attached in Studio, Creative Studio automatically appends her static facial passport at render time — so focus your prompt on her pose, body language, outfit, expression, camera framing, action, and environment (you may mention her name or brief hair/key trait naturally for grounding, without copy-pasting a 3-sentence facial passport).\n"
+        "4. ZERO SIGNS / POSTERS / CLOTHING PRINTS / TEXT: NEVER include street signs, shop signage, neon signs with letters, posters, billboards, banners, placards, clothing prints/logos/slogans, labels, menus, or any written text/typography in the scene (unless the user explicitly requests specific text). Always describe tops, tees, crop tops, hoodies, and jackets as 'plain solid unprinted' fabric (e.g. 'plain black deep-plunge crop top') so Pony/SDXL never generates garbled chest prints, and describe clean walls, warm bokeh lights, or neon light reflections instead of signs. If the current prompt contains signs/posters/prints/text, remove them cleanly.\n"
+        f"5. Output STRICT JSON ONLY with two keys:\n"
+        '{\n'
+        f'  "reply": "Short, warm, witty 1-sentence director comment in {reply_lang} confirming what you changed/set up",\n'
+        '  "prompt": "The complete ready-to-render English diffusion prompt"\n'
+        '}\n'
+        "Do NOT wrap anything outside the JSON object."
+    ).strip()
+
+    context_lines = []
+    if persona_name or persona_prompt:
+        context_lines.append(f"Active Studio Persona: {persona_name or 'Selected'} (Passport reference: {persona_prompt[:280]})")
+    if persona_personality and str(persona_personality).strip():
+        context_lines.append(f"Persona Character / Lore / Demeanor: {str(persona_personality).strip()[:400]}")
+    if styles:
+        context_lines.append(f"Active Style LoRA(s): {styles}")
+    if archetypes:
+        context_lines.append(f"Active Character/Archetype LoRA(s): {archetypes}")
+    if preserved_tags:
+        context_lines.append(f"Special tags in current prompt (keep unless asked to remove): {' '.join(preserved_tags)}")
+
+    messages = [{"role": "system", "content": system_prompt}]
+    if history and isinstance(history, list):
+        for h in history[-6:]:
+            role = h.get("role")
+            content = (h.get("content") or "").strip()
+            if role in ("user", "assistant") and content:
+                messages.append({"role": role, "content": content[:1200]})
+
+    user_msg_parts = []
+    if context_lines:
+        user_msg_parts.append("STUDIO CONTEXT:\n" + "\n".join(context_lines))
+    if current_prompt:
+        user_msg_parts.append(f"CURRENT PROMPT IN COMPOSER:\n{current_prompt}")
+    else:
+        user_msg_parts.append("CURRENT PROMPT IN COMPOSER: (empty — create a new prompt)")
+    user_msg_parts.append(f"DIRECTOR INSTRUCTION FROM USER:\n{instruction}")
+
+    messages.append({"role": "user", "content": "\n\n".join(user_msg_parts)})
+
+    payload = {
+        "model": model,
+        "messages": messages,
+        "stream": False,
+        "think": False,
+        "options": {
+            "temperature": 0.75,
+            "top_p": 0.92,
+            "num_predict": 1100,
+        },
+    }
+
+    data = await llm_request(payload)
+    raw = ""
+    if data and isinstance(data, dict):
+        raw = (data.get("message", {}) or {}).get("content", "") or data.get("content", "")
+    raw = (raw or "").strip()
+
+    parsed = _extract_json_object(raw)
+    if parsed and isinstance(parsed.get("prompt"), str) and parsed["prompt"].strip():
+        new_prompt = parsed["prompt"].strip()
+        reply = str(parsed.get("reply") or "").strip()
+    else:
+        # Clean fallback if model output plain text instead of JSON
+        cleaned_raw = re.sub(r"<think>[\s\S]*?</think>", "", raw).strip()
+        cleaned_raw = re.sub(r"^```(?:json|text)?\s*|\s*```$", "", cleaned_raw).strip()
+        new_prompt = cleaned_raw or current_prompt
+        reply = "Промпт обновлён и готов к съёмке!" if is_ru else "Prompt updated and ready to shoot!"
+
+    # Re-attach preserved <lora:...> or <Tag> tokens if model accidentally dropped them and user didn't ask to clear LoRAs
+    if preserved_tags and not any(k in instruction.lower() for k in ("убери лор", "удали лор", "без лор", "remove lora", "no lora")):
+        for tag in preserved_tags:
+            if tag not in new_prompt and not tag.lower().startswith("<think"):
+                new_prompt = f"{new_prompt} {tag}".strip()
+
+    if not reply:
+        reply = "Готово — обновил сцену в композере." if is_ru else "Done — updated the scene in the composer."
+
+    if import_badge_text:
+        reply = f"{import_badge_text}\n\n{reply}"
+
+    result = {
+        "prompt": new_prompt,
+        "reply": reply,
+        "model": model,
+    }
+    if applied_settings:
+        result["applied_settings"] = applied_settings
+    if civitai_meta:
+        result["civitai_import"] = civitai_meta
+    return result
+
+
+async def krea_director_storyboard(
+    ctx: UserContext,
+    action: str = "plan",
+    story_title: str = "",
+    setting: str = "",
+    idea: str = "",
+    scene_count: int = 4,
+    base_model: str = "realism",
+    personas: list[dict] | None = None,
+    styles: str = "",
+    archetypes: str = "",
+    existing_scenes: list[dict] | None = None,
+    target_scene_index: int | None = None,
+) -> dict:
+    """
+    AI Director's Chair — Multi-Scene Storyboard & Visual Novel Planner.
+    Supports:
+      - action='plan': Plans N scenes (literary prose/dialogues + continuous English visual prompts).
+      - action='continue': Appends N new scenes continuing seamlessly in the same setting.
+      - action='refine_scene': Rewrites a single scene's narrative & visual prompt per instruction.
+    """
+    scene_count = max(1, min(8, int(scene_count or 4)))
+    combined_sample = f"{story_title} {setting} {idea}"
+    if existing_scenes:
+        combined_sample += " " + " ".join(str(s.get("narrative", "")) for s in existing_scenes[:2])
+    story_lang, is_ru = _resolve_director_language(combined_sample, ctx)
+    model = _get_director_model()
+
+    base_lower = str(base_model or "").lower()
+    is_video_h3 = base_lower in ("minimax_h3", "video", "h3")
+    is_anima = base_lower in ("anima", "anime", "cyberrealistic_anima", "animaturbo")
+    is_sdxl = is_sdxl_base_model(base_lower)
+    if is_video_h3:
+        engine_note = "Write each `visual_prompt` in English for MiniMax-H3 Omni-AV: describe live-action physical motion, camera choreography, and end with an 'Audio:' block describing synchronized stereo ambience/foley (no music unless requested)."
+    elif is_anima:
+        engine_note = "Write each `visual_prompt` in English for Anima V1.1 (structured anime/illustration tags + clear pose, outfit, expression, camera framing, and background)."
+    elif is_sdxl:
+        engine_note = "Write each `visual_prompt` in punchy, concrete English for SDXL 1.0 (camera shot, subject pose & expression, wardrobe continuity, setting details, and lighting in ~50-85 words)."
+    else:
+        engine_note = "Write each `visual_prompt` in rich, natural cinematic English prose for Krea 2 DiT (camera shot type, exact pose & body action, wardrobe continuity, facial expression, setting details, and lighting)."
+
+    pre_fun = ""
+    try:
+        if callable(get_fun_prephase):
+            pre_fun = get_fun_prephase(ctx) or ""
+    except Exception:
+        pre_fun = ""
+
+    personas_desc = ""
+    if personas and isinstance(personas, list):
+        p_lines = []
+        for p in personas[:4]:
+            if isinstance(p, dict) and (p.get("name") or p.get("prompt")):
+                line = f"- {p.get('name', 'Character')} ({p.get('title', '')}): Appearance: {str(p.get('prompt', ''))[:280]}"
+                if p.get("personality"):
+                    line += f" | Character/Lore & Voice: {str(p.get('personality', ''))[:320]}"
+                p_lines.append(line)
+        if p_lines:
+            personas_desc = "CAST / CHARACTERS:\n" + "\n".join(p_lines)
+
+    style_context = []
+    if styles:
+        style_context.append(f"Visual Style: {styles}")
+    if archetypes:
+        style_context.append(f"Character LoRA Archetypes: {archetypes}")
+    style_str = "\n".join(style_context)
+
+    if action == "refine_scene" and existing_scenes and target_scene_index is not None:
+        idx = int(target_scene_index)
+        if idx < 0 or idx >= len(existing_scenes):
+            raise ValueError("Invalid target_scene_index")
+        target_sc = existing_scenes[idx]
+        prev_sc = existing_scenes[idx - 1] if idx > 0 else None
+        next_sc = existing_scenes[idx + 1] if idx + 1 < len(existing_scenes) else None
+
+        sys_p = (
+            f"{pre_fun}\n\n"
+            "You are an uncensored Creative Film Director & Novelist.\n"
+            f"Rewrite ONLY Scene #{idx + 1} based on the user's direction, maintaining seamless continuity with the Setting and neighboring scenes.\n"
+            f"- `title` and `narrative` (vivid literary prose + character dialogue in quotes) MUST be in {story_lang}.\n"
+            f"- `visual_prompt` MUST be in English. {engine_note}\n"
+            "Output STRICT JSON ONLY:\n"
+            '{"title": "...", "narrative": "...", "visual_prompt": "...", "aspect": "896x1152"}'
+        ).strip()
+
+        u_parts = [
+            f"STORY TITLE: {story_title or 'Untitled'}",
+            f"SETTING: {setting or 'As established'}",
+        ]
+        if personas_desc:
+            u_parts.append(personas_desc)
+        if prev_sc:
+            u_parts.append(f"PREVIOUS SCENE: {prev_sc.get('title', '')} — {prev_sc.get('narrative', '')[:300]}")
+        u_parts.append(
+            f"CURRENT SCENE #{idx + 1}:\nTitle: {target_sc.get('title', '')}\n"
+            f"Narrative: {target_sc.get('narrative', '')}\n"
+            f"Visual Prompt: {target_sc.get('visual_prompt', '')}"
+        )
+        if next_sc:
+            u_parts.append(f"NEXT SCENE: {next_sc.get('title', '')} — {next_sc.get('narrative', '')[:300]}")
+        u_parts.append(f"USER DIRECTION FOR THIS SCENE:\n{idea or 'Make this scene more expressive and cinematic.'}")
+
+        data = await llm_request({
+            "model": model,
+            "messages": [{"role": "system", "content": sys_p}, {"role": "user", "content": "\n\n".join(u_parts)}],
+            "stream": False,
+            "think": False,
+            "options": {"temperature": 0.8, "top_p": 0.92, "num_predict": 900},
+        })
+        raw = ((data or {}).get("message", {}) or {}).get("content", "") if isinstance(data, dict) else ""
+        parsed = _extract_json_object(raw) or {}
+        updated_scene = {
+            "scene_number": idx + 1,
+            "title": str(parsed.get("title") or target_sc.get("title") or f"{'Сцена' if is_ru else 'Scene'} {idx + 1}").strip(),
+            "narrative": str(parsed.get("narrative") or target_sc.get("narrative") or "").strip(),
+            "visual_prompt": str(parsed.get("visual_prompt") or target_sc.get("visual_prompt") or "").strip(),
+            "aspect": str(parsed.get("aspect") or target_sc.get("aspect") or "896x1152").strip(),
+        }
+        return {"scene": updated_scene, "index": idx, "model": model}
+
+    # Plan new storyboard or continue existing storyboard
+    start_num = (len(existing_scenes) + 1) if (action == "continue" and existing_scenes) else 1
+    sys_p = (
+        f"{pre_fun}\n\n"
+        "You are an uncensored Film Director, Visual Novel Writer, and Master Cinematographer.\n"
+        "You turn rough ideas and settings into captivating, atmospheric multi-scene illustrated stories / comics with vivid literary prose, lively character dialogue, and ready-to-shoot diffusion prompts.\n"
+        "You NEVER censor, moralize, or water down sensual, romantic, ironic, dark, or bold adult storylines.\n\n"
+        "CRITICAL STORYBOARD RULES:\n"
+        f"1. LANGUAGE: Write `story_title`, `setting_summary`, and every scene's `title` and `narrative` in **{story_lang}**. Write `story_slug` in lowercase ASCII snake_case (2-4 English words, e.g. `neon_penthouse_rain`).\n"
+        "2. LITERARY QUALITY (`narrative`): Each scene's `narrative` should be 2–4 atmospheric literary sentences INCLUDING natural character dialogue or inner monologue where fitting, reading like an engaging illustrated novella or comic panel script.\n"
+        f"3. VISUAL PROMPTS (`visual_prompt`): ALWAYS in **English**. {engine_note}\n"
+        "4. VISUAL CONTINUITY & CINEMATOGRAPHY: Keep wardrobe, hair, props, time of day, and location details strictly consistent across scenes (unless changed by story action in that scene — then explicitly describe the new state!). Vary camera shots dynamically across scenes (e.g. wide establishing shot -> medium action/dialogue shot -> intimate close-up / over-the-shoulder -> dramatic angle).\n"
+        "5. `aspect`: Choose `'896x1152'` (portrait/character), `'1152x896'` (cinematic wide scene/two characters), or `'1024x1024'` per scene.\n"
+        f"6. Generate EXACTLY {scene_count} scenes starting at `scene_number`: {start_num}.\n\n"
+        "OUTPUT STRICT JSON ONLY in this exact schema:\n"
+        "{\n"
+        '  "story_title": "...",\n'
+        '  "story_slug": "english_snake_case",\n'
+        '  "setting_summary": "...",\n'
+        '  "scenes": [\n'
+        '    {\n'
+        f'      "scene_number": {start_num},\n'
+        '      "title": "...",\n'
+        '      "narrative": "...",\n'
+        '      "visual_prompt": "...",\n'
+        '      "aspect": "896x1152"\n'
+        "    }\n"
+        "  ]\n"
+        "}"
+    ).strip()
+
+    u_parts = []
+    if story_title:
+        u_parts.append(f"STORY TITLE: {story_title}")
+    if setting:
+        u_parts.append(f"WORLD / SETTING & ATMOSPHERE:\n{setting}")
+    if personas_desc:
+        u_parts.append(personas_desc)
+    if style_str:
+        u_parts.append(style_str)
+
+    if action == "continue" and existing_scenes:
+        recap_lines = []
+        for s in existing_scenes[-5:]:
+            recap_lines.append(
+                f"Scene {s.get('scene_number', '?')} ({s.get('title', '')}): {str(s.get('narrative', ''))[:260]} "
+                f"[Visual state: {str(s.get('visual_prompt', ''))[:180]}]"
+            )
+        u_parts.append("PREVIOUS SCENES SO FAR (continue seamlessly from the last scene!):\n" + "\n".join(recap_lines))
+        u_parts.append(
+            f"WHAT HAPPENS NEXT (plan the next {scene_count} scenes starting at Scene #{start_num}):\n"
+            f"{idea or 'Continue the story naturally with escalating chemistry, plot twist, or expressive scene progression.'}"
+        )
+    else:
+        u_parts.append(
+            f"STORY IDEA / PLOT OUTLINE (plan {scene_count} scenes):\n"
+            f"{idea or 'Create an intriguing, atmospheric character story set in this world.'}"
+        )
+
+    data = await llm_request({
+        "model": model,
+        "messages": [{"role": "system", "content": sys_p}, {"role": "user", "content": "\n\n".join(u_parts)}],
+        "stream": False,
+        "think": False,
+        "options": {
+            "temperature": 0.85,
+            "top_p": 0.94,
+            "num_predict": 2400,
+        },
+    })
+    raw = ((data or {}).get("message", {}) or {}).get("content", "") if isinstance(data, dict) else ""
+    parsed = _extract_json_object(raw)
+    if not parsed or not isinstance(parsed.get("scenes"), list) or len(parsed["scenes"]) == 0:
+        logging.error(f"[Director Storyboard] Failed to parse JSON from LLM output: {raw[:400]}")
+        raise RuntimeError("Режиссёр задумался и выдал нестандартный формат — попробуйте нажать ещё раз или уточнить завязку." if is_ru else "Could not parse storyboard JSON — please try again.")
+
+    final_title = str(parsed.get("story_title") or story_title or ("Новая история" if is_ru else "New Story")).strip()
+    raw_slug = str(parsed.get("story_slug") or story_title or final_title).strip()
+    final_slug = sanitize_story_slug(raw_slug)
+    final_setting = str(setting or parsed.get("setting_summary") or "").strip()
+
+    valid_aspects = {"896x1152", "1024x1024", "1152x896"}
+    norm_scenes = []
+    for i, sc in enumerate(parsed["scenes"][:scene_count]):
+        if not isinstance(sc, dict):
+            continue
+        asp = str(sc.get("aspect") or "896x1152").strip()
+        if asp not in valid_aspects:
+            asp = "896x1152"
+        norm_scenes.append({
+            "scene_number": start_num + i,
+            "title": str(sc.get("title") or f"{'Сцена' if is_ru else 'Scene'} {start_num + i}").strip(),
+            "narrative": str(sc.get("narrative") or "").strip(),
+            "visual_prompt": str(sc.get("visual_prompt") or "").strip(),
+            "aspect": asp,
+        })
+
+    return {
+        "story_title": final_title,
+        "story_slug": final_slug,
+        "setting": final_setting,
+        "scenes": norm_scenes,
+        "model": model,
+    }
+
+
+def build_story_markdown(story_data: dict) -> str:
+    """Builds a rich illustrated Markdown file (Readme.md) for a multi-scene story folder."""
+    title = str(story_data.get("story_title") or "Story").strip()
+    setting = str(story_data.get("setting") or "").strip()
+    personas = story_data.get("personas") or []
+    scenes = story_data.get("scenes") or []
+
+    lines = [f"# {title}", ""]
+    if setting:
+        lines.append(f"> **Setting:** {setting}")
+        lines.append("")
+    if personas and isinstance(personas, list):
+        names = [str(p.get("name", "")).strip() for p in personas if isinstance(p, dict) and p.get("name")]
+        if names:
+            lines.append(f"**Cast:** {', '.join(names)}")
+            lines.append("")
+    lines.append("---")
+    lines.append("")
+
+    for idx, sc in enumerate(scenes):
+        if not isinstance(sc, dict):
+            continue
+        num = sc.get("scene_number") or (idx + 1)
+        sc_title = str(sc.get("title") or f"Scene {num}").strip()
+        narrative = str(sc.get("narrative") or "").strip()
+        img_name = str(sc.get("image_name") or "").strip()
+        vis_prompt = str(sc.get("visual_prompt") or "").strip()
+
+        lines.append(f"## {num}. {sc_title}")
+        lines.append("")
+        if img_name:
+            lines.append(f"![{sc_title}](./{img_name})")
+            lines.append("")
+        if narrative:
+            lines.append(narrative)
+            lines.append("")
+        if vis_prompt:
+            lines.append(f"<!-- scene_{num}_prompt: {vis_prompt} -->")
+        lines.append("---")
+        lines.append("")
+
+    return "\n".join(lines).strip() + "\n"
+
+
+def save_story_to_local_disk(ctx: UserContext, story_data: dict) -> dict:
+    """Saves Readme.md and story.json into generated/<story_slug>/ on the AI node (for Node Owner)."""
+    raw_slug = str(story_data.get("story_slug") or story_data.get("story_title") or "").strip()
+    slug = sanitize_story_slug(raw_slug)
+    story_data = dict(story_data)
+    story_data["story_slug"] = slug
+    story_data["updated_at"] = datetime.now().isoformat()
+
+    md_text = build_story_markdown(story_data)
+    json_text = json.dumps(story_data, ensure_ascii=False, indent=2)
+
+    rel_gen = f"generated/{slug}"
+    target_dir = resolve_local_target_dir(ctx, rel_gen)
+    os.makedirs(target_dir, exist_ok=True)
+    with open(os.path.join(target_dir, "Readme.md"), "w", encoding="utf-8") as f:
+        f.write(md_text)
+    with open(os.path.join(target_dir, "story.json"), "w", encoding="utf-8") as f:
+        f.write(json_text)
+
+    home_dir = os.path.expanduser("~")
+    omc_dir = os.path.join(home_dir, "OnMyChat", "generated", slug)
+    if os.path.isdir(os.path.join(home_dir, "OnMyChat")) and os.path.abspath(target_dir) != os.path.abspath(omc_dir):
+        os.makedirs(omc_dir, exist_ok=True)
+        with open(os.path.join(omc_dir, "Readme.md"), "w", encoding="utf-8") as f:
+            f.write(md_text)
+        with open(os.path.join(omc_dir, "story.json"), "w", encoding="utf-8") as f:
+            f.write(json_text)
+
+    return {"story_slug": slug, "readme_markdown": md_text, "story_json": story_data}
+
+
+def list_stories_on_local_disk(ctx: UserContext) -> list[dict]:
+    """Lists saved story projects in generated/<slug>/story.json on the AI node."""
+    gen_dir = resolve_local_target_dir(ctx, "generated")
+    results = []
+    seen = set()
+    cand_dirs = [gen_dir]
+    home_omc = os.path.join(os.path.expanduser("~"), "OnMyChat", "generated")
+    if os.path.isdir(home_omc) and os.path.abspath(home_omc) != os.path.abspath(gen_dir):
+        cand_dirs.append(home_omc)
+
+    for base in cand_dirs:
+        if not os.path.isdir(base):
+            continue
+        for entry in sorted(os.listdir(base)):
+            if entry.startswith(".") or entry in seen:
+                continue
+            sub = os.path.join(base, entry)
+            sjson = os.path.join(sub, "story.json")
+            if os.path.isdir(sub) and os.path.isfile(sjson):
+                try:
+                    with open(sjson, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    seen.add(entry)
+                    results.append({
+                        "story_slug": entry,
+                        "story_title": data.get("story_title") or entry,
+                        "setting": data.get("setting") or "",
+                        "scene_count": len(data.get("scenes") or []),
+                        "updated_at": data.get("updated_at") or "",
+                        "story": data,
+                    })
+                except Exception as e:
+                    logging.warning(f"[Director] Could not read {sjson}: {e}")
+    results.sort(key=lambda x: x.get("updated_at") or "", reverse=True)
+    return results
+
+
+
+def extract_title_and_prompt(response: str) -> tuple[str, str]:
+    """Extract title and image prompt from LLM response.
+    Expected format: 'Title: title\nImage: prompt'
+    Returns (prompt, title). If title not found, generates one from first words.
+    """
+    lines = response.strip().split('\n')
+    title = ""
+    img_prompt = ""
+    
+    # Try to find "Image:" marker and take everything after it
+    if "Image:" in response:
+        parts = response.split("Image:", 1)
+        # Search for title in the first part
+        title_part = parts[0].strip()
+        img_prompt = parts[1].strip()
+        
+        for line in title_part.split('\n'):
+             if line.strip().startswith("Title:"):
+                 title = line.strip()[6:].strip()
+                 break
+    else:
+        # Fallback loop for other formats or if Image: not found above (though check catches it)
+        for line in lines:
+            line = line.strip()
+            if line.startswith("Title:"):
+                title = line[6:].strip()
+            elif line.startswith("Image:"):
+                img_prompt = line[6:].strip()
+    
+    # Fallback: if no Title found, use image prompt or generate from prompt
+    if not title and img_prompt:
+        # Generate title from first few words
+        words = img_prompt.replace('<', '').replace('>', '').split()
+        clean_words = [w for w in words if not w.startswith('<')][:4]
+        title = ' '.join(clean_words[:4])
+    
+    # Fallback: if no Image found, use entire response
+    if not img_prompt:
+        img_prompt = response.strip()
+        if not title:
+            words = img_prompt.replace('<', '').replace('>', '').split()
+            title = ' '.join(words[:4])
+    
+    return img_prompt, title
+
+
+async def generate_title_from_prompt(ctx: UserContext, prompt: str) -> str:
+    """Generate a descriptive title from a raw user prompt.
+    For short prompts (≤4 words), returns cleaned prompt.
+    For long prompts, uses LLM to generate 3-4 word title.
+    """
+    # Clean tags from prompt
+    clean_prompt = prompt.replace('<', '').replace('>', '')
+    words = [w for w in clean_prompt.split() if not w.startswith('<')]
+    
+    # For short prompts, use the cleaned prompt itself
+    if len(words) <= 4:
+        return ' '.join(words)
+    
+    # For long prompts, generate a descriptive title using LLM
+    title_prompt = (
+        "Create a short descriptive title (3-4 words maximum) for this image generation prompt. "
+        "Return ONLY the title, no quotes, no explanations.\n\n"
+        f"Prompt: {prompt}"
+    )
+    
+    payload = {
+        "messages": [
+            {"role": "system", "content": "You are a title generation assistant."},
+            {"role": "user", "content": title_prompt}
+        ],
+        "model": get_llm_model(ctx),
+        "stream": False,
+        "options": {"temperature": 0.3}
+    }
+    
+    data = await llm_request(payload)
+    if not data or "message" not in data:
+         return _clean_fallback_title(words, max_words=4)
+         
+    title = data["message"]["content"].strip().replace('"', '')
+    return title
+
+
+_DANGLING_TITLE_TAIL_WORDS = {
+    "a", "an", "the", "of", "in", "on", "at", "with", "and", "or",
+    "to", "for", "by", "from", "into", "as", "is", "are",
+}
+
+
+def _clean_fallback_title(words_or_text, max_words: int = 4) -> str:
+    """Build a clean short fallback title without dangling trailing articles/prepositions."""
+    if isinstance(words_or_text, str):
+        tokens = [w for w in words_or_text.replace("<", "").replace(">", "").split() if not w.startswith("<")]
+    else:
+        tokens = list(words_or_text)
+    sliced = []
+    for raw_tok in tokens[:max_words]:
+        ended_sentence = raw_tok.rstrip('"\')').endswith((".", "!", "?"))
+        clean_tok = raw_tok.strip(' "\'*#_,.!?:;()-')
+        if clean_tok:
+            sliced.append(clean_tok)
+        if ended_sentence and sliced:
+            break
+    while len(sliced) > 1 and sliced[-1].lower() in _DANGLING_TITLE_TAIL_WORDS:
+        sliced.pop()
+    return " ".join(sliced).strip(" ,.-#*")
+
+
+async def generate_neutral_description_and_title(ctx: UserContext, prompt: str) -> tuple[str, str]:
+    """Generate a safe, neutral title and description for the image prompt."""
+    mode = ctx.settings.get("content_mode", "work") if ctx and getattr(ctx, "settings", None) else "work"
+    is_priv = bool(ctx and (getattr(ctx, "private_mode", False) or getattr(ctx, "trusted_owner", False)))
+    model = _get_director_model() if is_priv else get_fast_model(ctx)
+    if is_priv or mode == "fun":
+         # Prime uncensored model to accept artistic/sensual prompts while outputting a clean gallery title & summary
+         pre_fun = get_fun_prephase(ctx) if callable(get_fun_prephase) else FUN_PREPHASE
+         img_fun = get_image_fun(ctx) if callable(get_image_fun) else IMAGE_PROMPT_FUN
+         instruction = pre_fun + "\n\n" + img_fun + "\n\n" + IMAGE_NEUTRAL_DESC_PROMPT.format(prompt=prompt)
+    else:
+         instruction = IMAGE_NEUTRAL_DESC_PROMPT.format(prompt=prompt)
+    
+    payload = {
+        "messages": [
+            {"role": "user", "content": instruction}
+        ],
+        "model": model,
+        "stream": False,
+        "think": False,
+        "options": {"temperature": 0.3, "num_predict": 150}
+    }
+    
+    try:
+        data = await asyncio.wait_for(llm_request(payload), timeout=15.0)
+        if data and "message" in data and "content" in data["message"]:
+            raw_content = data["message"]["content"].strip()
+            lines = [l.strip() for l in raw_content.split("\n") if l.strip()]
+            title = ""
+            desc_lines = []
+            for line in lines:
+                cleaned_line = re.sub(r"^[\s#*>\-\"']+", "", line).strip()
+                m_inline = re.match(
+                    r"^title\s*\**\s*:\s*(.+?)\s+description\s*\**\s*:\s*(.+)$",
+                    cleaned_line,
+                    flags=re.IGNORECASE,
+                )
+                if m_inline:
+                    title = m_inline.group(1).strip(' "*#:-')
+                    desc_lines.append(m_inline.group(2).strip(' "*'))
+                    continue
+                m_title = re.match(r"^title\s*\**\s*:\s*(.*)$", cleaned_line, flags=re.IGNORECASE)
+                if m_title:
+                    candidate = m_title.group(1).strip(' "*#:-')
+                    if candidate:
+                        title = candidate
+                    continue
+                m_desc = re.match(r"^description\s*\**\s*:\s*(.*)$", cleaned_line, flags=re.IGNORECASE)
+                if m_desc:
+                    candidate_desc = m_desc.group(1).strip(' "*')
+                    if candidate_desc:
+                        desc_lines.append(candidate_desc)
+                    continue
+                desc_lines.append(line.strip(' "'))
+
+            # Fallback if LLM emitted two bare lines (<Title>\n<Description>) without "Title:" prefix
+            if not title and len(desc_lines) >= 2:
+                first_line = desc_lines[0].strip(' "*#:-')
+                first_words = first_line.split()
+                second_words = desc_lines[1].split()
+                if 1 <= len(first_words) <= 7 and (
+                    not first_line.endswith((".", "!", "?")) or len(second_words) >= 6
+                ):
+                    title = first_line.rstrip(".!?").strip(' "*#:-')
+                    desc_lines = desc_lines[1:]
+
+            desc = " ".join(desc_lines).strip()
+            return title, desc or raw_content
+    except Exception as e:
+        logging.warning(f"Neutral description LLM call skipped/failed: {e}")
+
+    clean_words = [w for w in prompt.replace("<", "").replace(">", "").split() if not w.startswith("<")]
+    title = _clean_fallback_title(clean_words, max_words=4)
+    sentences = [s.strip() for s in prompt.split(".") if s.strip()]
+    desc = sentences[0] if sentences else (" ".join(clean_words[:15]) or "Generated image")
+    return title, desc
+
+
+async def generate_neutral_description(ctx: UserContext, prompt: str) -> str:
+    """Generate a safe, neutral description for the image prompt (backward compatibility)."""
+    _, desc = await generate_neutral_description_and_title(ctx, prompt)
+    return desc
+
+
+
+def resolve_local_target_dir(ctx: UserContext, subfolder: str = "generated") -> str:
+    """
+    Resolves the real filesystem directory under the user's home directory
+    corresponding to ctx.storage / defaultStorage.
+    
+    Handles device-qualified paths from Svar (e.g. "/Colab-AI-Node/Data" -> "/home/<user>/Data/<subfolder>"),
+    user prefixes, and direct share paths.
+    """
+    home_dir = os.path.expanduser("~")
+    default_fallback = "OnMyChat" if os.path.isdir(os.path.join(home_dir, "OnMyChat")) else "Data"
+    raw_storage = (
+        getattr(ctx, "storage", None)
+        or (ctx.settings.get("defaultStorage", "") if getattr(ctx, "settings", None) else "")
+        or default_fallback
+    ).strip()
+
+    if raw_storage.lower() == "data" and os.path.isdir(os.path.join(home_dir, "OnMyChat", "generated")):
+        raw_storage = "OnMyChat"
+
+    if raw_storage.startswith(home_dir):
+        return os.path.join(raw_storage, subfolder) if subfolder else raw_storage
+
+    parts = [p for p in raw_storage.strip("/").split("/") if p and p != "."]
+
+    # Strip user_id prefix if present
+    if parts and getattr(ctx, "user_id", None) and parts[0] == ctx.user_id:
+        parts = parts[1:]
+
+    # In Svar (storage-path.js), paths with >= 2 parts where parts[0] != "private"
+    # are device-qualified (e.g. "/Colab-AI-Node/Data" -> device="Colab-AI-Node", folder="Data").
+    # If parts[1] is an existing local share, or parts[0] is not a local folder, strip device name.
+    if len(parts) >= 2 and parts[0].lower() != "private":
+        first_exists = os.path.isdir(os.path.join(home_dir, parts[0]))
+        second_exists = os.path.isdir(os.path.join(home_dir, parts[1]))
+        if second_exists or not first_exists:
+            parts = parts[1:]
+    elif len(parts) == 1 and not os.path.isdir(os.path.join(home_dir, parts[0])):
+        # If parts[0] is only the device name itself (e.g. "Colab-AI-Node")
+        if os.path.isdir(os.path.join(home_dir, "OnMyChat")):
+            parts = ["OnMyChat"]
+        elif os.path.isdir(os.path.join(home_dir, "Data")):
+            parts = ["Data"]
+
+    rel_path = "/".join(parts) if parts else default_fallback
+    base_dir = os.path.join(home_dir, rel_path)
+    return os.path.join(base_dir, subfolder) if subfolder else base_dir
+
+
+async def generate_image(ctx: UserContext, prompt, chat: str = 'default', update_history: bool = True, use_default_lora: bool = True, prompt_id: str | None = None, upload_storage: bool = True) -> tuple[str, str, str, bytes]:
+    if not prompt:
+        raise Exception("Please explain what do you want to see.")
+
+    user_id = ctx.user_id
+
+    effective_fun = ctx.private_mode and ctx.settings.get("content_mode", "work") == "fun"
+
+    negative_prompt = NEGATIVE_PROMPTS["base"]
+    if effective_fun:
+        negative_prompt = NEGATIVE_PROMPTS["fun"] + "," + negative_prompt
+
+
+    logging.info(f"Prompt: {prompt[:500]}")
+    with open(WORKFLOW_PATH, "r", encoding="utf-8") as f:
+        workflow_json = json.load(f)
+
+    # Промпт для генерации
+    workflow_json["4"]["inputs"]["text"] = negative_prompt
+    workflow_json["85"]["inputs"]["text"] =  prompt + ", " + IMPROVEMENT_PROMPT
+    
+    # Randomize seed
+    seed = random.randint(1, 1125899906842624)
+    if "5" in workflow_json and "inputs" in workflow_json["5"]:
+        workflow_json["5"]["inputs"]["seed"] = seed
+
+    # Выбираем модель в соответствии с режимом
+    style = ctx.settings.get("style", "realistic")
+    
+    # Check for style tags in prompt
+    tags = re.findall(r"<([^>]+)>", prompt)
+    for tag in tags:
+        tag_lower = tag.lower()
+        if tag_lower in STYLE_MODELS:
+            style = tag_lower
+            break
+
+    model = STYLE_MODELS.get(style, STYLE_MODELS["realistic"]) # Fallback just in case
+    workflow_json["127"]["inputs"]["ckpt_name"] = model
+    #workflow_json["103"]["inputs"][lora]["on"] = True
+    
+    # Dynamic LoRA activation
+    lora_map = {}
+    lora_nodes = {}
+    # Build map from name/filename to key
+    if "103" in workflow_json and "inputs" in workflow_json["103"]:
+        for key, value in workflow_json["103"]["inputs"].items():
+            if isinstance(value, dict) and "name" in value:
+                lora_nodes[key] = value
+                raw_name = value["name"].lower()
+                lora_map[raw_name] = key
+                lora_map[raw_name.replace(" ", "_")] = key
+                lora_map[raw_name.replace(" ", "-")] = key
+                lora_map[raw_name.replace(" ", "")] = key
+                if "lora" in value:
+                    lora_filename = value["lora"].lower()
+                    lora_map[lora_filename] = key
+                    lora_map[lora_filename.split(".")[0]] = key
+
+        # Map persona alias 'june' to default character LoRA key
+        if "domi" in lora_map:
+            lora_map["june"] = lora_map["domi"]
+
+    # Find tags in prompt
+    active_lora_keys = set()
+    tags = re.findall(r"<([^>]+)>", prompt)
+    for tag in tags:
+        tag_lower = tag.lower().strip()
+        if tag_lower in lora_map:
+            key = lora_map[tag_lower]
+            active_lora_keys.add(key)
+            logging.info(f"Found LoRA tag in prompt: {tag} -> {key} ({lora_nodes[key].get('name')})")
+
+    # If character LoRA is expected (use_default_lora=True), ensure character LoRA is active
+    if use_default_lora:
+        has_character_lora = any(
+            lora_nodes.get(k, {}).get("type") == "character"
+            for k in active_lora_keys
+        )
+        if not has_character_lora:
+            matched_key = None
+            # Check assistant_model first, character_lora is a legacy alias
+            for setting_key in ("assistant_model", "character_lora"):
+                candidate = ctx.settings.get(setting_key, "").lower().strip("<> ")
+                if candidate:
+                    matched_key = (
+                        lora_map.get(candidate)
+                        or lora_map.get(candidate.replace(" ", "_"))
+                        or lora_map.get(candidate.replace(" ", ""))
+                    )
+                    if matched_key:
+                        active_lora_keys.add(matched_key)
+                        logging.info(f"Using LoRA from settings ({setting_key}={candidate}): {matched_key} ({lora_nodes[matched_key].get('name')})")
+                        break
+            
+            # Fallback to default character LoRA if still none found
+            if not matched_key:
+                default_char_key = (
+                    lora_map.get("domi")
+                    or next((k for k, v in lora_nodes.items() if v.get("type") == "character"), None)
+                )
+                if default_char_key:
+                    active_lora_keys.add(default_char_key)
+                    logging.info(f"Using default character LoRA: {default_char_key} ({lora_nodes[default_char_key].get('name')})")
+
+    # Ensure style LoRA is active if applicable
+    has_style_lora = any(
+        lora_nodes.get(k, {}).get("type") == "style"
+        for k in active_lora_keys
+    )
+    if not has_style_lora:
+        # Check settings for explicit style_lora / style_loras / loras
+        style_candidates = []
+        for sk in ("style_lora", "style_loras", "loras"):
+            val = ctx.settings.get(sk)
+            if isinstance(val, list):
+                style_candidates.extend([str(x).lower().strip("<> ") for x in val])
+            elif isinstance(val, str) and val.strip():
+                style_candidates.extend([x.lower().strip("<> ") for x in val.split(",")])
+
+        for cand in style_candidates:
+            cand_key = lora_map.get(cand) or lora_map.get(cand.replace(" ", "_")) or lora_map.get(cand.replace(" ", ""))
+            if cand_key and cand_key in lora_nodes:
+                active_lora_keys.add(cand_key)
+                has_style_lora = True
+                logging.info(f"Using style LoRA from settings: {cand_key} ({lora_nodes[cand_key].get('name')})")
+
+    # Reset all loras to off, then activate active ones
+    for key, val in lora_nodes.items():
+        if key in active_lora_keys:
+            val["on"] = True
+            logging.info(f"Activated LoRA {key} ({val.get('name')}) with strength {val.get('strength', 1.0)}")
+        else:
+            val["on"] = False
+
+    logging.info(f"Generating with model: {model}")
+    img_data, filename = await generate_image_workflow(workflow_json)
+    
+    if not img_data:
+        raise Exception("Image generation failed")
+
+    # Track token consumption (only in public mode)
+    if not ctx.private_mode:
+        ctx.tokens_consumed = 0.1
+
+    # Local user folder (only used if no remote storage)
+    user_folder = os.path.join(APP_ROOT_DIR, USER_DATA_DIR, ctx.user_id, "generated") if ctx.user_id else None
+    
+    # Extract title from prompt (prompt may contain "Title: ..." from LLM)
+    img_prompt, initial_title = extract_title_and_prompt(prompt)
+    
+    # Generate safe neutral title and description via NSFW-neutral filter
+    neutral_title, neutral_description = await generate_neutral_description_and_title(ctx, img_prompt)
+    
+    # Determine final safe title (never a crude 4-word slice of SDXL tags)
+    raw_tag_prefix = ' '.join([w for w in img_prompt.replace('<', '').replace('>', '').split() if not w.startswith('<')][:4])
+    if neutral_title:
+        img_title = neutral_title
+    elif initial_title and initial_title != raw_tag_prefix:
+        img_title = initial_title
+    else:
+        img_title = await generate_title_from_prompt(ctx, neutral_description or img_prompt)
+        
+    formatted_readme = f"#{img_title}\n\n{neutral_description}"
+    
+    # Create unique filename by appending timestamp to index
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # Try to extract index from ComfyUI temp filename if present
+    # Pattern: ComfyUI_temp_..._00005_.png
+    match = re.search(r"_(\d{5})_\.png$", filename)
+    if match:
+        index = match.group(1)
+        filename = f"IMG_{index}_{timestamp}.png"
+    else:
+        # Fallback for other ComfyUI temp patterns or unexpected names
+        if filename.startswith("ComfyUI_temp"):
+             filename = f"IMG_{timestamp}.png"
+
+    gateway_uploaded = False
+    from api import validated_node_owner
+    is_node_owner = validated_node_owner(ctx)
+    is_p2p = getattr(ctx, "private_mode", False)
+
+    # In P2P calls or when running as node owner, skip gateway upload:
+    # 1. P2P clients receive the image directly via ephemeral /chat/image or WebRTC data push.
+    # 2. Node owners already have the file saved directly to host disk below.
+    # Gateway upload over internet adds several seconds of synchronous delay and is only needed
+    # for legacy web clients accessing via cloud gateway.
+    skip_gateway = (
+        not upload_storage
+        or is_p2p
+        or is_node_owner
+    )
+
+    if not skip_gateway and ctx.omd_key:
+        effective_storage = ctx.storage or (f"/{ctx.user_id}/Private/onmychat" if ctx.user_id and ctx.user_id != "anonymous" else "")
+        if effective_storage:
+            dest = f"{effective_storage}/generated"
+            logging.info(f"Uploading to storage: {dest}/{filename}")
+            try:
+                upload_data_to_storage(ctx.omd_key, dest, filename, img_data, "image/png")
+                readme_filename = os.path.splitext(filename)[0] + ".Readme.md"
+                upload_data_to_storage(ctx.omd_key, dest, readme_filename, formatted_readme, "text/markdown")
+                logging.info("Upload completed successfully.")
+                if not ctx.storage:
+                    ctx.storage = effective_storage
+                gateway_uploaded = True
+            except Exception as e:
+                logging.error(f"Upload to storage failed: {e}")
+    elif skip_gateway:
+        reason = "upload_storage=False" if not upload_storage else ("p2p mode" if is_p2p else "node owner local storage")
+        logging.info(f"Skipping gateway upload ({reason}): image delivered directly")
+
+    if is_node_owner:
+        # Node Owner only: Save directly to local storage on host relative to user's home directory.
+        target_dir = resolve_local_target_dir(ctx, "generated")
+        try:
+            os.makedirs(target_dir, exist_ok=True)
+            dest_path = os.path.join(target_dir, filename)
+            with open(dest_path, "wb") as f:
+                f.write(img_data)
+            readme_filename = os.path.splitext(filename)[0] + ".Readme.md"
+            readme_path = os.path.join(target_dir, readme_filename)
+            with open(readme_path, "w", encoding="utf-8") as f:
+                f.write(formatted_readme)
+            logging.info(f"[NodeOwner] Saved generated image locally on host: {dest_path}")
+        except Exception as e:
+            logging.warning(f"[NodeOwner] Local file save failed: {e}")
+
+    try:
+        from api import store_ephemeral_image
+        store_ephemeral_image(filename, img_data)
+        logging.info(f"Stored image {filename} in RAM ephemeral cache.")
+    except Exception as e:
+        logging.warning(f"Failed to store ephemeral image: {e}")
+
+    return filename, img_title, neutral_description, img_data
+
+async def _resolve_chat_image_sliders(ctx: UserContext, sliders: dict | None) -> tuple[dict, bool]:
+    """
+    Checks whether `ctx` is entitled to Cloud GPU Krea 2 (`krea_allowed`).
+    When `krea_allowed` is False (e.g. Guest or depleted Krea quota), maps `sliders`
+    to local Express SDXL (`sdxl_realistic` / `sdxl_tooned` / `sdxl_fantasy`) so chat
+    image creation works seamlessly in Express mode without hitting Studio gating.
+    """
+    eff = dict(sliders or {})
+    can_krea = False
+    try:
+        if await is_krea_available(ctx):
+            st = await check_krea_status(ctx)
+            can_krea = bool(isinstance(st, dict) and st.get("krea_allowed"))
+    except Exception as e:
+        logging.debug(f"[ExpressFallback] check_krea_status failed: {e}")
+        can_krea = False
+
+    if can_krea:
+        return eff, True
+
+    style_key = str(eff.get("style") or "").strip().lower()
+    if style_key in ("anime", "pixar", "3d", "comic"):
+        eff["base_model"] = "sdxl_tooned"
+    elif style_key in ("midjourney", "fantasy"):
+        eff["base_model"] = "sdxl_fantasy"
+    else:
+        eff["base_model"] = "sdxl_realistic"
+    eff.setdefault("steps", 7)
+    eff.setdefault("cfg", 1.45)
+    return eff, False
+
+
+async def generate_character_image(ctx: UserContext, prompt, chat: str = 'default', update_history: bool = True, prompt_id: str | None = None, upload_storage: bool = True) -> tuple[str, str, str, bytes]:
+    clean_prompt, persona_prompt, sliders = extract_krea2_prompt_and_params(ctx, prompt, is_character=True)
+    eff_sliders, can_krea = await _resolve_chat_image_sliders(ctx, sliders)
+    if can_krea:
+        logging.info(f"[Krea2] Generating character image: prompt='{clean_prompt[:50]}...', archetypes={eff_sliders.get('archetypes')}, style={eff_sliders.get('style')}")
+        ref_avatar = ctx.settings.get("assistant_avatar") or get_assistant_avatar_path(ctx)
+        return await generate_krea2_image(ctx, clean_prompt, persona_prompt=persona_prompt, sliders=eff_sliders, reference_image=ref_avatar, upload_storage=upload_storage)
+    if await is_comfy_available():
+        logging.info(f"[Express/SDXL] Generating character image in Express ({eff_sliders.get('base_model')}): prompt='{clean_prompt[:50]}...'")
+        ref_avatar = ctx.settings.get("assistant_avatar") or get_assistant_avatar_path(ctx)
+        return await generate_krea2_image(ctx, clean_prompt, persona_prompt=persona_prompt, sliders=eff_sliders, reference_image=ref_avatar, upload_storage=upload_storage)
+    return await generate_image(ctx, prompt, chat, update_history=update_history, prompt_id=prompt_id, upload_storage=upload_storage)
+
+# Generate general image, returns full path for further sending or conversion
+async def generate_general_image(ctx: UserContext, prompt, chat: str = 'default', prompt_id: str | None = None, upload_storage: bool = True) -> tuple[str, str, str, bytes]:
+    clean_prompt, _, sliders = extract_krea2_prompt_and_params(ctx, prompt, is_character=False)
+    eff_sliders, can_krea = await _resolve_chat_image_sliders(ctx, sliders)
+    if can_krea:
+        logging.info(f"[Krea2] Generating general image: prompt='{clean_prompt[:50]}...', style={eff_sliders.get('style')}")
+        return await generate_krea2_image(ctx, clean_prompt, persona_prompt="", sliders=eff_sliders, upload_storage=upload_storage)
+    if await is_comfy_available():
+        logging.info(f"[Express/SDXL] Generating general image in Express ({eff_sliders.get('base_model')}): prompt='{clean_prompt[:50]}...'")
+        return await generate_krea2_image(ctx, clean_prompt, persona_prompt="", sliders=eff_sliders, upload_storage=upload_storage)
+    return await generate_image(ctx, prompt, chat, use_default_lora=False, prompt_id=prompt_id, upload_storage=upload_storage)
+
+# img is base64 image #
+async def recognize_image(ctx: UserContext, img, prompt="", chat="default", provided_history=None):
+
+    effective_fun = ctx.private_mode and ctx.settings.get("content_mode", "work") == "fun"
+
+    if effective_fun:
+        pre_fun = get_fun_prephase(ctx) if callable(get_fun_prephase) else FUN_PREPHASE
+        system_prompt = pre_fun + "\n" +  BASE_SYSTEM_PROMPT + "\n" + "Recognize image"
+    else:
+        system_prompt =  BASE_SYSTEM_PROMPT + "\n" + "Recognize image"
+
+
+    try:
+        history = provided_history or []
+    except Exception as e:
+        logging.error(f"Failed to load history in recognize_image: {e}")
+        raise e
+
+    # Добавляем system-инструкцию
+    messages = [{"role": "system", "content": system_prompt}]
+    # Добавляем историю
+    messages.extend(history[-HISTORY_LIMIT:])
+    # Добавляем новый запрос с изображением
+    messages.append({
+        "role": "user",
+        "content": prompt,
+        "images": [img]
+    })
+
+    request_payload = {
+        "messages": messages,
+        "model": VISION_MODEL,
+        "stream": False,
+        "options": {
+            "temperature": 0.8,
+        }
+    }
+
+    data = await llm_request(request_payload)
+
+    if "message" in data and "content" in data["message"]:
+        response = data["message"]["content"]
+    else:
+        # на случай, если ответ в другом формате
+        response = data.get("content") or str(data)
+
+    history.append({"role": "assistant", "content": response})
+    # [LEGACY HISTORY] Save history removed
+
+    return response.lower().strip()
+
+async def recognize_image_annotation(ctx: UserContext, img: bytes, prompt: str = ""):
+    """
+    Vision-распознавание изображения → чистая аннотация для карточки-знания.
+    В отличие от recognize_image (чатовый клиент) не ловеркейзит ответ и не
+    смешивает с историей: возвращает фактологическое описание (OCR + содержание),
+    которое дальше идёт в теги/эмбеддинг/чанки как аннотация документа.
+    """
+    if not img:
+        return ""
+    try:
+        import base64 as _b64
+        img_b64 = _b64.b64encode(img).decode("utf-8")
+    except Exception as e:
+        logging.error(f"[recognize_image_annotation] b64 error: {e}")
+        return ""
+
+    system_prompt = (
+        "You are a meticulous vision assistant. Analyze the image and produce a concise "
+        "factual annotation for a knowledge card. Include: the main subject, key objects "
+        "and their arrangement, any visible text (OCR), colors, and notable details. "
+        "Write in clean plain prose, 2-5 sentences, no markdown, no preamble."
+    )
+    user_content = prompt.strip() if (prompt or "").strip() else "Describe this image."
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_content, "images": [img_b64]},
+    ]
+
+    request_payload = {
+        "messages": messages,
+        "model": VISION_MODEL,
+        "stream": False,
+        "options": {"temperature": 0.2},
+    }
+
+    try:
+        data = await llm_request(request_payload)
+        if isinstance(data, dict):
+            response = data.get("message", {}).get("content", "") or data.get("content", "")
+        else:
+            response = str(data)
+    except Exception as e:
+        logging.error(f"[recognize_image_annotation] LLM error: {e}")
+        return ""
+
+    return response.strip()
+
+_ISO3166_CC = {
+    "UA": "Ukraine", "RU": "Russia", "BY": "Belarus", "PL": "Poland", "CZ": "Czech Republic",
+    "SK": "Slovakia", "HU": "Hungary", "RO": "Romania", "MD": "Moldova", "BG": "Bulgaria",
+    "GE": "Georgia", "AM": "Armenia", "AZ": "Azerbaijan", "KZ": "Kazakhstan", "UZ": "Uzbekistan",
+    "KG": "Kyrgyzstan", "EE": "Estonia", "LV": "Latvia", "LT": "Lithuania", "FI": "Finland",
+    "SE": "Sweden", "NO": "Norway", "DK": "Denmark", "DE": "Germany", "AT": "Austria",
+    "CH": "Switzerland", "LI": "Liechtenstein", "IT": "Italy", "ES": "Spain", "PT": "Portugal",
+    "FR": "France", "BE": "Belgium", "NL": "Netherlands", "LU": "Luxembourg", "GB": "United Kingdom",
+    "IE": "Ireland", "GR": "Greece", "TR": "Turkey", "IL": "Israel", "AE": "United Arab Emirates",
+    "QA": "Qatar", "SA": "Saudi Arabia", "IN": "India", "TH": "Thailand", "VN": "Vietnam",
+    "ID": "Indonesia", "MY": "Malaysia", "SG": "Singapore", "JP": "Japan", "KR": "South Korea",
+    "CN": "China", "TW": "Taiwan", "HK": "Hong Kong", "PH": "Philippines", "AU": "Australia",
+    "NZ": "New Zealand", "CA": "Canada", "US": "United States", "MX": "Mexico", "BR": "Brazil",
+    "AR": "Argentina", "CL": "Chile", "PE": "Peru", "CO": "Colombia", "ZA": "South Africa",
+    "EG": "Egypt", "MA": "Morocco", "TN": "Tunisia", "RS": "Serbia", "HR": "Croatia",
+    "SI": "Slovenia", "ME": "Montenegro", "BA": "Bosnia and Herzegovina", "MK": "North Macedonia",
+    "AL": "Albania", "IS": "Iceland",
+}
+
+_GEO_REVERSE_CACHE: dict = {}
+
+# Национально-языковые имена стран (ISO → [официальное, украинское и т.п.]).
+# Используются, чтобы в теги попадали кириллические названия мест.
+_ISO3166_NATIVE = {
+    "UA": ["Ukraine", "Україна"],
+    "RU": ["Россия", "Росія"],
+    "BY": ["Беларусь", "Білорусь"],
+    "PL": ["Polska", "Польща"],
+    "CZ": ["Česko", "Чехія"],
+    "SK": ["Slovensko", "Словаччина"],
+    "HU": ["Magyarország", "Угорщина"],
+    "RO": ["România", "Румунія"],
+    "MD": ["Moldova", "Молдова"],
+    "BG": ["България", "Болгарія"],
+    "GE": ["საქართველო", "Грузія"],
+    "AM": ["Հայաստան", "Вірменія"],
+    "AZ": ["Azərbaycan", "Азербайджан"],
+    "KZ": ["Қазақстан", "Казахстан"],
+    "UZ": ["Oʻzbekiston", "Узбекистан"],
+    "KG": ["Кыргызстан", "Киргизстан"],
+    "EE": ["Eesti", "Естонія"],
+    "LV": ["Latvija", "Латвія"],
+    "LT": ["Lietuva", "Литва"],
+    "FI": ["Suomi", "Фінляндія"],
+    "SE": ["Sverige", "Швеція"],
+    "NO": ["Norge", "Норвегія"],
+    "DK": ["Danmark", "Данія"],
+    "DE": ["Deutschland", "Німеччина"],
+    "AT": ["Österreich", "Австрія"],
+    "CH": ["Schweiz/Suisse/Svizzera", "Швейцарія"],
+    "LI": ["Liechtenstein", "Ліхтенштейн"],
+    "IT": ["Italia", "Італія"],
+    "ES": ["España", "Іспанія"],
+    "PT": ["Portugal", "Португалія"],
+    "FR": ["France", "Франція"],
+    "BE": ["België/Belgique", "Бельгія"],
+    "NL": ["Nederland", "Нідерланди"],
+    "LU": ["Luxembourg", "Люксембург"],
+    "GB": ["United Kingdom", "Велика Британія"],
+    "IE": ["Ireland", "Ірландія"],
+    "GR": ["Ελλάδα", "Греція"],
+    "TR": ["Türkiye", "Туреччина"],
+    "IL": ["ישראל", "Ізраїль"],
+    "AE": ["United Arab Emirates", "ОАЕ"],
+    "QA": ["Qatar", "Катар"],
+    "SA": ["السعودية", "Саудівська Аравія"],
+    "IN": ["India", "Індія"],
+    "TH": ["Thailand", "Таїланд"],
+    "VN": ["Việt Nam", "В'єтнам"],
+    "ID": ["Indonesia", "Індонезія"],
+    "MY": ["Malaysia", "Малайзія"],
+    "SG": ["Singapore", "Сінгапур"],
+    "JP": ["日本", "Японія"],
+    "KR": ["대한민국", "Південна Корея"],
+    "CN": ["中国", "Китай"],
+    "TW": ["臺灣", "Тайвань"],
+    "HK": ["香港", "Гонконг"],
+    "PH": ["Pilipinas", "Філіппіни"],
+    "AU": ["Australia", "Австралія"],
+    "NZ": ["New Zealand", "Нова Зеландія"],
+    "CA": ["Canada", "Канада"],
+    "US": ["United States", "США"],
+    "MX": ["México", "Мексика"],
+    "BR": ["Brasil", "Бразилія"],
+    "AR": ["Argentina", "Аргентина"],
+    "CL": ["Chile", "Чилі"],
+    "PE": ["Perú", "Перу"],
+    "CO": ["Colombia", "Колумбія"],
+    "ZA": ["South Africa", "ПАР"],
+    "EG": ["مصر", "Єгипет"],
+    "MA": ["المغرب", "Марокко"],
+    "TN": ["تونس", "Туніс"],
+    "RS": ["Србија", "Сербія"],
+    "HR": ["Hrvatska", "Хорватія"],
+    "SI": ["Slovenija", "Словенія"],
+    "ME": ["Црна Гора", "Чорногорія"],
+    "BA": ["Bosna i Hercegovina", "Боснія і Герцеговина"],
+    "MK": ["Северна Македонија", "Північна Македонія"],
+    "AL": ["Shqipëria", "Албанія"],
+    "IS": ["Ísland", "Ісландія"],
+}
+
+# Локализованные названия городов/регионов (ключ — латинское имя в нижнем
+# регистре из reverse_geocoder). Пополняется по мере появления новых мест.
+_GEO_CITY_NATIVE = {
+    "uzhhorod": ["Ужгород"],
+    "zakarpattia": ["Закарпаття", "Закарпатська область"],
+    "lviv": ["Львів"],
+    "lviv oblast": ["Львівська область"],
+    "kyiv": ["Київ"],
+    "odesa": ["Одеса"],
+    "kharkiv": ["Харків"],
+    "ternopil": ["Тернопіль"],
+    "ivano-frankivsk": ["Івано-Франківськ"],
+    "khmelnytskyi": ["Хмельницький"],
+    "vinnytsia": ["Вінниця"],
+    "mukachevo": ["Мукачево"],
+    "mukacheve": ["Мукачево"],
+    "berehove": ["Берегове"],
+    "khust": ["Хуст"],
+    "chop": ["Чоп"],
+    "budapest": ["Будапешт"],
+    "szada": ["Шада"],
+    "nyiregyhaza": ["Ньїредьгаза"],
+    "debrecen": ["Дебрецен"],
+    "kranj": ["Крань"],
+    "ljubljana": ["Любляна"],
+    "maribor": ["Марибор"],
+    "celje": ["Целє"],
+    "koper": ["Копер"],
+    "osijek": ["Осієк"],
+    "zagreb": ["Загреб"],
+    "split": ["Спліт"],
+    "dubrovnik": ["Дубровник"],
+    "kosice": ["Кошіце", "Кошиці"],
+    "presov": ["Пряшів", "Прешов"],
+    "vienna": ["Відень"],
+    "graz": ["Грац"],
+    "salzburg": ["Зальцбург"],
+    "bratislava": ["Братислава"],
+    "prague": ["Прага"],
+    "warsaw": ["Варшава"],
+    "krakow": ["Краків"],
+}
+
+
+def geo_place_localized(place: str) -> list:
+    """Для 'Uzhhorod, Zakarpattia, Ukraine' → ['Ужгород', 'Закарпаття', 'Україна', ...].
+
+    Добавляет национально-языковые имена частей места (для кириллического поиска).
+    """
+    if not place:
+        return []
+    parts = [p.strip() for p in place.split(",") if p.strip()]
+    if not parts:
+        return []
+    out = []
+    for part in parts[:-1]:
+        aliases = _GEO_CITY_NATIVE.get(part.lower())
+        if aliases:
+            out.extend(a for a in aliases if a.lower() != part.lower())
+    country = parts[-1].strip()
+    for _, names in _ISO3166_NATIVE.items():
+        if country.lower() == names[0].lower():
+            out.extend(n for n in names[1:] if n)
+            break
+    return sorted(set(out))
+
+
+def reverse_geocode_coords(lat: float, lon: float) -> str:
+    """Offline реверс-геокодинг координат → 'City, Region, Country'.
+
+    Использует reverse_geocoder (вшитый датасет городов GeoNames, без сети).
+    Возвращает пустую строку, если место не резолвится.
+    """
+    if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0):
+        return ""
+    key = (round(lat, 4), round(lon, 4))
+    if key in _GEO_REVERSE_CACHE:
+        return _GEO_REVERSE_CACHE[key]
+    try:
+        import reverse_geocoder as _rg
+        r = _rg.search(key)[0] or {}
+        city = (r.get("name") or "").strip()
+        region = (r.get("admin1") or "").strip()
+        cc = (r.get("cc") or "").strip()
+        country = _ISO3166_CC.get(cc, cc)
+        place = ", ".join(p for p in (city, region, country) if p)
+    except Exception as e:
+        logging.warning(f"[geocode] reverse lookup error ({lat}, {lon}): {e}")
+        place = ""
+    _GEO_REVERSE_CACHE[key] = place
+    return place
+
+
+def gps_to_location(gps_coords: str) -> str:
+    """'48.62299, 22.29563' → 'Uzhhorod, Zakarpattia, Ukraine' (или пусто)."""
+    if not gps_coords:
+        return ""
+    try:
+        lat_s, lon_s = gps_coords.split(",")
+        lat = float(lat_s.strip())
+        lon = float(lon_s.strip())
+    except Exception:
+        return ""
+    return reverse_geocode_coords(lat, lon)
+
+
+def extract_image_exif_metadata(img_bytes: bytes) -> dict:
+    """Извлекает дату/время, GPS координаты и модель камеры из EXIF метаданных изображения."""
+    meta = {}
+    if not img_bytes:
+        return meta
+    try:
+        pil_img = Image.open(io.BytesIO(img_bytes))
+        raw_exif = pil_img._getexif() or {}
+        for k, v in raw_exif.items():
+            name = ExifTags.TAGS.get(k, k)
+            if name == "DateTimeOriginal" or (name == "DateTime" and "date_time" not in meta):
+                s = str(v).strip()
+                if len(s) >= 19 and s[4] == ":" and s[7] == ":":
+                    s = s[:4] + "-" + s[5:7] + "-" + s[8:]
+                meta["date_time"] = s
+            elif name == "Make":
+                meta["make"] = str(v).strip()
+            elif name == "Model":
+                meta["model"] = str(v).strip()
+            elif name == "GPSInfo" and isinstance(v, dict):
+                try:
+                    def to_deg(val):
+                        return float(val[0]) + float(val[1]) / 60.0 + float(val[2]) / 3600.0
+                    lat = to_deg(v[2])
+                    if v.get(1) == "S": lat = -lat
+                    lon = to_deg(v[4])
+                    if v.get(3) == "W": lon = -lon
+                    meta["gps_coords"] = f"{lat:.5f}, {lon:.5f}"
+                except Exception:
+                    pass
+    except Exception as e:
+        logging.debug(f"[exif] parse error: {e}")
+    return meta
+
+
+def prepare_image_for_vision(img_bytes: bytes, max_side: int = 1600) -> tuple[bytes, dict]:
+    """
+    Качественный скейлинг и извлечение фактологии для модели видения:
+    - Извлекает EXIF метаданные (дата/время съемки, GPS координаты, устройство)
+    - Поворачивает изображение в правильную ориентацию через ImageOps.exif_transpose
+    - Выполняет даунскейл методом LANCZOS для максимального сохранения резкости мелких объектов и текста
+    - Кодирует в качественный JPEG (92), оптимизируя размер для Ollama
+    """
+    meta = extract_image_exif_metadata(img_bytes)
+    if not img_bytes:
+        return b"", meta
+    try:
+        pil_img = Image.open(io.BytesIO(img_bytes))
+        try:
+            pil_img = ImageOps.exif_transpose(pil_img)
+        except Exception:
+            pass
+
+        if pil_img.mode in ("RGBA", "LA", "P"):
+            bg = Image.new("RGB", pil_img.size, (255, 255, 255))
+            if pil_img.mode == "P":
+                pil_img = pil_img.convert("RGBA")
+            bg.paste(pil_img, mask=pil_img.split()[-1] if pil_img.mode in ("RGBA", "LA") else None)
+            pil_img = bg
+        elif pil_img.mode not in ("RGB", "L"):
+            pil_img = pil_img.convert("RGB")
+
+        w, h = pil_img.size
+        if max(w, h) > max_side:
+            resample_filter = getattr(Image, "Resampling", Image).LANCZOS
+            pil_img.thumbnail((max_side, max_side), resample=resample_filter)
+
+        buf = io.BytesIO()
+        pil_img.save(buf, format="JPEG", quality=92, optimize=True)
+        return buf.getvalue(), meta
+    except Exception as e:
+        logging.warning(f"[prepare_image_for_vision] error: {e}")
+        return img_bytes, meta
+
+
+def format_readme_description(response: str, fallback_title: str = "") -> str:
+    """Форматирует описание по правилам Readme.md: # Заголовок\n\n2-3 предложения фактологии."""
+    text = (response or "").strip()
+    if not text:
+        return ""
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
+    if not lines:
+        return ""
+
+    title = ""
+    body_lines = []
+
+    if lines[0].startswith("#"):
+        title = lines[0].lstrip("#").strip()
+        body_lines = lines[1:]
+    else:
+        if len(lines[0]) < 80 and len(lines) > 1:
+            title = lines[0]
+            body_lines = lines[1:]
+        else:
+            title = fallback_title or "Photo Description"
+            body_lines = lines
+
+    body = " ".join(body_lines).strip()
+    body = re.sub(r"#+\s*", "", body)
+
+    sentences = re.split(r"(?<=[.!?])\s+", body)
+    if len(sentences) > 3:
+        body = " ".join(sentences[:3]).strip()
+
+    title_clean = title.replace("\n", " ").strip()
+    return f"# {title_clean}\n\n{body}"
+
+
+async def recognize_image_readme(
+    ctx: UserContext,
+    img: bytes,
+    title: str = "",
+    folder_name: str = "",
+    date_time: str = "",
+    gps_coords: str = "",
+):
+    """
+    Vision-аннотация для авто-индексации фотографий:
+    - Извлекает EXIF (дата, GPS, устройство) и скейлит изображение через prepare_image_for_vision
+    - Резолвит GPS-координаты в читаемое место (offline reverse geocoding)
+    - Передает в модель контекст (название альбома/папки, время, местоположение)
+    - Возвращает (README-строка, geo_place): описание + распознанное место ('City, Region, Country')
+    """
+    if not img:
+        return "", ""
+    try:
+        import base64 as _b64
+
+        scaled_bytes, meta = prepare_image_for_vision(img)
+        img_b64 = _b64.b64encode(scaled_bytes).decode("utf-8")
+    except Exception as e:
+        logging.error(f"[recognize_image_readme] prepare error: {e}")
+        return "", ""
+
+    # Метаданные: объединяем переданные параметры с извлеченными из EXIF
+    eff_folder = (folder_name or "").strip()
+    eff_date = (date_time or meta.get("date_time", "")).strip()
+    eff_gps = (gps_coords or meta.get("gps_coords", "")).strip()
+    device_info = f"{meta.get('make', '')} {meta.get('model', '')}".strip()
+
+    geo_place = gps_to_location(eff_gps) if eff_gps else ""
+
+    # Распознавание известных лиц
+    recognized_people = []
+    try:
+        import face_engine
+        owner = getattr(ctx, "user_id", None) or "owner"
+        recognized_people = face_engine.match_names_for_image(img, owner=owner)
+        if not recognized_people and owner != "owner":
+            recognized_people = face_engine.match_names_for_image(img, owner=None)
+    except Exception as e:
+        logging.warning(f"[recognize_image_readme] face recognition error: {e}")
+
+    context_lines = []
+    if eff_folder:
+        context_lines.append(f"Folder/Album: {eff_folder}")
+    if title:
+        context_lines.append(f"Filename: {title}")
+    if eff_date:
+        context_lines.append(f"Date & Time: {eff_date}")
+    if eff_gps:
+        context_lines.append(f"GPS coordinates: {eff_gps}")
+    if geo_place:
+        context_lines.append(f"Location (reverse geocoded from GPS): {geo_place}")
+    if device_info:
+        context_lines.append(f"Camera: {device_info}")
+    if recognized_people:
+        context_lines.append(f"Recognized people: {', '.join(recognized_people)}")
+
+    context_block = ""
+    if context_lines:
+        context_block = "Metadata context:\n" + "\n".join(f"- {c}" for c in context_lines) + "\n\n"
+
+    system_prompt = RECOGNITION_PROMPT or (
+        "You are an expert computer-vision analyst. Examine the photograph and metadata context. "
+        "Produce a concise factual README note in the format:\n"
+        "# <Short Title>\n\n<2-3 dense factual sentences describing the scene, landmarks, OCR text, and key details.>"
+    )
+    people_instruction = ""
+    if recognized_people:
+        people_instruction = (
+            f"\n\nImportant: The following known people are identified in this photo: {', '.join(recognized_people)}. "
+            f"Use their names in the description instead of generic phrases like 'a man', 'a woman', or 'a person'."
+        )
+    user_content = (
+        f"{context_block}Examine this photograph and produce the factual README note (# Title and 2-3 sentences).{people_instruction}"
+    )
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_content, "images": [img_b64]},
+    ]
+
+    request_payload = {
+        "messages": messages,
+        "model": VISION_MODEL,
+        "stream": False,
+        "options": {"temperature": 0.2},
+    }
+
+    try:
+        data = await llm_request(request_payload)
+        if isinstance(data, dict):
+            response = data.get("message", {}).get("content", "") or data.get("content", "")
+        else:
+            response = str(data)
+    except Exception as e:
+        logging.error(f"[recognize_image_readme] LLM error: {e}")
+        return "", geo_place, recognized_people
+
+    fallback_title = os.path.splitext(title)[0] if title else (eff_folder or "Photo")
+    return format_readme_description(response, fallback_title=fallback_title), geo_place, recognized_people
+
+# Суммаризация документа
+
+async def summarize_for_memory(ctx: UserContext, raw_text: str, limit: int = 8000) -> str:
+    """
+    Создаёт 'карточку памяти' документа для дальнейшего поиска.
+    :param raw_text: исходный текст документа
+    :param limit: максимальное количество символов для передачи модели (по умолчанию ~8000)
+    """
+    text_to_process = raw_text[:limit]
+
+    messages = [
+        {"role": "system", "content": SUMMARY_PROMPT},
+        {"role": "user", "content": text_to_process},
+    ]
+
+    request_payload = {
+        "messages": messages,
+        "model": get_llm_model(ctx),
+        "stream": False,
+        "options": {"temperature": 0.1},
+    }
+
+    data = await llm_request(request_payload)
+
+    if isinstance(data, dict):
+        if "message" in data and isinstance(data["message"], dict) and "content" in data["message"]:
+            response = data["message"]["content"]
+        else:
+            response = data.get("content") or str(data)
+    else:
+        response = str(data)
+
+    logging.info(f"Summary: {response}")
+    return response.strip()
+
+
+async def summarize_document_for_readme(ctx: UserContext, raw_text: str, limit: int = 8000) -> str:
+    """
+    Генерирует короткое LLM-описание документа для companion <файл>.Readme.md:
+    строка '# Заголовок' + 2-3 фактических предложения на языке документа.
+    Возвращает пустую строку, если LLM недоступен/пустой ответ.
+    """
+    text_to_process = raw_text[:limit]
+
+    messages = [
+        {"role": "system", "content": DOC_README_PROMPT},
+        {"role": "user", "content": text_to_process},
+    ]
+
+    request_payload = {
+        "messages": messages,
+        "model": get_llm_model(ctx),
+        "stream": False,
+        "options": {"temperature": 0.1},
+    }
+
+    data = await llm_request(request_payload)
+
+    response = ""
+    if isinstance(data, dict):
+        if isinstance(data.get("message"), dict) and data["message"].get("content"):
+            response = data["message"]["content"]
+        else:
+            response = data.get("content") or ""
+
+    logging.info(f"Doc README summary: {(response or '')[:200]}")
+    return (response or "").strip()
+
+
+async def extract_tags_from_text(ctx: UserContext, raw_text: str, limit: int = 4000) -> list:
+    """
+    Генерирует теги для документа через LLM.
+    Возвращает список тегов без # (для хранения в unified_memory).
+    """
+    text_to_process = raw_text[:limit]
+
+    prompt = (
+        "Extract 3-7 short topic tags from the following text. "
+        "Return ONLY the tags as a comma-separated list, lowercase, no # prefix, no explanation.\n\n"
+        f"Text:\n{text_to_process}"
+    )
+
+    messages = [
+        {"role": "system", "content": "You extract concise keyword tags from text. Reply only with comma-separated tags."},
+        {"role": "user", "content": prompt},
+    ]
+
+    request_payload = {
+        "messages": messages,
+        "model": get_llm_model(ctx),
+        "stream": False,
+        "options": {"temperature": 0.1, "num_predict": 64},
+    }
+
+    try:
+        data = await llm_request(request_payload)
+        if isinstance(data, dict):
+            raw = data.get("message", {}).get("content", "") or data.get("content", "")
+        else:
+            raw = str(data)
+        # Парсим теги: убираем #, лишние пробелы, пустые
+        tags = [t.strip().lstrip("#").lower() for t in raw.replace("\n", ",").split(",")]
+        tags = [t for t in tags if t and len(t) < 30]
+        return tags[:7]
+    except Exception as e:
+        logging.error(f"[extract_tags] error: {e}")
+        return []
+
+
+# === Web Search Tool ===
+async def search_web(ctx: UserContext, query: str) -> str:
+    """
+    Search the web: DDGS (duckduckgo_search, primp HTTP client) first,
+    lite.duckduckgo via aiohttp as fallback. No headless browser involved.
+    """
+    import asyncio
+    import urllib.parse
+
+    logging.info(f"[search] Searching web for: {query}")
+
+    # 1. DDGS library (primp, lightweight, no Chromium)
+    try:
+        try:
+            from ddgs import DDGS
+        except ImportError:
+            from duckduckgo_search import DDGS
+
+        def _ddg_text():
+            with DDGS() as d:
+                return list(d.text(query, max_results=8))
+
+        results = await asyncio.to_thread(_ddg_text)
+        lines = []
+        for r in results:
+            title = (r.get("title") or "").strip()
+            body = (r.get("body") or "").strip()
+            href = (r.get("href") or "").strip()
+            if body:
+                lines.append(f"{title} — {body}" + (f" ({href})" if href else ""))
+        if lines:
+            search_output = "\n".join(lines[:12])
+            logging.info(f"[search] DDGS: {len(lines)} results, {len(search_output)} chars")
+            return search_output
+    except Exception as e:
+        logging.warning(f"[search] DDGS failed: {e}")
+
+    # 2. Fallback: lite.duckduckgo HTML via POST
+    try:
+        import aiohttp
+        url = "https://lite.duckduckgo.com/lite/"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
+            "Content-Type": "application/x-www-form-urlencoded",
+        }
+        post_data = {"q": query}
+        async with aiohttp.ClientSession(headers=headers) as session:
+            async with session.post(url, data=post_data, timeout=aiohttp.ClientTimeout(total=20)) as resp:
+                if resp.status != 200:
+                    logging.warning(f"[search] lite failed: HTTP {resp.status}")
+                    return "No results found."
+                html = await resp.text()
+        # Parse result links + snippets from the lite table layout
+        import re
+        links = re.findall(r'<a[^>]+href=[\'"](https?://[^\'"]+)[\'"][^>]*class=[\'"]result-link[\'"][^>]*>(.*?)</a>', html)
+        if not links:
+            links = re.findall(r'<a[^>]+class=[\'"]result-link[\'"][^>]*href=[\'"](https?://[^\'"]+)[\'"][^>]*>(.*?)</a>', html)
+        if not links:
+            links = re.findall(r'<a[^>]+href=[\'"](https?://[^\'"]+)[\'"][^>]*>(.*?)</a>', html)
+        snippets = [re.sub(r"<[^>]+>", "", s).strip() for s in re.findall(r"<td[^>]*>(.*?)</td>", html)]
+        lines = []
+        for href, title in links[:12]:
+            title_text = re.sub(r"<[^>]+>", "", title).strip()
+            body = snippets[len(lines)] if len(lines) < len(snippets) and snippets[len(lines)] else ""
+            if title_text:
+                lines.append(f"{title_text} — {body} ({href})")
+        if lines:
+            search_output = "\n".join(lines[:12])
+            logging.info(f"[search] lite fallback: {len(lines)} results")
+            return search_output
+    except Exception as e:
+        logging.warning(f"[search] lite fallback error: {e}")
+
+    logging.warning(f"[search] No results found for '{query}'")
+    return "No results found."
+
+# === Импорт и память ===
+
+async def scrape_with_crawl4ai(url: str) -> str:
+    """
+    Scrape a URL using Crawl4AI (Playwright-based) to get clean Markdown.
+    """
+    try:
+        # Lazy import to avoid crash if not installed
+        from crawl4ai import AsyncWebCrawler
+        
+        logging.info(f"[crawl4ai] Starting crawl for: {url}")
+        async with AsyncWebCrawler(verbose=False) as crawler:
+            result = await crawler.arun(url=url)
+            
+            if result.markdown:
+                 logging.info(f"[crawl4ai] Success, length: {len(result.markdown)}")
+                 return result.markdown
+            else:
+                 logging.warning(f"[crawl4ai] No markdown content returned")
+                 return ""
+                 
+    except ImportError:
+        logging.error("[crawl4ai] Library not installed. Please run: pip install crawl4ai playwright && playwright install")
+        return ""
+    except Exception as e:
+        logging.error(f"[crawl4ai] Error scraping {url}: {e}")
+        return ""
+
+async def import_doc(ctx: UserContext, url_or_path, collection="user"):
+    key = ctx.omd_key or ctx.settings.get("omd_key", "")
+
+    logging.info(f"[import] importing: {url_or_path}")
+    raw_text = ""
+    # Определяем, это OMD или нет
+    is_omd = url_or_path.startswith("/") or GATEWAY_URL in url_or_path
+    
+    if is_omd:
+        if url_or_path.startswith("/"):
+            url_or_path = f"{GATEWAY_URL}{url_or_path}"
+        if not key:
+            raise Exception("⚠️ Provide On My Disk account key to access your files:\n`/bind abcdxxxxx...`")
+        
+        # Check if it is a directory by checking the extension of the path (without query params)
+        path_part = url_or_path.split("?")[0]
+        ext = os.path.splitext(path_part)[-1].lower().lstrip('.')
+        is_dir = not ext or ext == ''
+        
+        if is_dir:
+            list_url = url_or_path
+            if "?" in list_url:
+                list_url += "&list"
+            else:
+                list_url += "?list"
+            logging.info(f"[import] Directory detected, fetching listing: {list_url}")
+            raw_text = await fetch_document_text(list_url, key)
+            # If standard directory listing fetch fails or returns error, we fall back to normal fetch
+            if raw_text.startswith("Failed to fetch document:"):
+                logging.info("[import] Directory listing fetch failed, falling back to standard fetch")
+                raw_text = await fetch_document_text(url_or_path, key)
+        else:
+            raw_text = await fetch_document_text(url_or_path, key)
+    else:
+        # External URL: Try Crawl4AI first for better parsing
+        if url_or_path.startswith("http"):
+            raw_text = await scrape_with_crawl4ai(url_or_path)
+        
+        # Fallback to standard fetch if Crawl4AI failed or returned empty
+        if not raw_text:
+            if url_or_path.startswith("http"):
+                 logging.info("[import] Crawl4AI yielded no result, falling back to standard fetch")
+            raw_text = await fetch_document_text(url_or_path)
+
+    if not raw_text or not raw_text.strip():
+        # This catch-all ensures we don't proceed with an empty string, 
+        # which would trigger a generic frontend error.
+        raw_text = "Failed to fetch document: Unsupported file type or document has no selectable text."
+
+    if raw_text.startswith("Failed to fetch document:") or raw_text.startswith("Unsupported file type:"):
+        logging.error(f"[import] failed fetch: {raw_text}")    
+        return {
+            "id": "error",
+            "error": True,
+            "text": raw_text
+        }
+    
+    # Reject directory listings (JSON results) from being imported as documents
+    # and instead recursively import their files.
+    if raw_text.strip().startswith('{"list":') or raw_text.strip().startswith('{"result":'):
+        logging.info(f"[import] identified as directory listing, recursively importing contents...")
+        try:
+            import json
+            data = json.loads(raw_text)
+            items = data.get("list", []) or data.get("result", [])
+            imported_count = 0
+            errors = []
+            
+            # Clean trailing slash from base url_or_path
+            base_url = url_or_path.split("?")[0].rstrip('/')
+            
+            for item in items:
+                name = item.get("name", "")
+                item_type = item.get("type", "")
+                if not name:
+                    continue
+                
+                # Build sub-item path
+                sub_url = f"{base_url}/{name}"
+                # If it's a file, we import it
+                if item_type == "file":
+                    logging.info(f"[import] Recursively importing sub-file: {sub_url}")
+                    try:
+                        res = await import_doc(ctx, sub_url, collection=collection)
+                        if res and not res.get("error"):
+                            if "imported_count" in res:
+                                imported_count += res["imported_count"]
+                            else:
+                                imported_count += 1
+                        elif res:
+                            errors.append(f"{name}: {res.get('text')}")
+                    except Exception as sub_err:
+                        logging.error(f"[import] Failed to import sub-file {sub_url}: {sub_err}")
+                        errors.append(f"{name}: {sub_err}")
+                elif item_type == "dir":
+                    # Recursively import sub-directories
+                    logging.info(f"[import] Recursively importing sub-directory: {sub_url}")
+                    try:
+                        res = await import_doc(ctx, sub_url, collection=collection)
+                        if res and not res.get("error"):
+                            imported_count += int(res.get("imported_count", 0))
+                        elif res:
+                            errors.append(f"{name}: {res.get('text')}")
+                    except Exception as sub_err:
+                        logging.error(f"[import] Failed to import sub-dir {sub_url}: {sub_err}")
+                        errors.append(f"{name}: {sub_err}")
+            
+            return {
+                "id": "directory",
+                "text": f"Successfully imported {imported_count} files from directory '{url_or_path.split('?')[0]}' into collection '{collection}'." + (f" Errors: {', '.join(errors)}" if errors else ""),
+                "imported_count": imported_count
+            }
+        except Exception as e:
+            logging.error(f"[import] Error parsing directory listing JSON: {e}")
+            return {
+                "id": "error",
+                "error": True,
+                "text": f"Error listing directory: {e}"
+            }
+
+    # If it's an external HTML or we just want to ensure it's plain text via pandoc
+    if not is_omd or url_or_path.lower().endswith(".html") or url_or_path.lower().endswith(".htm"):
+        # We use pandoc to clean up HTML or other formats if needed
+        # Note: fetch_document_text for OMD might already return clean text if ?totext was used,
+        # but for external URLs it returns raw HTML.
+        
+        cmd = [
+            "pandoc",
+            "-f", "html",
+            "-t", "plain",
+        ]
+        try:
+            logging.info(f"[import] converting with pandoc (input length: {len(raw_text)})")
+            result = subprocess.run(cmd, input=raw_text, capture_output=True, text=True, check=True)
+            raw_text = result.stdout
+        except Exception as e:
+            logging.error(f"[import] pandoc failed: {e}")    
+            return {
+                "id": "error",
+                "error": True,
+                "text": f"Error during conversion: {e}"
+            }
+
+    # ─── Векторизация в unified_memory ────────────────────────────────────────
+    # Теги: collection передаётся как основной тег (напр. "omd"), плюс "docs"
+    doc_tags = list({t for t in [collection, "docs"] if t and t != "user"})
+
+    n_chunks = unified_memory.chunk_and_index_document(
+        raw_text,
+        document_id=url_or_path,
+        owner=ctx.user_id or user_context.node_owner(),
+        tags=doc_tags,
+        title=url_or_path.split("/")[-1].split("?")[0],
+    )
+    logging.info(f"[import] Indexed {n_chunks} chunks for {url_or_path}, tags={doc_tags}")
+
+    # ─── Аннотация ────────────────────────────────────────────────────────────
+    card_text = await summarize_for_memory(ctx, raw_text)
+
+    # Сохраняем аннотацию-карточку в unified_memory как memory_card
+    mem_id = unified_memory.upsert_memory_card(
+        card_text,
+        owner=ctx.user_id or user_context.node_owner(),
+        tags=doc_tags,
+        title=url_or_path.split("/")[-1].split("?")[0],
+        document_id=url_or_path,
+        relevance="permanent",
+    )
+    logging.info(f"[import] Saved annotation card {mem_id} for {url_or_path}")
+
+    mem_card = {
+        "id":        mem_id,
+        "text":      card_text,
+        "full_text": raw_text,
+    }
+    return mem_card
+
+def memorize(ctx, text):
+    # Backend memorization is disabled for "user" collection.
+    # New facts are extracted and sent to frontend via 'newFact' event in api.py
+    logging.info(f"[memory] Backend memorization skipped for: {text}")
+    return f"Fact received (backend memorization is disabled, frontend should handle it)"
+
+async def extract_and_save_memory(ctx: UserContext, message: str) -> str:
+    # Deprecated: Background extraction via tools proved too unstable for gemma3:12b without strict guidance.
+    # We now extract memories inside classify_user_intent.
+    return None
+
+
+async def generate_avatar(ctx: UserContext, style: str, character_lora: str, prompt: str, device_push: dict | None = None):
+    try:
+        if await is_krea_available():
+            try:
+                logging.info(f"[Krea2] Fast avatar generation: character={character_lora}, style={style}")
+                clean_prompt, persona_prompt, sliders = extract_krea2_prompt_and_params(
+                    ctx,
+                    f"{prompt} <{character_lora}> <{style}>",
+                    is_character=True
+                )
+                eff_sliders, _ = await _resolve_chat_image_sliders(ctx, sliders)
+                filename, title, desc, img_data = await generate_krea2_image(
+                    ctx,
+                    clean_prompt,
+                    persona_prompt=persona_prompt,
+                    sliders=eff_sliders,
+                    width=768,
+                    height=768,
+                    upload_storage=False
+                )
+                from api import store_ephemeral_image, schedule_generated_image_push
+                store_ephemeral_image(filename, img_data)
+                schedule_generated_image_push(ctx.omd_key, device_push, filename, img_data, title, desc, ctx=ctx)
+                return {
+                    "image": filename,
+                    "url": f"/chat/image/{filename}",
+                    "device_path": f"{device_push.get('folder', '')}/{filename}" if device_push else ""
+                }
+            except Exception as krea_err:
+                logging.warning(f"[Krea2] Avatar generation fallback to legacy workflow: {krea_err}")
+
+        # 1. Load Workflow
+        if not os.path.exists(WORKFLOW_PATH):
+            logging.error("Workflow file not found")
+            return None
+            
+        try:
+            with open(WORKFLOW_PATH, "r", encoding="utf-8") as f:
+                workflow = json.load(f)
+        except Exception as e:
+            logging.error(f"Failed to load workflow: {e}")
+            return None
+    
+        # 2. Determine Style Checkpoint
+        style_map = {
+            "realistic": "realistic",
+            "fantasy": "fantasy", 
+            "perfect": "perfect",
+            "tooned": "tooned"
+        }
+        backend_style = style_map.get(style, "realistic")
+        
+        ckpt_filename = STYLE_MODELS.get(backend_style, STYLE_MODELS["realistic"])
+    
+        # 3. Setup Workflow Parameters
+        seed = random.randint(1, 9999999999)
+        
+        # Helper to find node
+        def find_nodes_by_class(class_type):
+            return [node for node in workflow.values() if node.get("class_type") == class_type]
+    
+        # Set Seed
+        for node in find_nodes_by_class("KSampler"):
+            if "inputs" in node and "seed" in node["inputs"]:
+                node["inputs"]["seed"] = seed
+                
+        # Set Resolution (512x512)
+        for node in find_nodes_by_class("EmptyLatentImage"):
+            if "inputs" in node:
+                node["inputs"]["width"] = 512
+                node["inputs"]["height"] = 512
+            
+        # Set Checkpoint
+        for node in find_nodes_by_class("CheckpointLoaderSimple"):
+            if "inputs" in node:
+                node["inputs"]["ckpt_name"] = ckpt_filename
+            
+            # Set Prompt
+        prompt_set = False
+        
+        # Add appearance to prompt
+        negative_prompt = NEGATIVE_PROMPTS["fun"] + ", " + NEGATIVE_PROMPTS["base"]
+        appearance = ctx.settings.get("assistant_appearance", "")
+        full_prompt = f"{prompt} {appearance}"
+        logging.info(f"Generating avatar with style={style}, character={character_lora} prompt={full_prompt}")
+        
+        workflow["4"]["inputs"]["text"] = negative_prompt
+        workflow["85"]["inputs"]["text"] = full_prompt
+    
+        # 4. Inject Character LoRA (if workflow supports it)
+        if character_lora:
+            # We look for "Power Lora Loader (rgthree)" as used in available_loras
+            lora_nodes = find_nodes_by_class("Power Lora Loader (rgthree)")
+            if lora_nodes:
+                for node in lora_nodes:
+                    inputs = node.get("inputs", {})
+                    # The loader might have inputs like lora_1, lora_2 etc which are dicts? 
+                    # based on previous analysis of available_loras, input val is dict with "name"
+                    for key, val in inputs.items():
+                        if isinstance(val, dict) and val.get("name") == character_lora:
+                            val["on"] = True
+                            logging.info(f"Enabled LoRA: {character_lora}")
+            else:
+                # If standard LoraLoader?
+                lora_nodes = find_nodes_by_class("LoraLoader")
+                if lora_nodes:
+                    # We need mapping from Name -> Filename.
+                    # This is tricky without reading flow.json or having a map.
+                    # For now, if usage implies Power Lora Loader, we stick to that or skip.
+                    logging.warning("Character LoRA requested but no compatible LoRA loader found in workflow.")
+                        
+        # 5. Generate
+        # Reuse existing workflow generator which handles websocket and bytes retrieval
+        image_data, _ = await generate_image_workflow(workflow)
+        
+        if image_data:
+            # Upload to 'generated' folder in user storage
+            filename = f"avatar_{uuid.uuid4()}.png"
+
+            # Кандидат аватара живёт на УСТРОЙСТВЕ пользователя: p2p-пуш по
+            # consent-гранту из запроса (defaultStorage/generated/avatars).
+            # Планируется до обращения к шлюзу: сбой gateway-аплоада не должен
+            # лишать пользовательскую копию.
+            device_path = ""
+            if device_push and isinstance(device_push, dict):
+                try:
+                    import device_push as _device_push
+                    _device_push.schedule_avatar_push(ctx.omd_key, device_push, filename, image_data)
+                    _folder = str(device_push.get("folder") or "").strip("/")
+                    if _folder:
+                        device_path = f"/{_folder}/avatars/{filename}"
+                except Exception as _e:
+                    logging.warning(f"Avatar device push scheduling failed: {_e}")
+
+            if ctx.storage and ctx.omd_key:
+                try:
+                    dest_path = f"{ctx.storage}/generated/avatars"
+                    # upload_data_to_storage(omd_key, dest, filename, data, mime)
+                    upload_data_to_storage(ctx.omd_key, dest_path, filename, image_data, "image/png")
+                    logging.info(f"Avatar uploaded to {dest_path}/{filename}")
+
+                    # Report usage to console
+
+
+                    # Construct public URL
+                    clean_storage = ctx.storage.strip("/")
+                    full_url = f"/{clean_storage}/generated/avatars/{filename}"
+
+                    out = {"image": filename, "url": full_url}
+                    if device_path:
+                        out["device_path"] = device_path
+                    return out
+                except Exception as e:
+                    logging.error(f"Failed to upload avatar to storage: {e}")
+                    # Шлюз-аплоад не удался, но копия на устройстве уже в пути:
+                    # возвращаем device_path, клиент покажет её через /p2p/.
+                    if device_path:
+                        return {"image": filename, "url": "", "device_path": device_path}
+                    return None
+            else:
+                 # Fallback for local users (if any, though context implies OMD usage mostly)
+                 # But we want to avoid local fs if possible. 
+                 # If no storage, we might have to save locally or fail?
+                 # Let's save locally as fallback but log warning.
+                 output_dir = os.path.join(os.path.dirname(__file__), "generated")
+                 if not os.path.exists(output_dir):
+                     os.makedirs(output_dir, exist_ok=True)
+                 filepath = os.path.join(output_dir, filename)
+                 with open(filepath, "wb") as f:
+                     f.write(image_data)
+                 logging.warning(f"No storage context, saved locally to {filepath}")
+                 out = {"image": filename}
+                 if device_path:
+                     out["device_path"] = device_path
+                     out["url"] = ""
+                 return out
+
+        else:
+            logging.error("No image data received from workflow")
+            return None
+
+    except Exception as e:
+        logging.error(f"Avatar generation crashed: {e}", exc_info=True)
+        return None
+
+
+# --- Optional local plugins / private extensions ----------------------------
+try:
+    import extensions
+    extensions.init()
+except ImportError:
+    pass
+except Exception as e:
+    logging.warning(f"[Extensions] Optional extensions load failed: {e}")
+
+try:
+    import horde_dreamer
+    horde_dreamer.install_horde_client_hooks()
+except Exception as e:
+    logging.warning(f"[HordeDreamer] Failed installing AI Horde client hooks: {e}")
+
+

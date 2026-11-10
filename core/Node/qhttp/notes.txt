@@ -1,0 +1,2 @@
+range test via curl:
+curl -v -X GET --header "Range: bytes=0-20" --header "Authorization: Basic dXNlcjpwYXNz" http://localhost:8080/

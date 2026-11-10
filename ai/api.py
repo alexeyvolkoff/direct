@@ -1,0 +1,6626 @@
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request, Query, WebSocket, WebSocketDisconnect, BackgroundTasks
+from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, StreamingResponse, Response, RedirectResponse, JSONResponse
+from fastapi import Header, Depends
+from PIL import Image
+import io
+import re
+import mimetypes
+import configparser
+import os
+os.environ["HF_HUB_OFFLINE"] = "1"
+os.environ["TRANSFORMERS_OFFLINE"] = "1"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="multiprocessing.popen_fork")
+import logging
+
+# Suppress logging of DuplicateIDError and telemetry warnings from chromadb
+class DuplicateIDFilter(logging.Filter):
+    def filter(self, record):
+        message = record.getMessage()
+        if "DuplicateIDError" in message or "Expected IDs to be unique" in message:
+            return False
+        if "chromadb.telemetry" in record.name or "Failed to send telemetry event" in message:
+            return False
+        if record.exc_info:
+            exc_type, exc_value, _ = record.exc_info
+            if exc_type and ("DuplicateIDError" in exc_type.__name__ or "DuplicateIDError" in str(exc_type)):
+                return False
+            if exc_value and "Expected IDs to be unique" in str(exc_value):
+                return False
+        return True
+
+class AccessLogFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        if "/api/tags" in msg:
+            return False
+        if record.args and "/api/tags" in str(record.args):
+            return False
+        return True
+
+logging.basicConfig(level=logging.INFO)
+# Add filter to root logger and standard loggers
+for logger_name in [None, "uvicorn", "uvicorn.error", "uvicorn.access", "fastapi", "chromadb", "chromadb.telemetry"]:
+    l = logging.getLogger(logger_name)
+    l.addFilter(DuplicateIDFilter())
+    for handler in l.handlers:
+        handler.addFilter(DuplicateIDFilter())
+
+access_logger = logging.getLogger("uvicorn.access")
+access_logger.addFilter(AccessLogFilter())
+for h in access_logger.handlers:
+    h.addFilter(AccessLogFilter())
+
+import hashlib
+import email.utils
+import datetime
+import time
+import base64
+import requests
+import aiohttp
+import asyncio
+import json
+import subprocess
+import numpy as np
+from urllib.parse import urlparse
+from typing import List, Optional
+
+import core_service
+import user_context
+import horde_client
+import agentic_tunnel
+
+# Create a global session for proxying to avoid socket exhaustion
+_proxy_session = None
+
+# ---------------------------------------------------------------------------
+# Исключения из индексации (папки, которые не надо тащить в RAG-индекс).
+# Читаются из JSON: логические пути (/<share>/... относительно шары) и
+# физические абсолютные пути. Для совпадения достаточно ПРЕФИКСА пути.
+# ---------------------------------------------------------------------------
+_INDEX_EXCL_MTIME = 0
+INDEX_EXCL_LOGICAL = []
+INDEX_EXCL_PHYSICAL = []
+
+def _load_index_exclusions():
+    global _INDEX_EXCL_MTIME, INDEX_EXCL_LOGICAL, INDEX_EXCL_PHYSICAL
+    try:
+        cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index_exclusions.json")
+        if not os.path.isfile(cfg_path):
+            return [], []
+        mtime = os.path.getmtime(cfg_path)
+        if mtime != _INDEX_EXCL_MTIME:
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            INDEX_EXCL_LOGICAL = [str(p).strip("/ ").lower() for p in (cfg.get("logical") or []) if str(p).strip()]
+            INDEX_EXCL_PHYSICAL = [str(p).rstrip("/\\").lower() for p in (cfg.get("physical") or []) if str(p).strip()]
+            _INDEX_EXCL_MTIME = mtime
+        return INDEX_EXCL_LOGICAL, INDEX_EXCL_PHYSICAL
+    except Exception as e:
+        logging.warning(f"[index_exclusions] cannot load exclusions: {e}")
+        return INDEX_EXCL_LOGICAL, INDEX_EXCL_PHYSICAL
+
+_load_index_exclusions()
+
+def _is_path_excluded(logical_path: str, physical_path: str = "") -> Optional[str]:
+    """Возвращает правило-исключение, если путь (логический или физический)
+    попадает под список неиндексируемых директорий."""
+    _load_index_exclusions()
+    logical = (logical_path or "").strip("/ ").lower()
+    physical = (physical_path or "").rstrip("/\\").lower()
+    for rule in INDEX_EXCL_LOGICAL:
+        if logical == rule or logical.startswith(rule + "/") or logical.endswith("/" + rule) or f"/{rule}/" in f"/{logical}/":
+            return rule
+    for rule in INDEX_EXCL_PHYSICAL:
+        if physical == rule or physical.startswith(rule + "/") or (physical + "/").startswith(rule + "/"):
+            return rule
+    return None
+
+# The question tool must only ever ask ONE question at a time: when an agent
+# streams a "question" tool call its arguments are rewritten so that only the
+# first question survives (SSH tunnel agents still rely on this contract).
+SINGLE_QUESTION_TOOL_NAMES = ("question", "question.v2")
+
+
+
+async def get_proxy_session():
+    global _proxy_session
+    if _proxy_session is None or _proxy_session.closed:
+        _proxy_session = aiohttp.ClientSession()
+    return _proxy_session
+
+import memory_index
+import unified_memory
+from config import USER_DATA_DIR
+from config import BASE_INDEX_DIR
+from config import SETTINGS
+
+GATEWAY_URL = SETTINGS["GATEWAY_URL"]
+
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:8081",
+        "http://localhost:8080",
+        "http://localhost",
+        "capacitor://localhost",
+        "https://onmydisk.net",
+        "https://direct.onmydisk.net",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.middleware("http")
+async def capture_client_platform_middleware(request: Request, call_next):
+    plat = (request.headers.get("X-OMD-Platform") or "").strip().lower()
+    if not plat:
+        origin = (request.headers.get("Origin") or "").strip().lower()
+        if origin.startswith("capacitor://"):
+            plat = "ios"
+    token = user_context.CURRENT_REQUEST_PLATFORM.set(plat)
+    try:
+        return await call_next(request)
+    finally:
+        user_context.CURRENT_REQUEST_PLATFORM.reset(token)
+
+
+AI_TOKEN = SETTINGS.get("AI_TOKEN", "")
+
+@app.on_event("startup")
+async def on_startup():
+    """Initialize unified_memory and logging filters on startup."""
+    try:
+        acc_log = logging.getLogger("uvicorn.access")
+        acc_log.addFilter(AccessLogFilter())
+        for handler in acc_log.handlers:
+            handler.addFilter(AccessLogFilter())
+    except Exception:
+        pass
+    try:
+        unified_memory.init()
+    except Exception as e:
+        logging.error(f"[api] unified_memory init error: {e}")
+    try:
+        import agentic_tunnel
+        manager = await agentic_tunnel.start_from_settings(SETTINGS)
+        if manager:
+            # RAG/index stays local (embeddings CPU); only OLLAMA_URL and
+            # COMFY_API_URL got re-pointed at the P2P tunnel listeners.
+            logging.info("[api] agentic mode active: %s", {
+                "node": manager.active_node,
+                "urls": manager.urls(),
+            })
+    except Exception as e:
+        logging.error(f"[api] agentic mode init error: {e}")
+    try:
+        import extensions
+        if hasattr(extensions, "on_startup") and callable(extensions.on_startup):
+            await extensions.on_startup(app)
+    except ImportError:
+        pass
+    except Exception as e:
+        logging.error(f"[api] extensions startup error: {e}")
+    try:
+        import horde_dreamer
+        await horde_dreamer.start_horde_dreamer()
+    except Exception as e:
+        logging.error(f"[api] horde_dreamer startup error: {e}")
+
+
+@app.get("/api/agentic/status")
+async def agentic_status():
+    """Diagnostics for the agentic inference tunnels (no auth: status only)."""
+    import agentic_tunnel
+    manager = agentic_tunnel.get_manager()
+    if not manager:
+        return {"status": "ok", "agentic": False, "mode": (str(SETTINGS.get("AI_PROVIDER", "local")) or "local").strip().lower()}
+    return {"status": "ok", **manager.status()}
+
+@app.get("/api/urls/delete")
+async def delete_url(request: Request):
+    path = request.query_params.get("path") or request.headers.get("path")
+    if not path:
+        raise HTTPException(status_code=422, detail="path is required")
+    if not_authorized(request):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    unified_memory.delete_document(path)
+    return {"status": "ok", "path": path}
+
+@app.get("/api/urls/move")
+async def move_url(request: Request):
+    src    = request.query_params.get("src")    or request.headers.get("src")
+    target = request.query_params.get("target") or request.headers.get("target")
+    if not src or not target:
+        raise HTTPException(status_code=422, detail="src and target are required")
+    if not_authorized(request):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    unified_memory.move_file(src, target)
+    return {"status": "ok", "src": src, "target": target}
+
+
+# ─── RAG 3.0: новые эндпоинты ────────────────────────────────────────────────
+
+@app.get("/api/convert")
+async def convert_document(request: Request):
+    """
+    Конвертирует файл/URL в markdown-текст.
+    Вызывается через P2P data channel (WebRTCDataChannelDrive.sendRequest).
+    Заменяет шлюзовый ?totext для клиентского /learn.
+    """
+    path = request.query_params.get("path") or request.headers.get("path")
+    if not path:
+        raise HTTPException(status_code=422, detail="path is required")
+    if not_authorized(request):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    omd_key = _extract_omd_key(request)
+    try:
+        text = await core_service.fetch_document_text(
+            path if path.startswith("http") else f"{GATEWAY_URL}{path}",
+            token=omd_key
+        )
+        return {"text": text, "path": path}
+    except Exception as e:
+        logging.error(f"[api/convert] {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/learn")
+async def learn_document(request: Request):
+    """
+    Stateless /learn: аннотация + теги + эмбеддинги.
+    Ничего не пишет в ChromaDB — фронт сохраняет в GunDB.
+    Возвращает.annotation, tags, annotation_embedding, chunks с эмбеддингами.
+    """
+    if not_authorized(request):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    body     = await request.json()
+    path     = body.get("path", "")
+    text     = body.get("text", "")
+    tags     = body.get("tags", [])     # уже распарсенные теги (без #)
+    question = body.get("question", "") # необязательный вопрос для ответа
+
+    if not text or not path:
+        raise HTTPException(status_code=422, detail="path and text are required")
+
+    ctx = await _build_ctx_from_request(request)
+
+    doc_id = _norm_doc_path(path) if path else path
+    title  = path.split("/")[-1].split("?")[0]
+
+    # Аннотация + теги (stateless, LLM)
+    try:
+        annotation = await core_service.summarize_for_memory(ctx, text)
+        ai_tags    = await core_service.extract_tags_from_text(ctx, text)
+    except Exception as e:
+        logging.error(f"[api/learn] summarize error: {e}")
+        annotation = text[:500]
+        ai_tags    = tags
+
+    all_tags = sorted(set(tags) | set(ai_tags or []))
+
+    # Аннотационный эмбеддинг (теги активно участвуют в embed)
+    annotation_text = annotation + " " + " ".join(all_tags)
+    annotation_embedding = unified_memory.embed(annotation_text)
+
+    # Чанки + эмбеддинги чанков
+    chunks_texts = unified_memory.chunk_document(text)
+    chunks = []
+    if chunks_texts:
+        chunk_embeddings = unified_memory.get_model().encode(chunks_texts, show_progress_bar=False).tolist()
+        chunks = [
+            {"text": ct, "embedding": ce}
+            for ct, ce in zip(chunks_texts, chunk_embeddings)
+        ]
+
+    logging.info(f"[api/learn] Stateless: doc={doc_id} chunks={len(chunks)} tags={all_tags}")
+
+    return {
+        "annotation":          annotation,
+        "tags":                all_tags,
+        "annotation_embedding": annotation_embedding,
+        "chunks":              chunks,
+        "documentId":          doc_id,
+        "title":               title,
+        "chunkCount":          len(chunks),
+        "question":            question,
+    }
+
+# ─── RAG 3.0 (docs/RAG_3_0.md §2): пути нормализуем срезанием префикса юзера ─
+
+def _norm_doc_path(path: str) -> str:
+    """Локальный путь-/home/<user>/<share>/... или itemPath /<user>/<share>/... → /<share>/...; http — как есть."""
+    if not path:
+        return path
+    if path.startswith("http"):
+        return path
+    s = "/" + path.strip("/")
+    if s.startswith("/home/"):
+        # realPath ноды: /home/<user>/<share>/...
+        parts = s.split("/", 3)
+        return f"/{parts[3]}" if len(parts) == 4 else s.rstrip("/")
+    # виртуальный itemPath: /<user>/<share>/...
+    parts = s.split("/", 2)
+    return f"/{parts[2]}" if len(parts) == 3 else s.rstrip("/")
+
+
+def _norm_logical_path(path: str) -> str:
+    """Полный логический путь документа /<устройство>/<путь-к-файлу>.
+
+    В отличие от _norm_doc_path НЕ отбрасывает первый сегмент: он несёт
+    префикс устройства (hostname, напр. /beelink — не внутренний linkId) и
+    делает document_id уникальным, когда файлы с одинаковым именем лежат
+    на разных устройствах.
+    """
+    if not path:
+        return path
+    s = "/" + path.strip("/")
+    return s.rstrip("/") or "/"
+
+
+RAG_INDEX_STATUS = {}   # path → {"indexed": n, "pending": n, "failed": n, "lastError": ..., "done": bool}
+_RAG_SINGLE_LOCKS: dict = {}   # phys path → asyncio.Lock: не даём запускать две индексации одного файла одновременно
+_RAG_SETTLE_SECONDS = 1.5      # пауза перед индексацией одиночного файла: ждём, пока перестанет меняться (нода шлёт /rag/index на каждый чанк записи)
+
+# Расширения изображений. На OnMyDisk картинка может иметь ассоциированный файл
+# описания <файл>.Readme.md — тогда в индекс вносится ОРИГИНАЛЬНЫЙ файл, а не описание.
+IMAGE_EXTS = {
+    "jpg", "jpeg", "png", "gif", "webp", "bmp",
+    "tif", "tiff", "svg", "avif", "heic", "heif",
+}
+
+FOLDER_COVER_NAMES = {
+    "folder.jpg", "folder.jpeg", "folder.png",
+    "cover.jpg", "cover.jpeg", "cover.png",
+}
+
+def is_folder_cover_image(fn: str) -> bool:
+    """Проверяет, является ли файл обложкой папки (folder.jpg, cover.jpg и т.п.)."""
+    clean = (fn or "").strip().lower()
+    return clean in FOLDER_COVER_NAMES or clean.endswith((".cover.jpg", ".cover.png", ".cover.jpeg"))
+
+def _readme_target(fn: str):
+    """Если fn — описание (*.Readme.md), возвращает имя оригинального файла, иначе None."""
+    m = re.match(r"(?i)^(.+)\.readme\.md$", fn or "")
+    if not m:
+        return None
+    target = m.group(1)
+    if target.lower() in ("readme.md", "readme.txt", "readme") or target.lower().endswith(".readme.md"):
+        return None
+    return target
+
+
+def recognition_enabled():
+    """Автораспознавание фотографий при индексации: нужно, чтобы в конфиге был
+    задан VISION_MODEL и не отключён флаг AUTO_RECOGNIZE_IMAGES (default true)."""
+    try:
+        vision = (str(core_service.VISION_MODEL or "")).strip()
+    except Exception:
+        vision = (str(SETTINGS.get("VISION_MODEL") or "")).strip()
+    if not vision:
+        return False
+    cfg = str(SETTINGS.get("AUTO_RECOGNIZE_IMAGES", "true")).strip().lower()
+    return cfg in ("1", "true", "yes", "on")
+
+
+def _force_regen_companion(force: bool, base_full: str, full: str, fn: str, ctx) -> bool:
+    """При force-переиндексации перегенерирует LLM-выжимку существующего
+    companion <файл>.Readme.md (только для конвертируемых текстовых документов:
+    pdf/pandoc/txt; изображения пропускаются — их описания делает vision).
+    Возвращает True, если companion существует и ветку надо пропустить."""
+    companion = os.path.isfile(base_full + ".Readme.md") or os.path.isfile(base_full + ".readme.md") \
+        or os.path.isfile(full + ".Readme.md") or os.path.isfile(full + ".readme.md")
+    if not companion:
+        return False
+    if not force:
+        return True
+    ext = os.path.splitext(fn)[1].lower().lstrip(".")
+    if ext in IMAGE_EXTS:
+        return True
+    # Переписываем именно авто-помощников (LLM либо сыре превью); содержимое
+    # companion остаётся как фолбек при недоступности LLM.
+    readme_path = base_full + ".Readme.md"
+    for candidate in (base_full + ".Readme.md", base_full + ".readme.md", full + ".Readme.md", full + ".readme.md"):
+        if os.path.isfile(candidate):
+            readme_path = candidate
+            break
+    try:
+        with open(readme_path, "r", encoding="utf-8", errors="replace") as rf:
+            old_summary = rf.read().strip()
+    except Exception:
+        old_summary = ""
+    try:
+        with open(full, "rb") as f:
+            raw = unified_memory.convert_bytes_to_text(f.read(), fn)
+    except Exception as e_conv:
+        logging.warning(f"[rag/index] companion regen: {fn}: {e_conv}")
+        return True
+    if not raw or not raw.strip():
+        return True
+    new_summary = _llm_document_summary(ctx, raw, fn)
+    if new_summary and new_summary.startswith("#") and new_summary != old_summary:
+        try:
+            with open(readme_path, "w", encoding="utf-8") as rf:
+                rf.write(new_summary + "\n")
+            logging.info(f"[rag/index] companion regenerated (force): {readme_path}")
+        except Exception as e_write:
+            logging.warning(f"[rag/index] companion regen write failed {readme_path}: {e_write}")
+    return True
+
+
+def _llm_document_summary(ctx, raw: str, fn: str) -> str:
+    """LLM-выжимка документа (doc_readme prompt: '# Заголовок' + 2-3 предложения
+    на языке документа) для companion <файл>.Readme.md. Вызывается из синхронного
+    _index_one_sync (thread-pool), поэтому поднимает собственный event loop.
+    Возвращает '' при любой ошибке/недоступности LLM — вызывающий код тогда
+    падает на старое превью raw[:600]."""
+    try:
+        text = (raw or "").strip()
+        if not text:
+            return ""
+        sample = text[:8000]
+
+        async def _inner():
+            try:
+                return await core_service.summarize_document_for_readme(ctx, sample, limit=len(sample))
+            except Exception:
+                return ""
+
+        response = asyncio.run(_inner())
+        if not response:
+            return ""
+        if not response.startswith("#"):
+            response = core_service.format_readme_description(response, fallback_title=os.path.splitext(fn)[0])
+        return response or ""
+    except Exception as e_sum:
+        logging.warning(f"[rag/index] LLM companion summary failed: {e_sum}")
+        return ""
+
+def _rag_scope_tags(body_tags, scope: str) -> list:
+    tags = [t for t in (body_tags or []) if t]
+    if scope == "public":
+        if "public" not in tags:
+            tags.append("public")
+        # Публичные теги видимости (PUBLIC_TAGS, по умолчанию "omd") нужны для
+        # того, чтобы гостевые находки работали: общим поиском гость фильтрует
+        # знания именно по PUBLIC_TAGS, а не по "public".
+        for t in unified_memory.PUBLIC_TAGS:
+            if t and t not in tags:
+                tags.append(t)
+    return tags
+
+
+def _is_tunnel_error(exc: BaseException) -> bool:
+    """True when the failure is the transport, not the document.
+
+    Reindexing a folder is a long walk over one data channel; if that channel
+    dies we want a fresh tunnel and a resume, not N "failed" rows blaming the
+    files that happened to be in flight.
+    """
+    import p2p_client
+
+    if isinstance(exc, (p2p_client.P2PError, p2p_client.P2PTimeout,
+                        p2p_client.P2PAuthError)):
+        return True
+    # aiortc surfaces transport loss as bare TimeoutError/EOFError, whose str()
+    # is empty, so the type is the only usable signal.
+    return isinstance(exc, (TimeoutError, ConnectionError, EOFError))
+
+
+def _err_text(exc: BaseException) -> str:
+    """Never lose the exception TYPE in a log line.
+
+    `str(TimeoutError())`, `str(EOFError())` and `str(ConnectionResetError())`
+    are all empty strings, so a bare `f"failed: {e}"` prints "failed: " and
+    tells us nothing about what actually broke.
+    """
+    detail = str(exc).strip()
+    return f"{type(exc).__name__}: {detail}" if detail else type(exc).__name__
+
+
+HUB_URL = SETTINGS.get("HUB_URL", "https://direct.onmydisk.net:8765")
+
+async def fetch_chunks_from_hub(token_hash: str, memory_id: str) -> list:
+    """Fetch document chunks from GunDB hub for chunk-level RAG."""
+    try:
+        import aiohttp
+        url = f"{HUB_URL}/api/chunks?tokenHash={token_hash}&memoryId={memory_id}"
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                if resp.status != 200:
+                    return []
+                data = await resp.json()
+                return data.get("chunks", []) if data.get("ok") else []
+    except Exception as e:
+        logging.warning(f"[hub] fetch_chunks failed for {memory_id}: {e}")
+        return []
+
+
+def _cosine_similarity(a: list, b: list) -> float:
+    """Compute cosine similarity between two vectors."""
+    if not a or not b or len(a) != len(b):
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b))
+    norm_a = sum(x * x for x in a) ** 0.5
+    norm_b = sum(x * x for x in b) ** 0.5
+    denom = norm_a * norm_b
+    return dot / denom if denom > 0 else 0.0
+
+
+async def _rag_stateless_payload(ctx, raw_text: str, doc_id: str, title: str, tags: list, owner: str):
+    """Общая stateless-логика: аннотация + теги + эмбеддинги + чанки. Без ChromaDB."""
+    if not raw_text or not raw_text.strip():
+        raise HTTPException(status_code=422, detail="document text is empty after conversion")
+
+    try:
+        annotation = await core_service.summarize_for_memory(ctx, raw_text)
+        ai_tags = await core_service.extract_tags_from_text(ctx, raw_text)
+    except Exception as e:
+        logging.error(f"[rag/import] summarize error: {e}")
+        annotation = raw_text[:500]
+        ai_tags = []
+
+    if not ai_tags:
+        # Модель не выдала теги (детерминированно или fell over) — фолбэк:
+        # хештеги, которые она сама вставила в аннотацию (#NGI, #OnMyChat...).
+        try:
+            ai_tags = core_service._extract_hashtags(annotation)
+        except Exception:
+            ai_tags = []
+
+    all_tags = sorted(set(tags) | set(ai_tags or []))
+
+    # Аннотационный эмбеддинг (теги активно участвуют)
+    annotation_text = annotation + " " + " ".join(all_tags)
+    annotation_embedding = unified_memory.embed(annotation_text)
+
+    # Чанки + эмбеддинги чанков
+    chunks_texts = unified_memory.chunk_document(raw_text)
+    chunks = []
+    if chunks_texts:
+        chunk_embeddings = unified_memory.get_model().encode(chunks_texts, show_progress_bar=False).tolist()
+        chunks = [
+            {"text": ct, "embedding": ce}
+            for ct, ce in zip(chunks_texts, chunk_embeddings)
+        ]
+
+    logging.info(f"[rag/import] Stateless: doc={doc_id} chunks={len(chunks)} tags={all_tags} owner={owner}")
+
+    return {
+        "docId":               doc_id,
+        "documentId":          doc_id,
+        "title":               title,
+        "annotation":          annotation,
+        "tags":                all_tags,
+        "annotation_embedding": annotation_embedding,
+        "chunks":              chunks,
+        "chunkCount":          len(chunks),
+    }
+
+
+def _decode_hdr(request: Request, name: str) -> str | None:
+    """URL-encoded имена файлов в заголовках (X-OMD-Filename / X-OMD-Source)."""
+    raw = request.headers.get(name)
+    if not raw:
+        return None
+    if "%" in raw:
+        try:
+            from urllib.parse import unquote
+            return unquote(raw, errors="replace")
+        except Exception:
+            return raw
+    return raw
+
+
+def _image_preview_data_url(img_bytes: bytes, max_side: int = 480) -> str:
+    """Даунскейлит картинку до небольшого thumbnail и возвращает data URL для превью в карточке."""
+    if not img_bytes:
+        return ""
+    try:
+        img = Image.open(io.BytesIO(img_bytes))
+        img.thumbnail((max_side, max_side))
+        fmt = "JPEG"
+        if img.mode in ("RGBA", "LA", "P"):
+            img = img.convert("RGBA")
+            fmt = "PNG"
+        elif img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
+        buf = io.BytesIO()
+        img.save(buf, format=fmt, quality=82)
+        b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+        return f"data:image/{fmt.lower()};base64,{b64}"
+    except Exception as e:
+        logging.warning(f"[rag/recognize] preview generation error: {e}")
+        return ""
+
+
+async def _rag_recognize_payload(ctx, img_bytes: bytes, doc_id: str, title: str, tags: list, owner: str, prompt: str = ""):
+    """Общая stateless-логика /recognize: vision-аннотация + теги + эмбеддинги + чанки. Без ChromaDB."""
+    if not img_bytes:
+        raise HTTPException(status_code=422, detail="image bytes are empty")
+
+    try:
+        annotation = await core_service.recognize_image_annotation(ctx, img_bytes, prompt)
+        ai_tags = await core_service.extract_tags_from_text(ctx, annotation) if annotation else []
+    except Exception as e:
+        logging.error(f"[rag/recognize] vision error: {e}")
+        annotation = ""
+        ai_tags = []
+
+    if not annotation or not annotation.strip():
+        raise HTTPException(status_code=422, detail="could not recognize the image (vision returned empty annotation)")
+
+    all_tags = sorted(set(tags) | set(ai_tags or []))
+
+    # Аннотационный эмбеддинг (теги активно участвуют)
+    annotation_text = annotation + " " + " ".join(all_tags)
+    annotation_embedding = unified_memory.embed(annotation_text)
+
+    # Чанки + эмбеддинги чанков (по той же логике, что и документы)
+    chunks_texts = unified_memory.chunk_document(annotation)
+    chunks = []
+    if chunks_texts:
+        chunk_embeddings = unified_memory.get_model().encode(chunks_texts, show_progress_bar=False).tolist()
+        chunks = [
+            {"text": ct, "embedding": ce}
+            for ct, ce in zip(chunks_texts, chunk_embeddings)
+        ]
+
+    logging.info(f"[rag/recognize] Stateless: image={doc_id} chunks={len(chunks)} tags={all_tags} owner={owner}")
+
+    return {
+        "docId":                doc_id,
+        "documentId":           doc_id,
+        "title":                title,
+        "annotation":           annotation,
+        "tags":                 all_tags,
+        "annotation_embedding": annotation_embedding,
+        "chunks":               chunks,
+        "chunkCount":           len(chunks),
+        "isImage":              True,
+        "imagePreview":         _image_preview_data_url(img_bytes),
+    }
+
+
+@app.post("/rag/import/raw")
+async def rag_import_raw_endpoint(request: Request):
+    """
+    Stateless импорт сырого документа (гостевой/персональный слой):
+    клиент аплоадит байты файла → нода конвертирует ЛОКАЛЬНО (pdftotext/pandoc,
+    без шлюза) → аннотация/теги/чанки/эмбеддинги → возвращает payload, а временный
+    файл удаляется. В ChromaDB ничего не пишется — фронт хранит карточку в GunDB.
+    Заголовки: X-OMD-Filename (URL-encoded), X-OMD-Source, X-OMD-RAG-Scope,
+    X-OMD-Tags (JSON), X-OMD-Owner.
+    """
+    if not_authorized(request):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    try:
+        data = await request.body()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to read request body: {e}")
+
+    filename = _decode_hdr(request, "X-OMD-Filename") or _decode_hdr(request, "filename") or "document.bin"
+    source = _decode_hdr(request, "X-OMD-Source") or filename
+    scope = request.headers.get("X-OMD-RAG-Scope", "private")
+    owner = request.headers.get("X-OMD-Owner") or ""
+    try:
+        tags_in = json.loads(request.headers.get("X-OMD-Tags", "[]")) or []
+    except Exception:
+        tags_in = []
+
+    if not data:
+        raise HTTPException(status_code=422, detail="empty file body")
+
+    raw_text = unified_memory.convert_bytes_to_text(data, filename)
+    if not raw_text or not raw_text.strip():
+        raise HTTPException(status_code=422, detail="could not extract text from document (unsupported or scanned file)")
+
+    ctx = await _build_ctx_from_request(request)
+    owner = owner or ctx.user_id or user_context.node_owner()
+    # X-OMD-Doc-Path: полный логический путь /<устройство>/<путь>. Нужен отдельно
+    # от X-OMD-Source, который остаётся путём относительно устройства-источника,
+    # поэтому старые вызовы без этого заголовка работают как раньше.
+    logical = (_decode_hdr(request, "X-OMD-Doc-Path") or "").strip()
+    if logical:
+        doc_id = _norm_logical_path(logical)
+    else:
+        doc_id = _norm_doc_path(source) if source else f"upload:{filename}"
+    title = filename.split("/")[-1].split("?")[0].lstrip("/") or doc_id
+    tags = _rag_scope_tags(tags_in, scope)
+
+    return await _rag_stateless_payload(ctx, raw_text, doc_id, title, tags, owner)
+
+
+@app.post("/rag/import/local")
+async def rag_import_local_endpoint(request: Request):
+    """
+    /learn для владельца: файл УЖЕ лежит на ноде (выбран или загружен в шару,
+    напр. /Documents/invoice.pdf). Эндпоинт читает его с локального диска,
+    конвертирует (pdftotext/pandoc), индексирует чанки в unified ChromaDB
+    (facts потом граничатся по document_id через rag_focus) и возвращает
+    stateless payload для карточки. Файл остаётся на файловой системе.
+    Body: {source, tags?: [], scope?: "private"|"public"}.
+    """
+    if not_authorized(request):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    body = await request.json()
+    source = (body.get("source") or "").strip()
+    if not source or source.startswith("http"):
+        raise HTTPException(status_code=422, detail="local file path is required")
+    scope = body.get("scope") or request.headers.get("X-OMD-RAG-Scope", "private")
+    tags_in = body.get("tags") or []
+    tags = _rag_scope_tags(tags_in, scope)
+    ctx = await _build_ctx_from_request(request)
+    if not trusted_private_access(request, ctx):
+        raise HTTPException(status_code=403, detail="Only the node owner can index local files")
+    owner = ctx.user_id or user_context.node_owner()
+
+    # Реальный путь на диске: realPath /home/<u>/<share>/... или itemPath /<share>/...
+    real_path = source
+    if not os.path.exists(real_path):
+        import getpass as _getpass
+        candidates = []
+        # itemPath /<share>/<file> → реальный FS: /home/<osuser>/<share>/<file>
+        if source.startswith("/") and not source.startswith("/home/"):
+            candidates.append(f"/home/{_getpass.getuser()}{source}")
+        # normalized doc_id /<file> → /home/<osuser>/<file> (без шары), на случай flat-путей
+        doc_root = _norm_doc_path(source)
+        candidates.append(f"/home/{_getpass.getuser()}{doc_root}")
+        for cand in candidates:
+            if os.path.isfile(cand):
+                real_path = cand
+                break
+    if not os.path.isfile(real_path):
+        raise HTTPException(status_code=404, detail=f"file not found on node: {source}")
+
+    filename = os.path.basename(real_path)
+    # Полный логический путь от клиента (/<устройство>/<путь>) становится
+    # document_id; source остаётся путём внутри этой ноды. Без него _norm_doc_path
+    # отбросил бы сегмент устройства, и документы с одинаковым именем на разных
+    # устройствах получили бы один document_id.
+    client_doc_path = (body.get("docPath") or "").strip()
+    doc_id = _norm_logical_path(client_doc_path) if client_doc_path else _norm_doc_path(real_path)
+    try:
+        mtime_val = datetime.datetime.fromtimestamp(os.stat(real_path).st_mtime).isoformat(timespec="seconds")
+    except Exception:
+        mtime_val = ""
+    last_modified = mtime_val
+
+    with open(real_path, "rb") as f:
+        raw = f.read()
+    raw_text = unified_memory.convert_bytes_to_text(raw, filename)
+    if not raw_text or not raw_text.strip():
+        raise HTTPException(status_code=422, detail="could not extract text from document (unsupported or scanned file)")
+
+    # Аннотация + теги (вкл. AI) первыми: ими же индексируем чанки и карточку,
+    # чтобы аннотация и теги попали в ChromaDB, а не только в payload.
+    payload = await _rag_stateless_payload(ctx, raw_text, doc_id, filename, tags, owner)
+    all_tags = payload.get("tags") or tags
+
+    try:
+        n = unified_memory.chunk_and_index_document(
+            raw_text,
+            document_id=doc_id,
+            owner=owner,
+            tags=all_tags,
+            title=filename,
+            source_stamp=last_modified,
+        )
+        logging.info(f"[rag/import/local] {doc_id}: {n} chunks indexed")
+    except Exception as e:
+        logging.error(f"[rag/import/local] index error: {e}")
+        raise HTTPException(status_code=500, detail=f"indexing failed: {e}")
+
+    payload["indexed"] = n
+    payload["path"] = doc_id
+
+    # On-device карточка в ChromaDB: обновляем существующую (upsert по document_id),
+    # а не плодим новые дубли на каждый /learn одного и того же документа.
+    try:
+        mem = unified_memory.upsert_memory_card(
+            payload.get("annotation") or raw_text[:500],
+            owner=owner,
+            tags=all_tags,
+            title=filename,
+            document_id=doc_id,
+            relevance="permanent",
+        )
+        payload["memoryId"] = mem
+    except Exception as e:
+        logging.error(f"[rag/import/local] annotation card upsert error: {e}")
+
+    return payload
+
+
+@app.post("/rag/import")
+async def rag_import_endpoint(request: Request):
+    """
+    Stateless RAG 3.0 импорт: аннотация + теги + эмбеддинги + чанки.
+    Ничего не пишет в ChromaDB — фронт сохраняет в GunDB.
+    Текст документа присылает клиент (source + text) — нода не лезет в шлюз.
+    """
+    if not_authorized(request):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    body  = await request.json()
+    source = (body.get("source") or "").strip()
+    raw_text = (body.get("text") or "").strip()
+    scope = body.get("scope") or request.headers.get("X-OMD-RAG-Scope", "private")
+    owner = body.get("owner") or ""
+    tags_in = body.get("tags") or []
+
+    if not raw_text:
+        raise HTTPException(status_code=422, detail="text is required (client fetches the document and sends its text)")
+
+    doc_id = _norm_doc_path(source) if source else f"user:note:{body.get('title') or 'note'}"
+
+    ctx = await _build_ctx_from_request(request)
+    owner = owner or ctx.user_id or user_context.node_owner()
+    title = body.get("title") or doc_id.split("/")[-1].split("?")[0].lstrip("/")
+    tags = _rag_scope_tags(tags_in, scope)
+
+    return await _rag_stateless_payload(ctx, raw_text, doc_id, title, tags, owner)
+
+
+@app.post("/rag/recognize/local")
+async def rag_recognize_local_endpoint(request: Request):
+    """
+    /recognize для владельца: картинка УЖЕ лежит на ноде (путь в шаре, напр.
+    /Documents/photo.jpg). Нода читает её с диска, распознаёт vision-моделью
+    (аннотация + OCR), делает теги, индексирует чанки в unified ChromaDB и
+    создаёт/обновляет memory_card — точно так же, как /rag/import/local для
+    документов. Возвращает stateless payload + memoryId.
+    Body: {source, tags?: [], scope?: "private"|"public", prompt?: "<user question>"}.
+    """
+    if not_authorized(request):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    body = await request.json()
+    source = (body.get("source") or "").strip()
+    if not source or source.startswith("http"):
+        raise HTTPException(status_code=422, detail="local image path is required")
+    scope = body.get("scope") or request.headers.get("X-OMD-RAG-Scope", "private")
+    tags_in = body.get("tags") or []
+    prompt = body.get("prompt") or ""
+    tags = _rag_scope_tags(tags_in, scope)
+    ctx = await _build_ctx_from_request(request)
+    owner = ctx.user_id or user_context.node_owner()
+
+    # Реальный путь на диске: realPath /home/<u>/<share>/... или itemPath /<share>/...
+    real_path = source
+    if not os.path.exists(real_path):
+        import getpass as _getpass
+        candidates = []
+        if source.startswith("/") and not source.startswith("/home/"):
+            candidates.append(f"/home/{_getpass.getuser()}{source}")
+        doc_root = _norm_doc_path(source)
+        candidates.append(f"/home/{_getpass.getuser()}{doc_root}")
+        for cand in candidates:
+            if os.path.isfile(cand):
+                real_path = cand
+                break
+    if not os.path.isfile(real_path):
+        raise HTTPException(status_code=404, detail=f"image not found on node: {source}")
+
+    filename = os.path.basename(real_path)
+    # Полный логический путь от клиента (/<устройство>/<путь>) становится
+    # document_id; source остаётся путём внутри этой ноды. Без него _norm_doc_path
+    # отбросил бы сегмент устройства, и документы с одинаковым именем на разных
+    # устройствах получили бы один document_id.
+    client_doc_path = (body.get("docPath") or "").strip()
+    doc_id = _norm_logical_path(client_doc_path) if client_doc_path else _norm_doc_path(real_path)
+    try:
+        mtime_val = datetime.datetime.fromtimestamp(os.stat(real_path).st_mtime).isoformat(timespec="seconds")
+    except Exception:
+        mtime_val = ""
+    last_modified = mtime_val
+
+    with open(real_path, "rb") as f:
+        img_bytes = f.read()
+    if not img_bytes:
+        raise HTTPException(status_code=422, detail="could not read image from disk")
+
+    payload = await _rag_recognize_payload(ctx, img_bytes, doc_id, filename, tags, owner, prompt)
+    all_tags = payload.get("tags") or tags
+
+    try:
+        n = unified_memory.chunk_and_index_document(
+            payload["annotation"],
+            document_id=doc_id,
+            owner=owner,
+            tags=all_tags,
+            title=filename,
+            source_stamp=last_modified,
+            image_preview=payload.get("imagePreview", ""),
+        )
+        logging.info(f"[rag/recognize/local] {doc_id}: {n} chunks indexed")
+    except Exception as e:
+        logging.error(f"[rag/recognize/local] index error: {e}")
+        raise HTTPException(status_code=500, detail=f"indexing failed: {e}")
+
+    payload["indexed"] = n
+    payload["path"] = doc_id
+
+    # On-device карточка в ChromaDB: upsert по document_id (без дублей).
+    try:
+        mem = unified_memory.upsert_memory_card(
+            payload["annotation"],
+            owner=owner,
+            tags=all_tags,
+            title=filename,
+            document_id=doc_id,
+            relevance="permanent",
+            image_preview=payload.get("imagePreview", ""),
+        )
+        payload["memoryId"] = mem
+    except Exception as e:
+        logging.error(f"[rag/recognize/local] annotation card upsert error: {e}")
+
+    return payload
+
+
+@app.post("/rag/recognize/raw")
+async def rag_recognize_raw_endpoint(request: Request):
+    """
+    Stateless распознавание изображения (гостевой/персональный слой):
+    клиент аплоадит байты картинки → нода распознаёт vision-моделью
+    (аннотация + теги + эмбеддинги + чанки) → возвращает payload. В ChromaDB
+    ничего не пишется — фронт хранит карточку в GunDB.
+    Заголовки: X-OMD-Filename (URL-encoded), X-OMD-Source, X-OMD-RAG-Scope,
+    X-OMD-Tags (JSON), X-OMD-Owner, X-OMD-Prompt.
+    """
+    if not_authorized(request):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    try:
+        data = await request.body()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to read request body: {e}")
+
+    filename = _decode_hdr(request, "X-OMD-Filename") or _decode_hdr(request, "filename") or "image.bin"
+    source = _decode_hdr(request, "X-OMD-Source") or filename
+    scope = request.headers.get("X-OMD-RAG-Scope", "private")
+    owner = request.headers.get("X-OMD-Owner") or ""
+    prompt = request.headers.get("X-OMD-Prompt") or ""
+    try:
+        tags_in = json.loads(request.headers.get("X-OMD-Tags", "[]")) or []
+    except Exception:
+        tags_in = []
+
+    if not data:
+        raise HTTPException(status_code=422, detail="empty image body")
+
+    ctx = await _build_ctx_from_request(request)
+    owner = owner or ctx.user_id or user_context.node_owner()
+    # X-OMD-Doc-Path: полный логический путь /<устройство>/<путь>. Нужен отдельно
+    # от X-OMD-Source, который остаётся путём относительно устройства-источника,
+    # поэтому старые вызовы без этого заголовка работают как раньше.
+    logical = (_decode_hdr(request, "X-OMD-Doc-Path") or "").strip()
+    if logical:
+        doc_id = _norm_logical_path(logical)
+    else:
+        doc_id = _norm_doc_path(source) if source else f"image:{filename}"
+    title = filename.split("/")[-1].split("?")[0].lstrip("/") or doc_id
+    tags = _rag_scope_tags(tags_in, scope)
+
+    return await _rag_recognize_payload(ctx, data, doc_id, title, tags, owner, prompt)
+
+
+@app.post("/embed")
+async def embed_endpoint(request: Request):
+    """
+    Stateless embedding: {text: ""} → {embedding: []}.
+    Для фронта: эмбеддит вопрос при отправке (cosine vs annotation_embedding карточек).
+    """
+    if not_authorized(request):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    body = await request.json()
+    text = (body.get("text") or "").strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="text is required")
+    try:
+        embedding = unified_memory.embed(text)
+    except Exception as e:
+        logging.error(f"[embed] error: {e}")
+        raise HTTPException(status_code=500, detail=f"Embedding failed: {e}")
+    return {"embedding": embedding}
+
+
+@app.post("/rag/index")
+async def rag_index_endpoint(request: Request, background_tasks: BackgroundTasks):
+    """
+    ЛОКАЛЬНАЯ индексация папки на ноде (владелец): запрос приходит по P2P,
+    нода обходит свой локальный диск (os.walk по realPath), конвертирует
+    документы локально (pdftotext/pandoc, см. convert_bytes_to_text) и пишет
+    чанки в unified ChromaDB. Никакого шлюза и внешних запросов.
+    Заголовки: X-OMD-RAG-Scope. Body: {path: realPath, force?: bool, tags?: []}.
+    """
+    if not_authorized(request):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    body = await request.json()
+    source_path = (body.get("path") or "").strip()
+    if not source_path or source_path.startswith("http"):
+        raise HTTPException(status_code=422, detail="local folder path is required")
+    force = bool(body.get("force", False))
+    # C++ нода передаёт виртуальный путь (/<share>/...) — доки индексируются под
+    # логическими путями, видимыми в приложении (клик по источнику открывает файл)
+    logical_path = (body.get("logicalPath") or "").strip()
+    scope = request.headers.get("X-OMD-RAG-Scope", body.get("scope", "private"))
+
+    doc_root = ("/" + logical_path.strip("/")) if logical_path else _norm_doc_path(source_path)          # /<share>/... для названий карточек
+
+    # ------------------------------------------------------------------
+    # Исключения из индексации (index_exclusions.json): логические пути
+    # относительно шар и физические. Если локаль попадает под правило —
+    # не тянем её в RAG-индекс, возвращаем skipped.
+    # ------------------------------------------------------------------
+    skipped_rule = _is_path_excluded(logical_path, source_path)
+    if skipped_rule:
+        logging.info(f"[rag/index] skip excluded location: {doc_root} (rule: {skipped_rule}, path: {source_path})")
+        return {"done": True, "indexed": 0, "failed": 0, "note": f"excluded:{skipped_rule}"}
+
+    ctx = await _build_ctx_from_request(request)
+    if not (trusted_private_access(request, ctx) or request.headers.get("X-OMD-Node-Local") == "1"):
+        raise HTTPException(status_code=403, detail="Only the node owner can index local folders")
+    owner = ctx.user_id or user_context.node_owner()
+    tags = _rag_scope_tags(body.get("tags") or [], scope)
+
+    RAG_INDEX_STATUS[doc_root] = {"indexed": 0, "pending": 0, "failed": 0, "lastError": None, "done": False}
+
+    async def _crawl_local():
+        status = RAG_INDEX_STATUS[doc_root]
+        folder_tags_cache = {}
+
+        def _doc_id_of(full, rel):
+            if logical_path:
+                return doc_root.rstrip("/") + ("/" + rel if rel else "")
+            return _norm_doc_path(full)
+
+        def _index_one_sync(full, fn, rel):
+            """Performs ChromaDB-heavy indexing in the thread pool, returning a status dict."""
+            clean_fn = (fn or "").lower()
+            if clean_fn in ("readme.md.readme.md", "readme.txt.readme.md") or clean_fn.endswith(".readme.md.readme.md"):
+                unified_memory.delete_document(_doc_id_of(full, rel))
+                return None
+
+            if is_folder_cover_image(fn):
+                unified_memory.delete_document(_doc_id_of(full, rel))
+                return None
+
+            if fn.lower() == "readme.md":
+                # Readme.md в корне папки — это описание САМОЙ ПАПКИ (напр. альбома
+                # с фото), а не самостоятельный документ. В индекс вносим ПАПКУ:
+                # document_id = путь папки, иконка папки, по клику открываем папку.
+                folder_full = os.path.dirname(full)
+                folder_rel = os.path.dirname(rel)
+                folder_doc_id = _doc_id_of(folder_full, folder_rel)
+                readme_doc_id = _doc_id_of(full, rel)
+                try:
+                    with open(full, "rb") as f:
+                        raw = unified_memory.convert_bytes_to_text(f.read(), fn)
+                except Exception as e:
+                    return {"action": "error", "doc_id": folder_doc_id, "error": f"{fn}: {e}"}
+                if not raw or not raw.strip():
+                    # Пустое описание — чистим и старый док под путём readme
+                    unified_memory.delete_document(readme_doc_id)
+                    unified_memory.delete_document(folder_doc_id)
+                    return {"action": "error", "doc_id": folder_doc_id,
+                            "error": f"{fn}: empty folder description"}
+                try:
+                    stamp = os.stat(full).st_mtime
+                    last_modified = datetime.datetime.fromtimestamp(stamp).isoformat(timespec="seconds")
+                except Exception:
+                    last_modified = ""
+                # Старый вариант: Readme.md индексировался самостоятельным доком
+                unified_memory.delete_document(readme_doc_id)
+                folder_title = os.path.basename(folder_doc_id.rstrip("/")) or folder_doc_id
+
+                # Собираем теги для папки: из запроса + унаследованные вышестоящие + существующие в БД + хештеги/ключи из Readme.md
+                inherited_p_tags = unified_memory.get_inherited_folder_tags(folder_doc_id)
+                existing_f_tags = unified_memory.get_document_tags(folder_doc_id)
+                readme_f_tags = unified_memory.auto_extract_tags(raw, "Readme.md")
+                merged_folder_tags = sorted(set(tags) | set(inherited_p_tags) | set(existing_f_tags) | set(readme_f_tags))
+
+                # Добавляем хештеги в тело Readme папки и файл на диске
+                raw_with_tags = unified_memory.append_tags_to_card_text(raw, merged_folder_tags)
+                if raw_with_tags.strip() != raw.strip():
+                    try:
+                        with open(full, "w", encoding="utf-8") as rf:
+                            rf.write(raw_with_tags.strip() + "\n")
+                        raw = raw_with_tags
+                    except Exception as e_w:
+                        logging.warning(f"[rag/index] failed to write tags to folder Readme {full}: {e_w}")
+
+                folder_tags_cache[folder_doc_id] = merged_folder_tags
+
+                if not force and unified_memory.has_document(folder_doc_id, source_stamp=last_modified):
+                    return {"action": "skip", "doc_id": folder_doc_id, "is_folder": True}
+
+                # Ищем ассоциированную обложку папки (folder.jpg, cover.jpg и т.п.)
+                folder_preview = ""
+                for cname in ("folder.jpg", "cover.jpg", "folder.png", "cover.png", "folder.jpeg", "cover.jpeg"):
+                    cpath = os.path.join(folder_full, cname)
+                    if os.path.isfile(cpath):
+                        try:
+                            with open(cpath, "rb") as cf:
+                                folder_preview = _image_preview_data_url(cf.read())
+                            if folder_preview:
+                                break
+                        except Exception:
+                            pass
+
+                try:
+                    n = unified_memory.chunk_and_index_document(
+                        raw, document_id=folder_doc_id, owner=owner, tags=merged_folder_tags,
+                        title=folder_title, source_stamp=last_modified, is_folder=True,
+                        image_preview=folder_preview,
+                    )
+                    try:
+                        unified_memory.upsert_memory_card(
+                            raw_with_tags, document_id=folder_doc_id, owner=owner, tags=merged_folder_tags,
+                            title=folder_title, relevance="permanent", is_folder=True,
+                            image_preview=folder_preview,
+                        )
+                    except Exception as e_mem:
+                        logging.warning(f"[rag/index] memory_card upsert error {folder_doc_id}: {e_mem}")
+                    try:
+                        unified_memory.propagate_folder_tags(folder_doc_id, merged_folder_tags)
+                    except Exception as e_prop:
+                        logging.warning(f"[rag/index] propagate_folder_tags error {folder_doc_id}: {e_prop}")
+                    logging.info(f"[rag/index] {folder_doc_id} indexed as folder from {fn} ({n} chunks)")
+                    return {"action": "indexed", "doc_id": folder_doc_id, "is_folder": True, "chunks": n}
+                except Exception as e:
+                    return {"action": "error", "doc_id": folder_doc_id, "error": str(e)}
+
+            target = _readme_target(fn)
+            if target is not None:
+                if is_folder_cover_image(target):
+                    return None
+                # *.Readme.md — это НЕ самостоятельный документ, а описание
+                # оригинального файла (<файл>.Readme.md вместо <файл>.<ext>).
+                # В индекс вносим ОРИГИНАЛ, текстом берём само описание.
+                orig_full = os.path.join(os.path.dirname(full), target)
+                orig_rel = re.sub(r"(?i)\.readme\.md$", "", rel)
+                if not os.path.isfile(orig_full):
+                    # Если target без расширения (напр. "photo" от "photo.Readme.md"),
+                    # ищем оригинальный файл с подходящим расширением (photo.jpg, etc.)
+                    parent_dir = os.path.dirname(full)
+                    try:
+                        for candidate in os.listdir(parent_dir):
+                            c_base, _ = os.path.splitext(candidate)
+                            if c_base.lower() == target.lower() and not candidate.lower().endswith(".readme.md"):
+                                target = candidate
+                                orig_full = os.path.join(parent_dir, target)
+                                orig_rel = os.path.join(os.path.dirname(rel), target)
+                                break
+                    except Exception:
+                        pass
+                orig_doc_id = _doc_id_of(orig_full, orig_rel)
+                readme_doc_id = _doc_id_of(full, rel)
+                if not os.path.isfile(orig_full):
+                    # Сиротинка без оригинала — как самостоятельный файл не индексируем,
+                    # но чистим хвост прошлой (неверной) индексации под этим путём.
+                    unified_memory.delete_document(readme_doc_id)
+                    return {"action": "error", "doc_id": orig_doc_id,
+                            "error": f"{fn}: companion file {target} not found on node"}
+                try:
+                    with open(full, "rb") as f:
+                        raw = unified_memory.convert_bytes_to_text(f.read(), fn)
+                except Exception as e:
+                    return {"action": "error", "doc_id": orig_doc_id, "error": f"{fn}: {e}"}
+                if not raw or not raw.strip():
+                    return {"action": "error", "doc_id": orig_doc_id, "error": f"{fn}: description has no text"}
+                try:
+                    stamp = max(os.stat(full).st_mtime, os.stat(orig_full).st_mtime)
+                    last_modified = datetime.datetime.fromtimestamp(stamp).isoformat(timespec="seconds")
+                except Exception:
+                    last_modified = ""
+                # Старый вариант, когда *.Readme.md индексировался самостоятельным доком
+                unified_memory.delete_document(readme_doc_id)
+                if not force and unified_memory.has_document(orig_doc_id, source_stamp=last_modified):
+                    return {"action": "skip", "doc_id": orig_doc_id}
+                image_preview = ""
+                geo_tokens = []
+                ext = os.path.splitext(target)[1].lower().lstrip(".")
+                if ext in IMAGE_EXTS:
+                    try:
+                        with open(orig_full, "rb") as f:
+                            img_bytes = f.read()
+                        image_preview = _image_preview_data_url(img_bytes)
+                        try:
+                            exif = core_service.extract_image_exif_metadata(img_bytes)
+                            gps = (exif.get("gps_coords") or "").strip()
+                            if gps:
+                                geo_place = core_service.gps_to_location(gps)
+                                if geo_place:
+                                    geo_tokens = [t.strip() for t in re.split(r"[,/]", geo_place)]
+                                    geo_tokens = [t for t in geo_tokens if len(t) >= 3 and t.replace(" ", "").isalpha()]
+                                    geo_tokens += core_service.geo_place_localized(geo_place)
+                        except Exception as e_geo:
+                            logging.warning(f"[rag/index] geo tags error {orig_full}: {e_geo}")
+                    except Exception as e:
+                        logging.warning(f"[rag/index] preview error {orig_full}: {e}")
+                parent_folder_id = os.path.dirname(orig_doc_id)
+                folder_inherited = folder_tags_cache.get(parent_folder_id) or unified_memory.get_inherited_folder_tags(orig_doc_id)
+                file_auto_tags = unified_memory.auto_extract_tags(raw, target)
+                merged_tags = sorted(set(tags) | set(folder_inherited) | set(file_auto_tags) | set(geo_tokens))
+
+                raw_with_tags = unified_memory.append_tags_to_card_text(raw, merged_tags)
+                if raw_with_tags.strip() != raw.strip():
+                    try:
+                        with open(full, "w", encoding="utf-8") as rf:
+                            rf.write(raw_with_tags.strip() + "\n")
+                        raw = raw_with_tags
+                    except Exception as e_w:
+                        logging.warning(f"[rag/index] failed to write tags to companion {full}: {e_w}")
+                try:
+                    n = unified_memory.chunk_and_index_document(
+                        raw, document_id=orig_doc_id, owner=owner, tags=merged_tags,
+                        title=target, source_stamp=last_modified, image_preview=image_preview,
+                    )
+                    try:
+                        unified_memory.upsert_memory_card(
+                            raw_with_tags, document_id=orig_doc_id, owner=owner, tags=merged_tags,
+                            title=target, relevance="permanent", image_preview=image_preview,
+                        )
+                    except Exception as e_mem:
+                        logging.warning(f"[rag/index] memory_card upsert error {orig_doc_id}: {e_mem}")
+                    if image_preview:
+                        logging.info(f"[rag/index] {orig_doc_id} indexed from {fn} as image card ({n} chunks)")
+                    else:
+                        logging.info(f"[rag/index] {orig_doc_id} indexed from {fn} ({n} chunks)")
+                    return {"action": "indexed", "doc_id": orig_doc_id, "chunks": n}
+                except Exception as e:
+                    return {"action": "error", "doc_id": orig_doc_id, "error": str(e)}
+
+            # У оригинального файла есть описание *.Readme.md — индексируем только
+            # через ветку описания, чтобы не дублировать и не плодить лишние сущности.
+            base_full = os.path.splitext(full)[0]
+            if _force_regen_companion(force, base_full, full, fn, ctx):
+                return None
+
+            ext = os.path.splitext(fn)[1].lower().lstrip(".")
+            if ext not in ("pdf",) and ext not in unified_memory.PANDOC_FORMATS and ext not in ("txt", "text"):
+                return None
+            doc_id = _doc_id_of(full, rel)
+            try:
+                mtime_val = datetime.datetime.fromtimestamp(os.stat(full).st_mtime).isoformat(timespec="seconds")
+            except Exception:
+                mtime_val = ""
+            last_modified = mtime_val
+            if not force and unified_memory.has_document(doc_id, source_stamp=last_modified):
+                return {"action": "skip", "doc_id": doc_id}
+            try:
+                with open(full, "rb") as f:
+                    raw = unified_memory.convert_bytes_to_text(f.read(), fn)
+            except Exception as e:
+                return {"action": "error", "doc_id": doc_id, "error": f"{fn}: {e}"}
+            if not raw or not raw.strip():
+                return {"action": "error", "doc_id": doc_id, "error": f"{fn}: no text (unsupported or scanned)"}
+
+            parent_folder_id = os.path.dirname(doc_id)
+            folder_inherited = folder_tags_cache.get(parent_folder_id) or unified_memory.get_inherited_folder_tags(doc_id)
+            doc_auto_tags = unified_memory.auto_extract_tags(raw, fn)
+            merged_tags = sorted(set(tags) | set(folder_inherited) | set(doc_auto_tags))
+
+            try:
+                n = unified_memory.chunk_and_index_document(
+                    raw, document_id=doc_id, owner=owner, tags=merged_tags,
+                    title=fn, source_stamp=last_modified,
+                )
+                # Выжимка для memory_card: если есть Readme.md — берём его; иначе создаём первичное описание
+                base_full = os.path.splitext(full)[0]
+                readme_path = base_full + ".Readme.md"
+                summary_text = ""
+                for candidate_readme in (readme_path, base_full + ".readme.md", full + ".Readme.md", full + ".readme.md"):
+                    if os.path.isfile(candidate_readme):
+                        try:
+                            with open(candidate_readme, "r", encoding="utf-8", errors="replace") as rf:
+                                summary_text = rf.read().strip()
+                            if summary_text:
+                                readme_path = candidate_readme
+                                break
+                        except Exception:
+                            pass
+                if not summary_text:
+                    # LLM-выжимка: '# Заголовок' + 2-3 предложения на языке документа.
+                    # Выполняется синхронно (мы в thread-pool) — поднимаем свой event loop.
+                    summary_text = _llm_document_summary(ctx, raw, fn)
+                    if not summary_text:
+                        summary_text = raw.strip()[:600]
+
+                # Обогащаем тегами из summary_text и добавляем хештеги в тело карточки
+                summary_auto_tags = unified_memory.auto_extract_tags(summary_text, fn)
+                all_doc_tags = sorted(set(merged_tags) | set(summary_auto_tags))
+                summary_with_tags = unified_memory.append_tags_to_card_text(summary_text, all_doc_tags)
+
+                if readme_path and summary_with_tags.strip() != summary_text.strip():
+                    try:
+                        with open(readme_path, "w", encoding="utf-8") as rf:
+                            rf.write(summary_with_tags.strip() + "\n")
+                    except Exception as e_write:
+                        logging.warning(f"[rag/index] cannot write companion {readme_path}: {e_write}")
+
+                try:
+                    unified_memory.upsert_memory_card(
+                        summary_with_tags, document_id=doc_id, owner=owner, tags=all_doc_tags,
+                        title=fn, relevance="permanent",
+                    )
+                except Exception as e_mem:
+                    logging.warning(f"[rag/index] memory_card upsert error {doc_id}: {e_mem}")
+                return {"action": "indexed", "doc_id": doc_id, "chunks": n}
+            except Exception as e:
+                return {"action": "error", "doc_id": doc_id, "error": str(e)}
+
+        async def _maybe_recognize_image(full, fn, rel):
+            """Если это "голая" фотография (ext ∈ IMAGE_EXTS, рядом нет
+            <image>.Readme.md) и vision реально доступен (модель задана И есть
+            в ollama) — распознаём её и создаём <image>.Readme.md рядом с
+            файлом, затем индексируем как image-карточку. Возвращает
+            status-словарь или None (не наша работа)."""
+            if is_folder_cover_image(fn):
+                return None
+            if not recognition_enabled():
+                return None
+            try:
+                if not await core_service.is_vision_available():
+                    return None
+            except Exception as e:
+                logging.warning(f"[rag/index] vision availability check failed: {e}")
+                return None
+            if _readme_target(fn) is not None:
+                return None
+            ext = os.path.splitext(fn)[1].lower().lstrip(".")
+            if ext not in IMAGE_EXTS:
+                return None
+            base_full = os.path.splitext(full)[0]
+            if os.path.isfile(base_full + ".Readme.md") or os.path.isfile(base_full + ".readme.md") or os.path.isfile(full + ".Readme.md") or os.path.isfile(full + ".readme.md"):
+                return None
+            try:
+                with open(full, "rb") as f:
+                    img_bytes = f.read()
+            except Exception as e:
+                return {"action": "error", "doc_id": _doc_id_of(full, rel), "error": f"{fn}: {e}"}
+            if not img_bytes:
+                return None
+            folder_name = os.path.basename(os.path.dirname(full))
+            annotation, geo_place, recognized_people = await core_service.recognize_image_readme(
+                ctx, img_bytes, title=fn, folder_name=folder_name
+            )
+            if not annotation:
+                # Распознать не вышло (пустой ответ/heic/svg) — ведём себя как раньше
+                return None
+            ai_tags = []
+            try:
+                ai_tags = await core_service.extract_tags_from_text(ctx, annotation)
+            except Exception as e:
+                logging.warning(f"[rag/index] recognise tags error {fn}: {e}")
+            if recognized_people:
+                ai_tags = sorted(set(ai_tags) | set(recognized_people))
+            if geo_place:
+                place_tokens = [t.strip() for t in re.split(r"[,/]", geo_place)]
+                place_tokens = [t for t in place_tokens if len(t) >= 3 and t.replace(" ", "").isalpha()]
+                place_tokens += core_service.geo_place_localized(geo_place)
+                ai_tags = sorted(set(ai_tags) | set(place_tokens))
+            try:
+                readme_path = base_full + ".Readme.md"
+                with open(readme_path, "w", encoding="utf-8") as f:
+                    f.write(annotation + "\n")
+            except Exception as e:
+                return {"action": "error", "doc_id": _doc_id_of(full, rel),
+                        "error": f"{fn}: cannot write {readme_path}: {e}"}
+            try:
+                stamp = os.stat(full).st_mtime
+                last_modified = datetime.datetime.fromtimestamp(stamp).isoformat(timespec="seconds")
+            except Exception:
+                last_modified = ""
+            try:
+                image_preview = _image_preview_data_url(img_bytes)
+            except Exception as e:
+                logging.warning(f"[rag/index] recognise preview error {fn}: {e}")
+                image_preview = ""
+            doc_id = _doc_id_of(full, rel)
+            parent_folder_id = os.path.dirname(doc_id)
+            folder_inherited = folder_tags_cache.get(parent_folder_id) or unified_memory.get_inherited_folder_tags(doc_id)
+            merged_tags = sorted(set(tags) | set(folder_inherited) | set(ai_tags or []))
+            annotation_with_tags = unified_memory.append_tags_to_card_text(annotation, merged_tags)
+            if annotation_with_tags.strip() != annotation.strip():
+                try:
+                    with open(readme_path, "w", encoding="utf-8") as f:
+                        f.write(annotation_with_tags.strip() + "\n")
+                    annotation = annotation_with_tags
+                except Exception as e_w:
+                    logging.warning(f"[rag/index] failed to write tags to {readme_path}: {e_w}")
+            try:
+                n = unified_memory.chunk_and_index_document(
+                    annotation, document_id=doc_id, owner=owner, tags=merged_tags,
+                    title=fn, source_stamp=last_modified, image_preview=image_preview,
+                )
+                try:
+                    unified_memory.upsert_memory_card(
+                        annotation_with_tags, document_id=doc_id, owner=owner, tags=merged_tags,
+                        title=fn, relevance="permanent", image_preview=image_preview,
+                    )
+                except Exception as e_mem:
+                    logging.warning(f"[rag/index] memory_card upsert error {doc_id}: {e_mem}")
+                logging.info(f"[rag/index] {doc_id} recognised via vision ({n} chunks), wrote {readme_path}")
+                return {"action": "indexed", "doc_id": doc_id, "chunks": n}
+            except Exception as e:
+                return {"action": "error", "doc_id": doc_id, "error": str(e)}
+
+        local_root = source_path
+        if os.path.isfile(local_root):
+            fn = os.path.basename(local_root)
+            if not force:
+                try:
+                    st1 = os.stat(local_root)
+                    await asyncio.sleep(_RAG_SETTLE_SECONDS)
+                    st2 = os.stat(local_root)
+                except OSError:
+                    st1 = st2 = None
+                if st1 and st2 and (st1.st_size != st2.st_size or st1.st_mtime_ns != st2.st_mtime_ns):
+                    status["done"] = True
+                    logging.info(f"[rag/index] {doc_root} skipped: file still being written, waiting for upload to settle")
+                    return
+                lock = _RAG_SINGLE_LOCKS.setdefault(local_root, asyncio.Lock())
+                if lock.locked():
+                    status["done"] = True
+                    logging.info(f"[rag/index] {doc_root} skipped: index already in progress")
+                    return
+                try:
+                    async with lock:
+                        rec = await _maybe_recognize_image(local_root, fn, "")
+                        if rec is not None:
+                            result = rec
+                        else:
+                            result = await asyncio.to_thread(_index_one_sync, local_root, fn, "")
+                finally:
+                    _RAG_SINGLE_LOCKS.pop(local_root, None)
+            else:
+                rec = await _maybe_recognize_image(local_root, fn, "")
+                if rec is not None:
+                    result = rec
+                else:
+                    result = await asyncio.to_thread(_index_one_sync, local_root, fn, "")
+            if result:
+                if result.get("action") == "indexed":
+                    status["indexed"] += 1
+                elif result.get("action") == "error":
+                    status["failed"] += 1
+                    status["lastError"] = result.get("error")
+            status["done"] = True
+            logging.info(f"[rag/index] {doc_root} done: {status['indexed']} indexed, {status['failed']} failed")
+            return
+        if not os.path.isdir(local_root):
+            import getpass
+            candidate = f"/home/{getpass.getuser()}{doc_root}"
+            if os.path.isdir(candidate):
+                local_root = candidate
+
+        if not os.path.isdir(local_root):
+            status["failed"] += 1
+            status["lastError"] = f"folder not found on node: {source_path}"
+            status["done"] = True
+            return
+
+        for dirpath, dirnames, filenames in os.walk(local_root):
+            dirnames[:] = [d for d in dirnames
+                           if not d.startswith(".") and d.lower() not in ("node_modules", "build", "dist", "target", "venv", "__pycache__")]
+            # Отсекаем поддиректории, попавшие под index_exclusions.json.
+            # Строим полный логический путь /<logical_root>/<rel> и физический,
+            # затем проверяем префиксным правилом _is_path_excluded (стр. 78).
+            def _keep_dir(_d):
+                _phys = os.path.join(dirpath, _d)
+                _rel = os.path.relpath(_phys, local_root).replace("\\", "/")
+                _log = doc_root.rstrip("/") + ("/" + _rel if _rel != "." else "")
+                return _is_path_excluded(_log, _phys) is None
+            dirnames[:] = [d for d in dirnames if _keep_dir(d)]
+
+            rel_dir = os.path.relpath(dirpath, local_root).replace("\\", "/")
+            cur_folder_doc_id = doc_root.rstrip("/") + ("/" + rel_dir if rel_dir != "." else "")
+            if cur_folder_doc_id not in folder_tags_cache:
+                folder_tags_cache[cur_folder_doc_id] = sorted(
+                    set(tags)
+                    | set(unified_memory.get_inherited_folder_tags(cur_folder_doc_id))
+                    | set(unified_memory.get_document_tags(cur_folder_doc_id))
+                )
+
+            # Readme.md обрабатываем первым, чтобы инициализировать теги папки до файлов внутри
+            filenames.sort(key=lambda x: 0 if x.lower() == "readme.md" else 1)
+            for fn in filenames:
+                full = os.path.join(dirpath, fn)
+                rel = full[len(local_root):].lstrip("/")
+                if is_folder_cover_image(fn):
+                    cover_doc_id = _doc_id_of(full, rel)
+                    unified_memory.delete_document(cover_doc_id)
+                    continue
+                # Автораспознавание "голых" фотографий: если VISION_MODEL задан и у
+                # картинки нет companion <image>.Readme.md, распознаём (объекты,
+                # ориентиры, OCR) и пишем README рядом с файлом ДО индексации.
+                # Ручные описания и уже распознанные НЕ трогаем и не перезаписываем.
+                rec = await _maybe_recognize_image(full, fn, rel)
+                if rec is not None:
+                    result = rec
+                else:
+                    # Run the per-file ChromaDB work in a thread, then yield so the
+                    # event loop can serve active SSE streams (chat) between files.
+                    result = await asyncio.to_thread(_index_one_sync, full, fn, rel)
+                if result:
+                    if result["action"] == "skip":
+                        logging.info(f"[rag/index] skip unchanged {result['doc_id']}")
+                    elif result["action"] == "indexed":
+                        status["indexed"] += 1
+                        logging.info(f"[rag/index] {result['doc_id']}: {result['chunks']} chunks")
+                    else:
+                        status["failed"] += 1
+                        status["lastError"] = result["error"]
+                await asyncio.sleep(0)
+
+        status["done"] = True
+        logging.info(f"[rag/index] {doc_root} done: {status['indexed']} indexed, {status['failed']} failed")
+
+    background_tasks.add_task(_crawl_local)
+    return {"status": "indexing_started", "path": doc_root}
+
+
+# ---------------------------------------------------------------------------
+# RAG 3.0 §4: ручной Reindex из «Знаний» по прямому P2P к устройству.
+#
+# Нода (публичный AI backend) сама поднимает WebRTC-туннель к выбранному
+# PWA/native-устройству через шлюз (/api/signaling), читает файлы напрямую по
+# data-plane (байты идут device -> node, шлюз только маршрутизирует SDP),
+# конвертирует их локально, индексирует в свою ChromaDB и возвращает карточку
+# тем же туннелем командой KnowledgePut. В личный GunDB пишет ТОЛЬКО устройство
+# (оно шифрует своим omd_key и соблюдает dedup-правила chat-store).
+#
+# Доступ требует consent-гранта, который выдаёт устройство в момент выбора
+# документа/папки в UI (см. svar/src/lib/client-device-server.js: issueConsent).
+# ---------------------------------------------------------------------------
+
+RAG_REMOTE_INDEX_STATUS: dict = {}
+
+
+@app.post("/rag/reindex-remote")
+async def rag_reindex_remote_endpoint(request: Request, background_tasks: BackgroundTasks):
+    """Индексация документа/папки, выбранной на устройстве (P2P → устройство).
+
+    Body: {linkId, consentToken, path, didPub?, force?, tags?, writable?}
+    Заголовок X-OMD-RAG-Scope — scope тегов, как у /rag/index.
+    """
+    if not_authorized(request):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    body = await request.json()
+    link_id = (body.get("linkId") or "").strip()
+    consent_token = (body.get("consentToken") or "").strip()
+    remote_path = (body.get("path") or "").strip()
+    did_pub = (body.get("didPub") or "").strip()
+    force = bool(body.get("force", False))
+    tags_in = body.get("tags") or []
+    scope = request.headers.get("X-OMD-RAG-Scope", body.get("scope", "private"))
+
+    if not link_id:
+        raise HTTPException(status_code=422, detail="linkId is required")
+    if not consent_token:
+        raise HTTPException(status_code=422, detail="consentToken is required")
+    if not remote_path or remote_path.startswith("http"):
+        raise HTTPException(status_code=422, detail="remote path is required")
+
+    ctx = await _build_ctx_from_request(request)
+    owner = ctx.user_id or user_context.node_owner()
+    # Писать в ChromaDB ноды имеет смысл только владельцу ноды. Внешний
+    # пользователь (guest публичной ноды) индексирует документы СВОЕГО
+    # устройства: карточка с чанками уезжает тем же P2P-туннелем в его личную
+    # GunDB, а нода читает их оттуда (hub /api/chunks). В её собственный
+    # Chroma чужие документы не попадают.
+    write_node_index = trusted_private_access(request, ctx)
+    tags = _rag_scope_tags(tags_in, scope)
+    job_key = f"{link_id}:{remote_path}"
+
+    if RAG_REMOTE_INDEX_STATUS.get(job_key, {}).get("running"):
+        return {"status": "already_running", "path": remote_path}
+
+    RAG_REMOTE_INDEX_STATUS[job_key] = {
+        "running": True, "done": False, "indexed": 0, "skipped": 0, "failed": 0,
+        "pending": 0, "lastError": None, "path": remote_path, "linkId": link_id,
+    }
+
+    async def _pull_and_index():
+        status = RAG_REMOTE_INDEX_STATUS[job_key]
+        client = None
+        # A walk over a real folder takes minutes, and ICE can drop the channel
+        # mid-flight (candidate switch, NAT rebind, mobile handover). Losing the
+        # whole job on one blip is unacceptable, so we allow one fresh tunnel and
+        # resume from the first file that is still missing.
+        # resume state: doc_ids already stored in the device's GunDB this job
+        _done: set = set()
+
+        # NOTE: _run_once must be defined BEFORE the retry loop below. A nested
+        # async def only binds its name when execution reaches the def, so
+        # calling it from a loop placed above raised UnboundLocalError.
+        async def _run_once():
+            nonlocal client
+            try:
+                import p2p_client
+
+                settings = p2p_client.P2PSettings.from_settings(SETTINGS)
+                # Токена ноды глобального нет: берём omd_key конкретного юзера из его
+                # же запроса (HttpDrive). Без него шлюз не примет signaling.
+                settings.token = ctx.omd_key or ""
+                if not settings.token:
+                    raise RuntimeError("omd_key is required for P2P signaling")
+                status["pending"] = 1
+                client = p2p_client.P2PClient(settings)
+                # writable=True: reindex возвращает карточку командой KnowledgePut.
+                device = await client.device(
+                    link_id, consent_token, did_pub, remote_path, writable=True,
+                )
+
+                def _accept(path: str, entry: dict) -> bool:
+                    """Те же фильтры, что у /rag/index: exclusions + обложки папок."""
+                    if _is_path_excluded(path):
+                        return False
+                    name = (entry.get("name") or "").lower()
+                    if is_folder_cover_image(name):
+                        return False
+                    if name in ("readme.md", "readme.txt", "readme.md.readme.md") or name.endswith(".readme.md.readme.md"):
+                        return False
+                    if not entry.get("size"):
+                        return False
+                    return True
+
+                files = await device.walk(remote_path, should_visit=_accept)
+                status["pending"] = len(files)
+                logging.info(
+                    f"[rag/reindex-remote] {link_id} {remote_path}: {len(files)} files"
+                )
+
+                for entry in files:
+                    doc_id = entry["path"]
+                    name = doc_id.rsplit("/", 1)[-1]
+                    title = doc_id.rstrip("/").split("/")[-1] or name
+                    stamp = entry.get("lastModified") or ""
+                    # Retry pass: this document already went into the device's GunDB
+                    # before the tunnel dropped, so re-sending it would duplicate it.
+                    if doc_id in _done:
+                        status["skipped"] += 1
+                        continue
+                    try:
+                        if not force and write_node_index and unified_memory.has_document(doc_id, source_stamp=stamp):
+                            status["skipped"] += 1
+                            logging.info(f"[rag/reindex-remote] skip unchanged {doc_id}")
+                            continue
+                        raw_bytes = await device.read_file(doc_id)
+                        text = unified_memory.convert_bytes_to_text(raw_bytes, name)
+                        if not text or not text.strip():
+                            status["failed"] += 1
+                            status["lastError"] = f"{name}: empty after conversion"
+                            continue
+
+                        payload = await _rag_stateless_payload(ctx, text, doc_id, title, tags, owner)
+                        # Локальный RAG-индекс ноды (ChromaDB) — только владельцу.
+                        n = 0
+                        if write_node_index:
+                            n = unified_memory.chunk_and_index_document(
+                                text, document_id=doc_id, owner=owner, tags=payload.get("tags") or tags,
+                                title=title, source_stamp=stamp,
+                            )
+                        # Личный GunDB пишет устройство: возвращаем карточку тем же туннелем.
+                        await device.put_knowledge({
+                            "title": payload.get("title") or title,
+                            "text": payload.get("annotation") or "",
+                            "document_id": doc_id,
+                            "tags": payload.get("tags") or tags,
+                            "collection": "user",
+                            "relevance": "contextual",
+                            "docId": doc_id,
+                            "imagePreview": "",
+                            "created": datetime.datetime.now().isoformat(timespec="seconds"),
+                            "annotation_embedding": payload.get("annotation_embedding"),
+                            "chunks": payload.get("chunks") or [],
+                        })
+                        status["indexed"] += 1
+                        _done.add(doc_id)
+                        if write_node_index:
+                            logging.info(f"[rag/reindex-remote] {doc_id}: {n} chunks, card stored on device")
+                        else:
+                            logging.info(
+                                f"[rag/reindex-remote] {doc_id}: {len(payload.get('chunks') or [])} chunks "
+                                f"в GunDB устройства (Chroma ноды не тронут)"
+                            )
+                    except Exception as e:
+                        # A dead tunnel is not a bad document: re-raise so the
+                        # retry loop can rebuild the tunnel instead of marking
+                        # every remaining file as failed.
+                        if _is_tunnel_error(e):
+                            raise
+                        status["failed"] += 1
+                        status["lastError"] = _err_text(e)
+                        logging.warning(f"[rag/reindex-remote] {doc_id} failed: {_err_text(e)}")
+                    finally:
+                        status["pending"] = max(0, status["pending"] - 1)
+                    await asyncio.sleep(0)
+            finally:
+                status["running"] = False
+                status["done"] = True
+                if client is not None:
+                    try:
+                        await client.close()
+                    except Exception:
+                        pass
+                logging.info(
+                    f"[rag/reindex-remote] {job_key} done: {status['indexed']} indexed, "
+                    f"{status['skipped']} skipped, {status['failed']} failed"
+                )
+
+        # Retry driver. A walk over a real folder takes minutes and ICE can drop
+        # the channel mid-flight (candidate switch, NAT rebind, mobile handover).
+        # Losing the whole job on one blip is unacceptable, so we allow one fresh
+        # tunnel and resume from the first file that is still missing.
+        #
+        # The outer try/finally is deliberate: _run_once has its own finally, but
+        # a failure raised BEFORE its body starts (or during retry bookkeeping)
+        # would otherwise leave status["running"]=True forever, and the client
+        # polls /status in an endless loop on a job that no longer exists.
+        try:
+            for attempt in (1, 2):
+                try:
+                    await _run_once()
+                    return
+                except Exception as e:
+                    if attempt == 2:
+                        status["failed"] += 1
+                        status["lastError"] = _err_text(e)
+                        logging.error(
+                            f"[rag/reindex-remote] {link_id} {remote_path} "
+                            f"failed after retry: {_err_text(e)}"
+                        )
+                        return
+                    logging.warning(
+                        f"[rag/reindex-remote] {link_id} {remote_path}: tunnel lost "
+                        f"({_err_text(e)}), retrying once with a new tunnel"
+                    )
+                    if client is not None:
+                        try:
+                            await client.close()
+                        except Exception:
+                            pass
+                    client = None
+                    status["failed"] = max(0, status["failed"] - 1)
+        finally:
+            status["running"] = False
+            status["done"] = True
+            if client is not None:
+                try:
+                    await client.close()
+                except Exception:
+                    pass
+            logging.info(
+                f"[rag/reindex-remote] {job_key} finished: {status['indexed']} indexed, "
+                f"{status['skipped']} skipped, {status['failed']} failed"
+            )
+
+    background_tasks.add_task(_pull_and_index)
+    return {"status": "indexing_started", "path": remote_path, "linkId": link_id}
+
+
+@app.get("/rag/reindex-remote/status")
+async def rag_reindex_remote_status_endpoint(request: Request, linkId: str = "", path: str = ""):
+    """Прогресс P2P-индексации: /rag/reindex-remote/status?linkId=..&path=.."""
+    if not_authorized(request):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    job_key = f"{(linkId or '').strip()}:{(path or '').strip()}"
+    entry = RAG_REMOTE_INDEX_STATUS.get(job_key)
+    if not entry:
+        return {"running": False, "done": True, "indexed": 0, "skipped": 0,
+                "failed": 0, "pending": 0, "lastError": None, "path": path}
+    return entry
+
+
+@app.get("/rag/status")
+async def rag_status_endpoint(request: Request, path: str = "", docId: str = ""):
+    """Прогресс индексации пути (RAG 3.0 §2)."""
+    if not_authorized(request):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    raw = (path or docId or "").strip()
+    # УЖЕ нормализованный путь — не нормализуем повторно (иначе /Documents/Docs → /Docs)
+    entry = RAG_INDEX_STATUS.get(raw) or RAG_INDEX_STATUS.get(_norm_doc_path(raw), {})
+    return {"path": raw or _norm_doc_path(raw), **entry}
+
+
+@app.get("/indexer/from_crawl")
+async def indexer_from_crawl_endpoint(request: Request, url: str = ""):
+    """Легаси-вызов из C++-ноды/устаревшего приложения (from_crawl). Полноценная
+    crawl-индексация на этом бэкенде не настроена — отвечаем безопасным 200,
+    чтобы нода не спамила 404 в логах."""
+    return {"ok": True, "indexed": 0, "failed": 0, "action": "ignored",
+            "note": "from_crawl indexing not configured", "url": url}
+
+
+@app.post("/rag/delete")
+async def rag_delete_endpoint(request: Request):
+    """Удаление документа/потоков из индекса (source — itemPath/URL/docId)."""
+    if not_authorized(request):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    body = await request.json()
+    ctx = await _build_ctx_from_request(request)
+    if not (trusted_private_access(request, ctx) or request.headers.get("X-OMD-Node-Local") == "1"):
+        raise HTTPException(status_code=403, detail="Only the node owner can delete index entries")
+    source = (body.get("source") or body.get("docId") or "").strip()
+    if not source:
+        raise HTTPException(status_code=422, detail="source or docId is required")
+    # виртуальный путь /<share>/... уже каноничен (как хранится в индексе);
+    # реаль /home/<user>/... конвертируем в виртуальный, ничего больше не режем
+    if source.startswith("/home/"):
+        doc_id = _norm_doc_path(source)
+    else:
+        doc_id = "/" + source.strip("/") or source
+    unified_memory.delete_document(doc_id)
+    logging.info(f"[rag/delete] {doc_id}")
+    return {"deleted": 1, "path": doc_id}
+
+
+@app.get("/api/learn_preview")
+async def learn_preview(request: Request):
+    """
+    Preview: конвертирует документ и генерирует аннотацию + облако тегов.
+    НЕ сохраняет в ChromaDB — только для MemoryCardModal (preview перед сохранением).
+    """
+    if not_authorized(request):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    path    = request.query_params.get("path", "")
+    omd_key = _extract_omd_key(request)
+
+    if not path:
+        raise HTTPException(status_code=422, detail="path is required")
+
+    ctx = await _build_ctx_from_request(request)
+    try:
+        text = await core_service.fetch_document_text(
+            path if path.startswith("http") else f"{GATEWAY_URL}{path}",
+            token=omd_key
+        )
+        annotation = await core_service.summarize_for_memory(ctx, text)
+        ai_tags    = await core_service.extract_tags_from_text(ctx, text)
+        return {"annotation": annotation, "tags": ai_tags, "path": path}
+    except Exception as e:
+        logging.error(f"[api/learn_preview] {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/indexer/remove_path")
+async def remove_path(request: Request):
+    """Удаляет путь из unified индекса (вызывается C++ при удалении файла/шары)."""
+    if not_authorized(request):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    path = request.query_params.get("path", "")
+    if not path:
+        raise HTTPException(status_code=422, detail="path is required")
+    unified_memory.delete_path_prefix(path)
+    return {"status": "ok", "path": path}
+
+
+async def _build_ctx_from_request(request: Request):
+    """Строит UserContext из заголовков запроса."""
+    omd_key = _extract_omd_key(request)
+    # Реальный юзер: X-OMD-User или NODE_OWNER из конфига. Без них — уважаем
+    # "Calls me" из настроек клиента, а не выдаём чужака за владельца ноды.
+    raw_user  = request.headers.get("X-OMD-User", "") or SETTINGS.get("NODE_OWNER", "")
+    if not raw_user:
+        raw_user = user_context.node_owner()
+    ctx = user_context.UserContext(
+        type="omd",
+        user_id  = raw_user,
+        settings = {},
+        history  = [],
+        omd_key  = omd_key,
+    )
+    ctx.private_mode = trusted_private_access(request, ctx)
+    ctx.trusted_owner = trusted_owner_access(request)
+    return ctx
+
+
+def _extract_omd_key(request: Request) -> str | None:
+    """Извлекает omd_key из request напрямую (не через FastAPI Depends)."""
+    # Query params
+    omd_key = request.query_params.get("omd_key")
+    if omd_key:
+        return omd_key
+    token = request.query_params.get("token")
+    if token:
+        return token
+    # Headers
+    for header_name in ("X-OMD-Key", "X-OMD-Token", "Token"):
+        val = request.headers.get(header_name)
+        if val:
+            return val
+    # Authorization
+    authorization = request.headers.get("Authorization")
+    if authorization:
+        if authorization.startswith("Bearer "):
+            return authorization[7:]
+        elif authorization.startswith("token:"):
+            return authorization[6:]
+        elif authorization.startswith("token "):
+            return authorization[6:]
+        return authorization
+    return None
+
+def not_authorized(request: Request):
+    # Собственный узел (C++ нода + gateway-proxy работают на той же машине),
+    # внешний AI-TOKEN больше не используется: все запросы доверенные.
+    return False
+
+_ephemeral_image_cache: dict[str, dict] = {}
+
+def store_ephemeral_image(filename: str, data: bytes, ttl: int = 300):
+    cleanup_ephemeral_images()
+    _ephemeral_image_cache[filename] = {
+        "data": data,
+        "expires_at": time.time() + ttl
+    }
+
+def get_ephemeral_image(filename: str) -> bytes | None:
+    cleanup_ephemeral_images()
+    item = _ephemeral_image_cache.get(filename)
+    if item:
+        return item["data"]
+    return None
+
+def cleanup_ephemeral_images():
+    now = time.time()
+    expired = [k for k, v in _ephemeral_image_cache.items() if v["expires_at"] < now]
+    for k in expired:
+        _ephemeral_image_cache.pop(k, None)
+
+
+def schedule_generated_image_push(omd_key: str, device_push, filename: str, image_data: bytes,
+                                  title: str = "", description: str = "", ctx: user_context.UserContext | None = None,
+                                  prompt: str = ""):
+    """Fire-and-forget p2p-пуш сгенерированного фото на устройство пользователя.
+
+    `device_push` клиент выдаёт заранее: `{linkId, consentToken, folder}` из
+    `issueConsent(defaultStorage + '/generated', {writable: true})`. Сбой
+    туннеля не должен валить генерацию — ephemeral-копия и `/chat/image/`
+    остаются, а клиент покажет placeholder «Image expired» после TTL.
+    """
+    if not device_push or not image_data:
+        logging.info(f"[device_push] Skipping push: device_push={bool(device_push)}, image_data={bool(image_data)}")
+        return
+    try:
+        import device_push as _dp
+        if _dp.is_local_target(device_push, ctx):
+            logging.info(f"[device_push] Skipping P2P push: target {device_push.get('linkId')} is the local generation node itself")
+            return
+        logging.info(f"[device_push] Scheduling P2P push for {filename} to {device_push.get('linkId')} (folder={device_push.get('folder')})")
+        _dp.schedule_generated_image_push(
+            omd_key, device_push, filename, image_data, title, description, ctx=ctx, prompt=prompt
+        )
+    except Exception as exc:
+        logging.warning(f"device_push scheduling failed: {exc}")
+
+def is_private_mode(request: Request, ctx: user_context.UserContext | None = None) -> bool:
+    # 0. ctx matches local node owner — always private (= full unified index access)
+    import getpass
+    node_owner = SETTINGS.get("NODE_OWNER") or getpass.getuser()
+    if ctx and ctx.user_id and ctx.user_id == node_owner:
+        return True
+
+    # 1. Explicit header from gateway or P2P client (e.g. isOwner || isSharedTo)
+    pm_header = request.headers.get("X-OMD-Private-Mode")
+    if pm_header is not None:
+        return pm_header == "1" or pm_header.lower() == "true"
+
+    # 2. If token balance is provided and > 0, it's a paid external subscriber (Public Mode)
+    token_balance = float(request.headers.get("x-omd-token-balance", "0.0") or "0.0")
+    if token_balance > 0.0:
+        return False
+
+    # 3. Localhost connection (direct local embedded client on node)
+    client_host = request.client.host if request.client else ""
+    if client_host in ("127.0.0.1", "::1", "localhost"):
+        # If client is authenticated as someone other than node owner, it's NOT private mode
+        if ctx and ctx.user_id and ctx.user_id not in ("anonymous", "system", "") and ctx.user_id != node_owner:
+            return False
+        return True
+
+    return False
+
+
+def validated_node_owner(ctx: user_context.UserContext | None) -> bool:
+    """Строгий гейт приватных данных ноды: знания Chroma, фото-индекс, люди.
+
+    is_private_mode() недостаточна, потому что (а) заголовок X-OMD-Private-Mode
+    может прислать сам клиент (HttpDrive:712 — подделывается), и (б) правило
+    «localhost = приват» опасно для публичной AI-ноды: ВСЕ гостевые запросы
+    приходят на onmychat как localhost (проксируются C++-нодой), а ctx без
+    валидного omd_key — anonymous → приватный доступ чужаку. Поэтому доступ к
+    локальным приватным данным разрешаем только identity, реально
+    валидированной gateway'ем (getProfileData по omd_key запроса) и
+    совпадающей с NODE_OWNER (или юзером ОС для встроенного клиента).
+    Невалидные ключи (web_*), anonymous и приглашённые (X-OMD-Private-Mode) —
+    НЕ владельцы: их данные живут в их личном GunDB на устройстве.
+    """
+    if not ctx or not ctx.user_id or ctx.user_id in ("anonymous", "system", ""):
+        return False
+    if ctx.user_id.startswith("web_"):
+        return False
+    import getpass
+    node_owner = SETTINGS.get("NODE_OWNER") or getpass.getuser()
+    return ctx.user_id == node_owner
+
+
+def is_did_paired(did: str) -> bool:
+    """Проверяет, спарен ли данный DID в конфигурации ноды (PairedDIDs)."""
+    if not did:
+        return False
+    did_clean = did.strip().lower()
+    candidate_paths = [
+        "/home/alexey/projects/omd/onmydisk/Node/target/etc/onmydisk/onmydisk.conf.user",
+        "/etc/onmydisk/onmydisk.conf.user",
+        "/etc/onmydisk/onmydisk.conf",
+    ]
+    for cp in candidate_paths:
+        if os.path.isfile(cp):
+            try:
+                cp_cfg = configparser.ConfigParser()
+                cp_cfg.read(cp, encoding="utf-8")
+                if "PairedDIDs" in cp_cfg:
+                    for k in cp_cfg["PairedDIDs"]:
+                        k_clean = k.strip().lower()
+                        if k_clean == did_clean or k_clean.startswith(did_clean) or did_clean.startswith(k_clean):
+                            return True
+            except Exception as e:
+                logging.debug(f"[is_did_paired] error reading {cp}: {e}")
+    return False
+
+
+def trusted_caller_role(request: Request) -> str:
+    """Роль вызывающего из ДОВЕРЕННЫХ заголовков C++-туннеля."""
+    role = (request.headers.get("X-OMD-Caller-Role") or "").strip().lower()
+    return role if role in ("owner", "shared", "guest") else ""
+
+
+def trusted_private_access(request: Request, ctx: user_context.UserContext | None) -> bool:
+    role = trusted_caller_role(request)
+    pm = request.headers.get("X-OMD-Private-Mode")
+    caller_did = (request.headers.get("X-OMD-Caller-DID") or request.headers.get("X-OMD-DID") or "").strip()
+    did_paired = is_did_paired(caller_did) if caller_did else False
+    logging.info(f"[trusted_private_access] path={request.url.path} role={role!r} pm={pm!r} did={caller_did[:16] if caller_did else 'none'} paired={did_paired} ctx_user={getattr(ctx, 'user_id', None)!r}")
+
+    # 1. Если роль owner (от ноды) или DID спарен на самой ноде — прямой доступ владельца
+    if role == "owner" or did_paired:
+        return True
+
+    # 1b. Прямой локальный вызов из Svar/Web UI без роли гостя
+    client_host = request.client.host if request.client else ""
+    if client_host in ("127.0.0.1", "::1", "localhost") and role not in ("guest", "shared"):
+        if request.headers.get("x-client") == "svar" or pm == "1":
+            return True
+
+    # 2. Гость без спаренного DID и без private mode отсекается
+    if role in ("guest", "shared") and pm != "1":
+        return False
+
+    # 3. Если private mode явно включен и запрос локальный или доверенный
+    if is_private_mode(request, ctx):
+        return True
+
+    return validated_node_owner(ctx)
+
+
+def trusted_owner_access(request: Request) -> bool:
+    """Вызовывающий — ВЛАДЕЛЕЦ ноды по доверенным заголовкам туннеля
+    (role=owner, или DID, спаренный на самой ноде). Тот же trust-базис, что и
+    в trusted_private_access, но уровень «владелец»: например, владелец читает
+    документы СВОЕЙ ноды напрямую с диска, а не через шлюз снаружи."""
+    role = trusted_caller_role(request)
+    if role == "owner":
+        return True
+    caller_did = (request.headers.get("X-OMD-Caller-DID") or request.headers.get("X-OMD-DID") or "").strip()
+    if bool(caller_did) and is_did_paired(caller_did):
+        return True
+    client_host = request.client.host if request.client else ""
+    if client_host in ("127.0.0.1", "::1", "localhost") and role not in ("guest", "shared"):
+        if request.headers.get("x-client") == "svar" or request.headers.get("X-OMD-Private-Mode") == "1":
+            return True
+    return False
+
+
+def get_omd_key(
+    request: Request,
+    omd_key: str | None = Query(None),
+    token: str | None = Query(None),
+    x_omd_key: str | None = Header(None, alias="X-OMD-Key"),
+    x_omd_token: str | None = Header(None, alias="X-OMD-Token"),
+    authorization: str | None = Header(None),
+    token_header: str | None = Header(None, alias="Token")
+):
+    if omd_key:
+        logging.info(f"omd_key found in query: {omd_key[:10]}...")
+        return omd_key
+    if token:
+        logging.info(f"omd_key (token) found in query: {token[:10]}...")
+        return token
+    if token_header:
+        logging.info(f"omd_key found in Token header: {token_header[:10]}...")
+        return token_header
+    if x_omd_key:
+        logging.info(f"omd_key found in X-OMD-Key header: {x_omd_key[:10]}...")
+        return x_omd_key
+    if x_omd_token:
+        logging.info(f"omd_key found in X-OMD-Token header: {x_omd_token[:10]}...")
+        return x_omd_token
+    if authorization:
+        # Handle "Bearer <token>", "token:<token>", "token <token>" or just "<token>"
+        logging.info(f"omd_key found in Authorization header: {authorization[:20]}...")
+        auth_val = authorization.strip()
+        if auth_val.startswith("Bearer "):
+            return auth_val[7:].strip()
+        if auth_val.startswith("token:"):
+            return auth_val[6:].strip()
+        if auth_val.startswith("token "):
+            return auth_val[6:].strip()
+        return auth_val
+    
+    # Check cookies
+    cookie_token = request.cookies.get("omd_key")
+    if cookie_token:
+        logging.info(f"omd_key found in cookie: {cookie_token[:10]}...")
+        return cookie_token
+
+    logging.debug("No omd_key found in request")
+    return None
+
+@app.get("/search")
+async def search(
+    request: Request,
+    q: str | None = Query(None),
+    limit: int | None = Query(None),
+    lang: str | None = Query(None),
+    omd_key: str | None = Depends(get_omd_key)
+):
+    if not q:
+        q = request.headers.get("q")
+    if not q:
+        raise HTTPException(status_code=422, detail="q is required in query or headers")
+
+    if limit is None:
+        header_limit = request.headers.get("limit")
+        default_limit = int(SETTINGS.get("SEARCH_TOP_K", "20"))
+        limit = int(header_limit) if header_limit and header_limit.isdigit() else default_limit
+
+    if not lang:
+        lang = request.headers.get("lang") or "en"
+
+    ctx = get_ctx(omd_key)
+    private_mode = trusted_private_access(request, ctx)
+
+    out_dict = {}
+    grouped_documents = {}
+
+    # 1. Primary semantic search in unified_memory (OMD 3.0 ChromaDB)
+    try:
+        results = unified_memory.search_files_for_ui(
+            query=q,
+            private_mode=private_mode,
+            top_k=max(limit * 3, 30)
+        )
+        for r in results:
+            doc_id = r.get("document_id") or r.get("id", "").split(":chunk:")[0]
+            if not doc_id:
+                continue
+
+            item_path = doc_id
+            if item_path.startswith("http://") or item_path.startswith("https://"):
+                try:
+                    from urllib.parse import urlparse
+                    item_path = urlparse(item_path).path
+                except Exception:
+                    pass
+
+            owner_val = r.get("owner", "")
+            if ctx and hasattr(ctx, "user_id") and ctx.user_id and item_path.startswith(f"/{ctx.user_id}/"):
+                item_path = item_path[len(ctx.user_id) + 1:]
+            elif owner_val and item_path.startswith(f"/{owner_val}/"):
+                item_path = item_path[len(owner_val) + 1:]
+
+            dist = r.get("distance", 1.0)
+            score = r.get("relevance")
+            if not isinstance(score, (int, float)):
+                score = round((1.0 - dist) * 100, 1)
+
+            snippet = r.get("text", "")
+            if len(snippet) > 300:
+                snippet = snippet[:300] + "..."
+
+            title = r.get("title") or os.path.basename(item_path) or doc_id
+
+            if doc_id not in grouped_documents:
+                grouped_documents[doc_id] = {
+                    "itemPath": item_path,
+                    "title": title,
+                    "snippet": snippet,
+                    "description": r.get("description", ""),
+                    "owner": owner_val,
+                    "contentType": r.get("contentType", ""),
+                    "last_modified": r.get("source_stamp") or r.get("timestamp", ""),
+                    "relevance": score,
+                    "image_preview": r.get("image_preview", ""),
+                    "isFolder": r.get("is_folder", False),
+                    "_distance": dist
+                }
+            else:
+                if dist < grouped_documents[doc_id]["_distance"]:
+                    grouped_documents[doc_id]["_distance"] = dist
+                    grouped_documents[doc_id]["relevance"] = score
+                    grouped_documents[doc_id]["snippet"] = snippet
+                    if r.get("image_preview"):
+                        grouped_documents[doc_id]["image_preview"] = r.get("image_preview")
+    except Exception as e:
+        logging.error(f"[api] unified_memory search error: {e}")
+
+    sorted_docs = sorted(grouped_documents.values(), key=lambda x: x.get("_distance", 1.0))[:limit]
+
+    threshold = float(SETTINGS.get("SEARCH_THRESHOLD", "0.75"))
+    out_dict["system_info"] = {
+        "is_system": True,
+        "total_found": len(sorted_docs),
+        "returned_limit": limit,
+        "relevance_threshold": threshold
+    }
+
+    for item in sorted_docs:
+        key = item["itemPath"]
+        out_dict[key] = {
+            "itemPath": item["itemPath"],
+            "title": item["title"],
+            "snippet": item["snippet"],
+            "description": item.get("description", ""),
+            "owner": item.get("owner", ""),
+            "contentType": item.get("contentType", ""),
+            "last_modified": item.get("last_modified", ""),
+            "relevance": item["relevance"],
+            "image_preview": item.get("image_preview", ""),
+            "isFolder": item.get("isFolder", False)
+        }
+
+    return out_dict
+# CORS middleware already added at line 34
+
+@app.on_event("startup")
+async def startup_event():
+    logging.info("[api] Startup complete")
+
+# ==== Модели ввода ====
+
+class ChatInput(BaseModel):
+    omd_key: str
+    prompt: str
+    chat: str = "default"
+    settings: dict | None = None
+    history: list | None = None
+    knowledge: list | None = None
+    prompt_id: str | None = None
+
+class ChatStreamInput(BaseModel):
+    omd_key: str
+    prompt: str
+    chat: str = "default"
+    history: list | None = None
+    settings: dict | None = None
+    knowledge: list | None = None
+    prompt_id: str | None = None
+    chat_summary: str | None = None
+    total_message_count: int | None = None
+    image_delivery: str | None = None
+    client: str | None = None
+    rag_focus: dict | None = None
+    attached_docs: list | None = None
+    device_push: dict | None = None
+    mcp_keys: dict | None = None
+
+class ImportInput(BaseModel):
+    omd_key: str
+    url_or_path: str
+    collection: str = "user"
+
+class MemorizeInput(BaseModel):
+    omd_key: str
+    text: str
+
+class RecognizeInput(BaseModel):
+    omd_key: str
+    prompt: str = ""
+    chat: str = "default"
+    settings: dict | None = None
+    history: list | None = None
+
+class MemoryUpdate(BaseModel):
+    text: str
+    collection: str = "user"
+    relevance: str = "contextual"
+    document_id: str | None = None
+    memory_id: str | None = None
+
+class MemoryImport(BaseModel):
+    collection: str = "user"
+    document_id: str | None = None
+
+
+
+class GenerateInput(BaseModel):
+    omd_key: str
+    prompt: str
+    chat: str = "default"
+    message_index: int | None = None
+    message_nonce: str | None = None
+    settings: dict | None = None
+    history: list | None = None
+    prompt_id: str | None = None
+    device_push: dict | None = None
+    upload_storage: bool | None = None
+    mcp_keys: dict | None = None
+
+
+class KreaGenerateInput(BaseModel):
+    omd_key: str | None = None
+    prompt: str = ""
+    persona_id: str | None = None
+    persona_name: str | None = None
+    persona_prompt: str | None = None
+    persona_lora: str | None = None
+    force_avatar_ref: bool | None = False
+    reference_image: str | None = None
+    reference_images: list[str] | None = None
+    sliders: dict | None = None
+    width: int = 896
+    height: int = 1152
+    steps: int = 6
+    cfg: float = 1.0
+    seed: int | None = None
+    chat: str = "default"
+    settings: dict | None = None
+    device_push: dict | None = None
+    upload_storage: bool | None = None
+    image_delivery: str | None = "inline"
+    save_local: bool | None = False
+    mcp_keys: dict | None = None
+    subfolder: str | None = None
+    filename_prefix: str | None = None
+    custom_title: str | None = None
+    custom_description: str | None = None
+    stream: bool | None = False
+
+
+class KreaVideoGenerateInput(BaseModel):
+    omd_key: str | None = None
+    prompt: str = ""
+    persona_id: str | None = None
+    persona_name: str | None = None
+    persona_prompt: str | None = None
+    reference_image: str | None = None
+    reference_images: list[str] | None = None
+    video_ref_mode: str | None = "auto"
+    extend_video: str | None = None
+    width: int = 1344
+    height: int = 768
+    duration: float = 5.0
+    quality: str = "hd"
+    steps: int = 8
+    seed: int | None = None
+    chat: str = "default"
+    settings: dict | None = None
+    device_push: dict | None = None
+    upload_storage: bool | None = None
+    save_local: bool | None = False
+    mcp_keys: dict | None = None
+    subfolder: str | None = None
+    filename_prefix: str | None = None
+    custom_title: str | None = None
+    custom_description: str | None = None
+    stream: bool | None = False
+
+
+class PersonaGenerateInput(BaseModel):
+    omd_key: str | None = None
+    archetype: str = "alt"
+    gender: str = "female"
+    style: str | None = None
+    settings: dict | None = None
+    mcp_keys: dict | None = None
+
+
+class RandomPromptInput(BaseModel):
+    omd_key: str = ""
+    persona_id: str | None = None
+    persona_name: str | None = None
+    persona_prompt: str | None = None
+    persona_lora: str | None = None
+    style: str | None = None
+    keywords: str | None = None
+    archetypes: str | None = None
+    loras: str | None = None
+    chat: str = "default"
+
+
+
+class PersonaDescribeFaceInput(BaseModel):
+    omd_key: str | None = None
+    image: str
+
+
+class UpdateAssistantInput(BaseModel):
+    omd_key: str
+    style: str | None = None
+    system_prompt: str | None = None
+    assistant_name: str | None = None
+    assistant_title: str | None = None
+    assistant_appearance: str | None = None
+    assistant_model: str | None = None
+    name: str | None = None
+    defaultStorage: str | None = None
+
+class AvatarGenerateInput(BaseModel):
+    omd_key: str
+    style: str | None = None
+    character_lora: str | None = None
+    prompt: str = ""
+    settings: dict | None = None
+    history: list | None = None
+    device_push: dict | None = None
+
+# ... (ommitted lines)
+
+@app.get("/assistant")
+async def assistant_info(omd_key: str | None = Depends(get_omd_key)):
+    # Force reload settings from storage to ensure we have the latest data (bypass cache)
+    ctx = get_ctx(omd_key, force_reload=True)
+    try:
+        assistant = {
+            "assistant_name": ctx.settings.get("assistant_name", user_context.DEFAULT_ASSISTANT_NAME),
+            "name": ctx.settings.get("name") or ctx.settings.get("username") or "User",
+            "title": ctx.settings.get("assistant_title", user_context.DEFAULT_ASSISTANT_TITLE),
+            "system_prompt": ctx.settings.get("system_prompt", ""),
+            "assistant_appearance": ctx.settings.get("assistant_appearance", user_context.DEFAULT_ASSISTANT_APPEARANCE),
+            "style": ctx.settings.get("style", ""),
+            "assistant_model": ctx.settings.get("assistant_model", "Domi"),
+            "defaultStorage": ctx.settings.get("defaultStorage", ""),
+            "avatar_version": await core_service.get_avatar_version(ctx),
+            "omd_key": ctx.omd_key or omd_key,
+            "summary_threshold": core_service.SUMMARY_THRESHOLD,
+            "capabilities": {
+                "image_generation": await core_service.is_comfy_available(),
+                "vision": await core_service.is_vision_available(),
+                "krea2": await core_service.is_krea_available(ctx),
+                "chat": True
+            }
+        }
+        return assistant
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ... (ommitted lines)
+
+@app.post("/updateAssistant")
+async def update_assistant(request: Request):
+    try:
+        body = await request.json()
+        logging.info(f"UpdateAssistant payload: {body}")
+        data = UpdateAssistantInput(**body)
+    except Exception as e:
+        logging.error(f"Validation error: {e}")
+        raise HTTPException(status_code=422, detail=str(e))
+
+    ctx = get_ctx(data.omd_key)
+    try:
+        # Update settings with provided values
+        if data.style is not None:
+            ctx.settings["style"] = data.style
+        if data.system_prompt is not None:
+            ctx.settings["system_prompt"] = data.system_prompt
+        if data.assistant_appearance is not None:
+            ctx.settings["assistant_appearance"] = data.assistant_appearance
+        if data.assistant_name is not None:
+            ctx.settings["assistant_name"] = data.assistant_name
+        if data.assistant_title is not None:
+            ctx.settings["assistant_title"] = data.assistant_title
+        if data.assistant_model is not None:
+            ctx.settings["assistant_model"] = data.assistant_model
+        if data.name is not None:
+            ctx.settings["name"] = data.name
+        if data.defaultStorage is not None:
+            ctx.settings["defaultStorage"] = data.defaultStorage
+        
+        user_context.save_user_settings(ctx)
+        
+        settings = ctx.settings.copy()
+        settings["omd_key"] = ctx.omd_key
+        
+        return {"status": "ok", "settings": settings, "avatar_version": await core_service.get_avatar_version(ctx)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class AvatarUpdateInput(BaseModel):
+    omd_key: str
+    image_path: str
+    style: str | None = None
+    character_lora: str | None = None
+    assistant_model: str | None = None
+    assistant_appearance: str | None = None
+
+class SignoutInput(BaseModel):
+    omd_key: str
+
+
+# ==== Хелпер ====
+
+def get_ctx(omd_key: str | None, force_reload: bool = False):
+    if omd_key in ["undefined", "null"]:
+        omd_key = ""
+    # Без omd_key юзер остаётся анонимом ("anonymous"). Владельцем ноды его делает только
+    # явный X-OMD-User / NODE_OWNER (см. _build_ctx_from_request), а не private mode
+    # запроса — ос-юзера в качестве владельца не используем.
+    return user_context.get_context_by_account(omd_key, "", force_reload)
+
+
+def serve_file(filepath: str, request: Request, size: int = None) -> Response:
+    if not filepath or not os.path.isfile(filepath):
+        raise HTTPException(status_code=404, detail="File not found")
+
+    # MIME-тип
+    mime_type, _ = mimetypes.guess_type(filepath)
+    if mime_type is None:
+        mime_type = "application/octet-stream"
+
+    # Данные о файле
+    stat = os.stat(filepath)
+    mtime = datetime.datetime.fromtimestamp(stat.st_mtime, tz=datetime.timezone.utc)
+    last_modified = email.utils.format_datetime(mtime, usegmt=True)
+
+    # ETag на основе размера файла + mtime + параметра size
+    etag_raw = f"{stat.st_mtime}-{stat.st_size}-{size}".encode()
+    etag = hashlib.md5(etag_raw).hexdigest()
+
+    # Проверка If-None-Match (ETag)
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304)
+
+    # Проверка If-Modified-Since
+    if_modified_since = request.headers.get("if-modified-since")
+    if if_modified_since:
+        try:
+            ims_time = email.utils.parsedate_to_datetime(if_modified_since)
+            if ims_time >= mtime.replace(microsecond=0):
+                return Response(status_code=304)
+        except Exception:
+            pass  # игнорируем неверный формат заголовка
+
+    headers = {
+        "Cache-Control": "public, max-age=86400",  # кэш на 24 часа
+        "ETag": etag,
+        "Last-Modified": last_modified,
+    }
+
+    # Если нужен ресайз
+    if size and mime_type.startswith("image/"):
+        try:
+            with Image.open(filepath) as img:
+                try:
+                    from PIL import ImageOps
+                    img = ImageOps.exif_transpose(img)
+                except Exception:
+                    pass
+                img.thumbnail((size, size), Image.Resampling.LANCZOS)
+                buf = io.BytesIO()
+                fmt = img.format if img.format else "JPEG"
+                if fmt.upper() in ("JPEG", "JPG"):
+                    if img.mode in ("RGBA", "LA", "P"):
+                        img = img.convert("RGB")
+                    img.save(buf, format="JPEG", quality=90, optimize=True)
+                    mime_type = "image/jpeg"
+                else:
+                    img.save(buf, format=fmt)
+                buf.seek(0)
+                return StreamingResponse(buf, media_type=mime_type, headers=headers)
+        except Exception as e:
+            logging.warning(f"[serve_file] Error generating thumbnail for {filepath}: {e}")
+            raise HTTPException(status_code=423, detail="File is being written or unreadable")
+
+    # Если без ресайза — обычный FileResponse
+    return FileResponse(
+        filepath,
+        media_type=mime_type,
+        filename=os.path.basename(filepath),
+        headers=headers
+    )
+
+
+def serve_default_avatar(default_path: str, request: Request, size: int = None) -> Response:
+    # 1. Try to ensure it is created on disk
+    if not os.path.exists(default_path):
+        try:
+            from PIL import ImageDraw
+            os.makedirs(os.path.dirname(default_path), exist_ok=True)
+            img = Image.new("RGBA", (512, 512), color=(74, 144, 226, 255))
+            draw = ImageDraw.Draw(img)
+            draw.ellipse([186, 130, 326, 270], fill=(255, 255, 255, 255))
+            draw.ellipse([96, 320, 416, 580], fill=(255, 255, 255, 255))
+            img.save(default_path, "PNG")
+            logging.info(f"Created default avatar at {default_path}")
+        except Exception as err:
+            logging.error(f"Could not write default avatar to disk: {err}")
+            
+    # 2. If it exists on disk now, serve it normally
+    if os.path.isfile(default_path):
+        try:
+            return serve_file(default_path, request, size=size)
+        except Exception as serve_err:
+            logging.error(f"Error serving default avatar from disk: {serve_err}")
+            
+    # 3. In-memory fallback if disk operations failed
+    try:
+        from PIL import ImageDraw
+        import io
+        img = Image.new("RGBA", (512, 512), color=(74, 144, 226, 255))
+        draw = ImageDraw.Draw(img)
+        draw.ellipse([186, 130, 326, 270], fill=(255, 255, 255, 255))
+        draw.ellipse([96, 320, 416, 580], fill=(255, 255, 255, 255))
+        
+        if size:
+            img.thumbnail((size, size))
+            
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+        return StreamingResponse(buf, media_type="image/png")
+    except Exception as mem_err:
+        logging.error(f"Fatal error generating fallback avatar in memory: {mem_err}")
+        raise HTTPException(status_code=500, detail="Could not serve default avatar")
+
+
+# ==== Эндпоинты ====
+
+
+
+@app.get("/assistant/avatar")
+async def assistant_avatar(
+    request: Request,
+    omd_key: str | None = Depends(get_omd_key),
+    size: int = 80
+):
+    ctx = get_ctx(omd_key)
+    try:
+        # Fallback to default model avatar
+        avatar_path = core_service.get_assistant_avatar_path(ctx)
+        return serve_file(avatar_path, request, size=size)
+
+    except HTTPException as e:
+        if e.status_code == 404:
+            logging.info("Model avatar not found, serving default")
+        else:
+            logging.warning(f"HTTP error serving avatar: {e.detail}")
+        default_path = os.path.join(core_service.APP_ROOT_DIR, core_service.AVATAR_DIR, "default.png")
+        return serve_default_avatar(default_path, request, size=size)
+    except Exception as e:
+        logging.error(f"Error serving avatar: {e}")
+        default_path = os.path.join(core_service.APP_ROOT_DIR, core_service.AVATAR_DIR, "default.png")
+        return serve_default_avatar(default_path, request, size=size)
+
+
+@app.get("/chat/image/{filename:path}")
+@app.get("/generated/{filename:path}")
+@app.get("/{storage_name}/generated/{filename:path}")
+async def get_chat_image(
+    filename: str,
+    request: Request,
+    storage_name: str | None = None,
+    size: int | None = None,
+    omd_key: str | None = Depends(get_omd_key)
+):
+    ctx = get_ctx(omd_key)
+    safe_filename = os.path.basename(filename)
+    lower_fn = safe_filename.lower()
+    is_markdown = lower_fn.endswith(".md")
+    is_video = lower_fn.endswith((".mp4", ".webm", ".mov"))
+    if is_markdown:
+        content_media_type = "text/markdown; charset=utf-8"
+    else:
+        guessed_mime, _ = mimetypes.guess_type(safe_filename)
+        content_media_type = guessed_mime or ("video/mp4" if is_video else "image/png")
+
+    # 1. Check in-memory ephemeral cache first (Zero Contact / Subscriber mode)
+    ephemeral_data = get_ephemeral_image(safe_filename)
+    if ephemeral_data:
+        if size and not is_markdown and not is_video:
+            try:
+                img = Image.open(io.BytesIO(ephemeral_data))
+                img.thumbnail((size, size))
+                buf = io.BytesIO()
+                img.save(buf, format="PNG")
+                ephemeral_data = buf.getvalue()
+            except Exception as e:
+                logging.warning(f"Failed to resize in-memory image: {e}")
+
+        total_len = len(ephemeral_data)
+        range_header = request.headers.get("range")
+        if range_header and range_header.startswith("bytes="):
+            try:
+                parts = range_header.replace("bytes=", "").split("-")
+                start = int(parts[0]) if parts[0] else 0
+                end = int(parts[1]) if len(parts) > 1 and parts[1] else total_len - 1
+                end = min(end, total_len - 1)
+                chunk = ephemeral_data[start:end + 1]
+                return Response(
+                    content=chunk,
+                    status_code=206,
+                    media_type=content_media_type,
+                    headers={
+                        "Content-Range": f"bytes {start}-{end}/{total_len}",
+                        "Content-Length": str(len(chunk)),
+                        "Accept-Ranges": "bytes",
+                        "Cache-Control": "public, max-age=300"
+                    }
+                )
+            except Exception as e:
+                logging.warning(f"Error handling Range request: {e}")
+
+        async def stream_ephemeral():
+            chunk_size = 32768
+            for i in range(0, len(ephemeral_data), chunk_size):
+                yield ephemeral_data[i:i + chunk_size]
+                await asyncio.sleep(0.002)
+
+        return StreamingResponse(
+            stream_ephemeral(),
+            media_type=content_media_type,
+            headers={
+                "Content-Length": str(total_len),
+                "Accept-Ranges": "bytes",
+                "Cache-Control": "public, max-age=300"
+            }
+        )
+
+    # 2. Local storage candidates (Private Mode / Owner on device)
+    candidates = []
+    home_dir = os.path.expanduser("~")
+    try:
+        resolved_dir = core_service.resolve_local_target_dir(ctx, "generated")
+        candidates.append(os.path.join(resolved_dir, safe_filename))
+    except Exception:
+        pass
+    candidates.append(os.path.join(home_dir, "Data", "generated", safe_filename))
+    candidates.append(os.path.join(home_dir, "Data", "Krea2", safe_filename))
+    candidates.append(os.path.join("/content/ComfyUI/output", "generated", safe_filename))
+    candidates.append(os.path.join("/content/ComfyUI/output", "Krea2", safe_filename))
+    candidates.append(os.path.join("/content/ComfyUI/output", safe_filename))
+
+    clean_storage = (ctx.storage or "OnMyChat").strip("/")
+    if ctx.user_id and clean_storage.startswith(ctx.user_id + "/"):
+        clean_storage = clean_storage[len(ctx.user_id) + 1:]
+    elif ctx.user_id and clean_storage == ctx.user_id:
+        clean_storage = "OnMyChat"
+
+    candidates.append(os.path.join(home_dir, clean_storage, "generated", safe_filename))
+    candidates.append(os.path.join(home_dir, "OnMyChat", "generated", safe_filename))
+    if ctx.user_id:
+        candidates.append(os.path.join(core_service.APP_ROOT_DIR, USER_DATA_DIR, ctx.user_id, "generated", safe_filename))
+    candidates.append(os.path.join(core_service.APP_ROOT_DIR, USER_DATA_DIR, "default", "generated", safe_filename))
+    candidates.append(os.path.join(core_service.APP_ROOT_DIR, USER_DATA_DIR, "anonymous", "generated", safe_filename))
+    candidates.append(os.path.join(core_service.APP_ROOT_DIR, "generated", safe_filename))
+
+    for c in candidates:
+        if os.path.isfile(c):
+            return serve_file(c, request, size=size)
+
+    base_user_data = os.path.join(core_service.APP_ROOT_DIR, USER_DATA_DIR)
+    if os.path.isdir(base_user_data):
+        for root, dirs, files in os.walk(base_user_data):
+            if safe_filename in files:
+                target = os.path.join(root, safe_filename)
+                if os.path.isfile(target):
+                    return serve_file(target, request, size=size)
+
+    raise HTTPException(status_code=404, detail="Image not found")
+
+
+@app.post("/assistant/avatar/generate")
+async def generate_avatar_endpoint(data: AvatarGenerateInput):
+    ctx = get_ctx(data.omd_key)
+    if data.settings:
+        ctx.settings.update(data.settings)
+        ctx.storage = ctx.settings.get("defaultStorage", "")
+    try:
+        # Use hardcoded prompt for avatar generation as requested
+        prompt = "social profile photo, office style, headshot"
+        result = await core_service.generate_avatar(ctx, data.style, data.character_lora, prompt, device_push=data.device_push)
+        if result and "image" in result:
+             out = {"image": result["image"], "url": result.get("url")}
+             if result.get("device_path"):
+                 out["device_path"] = result["device_path"]
+             return out
+        else:
+             raise Exception("Failed to generate avatar")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/assistant/avatar/update")
+async def update_avatar_endpoint(data: AvatarUpdateInput):
+    ctx = get_ctx(data.omd_key)
+    try:
+        # Update settings if provided
+        if data.style:
+            ctx.settings["style"] = data.style
+        if data.assistant_model:
+            ctx.settings["assistant_model"] = data.assistant_model
+        if data.character_lora:
+            ctx.settings["character_lora"] = data.character_lora
+        if data.assistant_appearance:
+            ctx.settings["assistant_appearance"] = data.assistant_appearance
+        
+        if data.style or data.assistant_model or data.character_lora or data.assistant_appearance:
+            user_context.save_user_settings(ctx)
+
+        # The image path provided is just filename in 'generated' folder (e.g. AVATAR_....png)
+        filename = data.image_path
+        
+        if ctx.storage and ctx.omd_key:
+             # Remote
+             # Copy generated/{filename} to /avatar.png
+             # We assume we can download from gateway and re-upload.
+             
+             base_url = user_context.GATEWAY_URL.rstrip("/")
+             clean_storage_id = ctx.storage.strip("/")
+             source_url = f"{base_url}/{clean_storage_id}/generated/{filename}"
+             
+             # Fetch the image
+             resp = requests.get(source_url, headers={"Authorization": f"token:{ctx.omd_key}"})
+             
+             if resp.status_code != 200:
+                  raise Exception(f"Failed to retrieve generated image: {resp.status_code}")
+             
+             img_data = resp.content
+             
+             # 2. Upload to avatar.png
+             from utils import upload_data_to_storage
+             upload_data_to_storage(ctx.omd_key, ctx.storage, "avatar.png", img_data, "image/png")
+             
+        else:
+             # Local
+             user_folder = f"{core_service.APP_ROOT_DIR}/{USER_DATA_DIR}/{ctx.user_id}/generated"
+             src_path = os.path.join(user_folder, filename)
+             
+             if not os.path.exists(src_path):
+                  raise Exception("Image file not found")
+             
+             # We don't really have a 'local avatar' standard path except 'avatar.png' in user root maybe?
+             # But `assistant_avatar` fallback logic uses `core_service.get_assistant_avatar_path(ctx)` which returns model path.
+             # Wait, `assistant_avatar` line 200 checks storage.
+             # If no storage (local user), it falls back to default model avatar.
+             # So local users currently CANNOT have custom avatars?
+             # That seems to be the case in the current code snippet for `assistant_avatar`.
+             # It checks `if ctx.storage ...` then `Fallback to default model avatar`.
+             
+             # We should probably support local avatar too if we want this feature to work for local users.
+             # But `modals.html` logic seems to imply logged in users (storage).
+             # Let's stick to storage logic for now or try to support local if easy.
+             pass
+ 
+        version = await core_service.get_avatar_version(ctx)
+        return {"status": "ok", "avatar_version": version}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/assistant/import_character")
+async def import_character_endpoint(
+    file: UploadFile = File(None),
+    path: str = Form(None),
+    omd_key: str | None = Form(None)
+):
+    """
+    Imports a SillyTavern / TavernAI Character Card PNG.
+    Extracts the 'chara' tEXt chunk, parses character personality,
+    description, system prompt and example dialogue, saves the avatar,
+    and updates the assistant context.
+    """
+    ctx = get_ctx(omd_key)
+    try:
+        contents = None
+        if file is not None and hasattr(file, "read"):
+            contents = await file.read()
+        elif path and os.path.isfile(path):
+            with open(path, "rb") as f:
+                contents = f.read()
+        else:
+            raise HTTPException(status_code=400, detail="Either file upload or valid path is required")
+
+        img = Image.open(io.BytesIO(contents))
+        card_json_str = None
+        if "chara" in img.info:
+            raw_b64 = img.info["chara"]
+            card_json_str = base64.b64decode(raw_b64).decode("utf-8")
+
+        if not card_json_str:
+            raise HTTPException(status_code=400, detail="Image does not contain a SillyTavern character card ('chara' metadata chunk).")
+
+        card_data = json.loads(card_json_str)
+        chara = card_data.get("data", card_data)
+        name = chara.get("name", "Character")
+        description = chara.get("description", "")
+        personality = chara.get("personality", "")
+        scenario = chara.get("scenario", "")
+        first_mes = chara.get("first_mes", "")
+        mes_example = chara.get("mes_example", "")
+        system_prompt = chara.get("system_prompt", "")
+        tags = chara.get("tags", [])
+
+        # Compose unified system prompt
+        sections = []
+        if system_prompt:
+            sections.append(system_prompt.strip())
+        if description:
+            sections.append(f"### Character Description:\n{description.strip()}")
+        if personality:
+            sections.append(f"### Personality:\n{personality.strip()}")
+        if scenario:
+            sections.append(f"### Scenario / Setting:\n{scenario.strip()}")
+        if mes_example:
+            sections.append(f"### Dialogue Examples:\n{mes_example.strip()}")
+
+        full_prompt = "\n\n".join(sections)
+
+        # Save avatar image to onmychat avatars directory
+        safe_name = re.sub(r'[^\w\-]', '_', name).strip('_') or "character"
+        avatar_dir = os.path.join(core_service.APP_ROOT_DIR, core_service.AVATAR_DIR)
+        os.makedirs(avatar_dir, exist_ok=True)
+        avatar_dest = os.path.join(avatar_dir, f"{safe_name}.png")
+        img.convert("RGBA").save(avatar_dest, "PNG")
+
+        # Update ctx settings
+        ctx.settings["assistant_name"] = name
+        ctx.settings["assistant_model"] = safe_name
+        ctx.settings["system_prompt"] = full_prompt
+        ctx.settings["first_message"] = first_mes
+        user_context.save_user_settings(ctx)
+
+        logging.info(f"[import_character] Successfully imported '{name}' ({safe_name}), avatar saved to {avatar_dest}")
+
+        return {
+            "ok": True,
+            "name": name,
+            "title": "Companion",
+            "assistant_model": safe_name,
+            "avatar_url": f"/assistant/model/{safe_name}/avatar",
+            "first_message": first_mes,
+            "system_prompt": full_prompt,
+            "tags": tags
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Failed to import character: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/assistant/horde_models")
+async def get_horde_models():
+    """Returns active text models on AI Horde sorted by worker count."""
+    try:
+        models = await horde_client.get_online_text_models(limit=40)
+        return {"models": models}
+    except Exception as e:
+        logging.error(f"Error fetching horde models: {e}")
+        return {"models": []}
+
+
+@app.get("/assistant/loras")
+async def get_loras(request: Request, mode: str | None = Query(None), omd_key: str | None = Depends(get_omd_key)):
+    ctx = get_ctx(omd_key)
+    ctx.private_mode = trusted_private_access(request, ctx)
+    ctx.trusted_owner = trusted_owner_access(request)
+    return core_service.get_available_loras(ctx, mode=mode)
+
+@app.get("/assistant/model/{lora_name}/avatar")
+async def model_avatar(
+    request: Request,
+    lora_name: str,
+    omd_key: str | None = Depends(get_omd_key),
+    size: int = 80
+):
+    ctx = get_ctx(omd_key)
+    try:
+        avatar_path = core_service.get_model_avatar_path(lora_name)
+
+        logging.info(f"Serving model avatar: {avatar_path}")
+        return serve_file(avatar_path, request, size=size)
+    except HTTPException as e:
+        if e.status_code == 404:
+            logging.info(f"Model avatar not found for {lora_name}, serving default")
+        else:
+            logging.warning(f"HTTP error serving model avatar: {e.detail}")
+        default_path = os.path.join(core_service.APP_ROOT_DIR, core_service.AVATAR_DIR, "default.png")
+        return serve_default_avatar(default_path, request, size=size)
+    except Exception as e:
+        logging.error(f"Error serving model avatar: {e}")
+        default_path = os.path.join(core_service.APP_ROOT_DIR, core_service.AVATAR_DIR, "default.png")
+        return serve_default_avatar(default_path, request, size=size)
+    
+    
+@app.get("/assistant/avatars")
+async def get_assistant_avatars_endpoint(omd_key: str | None = Depends(get_omd_key)):
+    ctx = get_ctx(omd_key)
+    avatars = await core_service.get_generated_avatars(ctx)
+    return {"status": "ok", "avatars": avatars}
+
+
+@app.post("/chats/{chat}/archive")
+async def archive_chat(chat: str, omd_key: str | None = Depends(get_omd_key)):
+    return {"status": "ok", "chat": chat or "default"}
+
+@app.post("/chats/{chat}/restore")
+async def restore_chat(chat: str, omd_key: str | None = Depends(get_omd_key)):
+    return {"status": "ok", "chat": chat or "default"}
+
+
+# [LEGACY HISTORY] /history endpoints removed
+
+
+
+# [LEGACY HISTORY] delete_history removed
+
+
+
+@app.get("/memory")
+async def memory_endpoint(omd_key: str | None = Depends(get_omd_key), collection: str = "user"):
+    ctx = get_ctx(omd_key)
+    try:
+        memories = memory_index.load_memories(ctx, collection=collection)
+        return {"collection": collection, "memories": memories}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/memory")
+async def update_memory(data: MemoryUpdate, omd_key: str | None = Depends(get_omd_key)):
+    ctx = get_ctx(omd_key)  
+    try:
+        updated_id = memory_index.update_memory_card(
+            ctx=ctx,
+            text=data.text,
+            collection=data.collection,
+            relevance=data.relevance,
+            document_id=data.document_id,
+            mem_id=data.memory_id
+        )
+        if not updated_id:
+            raise HTTPException(status_code=404, detail="Memory not found")
+        return {"status": "ok", "memory_id": updated_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/memory/import")
+async def import_memory(data: MemoryImport, omd_key: str | None = Depends(get_omd_key)):
+    ctx = get_ctx(omd_key)  
+    try:
+        card = await core_service.import_doc(
+            ctx=ctx,
+            url_or_path=data.document_id,
+            collection=data.collection
+        )
+        if card.get("error"):
+            return {"status": "error", "card": card}
+            
+        return {"status": "ok", "card": card}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+@app.delete("/memory/{mem_id}")
+async def delete_memory(mem_id: str, omd_key: str | None = Depends(get_omd_key), collection: str = "shared" ):
+    ctx = get_ctx(omd_key)
+    print(f"KEY: {mem_id}")
+    try:
+        success = memory_index.delete_memory_card(ctx, mem_id=mem_id, collection=collection)
+        if not success:
+            raise HTTPException(status_code=404, detail="Memory not found")
+        return {"status": "deleted", "memory_id": mem_id}
+    except Exception as e:
+        print (f"Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/memory/{collection}/{mem_id}")
+async def get_memory(collection: str, mem_id: str, omd_key: str | None = Depends(get_omd_key)):
+    ctx = get_ctx(omd_key)
+    try:
+        memories = memory_index.load_memories(ctx, collection)
+        for m in memories:
+            if m["memory_id"] == mem_id:
+                return m
+        raise HTTPException(status_code=404, detail="Memory not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── On-device memory cards (unified ChromaDB, только владелец AI-ноды) ─────
+
+DEVICE_CARD_TEXT_LIMIT = 300
+
+# resolve_companion_readme / _folder_cover_exists делают filesystem-проверки на
+# каждую карточку каждого запроса /api/device_memory; короткий TTL-кэш (30с,
+# согласован с TTL кэша списков в unified_memory) снимает эту нагрузку.
+_RESPONSE_SIDE_CACHE_TTL = 30.0
+_readme_cache: dict = {}
+_folder_cover_cache: dict = {}
+
+
+def _readme_cache_get(doc_id: str):
+    entry = _readme_cache.get(doc_id)
+    if entry and (time.time() - entry["ts"]) < _RESPONSE_SIDE_CACHE_TTL:
+        return entry["value"]
+    try:
+        value = unified_memory.resolve_companion_readme(doc_id)
+    except Exception:
+        value = (None, None)
+    _readme_cache[doc_id] = {"ts": time.time(), "value": value}
+    return value
+
+
+def _folder_cover_exists(doc_id: str) -> bool:
+    """Есть ли файл-обложка (folder.jpg/cover.jpg и т.п.) у папки на диске."""
+    if not doc_id:
+        return False
+    entry = _folder_cover_cache.get(doc_id)
+    if entry and (time.time() - entry["ts"]) < _RESPONSE_SIDE_CACHE_TTL:
+        return entry["value"]
+    found = False
+    try:
+        readme_path, _ = _readme_cache_get(doc_id)
+    except Exception:
+        readme_path = None
+    if readme_path:
+        folder_dir = os.path.dirname(readme_path)
+        for cname in ("folder.jpg", "cover.jpg", "folder.png", "cover.png", "folder.jpeg", "cover.jpeg"):
+            if os.path.isfile(os.path.join(folder_dir, cname)):
+                found = True
+                break
+    _folder_cover_cache[doc_id] = {"ts": time.time(), "value": found}
+    return found
+
+
+DEVICE_CARD_TEXT_LIMIT = 300
+
+
+def _device_cards_response(offset: int = 0, limit: int = None, public_only: bool = False):
+    """Карточки on-device: memory_card + проиндексированные документы (группы file_chunk).
+
+    Внимание: base64-превью НЕ отдаём в списке (4611+ фото = сотни МБ JSON и
+    зависание клиента). Вместо них — флаг hasPreview, а сами картинки клиент
+    подгружает лениво через /api/device_memory_thumb?path=...
+
+    offset/limit: постраничная выдача (устойчивее в медленной P2P-сети, чем
+    один мегабайтный ответ). Без limit — прежний полный ответ (совместимость).
+    """
+    cards = unified_memory.get_all_memory_cards() + unified_memory.get_indexed_documents()
+    pub_tags = set(t.lower() for t in unified_memory.PUBLIC_TAGS)
+    out = []
+    for c in cards:
+        doc_id = c.get("document_id") or c.get("path") or ""
+        if doc_id and _is_path_excluded(doc_id):
+            continue
+        # Readme.md описывает саму папку (папка имеет отдельную карточку с is_folder=True).
+        # Одиночные карточки Readme.md как отдельный документ в список не включаем.
+        if (doc_id.lower().endswith("/readme.md") or doc_id.lower().endswith("/readme.txt")) and not c.get("is_folder"):
+            continue
+
+        # Если теги пусты, но в тексте есть хештеги — извлекаем их
+        if not c.get("tags") and c.get("text"):
+            found_tags = [w.lstrip("#").lower() for w in re.findall(r"(?<!\w)#[a-zA-Zа-яА-ЯёЁ0-9_-]{2,}", c["text"])]
+            if found_tags:
+                c["tags"] = sorted(set(found_tags))
+
+        # Фильтрация для гостей публичной ноды: только публичные теги (например, #omd)
+        if public_only:
+            c_tags = set(t.lower() for t in c.get("tags", []))
+            if not (c_tags & pub_tags):
+                continue
+            c["readOnly"] = True
+            # Скрываем префикс устройства/ноды из путей для гостей (например, /beelink/Knowledge/OMD -> /Knowledge/OMD)
+            stripped_doc_id = unified_memory._strip_device_namespace(doc_id)
+            if stripped_doc_id:
+                doc_id = stripped_doc_id
+                c["document_id"] = stripped_doc_id
+                c["path"] = stripped_doc_id
+                if c.get("title") and c["title"] == (c.get("document_id") or "").split("/")[-1]:
+                    c["title"] = stripped_doc_id.split("/")[-1]
+
+        c["onDevice"] = True
+        c["source"] = "device"
+        if not c.get("created"):
+            c["created"] = c.get("timestamp", "") or ""
+        if not c.get("title"):
+            c["title"] = (doc_id or "").split("/")[-1]
+
+        # Для папок: если выжимки нет или в тексте только имя/заголовок папки — подтягиваем из Readme.md
+        if c.get("is_folder") and doc_id:
+            cur_text = (c.get("text") or "").strip()
+            cur_title = (c.get("title") or "").strip()
+            if not cur_text or cur_text in (cur_title, f"# {cur_title}"):
+                readme_path, readme_content = _readme_cache_get(doc_id)
+                if readme_content:
+                    c["text"] = readme_content
+                    c["annotation"] = readme_content
+
+        # Превью: только флаг, без base64-данных (см. docstring функции).
+        has_any_preview = bool(
+            c.get("has_preview") or c.get("image_preview") or c.get("imagePreview")
+        )
+        if c.get("is_folder") and not has_any_preview:
+            has_any_preview = _folder_cover_exists(doc_id)
+        c["hasPreview"] = has_any_preview
+
+        # Гарантированно выпиливаем base64-превью из ответа
+        c.pop("image_preview", None)
+        c.pop("imagePreview", None)
+
+        # annotation карточками/модалкой on-device не используется (модалка читает
+        # c.text), но весит столько же, сколько text. text нужен для превью и
+        # поиска — обрезаем, чтобы не забивать P2P-туннель мегабайтами.
+        c.pop("annotation", None)
+        text = c.get("text")
+        if isinstance(text, str) and len(text) > DEVICE_CARD_TEXT_LIMIT:
+            c["text"] = text[:DEVICE_CARD_TEXT_LIMIT].rstrip() + "…"
+
+        out.append(c)
+
+    # Сортировка карточек: папки первыми (чтобы не терялись среди сотен файлов),
+    # внутри каждой группы — по дате изменения/создания (свежие сверху)
+    folders = [c for c in out if c.get("is_folder")]
+    non_folders = [c for c in out if not c.get("is_folder")]
+    folders.sort(key=lambda c: c.get("created") or c.get("timestamp") or "", reverse=True)
+    non_folders.sort(key=lambda c: c.get("created") or c.get("timestamp") or "", reverse=True)
+    ordered = folders + non_folders
+    total = len(ordered)
+    if limit is None:
+        return {"memories": ordered, "total": total, "offset": 0, "hasMore": False}
+    offset = max(0, int(offset or 0))
+    limit = max(1, int(limit or 0))
+    page = ordered[offset:offset + limit]
+    return {"memories": page, "total": total, "offset": offset, "hasMore": offset + limit < total}
+
+
+@app.get("/api/device_memory")
+async def device_memory_endpoint(
+    request: Request,
+    omd_key: str | None = Depends(get_omd_key),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(0, ge=0),  # 0 = весь список (совместимость со старым клиентом)
+):
+    ctx = get_ctx(omd_key)
+    pm = request.headers.get("X-OMD-Private-Mode")
+    role = trusted_caller_role(request)
+
+    # Владелец ноды имеет полный доступ ко всем своим знаниям.
+    # Гость (или запрос с X-OMD-Private-Mode: 0 / role=guest) видит ТОЛЬКО публичные знания (PUBLIC_TAGS).
+    is_owner = False
+    if pm in ("0", "false") or role in ("guest", "shared"):
+        is_owner = False
+    elif trusted_owner_access(request) or validated_node_owner(ctx):
+        is_owner = True
+    elif trusted_private_access(request, ctx):
+        is_owner = True
+
+    try:
+        page = _device_cards_response(offset=offset, limit=limit or None, public_only=not is_owner)
+    except Exception as e:
+        logging.error(f"[device_memory] list error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    if offset > 0 and not page["memories"]:
+        # Список съёжился (удаление/перезапуск) — мои страницы кончились
+        page["hasMore"] = False
+    return page
+
+
+@app.get("/api/device_memory_thumb")
+async def device_memory_thumb_endpoint(
+    request: Request,
+    path: str = "",
+    size: int = Query(480, ge=64, le=2048),
+    omd_key: str | None = Depends(get_omd_key),
+):
+    """Ленивая миниатюра карточки on-device (/api/device_memory не тащит base64).
+
+    path = document_id карточки (виртуальный путь, напр. /Pictures/photo.png).
+    size = желаемый размер (по умолчанию 480).
+    Для папок ищем обложку (folder.jpg/cover.jpg/...) внутри папки.
+    """
+    ctx = get_ctx(omd_key)
+    pm = request.headers.get("X-OMD-Private-Mode")
+    role = trusted_caller_role(request)
+
+    is_owner = False
+    if pm in ("0", "false") or role in ("guest", "shared"):
+        is_owner = False
+    elif trusted_owner_access(request) or validated_node_owner(ctx) or trusted_private_access(request, ctx):
+        is_owner = True
+
+    if not is_owner:
+        if not path or not unified_memory.is_document_public(path):
+            raise HTTPException(status_code=403, detail="Forbidden")
+
+    if not path:
+        raise HTTPException(status_code=400, detail="path is required")
+
+    real = unified_memory.resolve_doc_path(path)
+    if not real:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    # Папка → обложка внутри неё
+    if os.path.isdir(real):
+        for cname in ("folder.jpg", "cover.jpg", "folder.png", "cover.png", "folder.jpeg", "cover.jpeg"):
+            cpath = os.path.join(real, cname)
+            if os.path.isfile(cpath):
+                real = cpath
+                break
+        else:
+            raise HTTPException(status_code=404, detail="No folder cover")
+
+    ext = os.path.splitext(real)[1].lower().lstrip(".")
+    if ext not in IMAGE_EXTS:
+        raise HTTPException(status_code=404, detail="Not an image")
+
+    try:
+        return serve_file(real, request, size=size)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.warning(f"[device_memory_thumb] serve error {real}: {e}")
+        raise HTTPException(status_code=423, detail="Unreadable image or file is being written")
+
+
+@app.get("/api/device_memory_file")
+async def device_memory_file_endpoint(
+    request: Request,
+    path: str = "",
+    omd_key: str | None = Depends(get_omd_key),
+):
+    """Отдача файла базы знаний через файловый туннель (для владельцев и гостей).
+
+    path = document_id или имя файла из базы знаний.
+    Для гостей разрешён доступ только к публичным документам (PUBLIC_TAGS).
+    """
+    if not path:
+        raise HTTPException(status_code=400, detail="path is required")
+
+    ctx = get_ctx(omd_key)
+    pm = request.headers.get("X-OMD-Private-Mode")
+    role = trusted_caller_role(request)
+
+    is_owner = False
+    if pm in ("0", "false") or role in ("guest", "shared"):
+        is_owner = False
+    elif trusted_owner_access(request) or validated_node_owner(ctx) or trusted_private_access(request, ctx):
+        is_owner = True
+
+    # Проверка публичности для гостей
+    if not is_owner:
+        is_pub = unified_memory.is_document_public(path)
+        if not is_pub:
+            pub_did = unified_memory.find_document_id(path, public_only=True)
+            if pub_did:
+                path = pub_did
+                is_pub = True
+        if not is_pub:
+            raise HTTPException(status_code=403, detail="Forbidden: Document is not public")
+
+    real = unified_memory.resolve_doc_path(path)
+    if not real:
+        raise HTTPException(status_code=404, detail="File not found on node")
+
+    # Безопасность: исключённые файлы и пути
+    if _is_path_excluded(real):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Если папка — отдаем её Readme.md (если есть)
+    if os.path.isdir(real):
+        _, readme_content = unified_memory.resolve_companion_readme(path)
+        if readme_content:
+            return Response(content=readme_content, media_type="text/markdown; charset=utf-8")
+        raise HTTPException(status_code=404, detail="Directory cannot be served directly")
+
+    try:
+        return serve_file(real, request)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.warning(f"[device_memory_file] serve error {real}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/device_memory/{mem_id:path}")
+async def edit_device_memory(mem_id: str, request: Request, omd_key: str | None = Depends(get_omd_key)):
+    """Редактирование on-device карточки (текст/заголовок/теги) — обновляет memory_card в ChromaDB и Readme.md на диске."""
+    ctx = get_ctx(omd_key)
+    pm = request.headers.get("X-OMD-Private-Mode")
+    role = trusted_caller_role(request)
+    if pm in ("0", "false") or role in ("guest", "shared") or not trusted_private_access(request, ctx):
+        raise HTTPException(status_code=403, detail="Forbidden: Public knowledge is read-only for guests")
+    body = await request.json()
+    try:
+        new_text = (body.get("text") or "").strip()
+        new_title = (body.get("title") or "").strip() or None
+        new_tags = body.get("tags")
+
+        # Если это карточка документа — синхронизируем выжимку в companion Readme.md на диске
+        if mem_id.startswith("document::"):
+            doc_id = mem_id[len("document::"):]
+            if new_text:
+                unified_memory.save_companion_readme(doc_id, new_text)
+
+        updated = unified_memory.update_memory_card(
+            mem_id=mem_id,
+            text=new_text or None,
+            title=new_title,
+            tags=new_tags,
+        )
+        if not updated:
+            raise HTTPException(status_code=404, detail="Memory not found")
+        return {"status": "ok", "memory_id": mem_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"[device_memory] update error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/device_memory/{mem_id:path}")
+async def delete_device_memory(mem_id: str, request: Request, omd_key: str | None = Depends(get_omd_key)):
+    ctx = get_ctx(omd_key)
+    pm = request.headers.get("X-OMD-Private-Mode")
+    role = trusted_caller_role(request)
+    if pm in ("0", "false") or role in ("guest", "shared") or not trusted_private_access(request, ctx):
+        raise HTTPException(status_code=403, detail="Forbidden: Public knowledge is read-only for guests")
+    try:
+        # document::<document_id> — сгруппированный индексируемый документ
+        if mem_id.startswith("document::"):
+            unified_memory.delete_document(mem_id[len("document::"):])
+        else:
+            unified_memory.delete_memory_card(mem_id=mem_id)
+        return {"status": "deleted", "memory_id": mem_id}
+    except Exception as e:
+        logging.error(f"[device_memory] delete error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── FACE RECOGNITION ENDPOINTS ──────────────────────────────────────────────
+
+@app.post("/api/faces/detect")
+async def faces_detect_endpoint(
+    request: Request,
+    omd_key: str | None = Depends(get_omd_key),
+):
+    """Обнаружение лиц на фото, извлечение BBox и сопоставление с известными персонами."""
+    ctx = get_ctx(omd_key)
+    if not trusted_private_access(request, ctx):
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    path = body.get("path") or body.get("document_id") or request.query_params.get("path") or ""
+    img_b64 = body.get("image_b64") or ""
+    img_bytes = None
+
+    if path:
+        real = unified_memory.resolve_doc_path(path)
+        if not real and os.path.isfile(path):
+            real = path
+        if real and os.path.isfile(real):
+            try:
+                with open(real, "rb") as f:
+                    img_bytes = f.read()
+            except Exception as fe:
+                logging.warning(f"[faces/detect] failed to read file {real}: {fe}")
+
+    if not img_bytes and img_b64:
+        import base64
+        clean_b64 = re.sub(r"^data:image/[^;]+;base64,", "", img_b64)
+        img_bytes = base64.b64decode(clean_b64)
+
+    if not img_bytes:
+        raise HTTPException(status_code=400, detail="Path to image or image_b64 required")
+
+    try:
+        import face_engine
+        owner = getattr(ctx, "user_id", None) or "owner"
+        faces = face_engine.detect_faces(img_bytes, owner=owner)
+        if not any(f.get("name") for f in faces) and owner != "owner":
+            fallback_faces = face_engine.detect_faces(img_bytes, owner=None)
+            for f, fb in zip(faces, fallback_faces):
+                if fb.get("name"):
+                    f["name"] = fb["name"]
+                    f["person_id"] = fb["person_id"]
+                    f["similarity"] = fb["similarity"]
+        return {"faces": faces}
+    except Exception as e:
+        logging.error(f"[faces/detect] error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/faces/register")
+async def faces_register_endpoint(
+    request: Request,
+    omd_key: str | None = Depends(get_omd_key),
+):
+    """Регистрация лица (привязка имени к BBox на фотографии) в omd_faces."""
+    ctx = get_ctx(omd_key)
+    if not trusted_private_access(request, ctx):
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    body = await request.json()
+    name = (body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Name is required")
+
+    path = body.get("path") or body.get("document_id") or ""
+    bbox = body.get("bbox")
+    person_id = body.get("person_id")
+    img_b64 = body.get("image_b64") or ""
+    img_bytes = None
+
+    if path:
+        real = unified_memory.resolve_doc_path(path)
+        if not real and os.path.isfile(path):
+            real = path
+        if real and os.path.isfile(real):
+            try:
+                with open(real, "rb") as f:
+                    img_bytes = f.read()
+            except Exception as fe:
+                logging.warning(f"[faces/register] failed to read file {real}: {fe}")
+
+    if not img_bytes and img_b64:
+        import base64
+        clean_b64 = re.sub(r"^data:image/[^;]+;base64,", "", img_b64)
+        img_bytes = base64.b64decode(clean_b64)
+
+    if not img_bytes:
+        raise HTTPException(status_code=400, detail="Path to image or image_b64 required")
+
+    try:
+        import face_engine
+        owner = getattr(ctx, "user_id", None) or "owner"
+        res = face_engine.register_face(
+            owner=owner,
+            name=name,
+            img_bytes=img_bytes,
+            bbox=bbox,
+            person_id=person_id,
+            document_id=path,
+        )
+
+        # Автоматически добавляем человека в теги, описание и эмбеддинги документа
+        if path:
+            try:
+                unified_memory.add_person_to_document(path, name)
+            except Exception as te:
+                logging.warning(f"[faces/register] person memory update failed for {path}: {te}")
+
+        return {"status": "ok", "person": res}
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        logging.error(f"[faces/register] error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/faces/people")
+async def faces_people_endpoint(
+    request: Request,
+    omd_key: str | None = Depends(get_omd_key),
+):
+    """Список известных персон для текущего владельца устройства."""
+    ctx = get_ctx(omd_key)
+    if not trusted_private_access(request, ctx):
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    try:
+        import face_engine
+        owner = getattr(ctx, "user_id", None) or "owner"
+        people = face_engine.get_known_people(owner=owner)
+        if not people and owner != "owner":
+            people = face_engine.get_known_people(owner=None)
+        return {"people": people}
+    except Exception as e:
+        logging.error(f"[faces/people] list error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/faces/people/{person_id}")
+async def faces_rename_person_endpoint(
+    person_id: str,
+    request: Request,
+    omd_key: str | None = Depends(get_omd_key),
+):
+    """Переименование известной персоны."""
+    ctx = get_ctx(omd_key)
+    if not trusted_private_access(request, ctx):
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    body = await request.json()
+    new_name = (body.get("name") or "").strip()
+    if not new_name:
+        raise HTTPException(status_code=400, detail="Name is required")
+
+    try:
+        import face_engine
+        owner = getattr(ctx, "user_id", None) or "owner"
+        count = face_engine.rename_person(person_id, new_name, owner=owner)
+        if count == 0 and owner != "owner":
+            count = face_engine.rename_person(person_id, new_name, owner=None)
+        return {"status": "ok", "person_id": person_id, "name": new_name, "updated": count}
+    except Exception as e:
+        logging.error(f"[faces/rename] error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/faces/people/{person_id}")
+async def faces_delete_person_endpoint(
+    person_id: str,
+    request: Request,
+    omd_key: str | None = Depends(get_omd_key),
+):
+    """Удаление персоны из базы лиц."""
+    ctx = get_ctx(omd_key)
+    if not trusted_private_access(request, ctx):
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    try:
+        import face_engine
+        owner = getattr(ctx, "user_id", None) or "owner"
+        count = face_engine.delete_person(person_id, owner=owner)
+        if count == 0 and owner != "owner":
+            count = face_engine.delete_person(person_id, owner=None)
+        return {"status": "ok", "person_id": person_id, "deleted_faces": count}
+    except Exception as e:
+        logging.error(f"[faces/delete] error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+_face_scan_state = {
+    "running": False,
+    "person_id": "",
+    "person_name": "",
+    "total": 0,
+    "processed": 0,
+    "matched": 0,
+    "current_file": "",
+    "matched_photos": [],
+    "error": None,
+}
+
+
+async def _run_face_scan_archive(owner: str, person_id: str, person_name: str, image_doc_ids: list):
+    global _face_scan_state
+    import face_engine
+    _face_scan_state["running"] = True
+    _face_scan_state["person_id"] = person_id
+    _face_scan_state["person_name"] = person_name
+    _face_scan_state["total"] = len(image_doc_ids)
+    _face_scan_state["processed"] = 0
+    _face_scan_state["matched"] = 0
+    _face_scan_state["matched_photos"] = []
+    _face_scan_state["error"] = None
+
+    try:
+        for doc_id in image_doc_ids:
+            _face_scan_state["current_file"] = doc_id
+            real = unified_memory.resolve_doc_path(doc_id)
+            if not real or not os.path.isfile(real):
+                _face_scan_state["processed"] += 1
+                continue
+            try:
+                def _process_one(r_path, d_id):
+                    with open(r_path, "rb") as f:
+                        img_b = f.read()
+                    detected = face_engine.detect_faces(img_b, owner=owner)
+                    for f_info in detected:
+                        if f_info.get("person_id") == person_id:
+                            try:
+                                face_engine.register_face(
+                                    owner=owner,
+                                    name=person_name,
+                                    img_bytes=img_b,
+                                    bbox=f_info.get("bbox"),
+                                    person_id=person_id,
+                                    document_id=d_id,
+                                )
+                            except Exception:
+                                pass
+                            try:
+                                unified_memory.add_person_to_document(d_id, person_name)
+                            except Exception:
+                                pass
+                            return True
+                    return False
+
+                matched = await asyncio.to_thread(_process_one, real, doc_id)
+                if matched:
+                    _face_scan_state["matched"] += 1
+                    _face_scan_state["matched_photos"].append(doc_id)
+            except Exception as ie:
+                logging.warning(f"[faces/scan_archive] error processing {doc_id}: {ie}")
+
+            _face_scan_state["processed"] += 1
+            await asyncio.sleep(0.005)
+    except Exception as e:
+        _face_scan_state["error"] = str(e)
+        logging.error(f"[faces/scan_archive] background error: {e}")
+    finally:
+        _face_scan_state["running"] = False
+        _face_scan_state["current_file"] = ""
+
+
+@app.post("/api/faces/scan_archive")
+async def faces_scan_archive_endpoint(
+    request: Request,
+    omd_key: str | None = Depends(get_omd_key),
+):
+    """
+    Фоновый поиск персоны на других фотографиях архива (авто-разметка).
+    """
+    ctx = get_ctx(omd_key)
+    if not trusted_private_access(request, ctx):
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    global _face_scan_state
+    if _face_scan_state.get("running"):
+        return {"status": "already_running", "scan": _face_scan_state}
+
+    body = await request.json()
+    person_id = body.get("person_id")
+    if not person_id:
+        raise HTTPException(status_code=400, detail="person_id is required")
+
+    try:
+        import face_engine
+        owner = getattr(ctx, "user_id", None) or "owner"
+        people = face_engine.get_known_people(owner=owner)
+        target = next((p for p in people if p["person_id"] == person_id), None)
+        if not target and owner != "owner":
+            people = face_engine.get_known_people(owner=None)
+            target = next((p for p in people if p["person_id"] == person_id), None)
+
+        if not target:
+            raise HTTPException(status_code=404, detail="Person not found")
+
+        person_name = target["name"]
+        already_tagged_photos = set(target.get("photos", []))
+
+        device_page = _device_cards_response(offset=0, limit=None)
+        all_cards = device_page.get("memories", [])
+        image_doc_ids = []
+        for c in all_cards:
+            doc_id = c.get("document_id")
+            if not doc_id:
+                continue
+            ext = os.path.splitext(doc_id)[1].lower().lstrip(".")
+            if ext in IMAGE_EXTS and doc_id not in already_tagged_photos:
+                image_doc_ids.append(doc_id)
+
+        asyncio.create_task(_run_face_scan_archive(owner, person_id, person_name, image_doc_ids))
+
+        return {
+            "status": "started",
+            "person_id": person_id,
+            "person_name": person_name,
+            "total_to_scan": len(image_doc_ids),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"[faces/scan_archive] error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/faces/scan_status")
+async def faces_scan_status_endpoint(
+    request: Request,
+    omd_key: str | None = Depends(get_omd_key),
+):
+    """Текущий статус фонового сканирования архива лиц."""
+    ctx = get_ctx(omd_key)
+    if not trusted_private_access(request, ctx):
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    global _face_scan_state
+    return {"scan": _face_scan_state}
+
+
+
+# [LEGACY HISTORY] /chats endpoints removed
+
+@app.post("/chat")
+async def chat_endpoint(data: ChatInput):
+    ctx = get_ctx(data.omd_key)
+    if data.settings:
+        ctx.settings.update(data.settings)
+        ctx.storage = ctx.settings.get("defaultStorage", "")
+    try:
+        instruction=(
+            "Respond to user. If user question relates to *Known facts*, be extreamly accurate, do not guess."
+        )
+        response = await core_service.perform_prompt(
+            ctx,
+            instruction=instruction,
+            message=data.prompt,
+            chat=data.chat,
+            provided_history=data.history,
+            provided_knowledge=data.knowledge
+        )
+        return response
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+async def _stream_first_chunk_timeout(agen, timeout=120):
+    """Обёртка над async-генератором стрима: если ПЕРВЫЙ чанк не пришёл за
+    `timeout` секунд (нода зависла до начала стрима — RAG/LLM/кэш), клиент
+    получает ошибку вместо вечного «processing» (зависшая красная кнопка stop)."""
+    import asyncio as _asyncio
+    first = True
+    while True:
+        if first:
+            try:
+                chunk = await _asyncio.wait_for(agen.__anext__(), timeout)
+            except _asyncio.TimeoutError:
+                logging.error("[chat/stream] watchdog: no first chunk within %ss — aborting stream", timeout)
+                yield {"error": "⚠️ AI node is busy. Please try again in a moment.", "done": True}
+                return
+            except StopAsyncIteration:
+                return
+            first = False
+        else:
+            try:
+                chunk = await agen.__anext__()
+            except StopAsyncIteration:
+                return
+        yield chunk
+
+
+@app.post("/chat/stream")
+async def chat_stream_post(request: Request, data: ChatStreamInput):
+    agentic_tunnel.note_request(request, omd_key=data.omd_key, settings_payload=data.settings)
+    return await chat_stream(
+        request,
+        prompt=data.prompt,
+        omd_key=data.omd_key,
+        chat=data.chat,
+        provided_history=data.history,
+        provided_settings=data.settings,
+        provided_knowledge=data.knowledge,
+        provided_prompt_id=data.prompt_id,
+        chat_summary=data.chat_summary,
+        total_message_count=data.total_message_count,
+        image_delivery=data.image_delivery or (data.settings.get("image_delivery") if data.settings else None),
+        client=data.client or (data.settings.get("client") if data.settings else None),
+        rag_focus=data.rag_focus,
+        attached_docs=data.attached_docs,
+        device_push=data.device_push,
+        mcp_keys=data.mcp_keys
+    )
+
+@app.get("/chat/stream")
+async def chat_stream(request: Request, prompt: str, omd_key: str | None = Depends(get_omd_key), chat: str = "default", 
+                      provided_history: list|None = None, 
+                      provided_settings: dict|None = None,
+                      provided_knowledge: list|None = None,
+                      provided_prompt_id: str|None = None,
+                      chat_summary: str|None = None,
+                      total_message_count: int|None = None,
+                      image_delivery: str|None = None,
+                      client: str|None = None,
+                      rag_focus: dict|None = None,
+                      attached_docs: list|None = None,
+                      device_push: dict|None = None,
+                      mcp_keys: dict|None = None):
+    agentic_tunnel.note_request(request, omd_key=omd_key, settings_payload=provided_settings)
+    logging.info(f"Chat stream request: omd_key={omd_key[:10] if omd_key else 'None'}..., device_push={device_push}")
+    chat = chat or "default"
+    ctx = get_ctx(omd_key)
+    ctx.private_mode = trusted_private_access(request, ctx)
+    ctx.trusted_owner = trusted_owner_access(request)
+    ctx.device_push = device_push
+    ctx.mcp_keys = mcp_keys or (provided_settings.get("mcp_keys") if provided_settings else {}) or {}
+
+    # В новой системе нет анонимов: определяем настоящее имя пользователя
+    header_user = (request.headers.get("X-OMD-User") or "").strip()
+    client_name = (
+        header_user
+        or (provided_settings.get("name") if provided_settings else None)
+        or (provided_settings.get("username") if provided_settings else None)
+    )
+    if client_name and (not ctx.user_id or ctx.user_id in ("anonymous", "system", "") or ctx.user_id.startswith("user_") or ctx.user_id.startswith("web_")):
+        ctx.user_id = client_name
+    elif (not ctx.user_id or ctx.user_id in ("anonymous", "system", "")) and ctx.private_mode:
+        ctx.user_id = user_context.node_owner()
+
+    if provided_knowledge is None:
+        logging.info("[chat] provided knowledge: None (client did not send)")
+        try:
+            hub_cards = await core_service._fetch_all_knowledge_from_hub(
+                core_service._simple_hash(omd_key or "")
+            )
+            with_emb = sum(1 for c in hub_cards if isinstance(c.get("annotation_embedding"), list) and c.get("annotation_embedding"))
+            logging.info(
+                f"[chat] hub introspection: {len(hub_cards)} knowledge cards total, "
+                f"{with_emb} with annotation_embedding"
+            )
+        except Exception as e:
+            logging.warning(f"[chat] hub introspection failed: {e}")
+    else:
+        logging.info(f"[chat] provided knowledge: {len(provided_knowledge)} cards")
+
+    is_inline_image = (
+        image_delivery == "inline"
+        or request.headers.get("x-image-delivery") == "inline"
+        or (provided_settings and provided_settings.get("image_delivery") == "inline")
+        or request.headers.get("x-client") == "svar"
+        or client == "svar"
+        or (provided_settings and provided_settings.get("client") == "svar")
+    )
+
+    if provided_settings:
+        # Strip heavy fields that backend never reads — avoids sending base64 avatar every request
+        provided_settings.pop("assistant_avatar", None)
+        ctx.settings.update(provided_settings)
+        if not ctx.user_id or ctx.user_id in ("anonymous", "system", ""):
+            ctx.user_id = ctx.settings.get("name") or ctx.settings.get("username") or user_context.node_owner()
+        logging.info(f"Applying client-provided settings for {ctx.user_id}: {provided_settings}")
+        if provided_settings.get("defaultStorage"):
+            ctx.storage = provided_settings["defaultStorage"]
+    else:
+        logging.info(f"NO provided_settings received for {ctx.user_id}")
+
+    async def event_generator():
+        try:
+            nonlocal chat
+
+            # 0. IMMEDIATE STATUS CONFIRMATION
+            status_map_immediate = {
+                "/show": "generating",
+                "/view": "generating", "/imagine": "generating",
+                "/generate": "generating",
+                "/search": "searching",
+                "/import": "learning", "/learn": "learning",
+                "/recognize": "thinking", "/detect": "thinking",
+                "/think": "thinking",
+                "/explain": "thinking"
+            }
+            immediate_status = "processing"
+            for prefix, status in status_map_immediate.items():
+                if prompt.startswith(prefix):
+                    immediate_status = status
+                    break
+
+            yield f"data: {json.dumps({'status': immediate_status})}\n\n"
+            await asyncio.sleep(0.05) # Force yield to loop and flush
+
+            # defaults
+            intent = "chat"
+            event = None
+            # [LEGACY HISTORY] save_user_message removed
+            mem_id = None
+            img_source = None
+
+            # Initialize chat if it's the first message of a new session
+            if not chat or chat == "default" or chat == "newchat":
+                 try:
+                      chat_info = await core_service.ensure_chat(ctx, chat, prompt)
+                      chat = chat_info["name"]
+                      yield f"data: {json.dumps({'event': 'newchat', 'chatinfo': chat_info})}\n\n"
+                 except Exception as e:
+                      logging.error(f"Failed to ensure chat: {e}")
+                      chat = chat or "default"
+
+            # Enforce Rights (moved up)
+            token_balance = float(request.headers.get("x-omd-token-balance", "0.0"))
+
+
+            # 1. Broad Intent Detection First
+            
+            # Check for explicit slash commands
+            explicit_map = {
+                "/show": "show",
+                "/view": "view", "/imagine": "view",
+                "/generate": "generate",
+                "/import": "import", "/learn": "import",
+                "/recognize": "recognize", "/detect": "recognize",
+                "/think": "think",
+                "/explain": "explain",
+                "/search": "search",
+                "/explore": "explore", "/exlore": "explore", "/research": "explore",
+                "/tools": "tools",
+                "/docs": "tools",
+                "/doc": "tools",
+                "/mcp": "tools"
+            }
+            
+            intent = "chat"
+            raw_intent = ""
+            search_query = ""
+            
+            for prefix, mapped_intent in explicit_map.items():
+                if prompt.startswith(prefix):
+                    intent = mapped_intent
+                    raw_intent = f"Explicit command: {intent}"
+                    cmd_arg = prompt[len(prefix):].strip()
+                    if mapped_intent in ("search", "explore", "explain", "think"):
+                        search_query = cmd_arg if cmd_arg else prompt
+                    break
+            
+            if not raw_intent:
+
+                # Follow-up /learn: документ уже выбран пользователем (rag_focus).
+                # Классифицировать интент LLM-ом излишне: это секунды латентности,
+                # а вывод всё равно не меняет ничего — facts ограничены фокусным
+                # документом. Ставим explain и берём запрос как есть.
+                focus_doc_id = ""
+                if rag_focus and isinstance(rag_focus, dict):
+                    focus_doc_id = str(rag_focus.get("docId") or rag_focus.get("document_id") or "").strip()
+                if focus_doc_id:
+                    intent = "explain"
+                    search_query = re.sub(r"^\s*/(learn|recognize)\s+\S+", "", prompt).strip() or prompt
+                    raw_intent = f"Focused /learn follow-up: {focus_doc_id}"
+                    logging.info(f"[chat] focused question: intent forced to explain, no classification ({focus_doc_id})")
+                else:
+                    raw_intent = await core_service.classify_user_intent(ctx, prompt, chat, provided_history=provided_history)
+                    intent, search_query = core_service.parse_intent_and_query(raw_intent, default_prompt=prompt)
+                    if not prompt.lstrip().startswith("/") and intent in ("show", "view", "generate"):
+                        _p_norm = prompt.strip()
+                        _cap_en = re.match(
+                            r"^(?:(?:so|wait|oh|well|wow|hey|really|and)\b[\s,]*)*(?:(?:can|could|do|are|will)\s+you|you\s+(?:can|could|also)?)(?:\s+(?:really|actually|also|even|able\s+to))?\s+(?:create|generate|make|draw|render|paint|produce|send|show)(?:\s+me)?(?:\s+(?:any|new|ai|some))?(?:\s+(?:images?|pictures?|photos?|art|artwork|illustrations?|visuals?|drawings?|selfies?))?\s*\?+\s*$",
+                            _p_norm,
+                            flags=re.IGNORECASE,
+                        )
+                        _how_en = re.match(
+                            r"^(?:how\s+(?:do|can)\s+you|what\s+kind\s+of\s+(?:images?|pictures?)\s+(?:can|do)\s+you)\s+(?:create|generate|make|draw|render)\b[^.]*\?*\s*$",
+                            _p_norm,
+                            flags=re.IGNORECASE,
+                        )
+                        _cap_ru = re.match(
+                            r"^(?:(?:а|и|о|ого|ну|так|то\s+есть|получается)\b[\s,]*)*(?:ты\s+|вы\s+)?(?:правда\s+|тоже\s+|реально\s+)?(?:умеешь|умеете|можешь|можете|способна|способен)?\s*(?:создавать|генерировать|рисовать|делать|сделать|нарисовать|присылать|генерить)(?:\s+(?:мне|нам))?(?:\s+(?:любые|разные|новые|свои))?(?:\s+(?:картинки|изображения|фотки|фото|фотографии|рисунки|арты|селфи))?\s*\?+\s*$",
+                            _p_norm,
+                            flags=re.IGNORECASE,
+                        )
+                        if _cap_en or _how_en or _cap_ru:
+                            logging.info(f"[IntentGuard] Downgrading meta capability question from '{intent}' to 'chat': {_p_norm}")
+                            intent = "chat"
+                            search_query = ""
+            
+            # Ensure chat existence for all intent types (crucial for 'show' intent which bypasses perform_prompt)
+            # This ensures chat is in the index and has a title
+            if intent != "chat": # perform_prompt handles chat intent
+                 # Only if we are branching away from perform_prompt
+                 try:
+                      chat_info = await core_service.ensure_chat(ctx, chat, prompt)
+                      chat = chat_info.get("name", chat)
+                 except Exception as e:
+                      logging.error(f"Failed to ensure chat for intent {intent}: {e}")
+            
+            logging.info(f"Intent detected: {intent} (search_query: '{search_query}') \n(raw: {raw_intent})")
+            
+            # Yield specialized status if it matches (overwrite thinking)
+            status_map_detected = {
+                "show": "generating",
+                "view": "generating",
+                "generate": "generating",
+                "explain": "thinking",
+                "think": "thinking",
+                "search": "searching",
+                "explore": "searching",
+                "recognize": "thinking",
+                "import": "learning",
+                "tools": "executing",
+                "doc": "executing"
+            }
+            check_intent_status = intent.split(":")[0] if ":" in intent else intent
+            if check_intent_status in status_map_detected:
+                logging.info(f"Notifying frontend about new status: {status_map_detected[check_intent_status]}")
+                yield f"data: {json.dumps({'status': status_map_detected[check_intent_status]})}\n\n"
+
+            # 2. Extract Memory Facts immediately (from the combined intent/memory string)
+            memory_fact = memory_index.extract_memory_from_response(raw_intent)
+            if memory_fact:
+                try:
+                    logging.info(f"Notifying frontend about new fact: {memory_fact}")
+                    # memory_index.add_memory_card(ctx, memory_fact, collection="user", relevance="contextual")
+                    yield f"data: {json.dumps({'newFact': memory_fact})}\n\n"
+                except Exception as e:
+                    logging.error(f"Error sending fact notification: {e}")
+
+            # 3. Handle Special Primary Intents (Slash overrides)
+            if prompt.startswith("/show"):
+                intent = "show"
+            elif prompt.startswith("/generate"):
+                intent = "generate"
+            elif prompt.startswith("/view") or prompt.startswith("/imagine") or (intent == "view" and prompt.startswith("/")):
+                intent = "view"
+            elif prompt.startswith(("/tools", "/docs", "/doc", "/mcp")) or intent == "tools":
+                intent = "tools"
+            elif prompt.startswith("/import") or prompt.startswith("/learn"):  
+                m = re.match(r'^/(?:import|learn)\s+(?:"([^"]+)"|\'([^\']+)\'|(\S+))(?:\s+(\S+))?', prompt)
+                file_path_or_url = m.group(1) or m.group(2) or m.group(3) if m else None
+                collection = m.group(4) if m else "user"
+                if file_path_or_url:
+                    intent = f"import:{file_path_or_url}:{collection}"
+            elif prompt.startswith("/recognize") or prompt.startswith("/detect"):  
+                m = re.match(r'^/(?:recognize|detect)\s+(?:"([^"]+)"|\'([^\']+)\'|(\S+))', prompt)
+                file_path_or_url = m.group(1) or m.group(2) or m.group(3) if m else None
+                if file_path_or_url:
+                    intent = f"recognize:{file_path_or_url}"
+            elif prompt.startswith("/think"):  
+                intent = "think"
+            elif prompt.startswith("/explain"):
+                intent = "explain"
+            elif prompt.startswith(("/explore", "/exlore", "/research")):
+                intent = "explore"
+            elif prompt.startswith("/search"):
+                intent = "search"
+
+            # 4. Content Safety Filter for all image intents (/show, /generate, /view, auto-classified)
+            if intent in ("show", "view", "generate"):
+                if prompt.startswith("/generate"):
+                    img_prompt = prompt[len("/generate"):].strip()
+                elif prompt.startswith("/show"):
+                    img_prompt = prompt[len("/show"):].strip()
+                elif prompt.startswith("/view"):
+                    img_prompt = prompt[len("/view"):].strip()
+                elif prompt.startswith("/imagine"):
+                    img_prompt = prompt[len("/imagine"):].strip()
+                else:
+                    img_prompt = prompt.strip()
+
+                bypass_safety = ctx.private_mode or ctx.is_unlimited
+                if not bypass_safety:
+                    check_text = img_prompt or prompt
+                    logging.info(f"Checking image generation safety: {check_text}")
+                    safety_result = await core_service.check_prompt_safety(ctx, check_text)
+                    if safety_result != "SAFE":
+                        logging.info(f"Image generation safety check failed: {safety_result}")
+                        yield f"data: {json.dumps({'delta': safety_result, 'role': 'assistant', 'done': True})}\n\n"
+                        return
+        
+            restricted_intents = ["tools", "doc"]
+            
+            # Check primary intent or prefixed intent (e.g. import:url)
+            check_intent = intent.split(":")[0] if ":" in intent else intent
+
+            if ctx.settings.get("content_mode", "work") == "fun" and check_intent in ["explain", "think"]:
+                logging.info(f"Fun mode: intent '{check_intent}' downgraded to 'chat' (no DB search, RP preserved).")
+                intent = "chat"
+                check_intent = "chat"
+
+            if not ctx.private_mode:
+                logging.info(f"Token Balance: {token_balance}")
+                #if token_balance <= 0:
+                #     if check_intent in restricted_intents:
+                #          yield f"data: {json.dumps({'delta': 'Advanced AI features are available with a Premium Plan.', 'role': 'assistant', 'done': True})}\n\n"
+                #          return
+
+            logging.info(f"Check intent: {check_intent}")
+            if check_intent in ["tools", "search", "explore", "explain", "think"]:
+                 # Пока ищем в unified_memory — статус thinking
+                 status_msg = "executing" if check_intent == "tools" else "thinking"
+                 logging.info(f"Yielding {status_msg} status")
+                 yield f"data: {json.dumps({'status': status_msg})}\n\n"
+                 
+            if check_intent == "import" and not ctx.private_mode:
+                 # Limit to 10 items for free accounts
+                 memories = memory_index.load_memories(ctx, collection="shared")
+                 if len(memories) >= 10:
+                     yield f"data: {json.dumps({'delta': 'Free accounts are limited to 10 knowledge base items. Upgrade to Premium for unlimited storage.', 'role': 'assistant', 'done': True})}\n\n"
+                     return
+
+            if intent == "show":
+                # 1️⃣ статус
+                yield f"data: {json.dumps({'status': 'generating'})}\n\n"
+                await asyncio.sleep(0.05)
+
+                # 2️⃣ картинка
+                # [LEGACY HISTORY] Load history removed
+                # Generate prompt using loaded history, but DO NOT save yet (atomic update later)
+                history = provided_history or []
+                logging.info(f"Generating refined image prompt for: {prompt}")
+                raw_prompt = await core_service.generate_character_image_prompt(ctx, prompt, chat, history=history)
+                img_prompt, _ = core_service.extract_title_and_prompt(raw_prompt)
+
+                if not (ctx.private_mode or ctx.is_unlimited):
+                    safety_result = await core_service.check_prompt_safety(ctx, img_prompt)
+                    if safety_result != "SAFE":
+                        logging.info(f"Generated character tags safety check failed: {safety_result}")
+                        yield f"data: {json.dumps({'delta': safety_result, 'role': 'assistant', 'done': True})}\n\n"
+                        return
+
+                # Calculate prompt_id if not provided
+                prompt_id = provided_prompt_id or ("p_" + core_service.hash_string(img_prompt + ctx.settings.get("style", "")))
+
+                # Generate image using prompt, DO NOT save yet
+                upload_storage_flag = not is_inline_image
+                res = await core_service.generate_character_image(ctx, img_prompt, chat, update_history=False, prompt_id=prompt_id, upload_storage=upload_storage_flag)
+                path, title, description = res[0], res[1], res[2]
+                if len(res) > 3 and res[3]:
+                    store_ephemeral_image(path, res[3])
+                    schedule_generated_image_push(omd_key, device_push, path, res[3], title, description, ctx=ctx)
+                image_url = f"/chat/image/{path}"
+                img_payload = {'path': path, 'title': title, 'description': description, 'url': image_url, 'prompt': img_prompt}
+                yield f"data: {json.dumps({'prompt': img_prompt, 'prompt_id': prompt_id, 'image': img_payload, 'tokens_consumed': ctx.tokens_consumed})}\n\n"
+                await asyncio.sleep(0.05)
+                yield f"data: {json.dumps({'status': 'typing'})}\n\n"
+                await asyncio.sleep(0.05)
+
+                #Set specific instructions
+                instruction = (
+                    "You have ALREADY generated an image of yourself based on the user's request.\n"
+                    "The scene description is:\n"
+                    "{}\n\n"
+                    "TASK: Roleplay this scene. Continue conversation. Take into account the generated image, your feelings about it and the previous conversation context.\n"
+                ).format(img_prompt)
+                llm_message = prompt
+                # [LEGACY HISTORY] save_user_message removed
+            elif intent == "view":
+                # 1️⃣ статус
+                yield f"data: {json.dumps({'status': 'generating'})}\n\n"
+                await asyncio.sleep(0.05)
+
+                # 2️⃣ картинка
+                logging.info(f"Generating refined image prompt for: {prompt}")
+                raw_prompt = await core_service.generate_general_image_prompt(ctx, prompt, chat, history=provided_history)
+                img_prompt, _ = core_service.extract_title_and_prompt(raw_prompt)
+
+                if not (ctx.private_mode or ctx.is_unlimited):
+                    safety_result = await core_service.check_prompt_safety(ctx, img_prompt)
+                    if safety_result != "SAFE":
+                        logging.info(f"Generated general tags safety check failed: {safety_result}")
+                        yield f"data: {json.dumps({'delta': safety_result, 'role': 'assistant', 'done': True})}\n\n"
+                        return
+
+                # Calculate prompt_id if not provided
+                prompt_id = provided_prompt_id or ("p_" + core_service.hash_string(img_prompt + ctx.settings.get("style", "")))
+
+                # 3️⃣ Generate image (no character LoRA)
+                upload_storage_flag = not is_inline_image
+                res = await core_service.generate_general_image(ctx, img_prompt, chat, prompt_id=prompt_id, upload_storage=upload_storage_flag)
+                path, title, description = res[0], res[1], res[2]
+                if len(res) > 3 and res[3]:
+                    store_ephemeral_image(path, res[3])
+                    schedule_generated_image_push(omd_key, device_push, path, res[3], title, description, ctx=ctx)
+                image_url = f"/chat/image/{path}"
+                img_payload = {'path': path, 'title': title, 'description': description, 'url': image_url, 'prompt': img_prompt}
+                yield f"data: {json.dumps({'prompt': img_prompt, 'prompt_id': prompt_id, 'image': img_payload, 'tokens_consumed': ctx.tokens_consumed})}\n\n"
+                await asyncio.sleep(0.05)
+                yield f"data: {json.dumps({'status': 'typing'})}\n\n"
+                await asyncio.sleep(0.05)
+
+                #Set specific instructions
+                instruction = (
+                    "You have ALREADY generated an image based on the user's request.\n"
+                    "The scene description is:\n"
+                    "{}\n\n"
+                    "Your TASK: describe the generated image enthusiastically or provide a caption for it."
+                ).format(img_prompt)
+                llm_message = prompt
+                # [LEGACY HISTORY] save_user_message removed
+
+            elif intent in ("explain", "think", "search", "explore"):
+                # Единый RAG-пайплайн: внутренний поиск + web-fallback выполняются
+                # внутри _perform_prompt_gen через inject_facts (факты попадают в system prompt).
+                if not search_query:
+                    search_query = prompt
+                    for pfx in ("/explore", "/exlore", "/research", "/search", "/explain", "/think"):
+                        if prompt.lower().startswith(pfx):
+                            search_query = prompt[len(pfx):].strip()
+                            break
+                    if not search_query:
+                        search_query = prompt
+
+                instruction = (
+                    "The user asked a question. Use the *Known facts* / *Strict facts* injected into the system prompt "
+                    "to answer. Base your answer ONLY on that material where it is relevant.\n\n"
+                    "CITATION AND FORMATTING RULES:\n"
+                    "1. MANDATORY FULL PATHS: When listing, recommending, or presenting files, photos, or documents, you MUST ALWAYS write their EXACT FULL PATH from *Known facts* / *Strict facts* in bold (e.g. `- **/beelink/Data/Phone/IMG_20260926_175706.jpg**: description`). NEVER output bare filenames without their full directory path! NEVER invent files or use files from previous conversation turns that are not listed in the current *Known facts* / *Strict facts*.\n"
+                    "2. WARM & STRUCTURED STYLE: Keep formatting clean, lively and well-structured. Group items into natural thematic categories with emojis if appropriate (e.g. `✨ **Портреты и люди:**`). Use standard bullet lists with the full path in bold (e.g. `- **/path/to/file.ext**: description`).\n"
+                    "3. ACCURACY: If the material does not actually answer the question, say so plainly. Do not invent links or ungrounded facts."
+                )
+                llm_message = search_query if (prompt.startswith("/") and search_query) else prompt
+            elif intent.startswith("recognize"): 
+
+                if ":" in intent:
+                    img_source = intent.split(":", 1)[1]
+            
+                instruction = (
+                    "Recognize the image according to context."
+                )
+                llm_message = prompt
+            elif intent.startswith("import"):
+                doc_source = None
+                collection = "user"
+                card = {}
+                if ":" in intent:
+                    parts = intent.split(":", 2)
+                    doc_source = parts[1]
+                    if len(parts) > 2:
+                        collection = parts[2]
+                
+                yield f"data: {json.dumps({'status': 'learning'})}\n\n"
+                new_knowledge, card = await core_service.import_knowledge(ctx, doc_source, prompt, collection=collection)
+                
+                if not new_knowledge:
+                    # FALLBACK: If import failed or was a directory, treat as chat so MCP can handle it
+                    logging.info(f"Import yielded no knowledge. Falling back to chat intent.")
+                    intent = "chat"
+                    llm_message = prompt
+                    instruction = (
+                        "If *Known facts* are provided in your prior system prompt and they are relevant to user's query, be extremely accurate, do not guess. "
+                        "If no *Known facts* provided, respond freely as a helpful conversational assistant."
+                    )
+                else:
+                    yield f"data: {json.dumps({'new_knowledge': new_knowledge})}\n\n"    
+                    logging.info(f"*New knowledge:*\n{new_knowledge}")
+                    instruction=(
+                        f"Base your answer on *New knowledge* ONLY, if present. *New knowledge:*\n{new_knowledge}"
+                    )
+                    llm_message = prompt
+                    mem_id = card.get("id")
+            elif intent.startswith("image"):
+                pass
+
+            elif intent == "generate":
+                # Ensure chat exists and update timestamp
+                chat_info = await core_service.ensure_chat(ctx, chat, img_prompt)
+                
+                # 1️⃣ Status: generating image
+                yield f"data: {json.dumps({'status': 'generating'})}\n\n"
+                await asyncio.sleep(0.05)
+
+                # 2️⃣ Generate title from raw prompt
+                img_title = await core_service.generate_title_from_prompt(ctx, img_prompt)
+                
+                # Format prompt with title for generate_image to parse
+                formatted_prompt = f"Title: {img_title}\nImage: {img_prompt}"
+                
+                # Calculate prompt_id if not provided
+                prompt_id = provided_prompt_id or ("p_" + core_service.hash_string(img_prompt + ctx.settings.get("style", "")))
+
+                upload_storage_flag = not is_inline_image
+                has_char_tag = any(k in img_prompt.lower() for k in ["<domi>", "<ada>", "<brie>", "<tifa>", "<alt>", "<influencer>", "<june>"])
+                if has_char_tag:
+                    res = await core_service.generate_character_image(ctx, formatted_prompt, chat, update_history=False, prompt_id=prompt_id, upload_storage=upload_storage_flag)
+                else:
+                    res = await core_service.generate_general_image(ctx, formatted_prompt, chat, prompt_id=prompt_id, upload_storage=upload_storage_flag)
+                path, title, description = res[0], res[1], res[2]
+                if len(res) > 3 and res[3]:
+                    store_ephemeral_image(path, res[3])
+                    schedule_generated_image_push(omd_key, device_push, path, res[3], title, description, ctx=ctx, prompt=img_prompt)
+                image_url = f"/chat/image/{path}"
+                img_payload = {'path': path, 'title': title, 'description': description, 'url': image_url, 'prompt': img_prompt}
+                yield f"data: {json.dumps({'prompt': img_prompt, 'prompt_id': prompt_id, 'image': img_payload, 'tokens_consumed': ctx.tokens_consumed, 'done': True})}\n\n"
+                await asyncio.sleep(0.05)
+                
+                # [LEGACY HISTORY] Backend-side history saving removed - handled by frontend/OrbitDB
+                return
+
+            elif check_intent in ("tools", "doc"):
+                logging.info(f"[MCP ROUTE] Routing to check_and_execute_mcp. Prompt: {prompt[:50]}...")
+                yield f"data: {json.dumps({'status': 'executing'})}\n\n"
+                await asyncio.sleep(0.1)
+                
+                mode = ctx.settings.get("content_mode", "work")
+                async for chunk in core_service.check_and_execute_mcp(ctx, prompt, mode=mode, provided_history=provided_history):
+                    if isinstance(chunk, dict):
+                        chunk_type = chunk.get("type")
+                        if chunk_type == "status":
+                            yield f"data: {json.dumps({'status': chunk.get('content'), 'args': chunk.get('args')})}\n\n"
+                        elif chunk_type == "content_delta":
+                            # Live streamed token directly from LLM
+                            yield f"data: {json.dumps({'delta': chunk.get('delta', ''), 'role': 'assistant', 'done': False})}\n\n"
+                        elif chunk_type == "result":
+                            res_content = chunk.get("content") or chunk.get("delta") or ""
+                            # Only fallback to simulated token typing if response was not streamed live
+                            if not chunk.get("streamed") and res_content:
+                                tokens = re.findall(r'\S+\s*|\n+', res_content)
+                                acc = ""
+                                for tok in tokens:
+                                    acc += tok
+                                    yield f"data: {json.dumps({'content': acc, 'delta': tok, 'role': 'assistant', 'done': False})}\n\n"
+                                    await asyncio.sleep(0.012)
+
+                            payload = {'content': res_content, 'role': 'assistant', 'done': True}
+                            if chunk.get("changedFiles"):
+                                payload["changedFiles"] = chunk.get("changedFiles")
+                            if chunk.get("sources"):
+                                payload["sources"] = chunk.get("sources")
+                            yield f"data: {json.dumps(payload)}\n\n"
+                        elif any(k in chunk for k in ["id", "action", "state", "delta", "thought_delta", "tool_call_delta", "tool_result_delta"]):
+                            # Support direct forwarding of rich OpenCode-like events
+                            yield f"data: {json.dumps(chunk)}\n\n"
+                return
+
+            # 3️⃣ основной стрим чата
+            else:
+
+                llm_message = prompt
+                instruction = (
+                    "Respond freely as a helpful conversational assistant."
+                )
+            # 3️⃣ ответ
+            async for chunk in _stream_first_chunk_timeout(
+                await core_service.perform_prompt(
+                    ctx,
+                    instruction=instruction,
+                    message=llm_message,
+                    search_query=search_query,
+                    chat=chat,
+                    intent=intent,
+                    mem_id=mem_id,
+                    img_source=img_source,
+                    event=event,
+                    stream=True,
+                    provided_history=provided_history,
+                    provided_knowledge=provided_knowledge,
+                    chat_summary=chat_summary,
+                    total_message_count=total_message_count,
+                    rag_focus=rag_focus,
+                    attached_docs=attached_docs
+                )
+            ):
+                yield f"data: {json.dumps(chunk)}\n\n"
+        except Exception as e:
+            err_str = str(e).strip()
+            logging.error(f"Error in event_generator: {e}")
+            if err_str.startswith("✨"):
+                yield f"data: {json.dumps({'delta': err_str, 'content': err_str, 'role': 'assistant', 'done': True})}\n\n"
+            else:
+                yield f"data: {json.dumps({'error': 'Request failed. Please try again later.', 'done': True})}\n\n"
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
+
+@app.post("/import")
+async def import_endpoint(data: ImportInput):
+    ctx = get_ctx(data.omd_key)
+    try:
+        card = await core_service.import_doc(ctx, data.url_or_path, data.collection)
+        return {
+           "status": "ok",
+           "card": card
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/memorize")
+async def memorize_endpoint(data: MemorizeInput):
+    ctx = get_ctx(data.omd_key)
+    try:
+        core_service.memorize(ctx, data.text)
+        return {"status": "ok"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/recognize")
+async def recognize_endpoint(
+    request: Request,
+    omd_key: str | None = Depends(get_omd_key),
+    chat: str = Form("default"),
+    prompt: str = Form(""),
+    settings: str = Form(None),
+    history: str = Form(None),
+    file: UploadFile = File(...)
+):
+    chat = chat or "default"
+    ctx = get_ctx(omd_key)
+    ctx.private_mode = trusted_private_access(request, ctx)
+    ctx.trusted_owner = trusted_owner_access(request)
+    if settings:
+        try:
+            provided_settings = json.loads(settings)
+            ctx.settings.update(provided_settings)
+            ctx.storage = ctx.settings.get("defaultStorage", "")
+        except:
+             logging.warning("Failed to parse settings in /recognize")
+    
+    provided_history = None
+    if history:
+         try:
+              provided_history = json.loads(history)
+         except:
+              logging.warning("Failed to parse history in /recognize")
+
+    try:
+        img_bytes = await file.read()
+        result = await core_service.recognize_image(ctx, img_bytes, prompt, chat, provided_history=provided_history)
+        return {"response": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/generate/image/character")
+async def generate_character_image(request: Request, data: GenerateInput):
+    agentic_tunnel.note_request(request, omd_key=data.omd_key, settings_payload=data.settings)
+    data.chat = data.chat or "default"
+    ctx = get_ctx(data.omd_key)
+    ctx.private_mode = trusted_private_access(request, ctx)
+    ctx.trusted_owner = trusted_owner_access(request)
+    if data.settings:
+        ctx.settings.update(data.settings)
+        ctx.storage = ctx.settings.get("defaultStorage", "")
+    ctx.mcp_keys = data.mcp_keys or (ctx.settings.get("mcp_keys") if isinstance(ctx.settings, dict) else None) or getattr(ctx, "mcp_keys", None) or {}
+    try:
+        is_p2p = (
+            ctx.private_mode
+            or bool(data.device_push)
+            or bool(request.headers.get("X-OMD-Caller-Role"))
+            or bool(request.headers.get("X-OMD-Caller-DID"))
+            or bool(request.headers.get("X-OMD-DID"))
+            or request.headers.get("X-OMD-Private-Mode") == "1"
+            or request.headers.get("x-client") == "svar"
+            or request.headers.get("x-image-delivery") == "inline"
+            or (data.settings and (data.settings.get("client") == "svar" or data.settings.get("image_delivery") == "inline"))
+        )
+        upload_storage_flag = data.upload_storage if data.upload_storage is not None else (not is_p2p)
+        if not (ctx.private_mode or ctx.is_unlimited):
+            safety = await core_service.check_prompt_safety(ctx, data.prompt)
+            if safety != "SAFE":
+                raise HTTPException(status_code=403, detail=safety)
+        # generate_image returns (filename, title, description, img_data)
+        is_new = data.message_nonce is None and data.message_index is None
+        res = await core_service.generate_character_image(ctx, data.prompt, data.chat, update_history=is_new, prompt_id=data.prompt_id, upload_storage=upload_storage_flag)
+        filename, title, description = res[0], res[1], res[2]
+        if len(res) > 3 and res[3]:
+            store_ephemeral_image(filename, res[3])
+            schedule_generated_image_push(data.omd_key, data.device_push, filename, res[3], title, description, ctx=ctx)
+        
+        # [LEGACY HISTORY] Load history removed
+        history = []
+        
+        if data.message_index is not None:
+             # This part might still be needed if we want to return the updated description,
+             # but we don't save it to local disk anymore.
+             pass
+
+        return {
+            "image": filename,
+            "path": filename,
+            "url": f"/chat/image/{filename}",
+            "title": title,
+            "description": description,
+            "tokens_consumed": ctx.tokens_consumed
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/generate/image/general")
+async def generate_general_image(request: Request, data: GenerateInput):
+    agentic_tunnel.note_request(request, omd_key=data.omd_key, settings_payload=data.settings)
+    data.chat = data.chat or "default"
+    ctx = get_ctx(data.omd_key)
+    ctx.private_mode = trusted_private_access(request, ctx)
+    ctx.trusted_owner = trusted_owner_access(request)
+    if data.settings:
+        ctx.settings.update(data.settings)
+        ctx.storage = ctx.settings.get("defaultStorage", "")
+    ctx.mcp_keys = data.mcp_keys or (ctx.settings.get("mcp_keys") if isinstance(ctx.settings, dict) else None) or getattr(ctx, "mcp_keys", None) or {}
+    try:
+        is_p2p = (
+            ctx.private_mode
+            or bool(data.device_push)
+            or bool(request.headers.get("X-OMD-Caller-Role"))
+            or bool(request.headers.get("X-OMD-Caller-DID"))
+            or bool(request.headers.get("X-OMD-DID"))
+            or request.headers.get("X-OMD-Private-Mode") == "1"
+            or request.headers.get("x-client") == "svar"
+            or request.headers.get("x-image-delivery") == "inline"
+            or (data.settings and (data.settings.get("client") == "svar" or data.settings.get("image_delivery") == "inline"))
+        )
+        upload_storage_flag = data.upload_storage if data.upload_storage is not None else (not is_p2p)
+        if not (ctx.private_mode or ctx.is_unlimited):
+            safety = await core_service.check_prompt_safety(ctx, data.prompt)
+            if safety != "SAFE":
+                raise HTTPException(status_code=403, detail=safety)
+        # generate_general_image returns (filename, title, description, img_data)
+        res = await core_service.generate_general_image(ctx, data.prompt, data.chat, prompt_id=data.prompt_id, upload_storage=upload_storage_flag)
+        filename, title, description = res[0], res[1], res[2]
+        if len(res) > 3 and res[3]:
+            store_ephemeral_image(filename, res[3])
+            schedule_generated_image_push(data.omd_key, data.device_push, filename, res[3], title, description, ctx=ctx)
+        return {
+            "image": filename,
+            "path": filename,
+            "url": f"/chat/image/{filename}",
+            "title": title,
+            "description": description,
+            "tokens_consumed": ctx.tokens_consumed
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/generate/krea2")
+async def generate_krea2_endpoint(request: Request, data: KreaGenerateInput):
+    agentic_tunnel.note_request(request, omd_key=data.omd_key, settings_payload=data.settings)
+    data.chat = data.chat or "default"
+    ctx = get_ctx(data.omd_key)
+    ctx.private_mode = trusted_private_access(request, ctx)
+    ctx.trusted_owner = trusted_owner_access(request)
+    if data.settings:
+        ctx.settings.update(data.settings)
+        ctx.storage = ctx.settings.get("defaultStorage", "")
+    ctx.mcp_keys = data.mcp_keys or (ctx.settings.get("mcp_keys") if isinstance(ctx.settings, dict) else None) or getattr(ctx, "mcp_keys", None) or {}
+    try:
+        is_p2p = (
+            ctx.private_mode
+            or bool(data.device_push)
+            or bool(request.headers.get("X-OMD-Caller-Role"))
+            or bool(request.headers.get("X-OMD-Caller-DID"))
+            or bool(request.headers.get("X-OMD-DID"))
+            or request.headers.get("X-OMD-Private-Mode") == "1"
+            or request.headers.get("x-client") == "svar"
+            or request.headers.get("x-image-delivery") == "inline"
+            or (data.settings and (data.settings.get("client") == "svar" or data.settings.get("image_delivery") == "inline"))
+        )
+        upload_storage_flag = data.upload_storage if data.upload_storage is not None else (not is_p2p)
+        if not (ctx.private_mode or ctx.is_unlimited):
+            safety = await core_service.check_prompt_safety(ctx, data.prompt)
+            if safety != "SAFE":
+                raise HTTPException(status_code=403, detail=safety)
+
+        # Случай 1: Владелец ноды или локальный запрос — сохранение на этой ноде (save_local=True)
+        is_node_owner = False
+        try:
+            is_node_owner = (
+                validated_node_owner(ctx)
+                or getattr(ctx, "trusted_owner", False)
+                or getattr(ctx, "private_mode", False)
+                or trusted_owner_access(request)
+            )
+        except Exception:
+            is_node_owner = getattr(ctx, "trusted_owner", False)
+        save_locally = bool(is_node_owner or data.save_local)
+
+        ref_imgs = data.reference_images or ([data.reference_image] if data.reference_image else None)
+        is_sdxl_req = isinstance(data.sliders, dict) and core_service.is_sdxl_base_model(data.sliders.get("base_model"))
+
+        async def _run_krea2_core() -> dict:
+            t_start = time.time()
+            res = await core_service.generate_krea2_image(
+                ctx=ctx,
+                prompt=data.prompt,
+                persona_prompt=data.persona_prompt or "",
+                persona_lora=data.persona_lora,
+                persona_id=data.persona_id,
+                persona_name=data.persona_name,
+                force_avatar_ref=bool(data.force_avatar_ref),
+                sliders=data.sliders,
+                reference_image=ref_imgs[0] if ref_imgs else None,
+                reference_images=ref_imgs,
+                width=data.width,
+                height=data.height,
+                steps=data.steps,
+                cfg=data.cfg,
+                seed=data.seed,
+                upload_storage=upload_storage_flag,
+                save_local=save_locally,
+                subfolder=data.subfolder,
+                filename_prefix=data.filename_prefix,
+                custom_title=data.custom_title,
+                custom_description=data.custom_description,
+            )
+            total_time = round(time.time() - t_start, 2)
+            gpu_time = None
+            if not is_sdxl_req:
+                try:
+                    from extensions.modal_comfy_client import get_last_gpu_time
+                    gpu_time = get_last_gpu_time()
+                except Exception:
+                    pass
+
+            await core_service.emit_generation_progress("saving")
+
+            filename, title, description, img_data = res[0], res[1], res[2], res[3]
+            raw_prompt = (data.prompt or data.persona_prompt or "").strip()
+            if img_data:
+                store_ephemeral_image(filename, img_data)
+                readme_filename = os.path.splitext(filename)[0] + ".Readme.md"
+                readme_text = f"# {title}\n\n{description}\n"
+                if raw_prompt:
+                    readme_text += f"\n<!-- prompt: {raw_prompt} -->\n"
+                store_ephemeral_image(readme_filename, readme_text.encode("utf-8"))
+                if data.device_push:
+                    schedule_generated_image_push(data.omd_key, data.device_push, filename, img_data, title, description, ctx=ctx, prompt=raw_prompt)
+
+            safe_subfolder = core_service.sanitize_story_slug(data.subfolder) if data.subfolder else ""
+            out_payload = {
+                "image": filename,
+                "path": f"{safe_subfolder}/{filename}" if safe_subfolder else filename,
+                "subfolder": safe_subfolder,
+                "url": f"/chat/image/{filename}",
+                "title": title,
+                "description": description,
+                "prompt": raw_prompt,
+                "persona": data.persona_name or data.persona_id or "",
+                "saved_locally": save_locally,
+                "gpu_time": gpu_time,
+                "total_time": total_time,
+            }
+            try:
+                post_status = await core_service.check_krea_status(ctx)
+                if isinstance(post_status, dict):
+                    for qk in ("tier", "krea_allowed", "credits", "krea_daily_remaining", "krea_daily_limit", "krea_notice"):
+                        if qk in post_status:
+                            out_payload[qk] = post_status[qk]
+            except Exception:
+                pass
+            return out_payload
+
+        if not data.stream:
+            return await _run_krea2_core()
+
+        async def _ndjson_stream():
+            prog_q: asyncio.Queue = asyncio.Queue()
+
+            def _on_progress(stage: str, **info):
+                prog_q.put_nowait({"type": "progress", "stage": stage, **info})
+
+            token_var = core_service.generation_progress_var.set(_on_progress)
+            task = asyncio.create_task(_run_krea2_core())
+            core_service.generation_progress_var.reset(token_var)
+            task.add_done_callback(lambda _: prog_q.put_nowait(None))
+
+            init_evt = (
+                {"type": "progress", "stage": "generating", "phase": "loading_models", "step": 0}
+                if is_sdxl_req
+                else {"type": "progress", "stage": "warming", "phase": "preparing"}
+            )
+            yield (json.dumps(init_evt) + "\n").encode("utf-8")
+
+            try:
+                while True:
+                    try:
+                        ev = await asyncio.wait_for(prog_q.get(), timeout=8.0)
+                        if ev is None:
+                            while not prog_q.empty():
+                                tail = prog_q.get_nowait()
+                                if tail is not None:
+                                    yield (json.dumps(tail) + "\n").encode("utf-8")
+                            break
+                        yield (json.dumps(ev) + "\n").encode("utf-8")
+                    except asyncio.TimeoutError:
+                        if task.done():
+                            break
+                        yield (json.dumps({"type": "ping"}) + "\n").encode("utf-8")
+
+                result_dict = await task
+                yield (json.dumps({"type": "result", "data": result_dict}) + "\n").encode("utf-8")
+            except HTTPException as he:
+                yield (json.dumps({"type": "error", "detail": str(he.detail)}) + "\n").encode("utf-8")
+            except Exception as exc:
+                logging.error(f"Error in streamed /generate/krea2: {exc}")
+                yield (json.dumps({"type": "error", "detail": str(exc)}) + "\n").encode("utf-8")
+
+        return StreamingResponse(_ndjson_stream(), media_type="application/x-ndjson")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error in /generate/krea2: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/generate/krea/video")
+async def generate_krea_video_endpoint(request: Request, data: KreaVideoGenerateInput):
+    agentic_tunnel.note_request(request, omd_key=data.omd_key, settings_payload=data.settings)
+    data.chat = data.chat or "default"
+    ctx = get_ctx(data.omd_key)
+    ctx.private_mode = trusted_private_access(request, ctx)
+    ctx.trusted_owner = trusted_owner_access(request)
+    if data.settings:
+        ctx.settings.update(data.settings)
+        ctx.storage = ctx.settings.get("defaultStorage", "")
+    ctx.mcp_keys = data.mcp_keys or (ctx.settings.get("mcp_keys") if isinstance(ctx.settings, dict) else None) or getattr(ctx, "mcp_keys", None) or {}
+    try:
+        if not (ctx.private_mode or ctx.is_unlimited):
+            safety = await core_service.check_prompt_safety(ctx, data.prompt)
+            if safety != "SAFE":
+                raise HTTPException(status_code=403, detail=safety)
+
+        is_node_owner = False
+        try:
+            is_node_owner = (
+                validated_node_owner(ctx)
+                or getattr(ctx, "trusted_owner", False)
+                or getattr(ctx, "private_mode", False)
+                or trusted_owner_access(request)
+            )
+        except Exception:
+            is_node_owner = getattr(ctx, "trusted_owner", False)
+        save_locally = bool(is_node_owner or data.save_local)
+
+        ref_imgs = data.reference_images or ([data.reference_image] if data.reference_image else None)
+
+        async def _run_video_core() -> dict:
+            t_start = time.time()
+            res = await core_service.generate_krea_video(
+                ctx=ctx,
+                prompt=data.prompt,
+                persona_id=data.persona_id,
+                persona_prompt=data.persona_prompt or "",
+                persona_name=data.persona_name,
+                reference_image=ref_imgs[0] if ref_imgs else None,
+                reference_images=ref_imgs,
+                video_ref_mode=data.video_ref_mode or "auto",
+                extend_video=data.extend_video,
+                width=data.width,
+                height=data.height,
+                duration=data.duration,
+                quality=data.quality,
+                steps=data.steps,
+                seed=data.seed,
+                save_local=save_locally,
+                subfolder=data.subfolder,
+                filename_prefix=data.filename_prefix,
+                custom_title=data.custom_title,
+                custom_description=data.custom_description,
+            )
+            total_time = round(time.time() - t_start, 2)
+            gpu_time = None
+            try:
+                from extensions.modal_comfy_client import get_last_video_gpu_time
+                gpu_time = get_last_video_gpu_time()
+            except Exception:
+                pass
+
+            await core_service.emit_generation_progress("saving")
+
+            filename, title, description, video_data, cover_bytes = res[0], res[1], res[2], res[3], res[4]
+            raw_prompt = (data.prompt or data.persona_prompt or "").strip()
+            base_no_ext = os.path.splitext(filename)[0]
+            cover_filename = f"{base_no_ext}.cover.jpg" if cover_bytes else ""
+
+            actual_duration = round(core_service.align_minimax_h3_frames(data.duration) / 24.0, 1)
+            if video_data:
+                probed = core_service._probe_video_bytes_meta(video_data)
+                if probed.get("duration", 0) > 0.5:
+                    actual_duration = round(float(probed["duration"]), 1)
+                store_ephemeral_image(filename, video_data, ttl=1800)
+                readme_filename = f"{base_no_ext}.Readme.md"
+                readme_text = f"# {title}\n\n{description}\n"
+                if raw_prompt:
+                    readme_text += f"\n<!-- prompt: {raw_prompt} -->\n"
+                store_ephemeral_image(readme_filename, readme_text.encode("utf-8"), ttl=1800)
+                if cover_bytes and cover_filename:
+                    store_ephemeral_image(cover_filename, cover_bytes, ttl=1800)
+                if data.device_push:
+                    schedule_generated_image_push(
+                        data.omd_key, data.device_push, filename, video_data, title, description, ctx=ctx, prompt=raw_prompt
+                    )
+                    if cover_bytes and cover_filename:
+                        try:
+                            import device_push as _dp
+                            if not _dp.is_local_target(data.device_push, ctx):
+                                _dp.schedule_push(data.omd_key, data.device_push, [(cover_filename, cover_bytes)], ctx=ctx)
+                        except Exception:
+                            pass
+
+            safe_subfolder = core_service.sanitize_story_slug(data.subfolder) if data.subfolder else ""
+            out_payload = {
+                "video": filename,
+                "image": filename,
+                "is_video": True,
+                "duration": actual_duration,
+                "cover": cover_filename,
+                "cover_url": f"/chat/image/{cover_filename}" if cover_filename else "",
+                "path": f"{safe_subfolder}/{filename}" if safe_subfolder else filename,
+                "subfolder": safe_subfolder,
+                "url": f"/chat/image/{filename}",
+                "title": title,
+                "description": description,
+                "prompt": raw_prompt,
+                "persona": data.persona_name or data.persona_id or "",
+                "saved_locally": save_locally,
+                "gpu_time": gpu_time,
+                "total_time": total_time,
+            }
+            try:
+                post_status = await core_service.check_krea_status(ctx)
+                if isinstance(post_status, dict):
+                    for qk in ("tier", "krea_allowed", "credits", "krea_daily_remaining", "krea_daily_limit", "krea_notice"):
+                        if qk in post_status:
+                            out_payload[qk] = post_status[qk]
+            except Exception:
+                pass
+            return out_payload
+
+        if not data.stream:
+            return await _run_video_core()
+
+        async def _ndjson_stream():
+            prog_q: asyncio.Queue = asyncio.Queue()
+
+            def _on_progress(stage: str, **info):
+                prog_q.put_nowait({"type": "progress", "stage": stage, **info})
+
+            token_var = core_service.generation_progress_var.set(_on_progress)
+            task = asyncio.create_task(_run_video_core())
+            core_service.generation_progress_var.reset(token_var)
+            task.add_done_callback(lambda _: prog_q.put_nowait(None))
+
+            yield (json.dumps({"type": "progress", "stage": "warming", "phase": "preparing"}) + "\n").encode("utf-8")
+
+            try:
+                while True:
+                    try:
+                        ev = await asyncio.wait_for(prog_q.get(), timeout=8.0)
+                        if ev is None:
+                            while not prog_q.empty():
+                                tail = prog_q.get_nowait()
+                                if tail is not None:
+                                    yield (json.dumps(tail) + "\n").encode("utf-8")
+                            break
+                        yield (json.dumps(ev) + "\n").encode("utf-8")
+                    except asyncio.TimeoutError:
+                        if task.done():
+                            break
+                        yield (json.dumps({"type": "ping"}) + "\n").encode("utf-8")
+
+                result_dict = await task
+                yield (json.dumps({"type": "result", "data": result_dict}) + "\n").encode("utf-8")
+            except HTTPException as he:
+                yield (json.dumps({"type": "error", "detail": str(he.detail)}) + "\n").encode("utf-8")
+            except Exception as exc:
+                logging.error(f"Error in streamed /generate/krea/video: {exc}")
+                yield (json.dumps({"type": "error", "detail": str(exc)}) + "\n").encode("utf-8")
+
+        return StreamingResponse(_ndjson_stream(), media_type="application/x-ndjson")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error in /generate/krea/video: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/personas/generate")
+async def generate_persona_endpoint(request: Request, data: PersonaGenerateInput):
+    """Генерирует новую персону по типажу (словесный паспорт + портрет Krea 2)."""
+    import random, base64
+    ctx = get_ctx(data.omd_key)
+    ctx.private_mode = trusted_private_access(request, ctx)
+    ctx.trusted_owner = trusted_owner_access(request)
+    if data.settings:
+        ctx.settings.update(data.settings)
+    ctx.mcp_keys = data.mcp_keys or (ctx.settings.get("mcp_keys") if isinstance(ctx.settings, dict) else None) or getattr(ctx, "mcp_keys", None) or {}
+
+    archetype_presets = {
+        "domi": {
+            "names": ["Доминика", "Domi", "Ника", "Dominika"],
+            "title": "Domi / Mysterious Charisma",
+            "passport": "DomiK, attractive woman with piercing hazel gaze, shoulder-length stylish layered haircut, confident radiant smile, modern chic outfit, magnetic presence",
+            "style": "photorealistic",
+            "archetype": "domi",
+            "lora": "DomiK4.safetensors"
+        },
+        "ada": {
+            "names": ["Ада", "Ada", "Ada Wong"],
+            "title": "Femme Fatale Secret Agent",
+            "passport": "ada_wong, short sleek black bob hair, elegant crimson silk dress, captivating dark eyes, confident enigmatic expression, cinematic espionage aesthetics",
+            "style": "cinematic",
+            "archetype": "ada",
+            "lora": "ada_wong.safetensors"
+        },
+        "brie": {
+            "names": ["Бри", "Brie", "Bella", "Brooke"],
+            "title": "Cheerful Blonde Beauty",
+            "passport": "kxbrie woman, blonde wavy hair, sparkling blue eyes, radiant playful smile, sun-kissed natural complexion, stylish casual summer attire",
+            "style": "photorealistic",
+            "archetype": "brie",
+            "lora": "kxbrie.safetensors"
+        },
+        "alt": {
+            "names": ["Кира", "Лира", "Ника", "Raven", "Roxy", "Marta"],
+            "title": "Alt / Goth Girl",
+            "passport": "Young alternative woman with chin-length jet-black hair with vibrant purple streaks, dark winged eyeliner, small silver nose ring, velvet choker, expressive moody gaze, pale skin, edgy alternative chic",
+            "style": "alt",
+            "archetype": "alt",
+            "lora": "BSS_AJlbTyIIIKu_V20_Krea2.safetensors"
+        },
+        "influencer": {
+            "names": ["София", "Эмма", "Мия", "Chloe", "Valerie", "Diana"],
+            "title": "Instagram Influencer",
+            "passport": "Stunning 22-year-old lifestyle influencer with long wavy honey-blonde hair, warm hazel eyes, glowing tanned skin, soft natural makeup, charming candid smile, chic oversized knitted cardigan, golden hour warmth",
+            "style": "influencer",
+            "archetype": "influencer",
+            "lora": "Famegrid-Natural-V1-Krea-2.safetensors"
+        },
+        "business": {
+            "names": ["Виктория", "Елена", "Claire", "Diane", "Ingrid"],
+            "title": "Tech Founder & CEO",
+            "passport": "Sophisticated modern woman with sleek dark brunette bob, confident warm brown eyes, sharp tailored blazer, delicate minimalist earrings, intelligent poised expression, modern high-rise office ambiance",
+            "style": "photorealistic",
+            "archetype": None
+        },
+        "cyberpunk": {
+            "names": ["Нейра", "Злата", "Nova", "Cipher", "Vesper"],
+            "title": "Cyberpunk Netrunner",
+            "passport": "Futuristic young cyber-operative with asymmetrical platinum hair and teal neon tips, glowing optic cyberware around temple, dark techwear jacket with luminous accents, rain-slicked neon street reflections",
+            "style": "neon",
+            "archetype": None
+        },
+        "anime": {
+            "names": ["Юки", "Акари", "Sakura", "Hana", "Rei"],
+            "title": "Artistic Anime Muse",
+            "passport": "Artistic girl with voluminous pastel pink wavy hair, large luminous violet eyes, playful gentle expression, delicate porcelain skin, cute oversized sweater with artistic pins",
+            "style": "anime",
+            "archetype": None
+        },
+        "tifa": {
+            "names": ["Тифа", "Tifa", "Lockhart"],
+            "title": "Legendary Heroine",
+            "passport": "Stunning athletic martial artist with long waist-length glossy black hair tied in dolphin-tail tip, captivating ruby-red eyes, toned athletic build, leather fingerless gloves, iconic white top with suspenders",
+            "style": "photorealistic",
+            "archetype": "tifa",
+            "lora": "tifa_lockhart_krea2.safetensors"
+        },
+        "luna": {
+            "names": ["Луна", "Luna"],
+            "title": "Sweet & Flirtatious Beauty",
+            "passport": "Lun4, attractive young woman, sweet and flirtatious gaze, charming smile, alluring presence",
+            "style": "photorealistic",
+            "archetype": "luna",
+            "lora": "Krea_2_Luna_epoch_10.safetensors"
+        }
+    }
+    krea_data = core_service.get_krea_presets()
+    krea_archetypes = {a["id"]: a for a in krea_data.get("archetypes", []) if "id" in a}
+
+    arch_key = data.archetype if (data.archetype in krea_archetypes or data.archetype in archetype_presets) else "alt"
+
+    if arch_key in krea_archetypes:
+        k_arch = krea_archetypes[arch_key]
+        name = k_arch.get("name", arch_key)
+        title = f"{k_arch.get('name', arch_key)} / {k_arch.get('description', '')}"
+        passport = k_arch.get("trigger", "")
+        style = data.style or "photorealistic"
+        arch_val = arch_key
+        arch_lora = k_arch.get("lora", "")
+    else:
+        arch = archetype_presets[arch_key]
+        name = random.choice(arch["names"])
+        title = arch["title"]
+        passport = arch["passport"]
+        style = data.style or arch["style"]
+        arch_val = arch.get("archetype")
+        arch_lora = arch.get("lora", "")
+
+    timestamp = int(time.time())
+    persona_id = f"persona_{arch_key}_{timestamp}"
+
+    # Рендерим портрет через Krea 2 (или локальный SDXL для SDXL-архетипов / гостей / локальных узлов)
+    b64_str = ""
+    try:
+        st_persona = await core_service.check_krea_status(ctx)
+        is_sdxl_arch = arch_key in krea_archetypes and "sdxl" in (krea_archetypes[arch_key].get("models") or [])
+        can_use_krea = bool(st_persona.get("krea_allowed")) and await core_service.is_krea_available(ctx) and not is_sdxl_arch
+        if can_use_krea:
+            res = await core_service.generate_krea2_image(
+                ctx=ctx,
+                prompt="close-up headshot portrait, looking directly at camera, soft studio rim light, natural skin detail",
+                persona_prompt=passport,
+                sliders={"style": style, "archetypes": [arch_val] if arch_val else [], "detail": 0.5},
+                width=896,
+                height=1152,
+                steps=10,
+                cfg=1.0,
+                upload_storage=False
+            )
+            img_data = res[3]
+            b64_str = f"data:image/png;base64,{base64.b64encode(img_data).decode('utf-8')}" if img_data else ""
+        elif await core_service.is_comfy_available():
+            res = await core_service.generate_krea2_image(
+                ctx=ctx,
+                prompt="close-up headshot portrait, looking directly at camera, soft studio rim light, natural skin detail",
+                persona_prompt=passport,
+                sliders={"base_model": "sdxl_realistic", "archetypes": [arch_val] if arch_val else [], "detail": 0.5},
+                width=896,
+                height=1152,
+                steps=6,
+                cfg=1.0,
+                upload_storage=False
+            )
+            img_data = res[3]
+            b64_str = f"data:image/png;base64,{base64.b64encode(img_data).decode('utf-8')}" if img_data else ""
+        else:
+            logging.info("[personas/generate] ComfyUI / Krea 2 is not available, returning text passport")
+    except Exception as e:
+        logging.error(f"Error generating persona portrait: {e}")
+        b64_str = ""
+
+    return {
+        "id": persona_id,
+        "name": name,
+        "title": title,
+        "prompt": passport,
+        "archetype": arch_key,
+        "lora": arch_lora,
+        "style": style,
+        "avatar": b64_str,
+        "avatarData": b64_str
+    }
+
+
+@app.post("/personas/describe-face")
+async def describe_persona_face(request: Request, data: PersonaDescribeFaceInput):
+    """Распознает черты лица и внешность с изображения через Vision-модель для словесного паспорта Krea 2."""
+    raw_img = data.image.strip()
+    if not raw_img:
+        raise HTTPException(status_code=400, detail="No image provided")
+    if "," in raw_img:
+        raw_img = raw_img.split(",", 1)[1]
+
+    # Ищем подходящую vision-модель в ollama
+    vision_model = (core_service.VISION_MODEL or "").strip()
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=2.0)) as session:
+            async with session.get(f"{core_service.OLLAMA_URL}/api/tags") as resp:
+                if resp.status == 200:
+                    tags = await resp.json()
+                    available_vision = [
+                        m["name"] for m in tags.get("models", [])
+                        if "vision" in m.get("capabilities", [])
+                    ]
+                    if "qwen3.5-32k:latest" in available_vision:
+                        vision_model = "qwen3.5-32k:latest"
+                    elif "gemma4-work:latest" in available_vision:
+                        vision_model = "gemma4-work:latest"
+                    elif available_vision:
+                        vision_model = available_vision[0]
+    except Exception as e:
+        logging.warning(f"Error checking vision tags: {e}")
+
+    if not vision_model:
+        vision_model = "qwen3.5-32k:latest"
+
+    sys_prompt = (
+        "You are an expert character facial analyst for text-to-image diffusion models (Krea 2 / CyberRealistic). "
+        "Analyze this person's face and appearance from the photograph and produce a concise, highly specific physical description (verbal passport) "
+        "for consistent character image generation. Detail: gender, approximate age, ethnicity/features, facial structure, skin tone, eye shape & color, "
+        "eyebrows, nose, lips/mouth, hair style/color/length/texture, and any distinctive traits (freckles, glasses, smile). "
+        "Output ONLY the descriptive prompt in English in 2-3 sentences, starting with the subject description (e.g. 'A 25-year-old woman with...'). "
+        "Do not include commentary, markdown headers, or preambles."
+    )
+
+    payload = {
+        "model": vision_model,
+        "messages": [
+            {"role": "system", "content": sys_prompt},
+            {"role": "user", "content": "Analyze this face for diffusion character passport.", "images": [raw_img]}
+        ],
+        "stream": False,
+        "options": {"temperature": 0.2}
+    }
+
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60.0)) as session:
+            async with session.post(f"{core_service.OLLAMA_URL}/api/chat", json=payload) as resp:
+                if resp.status != 200:
+                    err_text = await resp.text()
+                    raise HTTPException(status_code=resp.status, detail=f"Ollama vision error: {err_text}")
+                res = await resp.json()
+                passport = res.get("message", {}).get("content", "").strip()
+                if not passport:
+                    raise HTTPException(status_code=500, detail="Empty vision response")
+
+                # Clean any <think>...</think> if model output thought tags
+                passport = re.sub(r"<think>[\s\S]*?</think>", "", passport).strip()
+
+                return {
+                    "prompt": passport,
+                    "title": "Custom Character"
+                }
+    except Exception as e:
+        logging.error(f"Error in /personas/describe-face: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/personas")
+async def get_personas_endpoint(omd_key: str | None = Depends(get_omd_key)):
+    """Возвращает список доступных персон из папки personas рядом с generated."""
+    ctx = get_ctx(omd_key)
+    disk_personas = core_service.load_personas_from_disk(ctx)
+
+    # Гарантируем наличие базовой персоны ассистента в начале списка
+    has_assistant = any(p.get("id") == "june" or p.get("is_default") for p in disk_personas)
+    if not has_assistant:
+        june_desc = ctx.settings.get("assistant_appearance") or user_context.DEFAULT_ASSISTANT_APPEARANCE
+        default_persona = {
+            "id": "june",
+            "name": ctx.settings.get("assistant_name", "June"),
+            "title": ctx.settings.get("assistant_title", "Junior Assistant"),
+            "prompt": june_desc.strip(),
+            "archetype": "domi",
+            "lora": "DomiK4.safetensors",
+            "avatar": "/assistant/avatar?size=160",
+            "avatar_url": "/assistant/avatar?size=160",
+            "is_default": True
+        }
+        disk_personas = [default_persona] + disk_personas
+
+    return {"personas": disk_personas}
+
+
+@app.post("/personas")
+async def save_persona_endpoint(request: Request, data: dict):
+    """Сохраняет персону (.json и .png) в папку personas рядом с generated только для владельца ноды при save_local=True."""
+    omd_key = data.get("omd_key")
+    ctx = get_ctx(omd_key)
+    ctx.private_mode = trusted_private_access(request, ctx)
+    ctx.trusted_owner = trusted_owner_access(request)
+
+    is_owner = False
+    try:
+        is_owner = validated_node_owner(ctx)
+    except Exception:
+        is_owner = False
+
+    # Персоны гостей и персоны на удаленных накопителях НЕ сохраняются на диск ноды
+    if not is_owner or not data.get("save_local", False):
+        p_id = data.get("id") or "unnamed"
+        logging.info(
+            f"[Personas] Not saving on AI node: is_owner={is_owner}, save_local={data.get('save_local')} "
+            f"(persona='{p_id}', user='{ctx.user_id}')"
+        )
+        resp_persona = dict(data)
+        resp_persona.pop("omd_key", None)
+        return {"status": "ok", "persona": resp_persona, "saved_locally": False}
+
+    saved = core_service.save_persona_to_disk(data, ctx)
+    return {"status": "ok", "persona": saved, "saved_locally": True}
+
+
+@app.delete("/personas/{persona_id}")
+async def delete_persona_endpoint(persona_id: str, omd_key: str | None = Depends(get_omd_key)):
+    """Удаляет персону (.json и .png) из папки personas владельца ноды."""
+    ctx = get_ctx(omd_key)
+    is_owner = False
+    try:
+        is_owner = validated_node_owner(ctx)
+    except Exception:
+        is_owner = False
+    if not is_owner:
+        logging.info(f"[Personas] Rejecting delete on AI node: not owner (user='{ctx.user_id}')")
+        return {"status": "ok", "deleted": False, "reason": "not_owner"}
+    success = core_service.delete_persona_from_disk(persona_id, ctx)
+    return {"status": "ok", "deleted": success}
+
+
+@app.get("/personas/{persona_id}/avatar")
+async def get_persona_avatar_endpoint(persona_id: str, omd_key: str | None = Depends(get_omd_key)):
+    """Отдает аватар персоны из папки personas."""
+    ctx = get_ctx(omd_key)
+    dirs = core_service.get_personas_dirs(ctx)
+    for p_dir in dirs:
+        cand = os.path.join(p_dir, f"{persona_id}.png")
+        if os.path.isfile(cand):
+            return FileResponse(cand, media_type="image/png")
+    # Fallback на дефолтный аватар ТОЛЬКО для базовой June
+    if persona_id in ("june", "default"):
+        default_path = os.path.join(core_service.APP_ROOT_DIR, core_service.AVATAR_DIR, "default.png")
+        if os.path.isfile(default_path):
+            return FileResponse(default_path, media_type="image/png")
+    raise HTTPException(status_code=404, detail="Avatar not found")
+
+
+class KreaStatusInput(BaseModel):
+    omd_key: Optional[str] = ""
+    base_model: Optional[str] = ""
+    settings: Optional[dict] = None
+    mcp_keys: Optional[dict] = None
+
+
+@app.api_route("/krea/presets", methods=["GET", "POST"])
+async def get_krea_presets_endpoint(request: Request, data: Optional[KreaStatusInput] = None):
+    """Отдает единый реестр стилей и LoRA для универсальной Creative Studio (Krea 2 / Anima + SDXL)."""
+    ctx = _build_krea_ctx(request, data)
+    include_fun = False
+    try:
+        st = await core_service.check_krea_status(ctx)
+        include_fun = bool(st.get("uncensored"))
+    except Exception:
+        include_fun = bool(getattr(ctx, "private_mode", False) or getattr(ctx, "trusted_owner", False))
+    return core_service.get_krea_presets(include_fun=include_fun)
+
+
+@app.api_route("/krea/status", methods=["GET", "POST"])
+async def check_krea_status_endpoint(request: Request, data: Optional[KreaStatusInput] = None):
+    """
+    Checks Creative Studio tier & engine entitlements for the caller.
+    Delegates to core_service / private extension hook.
+    """
+    ctx = _build_krea_ctx(request, data)
+    res = await core_service.check_krea_status(ctx)
+    if isinstance(res, dict) and res.get("allowed") and res.get("tier") != "guest":
+        try:
+            res = dict(res)
+            res["civitai_accounts"] = await core_service.list_civitai_publish_accounts(ctx)
+        except Exception as e:
+            logging.debug(f"[CivitAI] Accounts lookup in status skipped: {e}")
+    return res
+
+
+class DirectorPromptInput(BaseModel):
+    omd_key: Optional[str] = ""
+    instruction: str = ""
+    current_prompt: Optional[str] = ""
+    base_model: Optional[str] = "realism"
+    persona_name: Optional[str] = ""
+    persona_prompt: Optional[str] = ""
+    persona_personality: Optional[str] = ""
+    styles: Optional[str] = ""
+    archetypes: Optional[str] = ""
+    history: Optional[list] = None
+    warmup_gpu: Optional[bool] = False
+    settings: Optional[dict] = None
+    mcp_keys: Optional[dict] = None
+
+
+class DirectorStoryboardInput(BaseModel):
+    omd_key: Optional[str] = ""
+    action: str = "plan"  # "plan" | "continue" | "refine_scene"
+    story_title: Optional[str] = ""
+    setting: Optional[str] = ""
+    idea: Optional[str] = ""
+    scene_count: int = 4
+    base_model: Optional[str] = "realism"
+    personas: Optional[list] = None
+    styles: Optional[str] = ""
+    archetypes: Optional[str] = ""
+    existing_scenes: Optional[list] = None
+    target_scene_index: Optional[int] = None
+    warmup_gpu: Optional[bool] = False
+    settings: Optional[dict] = None
+    mcp_keys: Optional[dict] = None
+
+
+class StorySaveInput(BaseModel):
+    omd_key: Optional[str] = ""
+    story_title: str = "Untitled Story"
+    story_slug: Optional[str] = ""
+    setting: Optional[str] = ""
+    personas: Optional[list] = None
+    scenes: list = []
+    save_local: Optional[bool] = True
+    settings: Optional[dict] = None
+    mcp_keys: Optional[dict] = None
+
+
+def _build_krea_ctx(request: Request, data=None):
+    effective_key = (getattr(data, "omd_key", "") if data else "") or request.headers.get("Token", "") or request.query_params.get("omd_key", "")
+    ctx = get_ctx(effective_key)
+    ctx.private_mode = trusted_private_access(request, ctx)
+    ctx.trusted_owner = trusted_owner_access(request)
+    if data and getattr(data, "settings", None):
+        ctx.settings.update(data.settings)
+        ctx.storage = ctx.settings.get("defaultStorage", "")
+    if data:
+        ctx.mcp_keys = getattr(data, "mcp_keys", None) or (ctx.settings.get("mcp_keys") if isinstance(ctx.settings, dict) else None) or getattr(ctx, "mcp_keys", None) or {}
+    return ctx
+
+
+@app.post("/krea/warmup")
+async def krea_warmup_endpoint(request: Request, data: Optional[KreaStatusInput] = None):
+    """Triggers lazy background Cloud GPU warmup right when a Krea/Anima generation begins."""
+    ctx = _build_krea_ctx(request, data)
+    status = await core_service.check_krea_status(ctx)
+    if not status.get("allowed"):
+        raise HTTPException(status_code=403, detail=status.get("error", "Not authorized"))
+    req_base = (data.base_model if data else "") or ""
+    if core_service.is_sdxl_base_model(req_base) or not status.get("krea_allowed"):
+        return {"status": "local_sdxl", "gpu_warm": False}
+    try:
+        from extensions.hooks import maybe_start_gpu_warmup_for_generation
+        await maybe_start_gpu_warmup_for_generation(ctx, base_model=req_base)
+    except Exception:
+        pass
+    return {"status": "warming", "gpu_warm": status.get("gpu_warm", False)}
+
+
+class CivitaiExtractInput(BaseModel):
+    omd_key: Optional[str] = ""
+    url: str
+    warmup_gpu: Optional[bool] = False
+    settings: Optional[dict] = None
+    mcp_keys: Optional[dict] = None
+
+
+@app.post("/krea/civitai/extract")
+async def krea_civitai_extract_endpoint(request: Request, data: CivitaiExtractInput):
+    """Extracts prompt, base model, LoRA styles/archetypes & weights, steps, CFG, and aspect ratio from a CivitAI image/post URL."""
+    ctx = _build_krea_ctx(request, data)
+    status = await core_service.check_krea_status(ctx)
+    if not status.get("allowed"):
+        raise HTTPException(status_code=403, detail=status.get("error", "Creative Studio access required"))
+    if data.warmup_gpu and status.get("krea_allowed"):
+        try:
+            from extensions.hooks import maybe_start_gpu_warmup_for_generation
+            asyncio.create_task(maybe_start_gpu_warmup_for_generation(ctx))
+        except Exception:
+            pass
+    try:
+        imported, remaining = await core_service.extract_civitai_image_preset(ctx, data.url)
+        if not imported:
+            raise ValueError("Не найдена ссылка на CivitAI (ожидается https://civitai.com/images/... или https://civitai.red/images/...).")
+        return {**imported, "remaining_instruction": remaining}
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        logging.error(f"Error in /krea/civitai/extract: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class CivitaiPublishInput(BaseModel):
+    omd_key: Optional[str] = ""
+    images: list[dict] = []
+    title: Optional[str] = ""
+    detail: Optional[str] = ""
+    tags: Optional[list[str] | str] = None
+    publish: bool = True
+    include_meta: bool = True
+    account_id: Optional[str] = ""
+    custom_token: Optional[str] = ""
+    persona_id: Optional[str] = ""
+    settings: Optional[dict] = None
+    mcp_keys: Optional[dict] = None
+
+
+@app.post("/krea/civitai/accounts")
+async def krea_civitai_accounts_endpoint(request: Request, data: Optional[KreaStatusInput] = None):
+    """Returns available CivitAI publishing accounts (IDs + usernames, never exposing tokens)."""
+    ctx = _build_krea_ctx(request, data)
+    status = await core_service.check_krea_status(ctx)
+    if not status.get("allowed") or status.get("tier") == "guest":
+        raise HTTPException(status_code=403, detail=status.get("krea_notice") or status.get("error", "Creative Studio Pass required"))
+    accounts = await core_service.list_civitai_publish_accounts(ctx)
+    return {"accounts": accounts}
+
+
+@app.post("/krea/civitai/publish")
+async def krea_civitai_publish_endpoint(request: Request, data: CivitaiPublishInput):
+    """Uploads 1..20 images directly to CivitAI and creates/publishes a post under the selected API key's account."""
+    ctx = _build_krea_ctx(request, data)
+    status = await core_service.check_krea_status(ctx)
+    if not status.get("allowed") or status.get("tier") == "guest":
+        raise HTTPException(status_code=403, detail=status.get("krea_notice") or status.get("error", "Creative Studio Pass required"))
+    try:
+        return await core_service.publish_to_civitai(
+            ctx=ctx,
+            images=data.images or [],
+            title=data.title or "",
+            detail=data.detail or "",
+            tags=data.tags,
+            publish=bool(data.publish),
+            include_meta=bool(data.include_meta),
+            account_id=data.account_id or "",
+            custom_token=data.custom_token or "",
+            persona_id=data.persona_id or "",
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        logging.error(f"Error in /krea/civitai/publish: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/krea/autopilot/intake")
+async def krea_autopilot_intake_endpoint(request: Request, data: CivitaiPublishInput):
+    """Sends 1..20 images or videos from Creative Studio directly into Autopilot review queue (pending_review)."""
+    ctx = _build_krea_ctx(request, data)
+    status = await core_service.check_krea_status(ctx)
+    if not status.get("allowed") or status.get("tier") == "guest":
+        raise HTTPException(status_code=403, detail=status.get("krea_notice") or status.get("error", "Creative Studio Pass required"))
+    try:
+        from extensions import autopilot as _autopilot_ext
+        return await _autopilot_ext.intake_creation_to_autopilot(
+            ctx=ctx,
+            images=data.images or [],
+            title=data.title or "",
+            detail=data.detail or "",
+            tags=data.tags,
+            persona_id=data.persona_id or "",
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        logging.error(f"Error in /krea/autopilot/intake: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/krea/director/prompt")
+async def krea_director_prompt_endpoint(request: Request, data: DirectorPromptInput):
+    """AI Director's Chair — Prompt Co-Pilot (rewrites or creates Krea2/Anima/SDXL prompts in natural language, with CivitAI URL auto-import)."""
+    ctx = _build_krea_ctx(request, data)
+    status = await core_service.check_krea_status(ctx)
+    if not status.get("allowed"):
+        raise HTTPException(status_code=403, detail=status.get("error", "Creative Studio access required"))
+    if not status.get("uncensored"):
+        check_text = f"{data.instruction or ''} {data.current_prompt or ''}".strip()
+        if check_text:
+            safety = await core_service.check_prompt_safety(ctx, check_text)
+            if safety != "SAFE":
+                raise HTTPException(status_code=403, detail=safety)
+    if data.warmup_gpu and status.get("krea_allowed"):
+        try:
+            from extensions.hooks import maybe_start_gpu_warmup_for_generation
+            asyncio.create_task(maybe_start_gpu_warmup_for_generation(ctx, base_model=data.base_model or ""))
+        except Exception:
+            pass
+    try:
+        return await core_service.krea_director_rewrite_prompt(
+            ctx=ctx,
+            instruction=data.instruction,
+            current_prompt=data.current_prompt or "",
+            base_model=data.base_model or "realism",
+            persona_name=data.persona_name or "",
+            persona_prompt=data.persona_prompt or "",
+            persona_personality=data.persona_personality or "",
+            styles=data.styles or "",
+            archetypes=data.archetypes or "",
+            history=data.history,
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        logging.error(f"Error in /krea/director/prompt: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/krea/director/storyboard")
+async def krea_director_storyboard_endpoint(request: Request, data: DirectorStoryboardInput):
+    """AI Director's Chair — Multi-scene Storyboard & Visual Novel Planner."""
+    ctx = _build_krea_ctx(request, data)
+    status = await core_service.check_krea_status(ctx)
+    if not status.get("allowed"):
+        raise HTTPException(status_code=403, detail=status.get("error", "Creative Studio access required"))
+    if not status.get("uncensored"):
+        check_text = f"{data.story_title or ''} {data.setting or ''} {data.idea or ''}".strip()
+        if check_text:
+            safety = await core_service.check_prompt_safety(ctx, check_text)
+            if safety != "SAFE":
+                raise HTTPException(status_code=403, detail=safety)
+    if data.warmup_gpu and status.get("krea_allowed"):
+        try:
+            from extensions.hooks import maybe_start_gpu_warmup_for_generation
+            await maybe_start_gpu_warmup_for_generation(ctx, base_model=data.base_model or "")
+        except Exception:
+            pass
+    try:
+        return await core_service.krea_director_storyboard(
+            ctx=ctx,
+            action=data.action or "plan",
+            story_title=data.story_title or "",
+            setting=data.setting or "",
+            idea=data.idea or "",
+            scene_count=data.scene_count or 4,
+            base_model=data.base_model or "realism",
+            personas=data.personas,
+            styles=data.styles or "",
+            archetypes=data.archetypes or "",
+            existing_scenes=data.existing_scenes,
+            target_scene_index=data.target_scene_index,
+        )
+    except Exception as e:
+        logging.error(f"Error in /krea/director/storyboard: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/krea/story/save")
+async def krea_story_save_endpoint(request: Request, data: StorySaveInput):
+    """Builds illustrated Readme.md + story.json and saves locally for Node Owner."""
+    ctx = _build_krea_ctx(request, data)
+    is_owner = False
+    try:
+        is_owner = (
+            validated_node_owner(ctx)
+            or getattr(ctx, "trusted_owner", False)
+            or getattr(ctx, "private_mode", False)
+            or trusted_owner_access(request)
+        )
+    except Exception:
+        is_owner = getattr(ctx, "trusted_owner", False)
+
+    story_dict = {
+        "story_title": data.story_title,
+        "story_slug": core_service.sanitize_story_slug(data.story_slug or data.story_title),
+        "setting": data.setting or "",
+        "personas": data.personas or [],
+        "scenes": data.scenes or [],
+    }
+    if is_owner and data.save_local:
+        saved = core_service.save_story_to_local_disk(ctx, story_dict)
+        return {
+            "status": "ok",
+            "saved_locally": True,
+            "story_slug": saved["story_slug"],
+            "readme_markdown": saved["readme_markdown"],
+            "story_json": saved["story_json"],
+        }
+    md_text = core_service.build_story_markdown(story_dict)
+    return {
+        "status": "ok",
+        "saved_locally": False,
+        "story_slug": story_dict["story_slug"],
+        "readme_markdown": md_text,
+        "story_json": story_dict,
+    }
+
+
+@app.get("/krea/stories")
+async def krea_list_stories_endpoint(request: Request, omd_key: str | None = Depends(get_omd_key)):
+    """Lists saved story projects on the AI node (for Node Owner)."""
+    ctx = get_ctx(omd_key or "")
+    ctx.private_mode = trusted_private_access(request, ctx)
+    ctx.trusted_owner = trusted_owner_access(request)
+    is_owner = False
+    try:
+        is_owner = (
+            validated_node_owner(ctx)
+            or getattr(ctx, "trusted_owner", False)
+            or getattr(ctx, "private_mode", False)
+            or trusted_owner_access(request)
+        )
+    except Exception:
+        is_owner = False
+    if not is_owner:
+        return {"stories": []}
+    return {"stories": core_service.list_stories_on_local_disk(ctx)}
+
+
+
+
+
+
+@app.post("/generate/prompt/character")
+async def generate_character_image_prompt(request: Request, data: GenerateInput):
+    data.chat = data.chat or "default"
+    ctx = get_ctx(data.omd_key)
+    ctx.private_mode = trusted_private_access(request, ctx)
+    ctx.trusted_owner = trusted_owner_access(request)
+    if data.settings:
+        ctx.settings.update(data.settings)
+        ctx.storage = ctx.settings.get("defaultStorage", "")
+    try:
+        result = await core_service.generate_character_image_prompt(ctx, data.prompt, data.chat, history=data.history)
+        return {"prompt": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+
+@app.post("/generate/prompt/general")
+async def generate_general_image_prompt(request: Request, data: GenerateInput):
+    data.chat = data.chat or "default"
+    ctx = get_ctx(data.omd_key)
+    ctx.private_mode = trusted_private_access(request, ctx)
+    ctx.trusted_owner = trusted_owner_access(request)
+    if data.settings:
+        ctx.settings.update(data.settings)
+        ctx.storage = ctx.settings.get("defaultStorage", "")
+    try:
+        if not data.prompt or data.prompt.strip() in ("", "random"):
+            result = await core_service.generate_random_creative_prompt(ctx)
+        else:
+            result = await core_service.generate_general_image_prompt(ctx, data.prompt, data.chat, history=data.history)
+        return {"prompt": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/generate/prompt/random")
+async def generate_random_prompt_endpoint(
+    request: Request,
+    data: RandomPromptInput,
+    omd_key: str | None = Depends(get_omd_key)
+):
+    effective_key = data.omd_key or omd_key or ""
+    ctx = get_ctx(effective_key)
+    ctx.private_mode = trusted_private_access(request, ctx)
+    ctx.trusted_owner = trusted_owner_access(request)
+    try:
+        result = await core_service.generate_random_creative_prompt(
+            ctx,
+            persona_name=data.persona_name or "",
+            persona_prompt=data.persona_prompt or "",
+            persona_lora=data.persona_lora or "",
+            style=data.style or "",
+            keywords=data.keywords or "",
+            archetypes=data.archetypes or "",
+            loras=data.loras or ""
+        )
+        return {"prompt": result}
+    except Exception as e:
+        logging.error(f"[api] Error in /generate/prompt/random: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/updateAssistant")
+async def update_assistant(request: Request):
+    try:
+        body = await request.json()
+        logging.info(f"UpdateAssistant payload: {body}")
+        data = UpdateAssistantInput(**body)
+    except Exception as e:
+        logging.error(f"Validation error: {e}")
+        raise HTTPException(status_code=422, detail=str(e))
+
+    ctx = get_ctx(data.omd_key)
+    try:
+        # Update settings with provided values
+        if data.style is not None:
+            ctx.settings["style"] = data.style
+        if data.system_prompt is not None:
+            ctx.settings["system_prompt"] = data.system_prompt
+        if data.assistant_appearance is not None:
+            ctx.settings["assistant_appearance"] = data.assistant_appearance
+        if data.assistant_name is not None:
+            ctx.settings["assistant_name"] = data.assistant_name
+        if data.assistant_title is not None:
+            ctx.settings["assistant_title"] = data.assistant_title
+        if data.assistant_model is not None:
+            ctx.settings["assistant_model"] = data.assistant_model
+        
+        user_context.save_user_settings(ctx)
+        
+        # Return settings without sensitive data if preferred, but for now returning all
+        # We might want to exclude 'omd_key' or 'storage' from response if strictly needed, 
+        # but the user has the key anyway.
+        
+        # Get new avatar version
+        version = await core_service.get_avatar_version(ctx)
+        
+        return {
+            "status": "ok", 
+            "settings": ctx.settings, 
+            "avatar_version": version
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/notify/signout")
+async def notify_signout(data: SignoutInput):
+    logging.info(f"Signout notification for key {data.omd_key[:10]}...")
+    return {"status": "ok"}
+
+
+# --- Proxy Logic ---
+
+async def proxy_request(url: str, request: Request, method: str = "POST"):
+    """
+    Proxies a request to the upstream URL, streaming the response back.
+    """
+    # 1. Prepare Headers
+    headers = dict(request.headers)
+    # Remove headers that might cause issues or are improper to forward blindly
+    headers.pop("host", None)
+    headers.pop("content-length", None) 
+    headers.pop("connection", None)
+    headers.pop("accept-encoding", None)
+    headers["accept-encoding"] = "identity" # Force no encoding from upstream
+
+    # 2. Get Body (if any)
+    try:
+        body = await request.body()
+    except Exception:
+        body = None
+
+    # 3. Use global session for proxying
+    session = await get_proxy_session()
+    req = session.request(
+        method=method,
+        url=url,
+        headers=headers,
+        data=body,
+        timeout=None # Streaming responses can be long
+    )
+    try:
+        # Enter request context
+        resp = await req.__aenter__()
+        
+        # 4. Prepare Response Headers
+        response_headers = {}
+        content_type = None
+        for k, v in resp.headers.items():
+            lk = k.lower()
+            if lk == "content-type":
+                content_type = v
+                continue # We set it via media_type parameter
+                
+            if lk in [
+                "connection", "keep-alive", "proxy-authenticate", 
+                "proxy-authorization", "te", "trailers", 
+                "transfer-encoding", "upgrade"
+            ]:
+                continue
+            if lk == "content-security-policy":
+                v = v.replace("script-src 'self'", "script-src 'self' 'unsafe-inline'")
+            response_headers[k] = v
+
+        if not content_type:
+            # Fallback to aiohttp property
+            content_type = resp.content_type
+            if not content_type:
+                logging.warning(f"[Proxy] Missing Content-Type from {url}")
+
+        # Add buffering optimization for Nginx (essential for SSE/chunked)
+        response_headers["X-Accel-Buffering"] = "no"
+
+        async def stream_generator():
+            try:
+                async for chunk in resp.content.iter_any():
+                    yield chunk
+            finally:
+                # Cleanup resources when streaming is done or fails
+                await req.__aexit__(None, None, None)
+                # DO NOT close global session here
+
+        return StreamingResponse(
+            stream_generator(),
+            status_code=resp.status,
+            media_type=content_type,
+            headers=response_headers
+        )
+    except Exception as e:
+        logging.error(f"[Proxy] Error proxying to {url}: {e}")
+        # Ensure cleanup if we fail before returning the StreamingResponse (session is global)
+        try:
+            await req.__aexit__(None, None, None)
+        except:
+            pass
+        raise HTTPException(status_code=502, detail=f"Proxy Error: {str(e)}")
+
+
+
+
+@app.post("/v1/chat/completions")
+async def openai_chat_completions(request: Request):
+    """
+    Proxies OpenAI-style chat completions to Ollama.
+    Intercepts the request/response to log, translate reasoning fields,
+    and convert raw text JSON tool calls into native tool calls.
+    """
+    target_url = f"{core_service.OLLAMA_URL}/v1/chat/completions"
+    
+    try:
+        req_body = await request.json()
+    except Exception as e:
+        logging.warning(f"[OpenAI Proxy] Failed to parse request JSON: {e}")
+        return await proxy_request(target_url, request, method="POST")
+
+    model_name = req_body.get("model", "")
+    stream = req_body.get("stream", False)
+    messages = req_body.get("messages", [])
+    has_tools = "tools" in req_body
+
+    logging.info(f"[OpenAI Proxy] Request: model={model_name}, stream={stream}, messages={len(messages)}, has_tools={has_tools}")
+
+    # Prepare request headers
+    headers = dict(request.headers)
+    headers.pop("host", None)
+    headers.pop("content-length", None)
+    headers.pop("connection", None)
+    headers.pop("accept-encoding", None)
+    headers["accept-encoding"] = "identity"
+
+    session = await get_proxy_session()
+
+    if stream:
+        try:
+            resp = await session.post(target_url, json=req_body, headers=headers)
+        except Exception as e:
+            logging.error(f"[OpenAI Proxy] Error starting stream to Ollama: {e}")
+            raise HTTPException(status_code=502, detail=f"Proxy Error: {str(e)}")
+
+        async def stream_generator():
+            accumulated_content = ""
+            accumulated_reasoning = ""
+            has_tool_calls = False
+            last_chunk_data = None
+            # Tool-call buffers for the question tool. We strip its argument
+            # fragments from the forwarded stream and, once the tool call is
+            # complete, re-emit a single tool_call chunk containing only the
+            # first question. This is the hard guarantee that the model can
+            # never drive a multi-question reply through the pipeline.
+            question_tool_buffers: dict = {}  # tool-call index -> {"name","id","args"}
+
+            def _finalize_question_tool_buffers():
+                nonlocal question_tool_buffers
+                out = []
+                for idx in sorted(question_tool_buffers.keys()):
+                    entry = question_tool_buffers[idx]
+                    args_out = entry["args"]
+                    try:
+                        parsed = json.loads(entry["args"])
+                    except Exception:
+                        parsed = None
+                    if isinstance(parsed, dict) and isinstance(parsed.get("questions"), list):
+                        qs = parsed["questions"]
+                        if len(qs) > 1:
+                            parsed["questions"] = [qs[0]]
+                            args_out = json.dumps(parsed, ensure_ascii=False)
+                            logging.info(
+                                f"[OpenAI Proxy] Rewrote {entry['name']} tool call: {len(qs)} questions -> 1"
+                            )
+                    synth = {
+                        "id": last_chunk_data.get("id") if last_chunk_data else "chatcmpl-q",
+                        "object": "chat.completion.chunk",
+                        "created": last_chunk_data.get("created") if last_chunk_data else int(datetime.datetime.now().timestamp()),
+                        "model": model_name,
+                        "choices": [{
+                            "index": 0,
+                            "delta": {
+                                "tool_calls": [{
+                                    "index": idx,
+                                    "id": entry["id"],
+                                    "function": {
+                                        "name": entry["name"],
+                                        "arguments": args_out,
+                                    },
+                                }]
+                            },
+                            "finish_reason": None,
+                        }]
+                    }
+                    out.append(f"data: {json.dumps(synth)}\n\n".encode("utf-8"))
+                question_tool_buffers = {}
+                return out
+
+            try:
+                async for line in resp.content:
+                    line_str = line.decode("utf-8").strip()
+                    if not line_str:
+                        continue
+                    if line_str.startswith("data:"):
+                        raw_data = line_str[5:].strip()
+                        if raw_data == "[DONE]":
+                            if question_tool_buffers:
+                                for chunk_bytes in _finalize_question_tool_buffers():
+                                    yield chunk_bytes
+                            if accumulated_reasoning and not accumulated_content and not has_tool_calls:
+                                logging.info("[OpenAI Proxy] Injecting spacer chunk to prevent validation error for empty content")
+                                spacer_data = {
+                                    "id": last_chunk_data.get("id") if last_chunk_data else "chatcmpl-spacer",
+                                    "object": "chat.completion.chunk",
+                                    "created": last_chunk_data.get("created") if last_chunk_data else int(datetime.datetime.now().timestamp()),
+                                    "model": model_name,
+                                    "choices": [{
+                                        "index": 0,
+                                        "delta": {"content": " "},
+                                        "finish_reason": None
+                                    }]
+                                }
+                                yield f"data: {json.dumps(spacer_data)}\n\n".encode("utf-8")
+                            
+                            yield b"data: [DONE]\n\n"
+                            continue
+
+                        try:
+                            data = json.loads(raw_data)
+                            last_chunk_data = data
+                            choices = data.get("choices", [])
+                            
+                            for choice in choices:
+                                delta = choice.get("delta", {})
+                                
+                                if delta.get("content"):
+                                    accumulated_content += delta["content"]
+                                    
+                                if delta.get("tool_calls"):
+                                    has_tool_calls = True
+                                    # Strip question-tool argument fragments and
+                                    # buffer them for single-question rewriting.
+                                    filtered_calls = []
+                                    for tc in delta["tool_calls"]:
+                                        idx = tc.get("index", 0)
+                                        fn = tc.get("function", {}) or {}
+                                        name = fn.get("name")
+                                        args = fn.get("arguments")
+                                        call_id = tc.get("id")
+                                        if name and name in SINGLE_QUESTION_TOOL_NAMES:
+                                            entry = question_tool_buffers.setdefault(
+                                                idx, {"name": name, "id": call_id, "args": ""}
+                                            )
+                                            if args:
+                                                entry["args"] += args
+                                            continue
+                                        if idx in question_tool_buffers:
+                                            if args:
+                                                question_tool_buffers[idx]["args"] += args
+                                            continue
+                                        filtered_calls.append(tc)
+                                    if filtered_calls:
+                                        delta["tool_calls"] = filtered_calls
+                                    else:
+                                        delta.pop("tool_calls", None)
+                                    
+                                reasoning_val = delta.pop("reasoning", None) or delta.pop("thinking", None)
+                                if reasoning_val is not None:
+                                    delta["reasoning_content"] = reasoning_val
+                                    accumulated_reasoning += reasoning_val
+
+                            # If the LLM signals the end of tool calls, flush the
+                            # buffered (rewritten) question tool call before the
+                            # finish chunk so the agent sees a complete argument.
+                            if question_tool_buffers and any(c.get("finish_reason") for c in choices):
+                                for chunk_bytes in _finalize_question_tool_buffers():
+                                    yield chunk_bytes
+
+                            yield f"data: {json.dumps(data)}\n\n".encode("utf-8")
+
+                        except Exception as parse_err:
+                            logging.warning(f"[OpenAI Proxy] Error transforming line: {parse_err}")
+                            yield line + b"\n"
+                    else:
+                        yield line + b"\n"
+            finally:
+                resp.close()
+
+        response_headers = {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+        return StreamingResponse(stream_generator(), status_code=resp.status, headers=response_headers)
+
+    else:
+        try:
+            async with session.post(target_url, json=req_body, headers=headers) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    choices = data.get("choices", [])
+                    for choice in choices:
+                        msg = choice.get("message", {})
+                        
+                        reasoning_val = msg.pop("reasoning", None) or msg.pop("thinking", None)
+                        if reasoning_val is not None:
+                            msg["reasoning_content"] = reasoning_val
+                            
+                        if reasoning_val and not msg.get("content") and not msg.get("tool_calls"):
+                            msg["content"] = " "
+                            logging.info("[OpenAI Proxy] Injected spacer into message to prevent empty content error")
+                            
+                        # Rewrite question tool calls to keep only the first question.
+                        tool_calls = msg.get("tool_calls") or []
+                        for tc in tool_calls:
+                            fn = tc.get("function", {}) or {}
+                            name = fn.get("name")
+                            if name and name in SINGLE_QUESTION_TOOL_NAMES:
+                                try:
+                                    parsed = json.loads(fn.get("arguments") or "{}")
+                                except Exception:
+                                    parsed = None
+                                if isinstance(parsed, dict) and isinstance(parsed.get("questions"), list) and len(parsed["questions"]) > 1:
+                                    q_count = len(parsed["questions"])
+                                    parsed["questions"] = [parsed["questions"][0]]
+                                    fn["arguments"] = json.dumps(parsed, ensure_ascii=False)
+                                    logging.info(
+                                        f"[OpenAI Proxy] Rewrote {name} tool call (non-streaming): {q_count} questions -> 1"
+                                    )
+                            
+                    return JSONResponse(status_code=200, content=data)
+                else:
+                    text = await resp.text()
+                    return Response(content=text, status_code=resp.status, media_type=resp.content_type)
+        except Exception as e:
+            logging.error(f"[OpenAI Proxy] Error during non-streaming completions: {e}")
+            raise HTTPException(status_code=502, detail=f"Proxy Error: {str(e)}")
+
+@app.get("/v1/models")
+async def openai_models(request: Request):
+    """
+    Proxies OpenAI-style models listing to Ollama.
+    """
+    target_url = f"{core_service.OLLAMA_URL}/v1/models"
+    return await proxy_request(target_url, request, method="GET")
+
+# --- Ollama Native Endpoints ---
+
+@app.post("/v1/extract")
+async def extract_knowledge(request: Request):
+    """
+    Extracts cleaned text from a URL or OMD path without saving/vectorizing on backend.
+    """
+    try:
+        data = await request.json()
+        url_or_path = data.get("url_or_path")
+        if not url_or_path:
+            raise HTTPException(status_code=400, detail="Missing url_or_path")
+            
+        token = request.headers.get("X-OMD-Key")
+        ctx = user_context.UserContext(type="omd", user_id="system", settings={}, history=[], omd_key=token)
+        
+        # We use a specialized branch of import logic that only returns text
+        logging.info(f"[extract] Extracting text from: {url_or_path}")
+        
+        # Reuse core_service logic but skip any storage
+        # We'll call a modified version or just ensure import_doc for "user" is safe
+        card = await core_service.import_doc(ctx, url_or_path, collection="user")
+        
+        if card and card.get("error"):
+             raise HTTPException(status_code=500, detail=card.get("text"))
+             
+        return {
+            "text": card.get("full_text") or "",
+            "card": card.get("text") or ""
+        }
+        
+    except Exception as e:
+        logging.error(f"[extract] Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/chat")
+async def ollama_chat(request: Request):
+    """
+    Proxies Ollama native chat to Ollama.
+    """
+    target_url = f"{core_service.OLLAMA_URL}/api/chat"
+    return await proxy_request(target_url, request, method="POST")
+
+@app.post("/api/generate")
+async def ollama_generate(request: Request):
+    """
+    Proxies Ollama generate to Ollama.
+    """
+    target_url = f"{core_service.OLLAMA_URL}/api/generate"
+    return await proxy_request(target_url, request, method="POST")
+
+@app.post("/api/cleanup-chroma")
+async def cleanup_chroma_endpoint(request: Request):
+    """
+    Удаляет из ChromaDB гостевые данные (owner != node_owner && !t_omd).
+    Принимает {owner: "<user_id>", apply: true}.
+    Без apply=true — dry-run (покажет что будет удалено).
+    """
+    if not_authorized(request):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    owner = body.get("owner", SETTINGS.get("NODE_OWNER", ""))
+    apply = body.get("apply", False)
+
+    if not owner:
+        coll = unified_memory.get_collection()
+        results = coll.get(include=["metadatas"])
+        owners = {}
+        for meta in results.get("metadatas", []):
+            o = meta.get("owner", "(none)")
+            has_omd = meta.get("t_omd", 0) == 1
+            key = f"{o}{' [omd]' if has_omd else ''}"
+            owners[key] = owners.get(key, 0) + 1
+        return {"status": "no_owner", "owners": owners, "hint": "Pass {owner: '<user_id>', apply: true}"}
+
+    if not apply:
+        coll = unified_memory.get_collection()
+        results = coll.get(include=["metadatas"])
+        would_delete = sum(1 for m in results.get("metadatas", [])
+                         if m.get("owner", "") != owner and m.get("t_omd", 0) != 1)
+        return {"status": "dry_run", "owner": owner, "would_delete": would_delete,
+                "total": coll.count(), "hint": "Pass {apply: true} to execute"}
+
+    deleted = unified_memory.cleanup_guest_data([owner])
+    return {"status": "done", "deleted": deleted, "owner": owner}
+
+
+@app.get("/api/tags")
+async def ollama_tags(request: Request):
+    """
+    Proxies Ollama tags (models list) to Ollama.
+    """
+    target_url = f"{core_service.OLLAMA_URL}/api/tags"
+    return await proxy_request(target_url, request, method="GET")
+
+@app.post("/api/show")
+async def ollama_show(request: Request):
+    """
+    Proxies Ollama show model info to Ollama.
+    """
+    target_url = f"{core_service.OLLAMA_URL}/api/show"
+    return await proxy_request(target_url, request, method="POST")
+
+
+# --- Q&A Matching Endpoints (ChromaDB) ---
+
+@app.post("/qa/load")
+async def qa_load(data: dict):
+    entries = data.get("entries", [])
+    count = memory_index.qa_load_entries(entries)
+    return {"ok": True, "count": count}
+
+@app.post("/qa/match")
+async def qa_match(data: dict):
+    question = data.get("question", "")
+    min_score = data.get("min_score", 0.8)
+    top_k = data.get("top_k", 1)
+    include_score = data.get("include_score", True)
+    return memory_index.qa_match_query(question, min_score, top_k, include_score)
+
+
+# --- Text-to-Speech (Kokoro-82M) ---
+class TTSRequest(BaseModel):
+    text: str
+    voice: Optional[str] = None
+    speed: Optional[float] = None
+
+@app.get("/api/tts/voices")
+async def get_tts_voices():
+    from tts_service import tts_service
+    return {"voices": tts_service.get_voices(), "default": tts_service.default_voice}
+
+@app.post("/api/tts")
+async def synthesize_speech(data: TTSRequest):
+    if not data.text or not data.text.strip():
+        raise HTTPException(status_code=400, detail="Text is required")
+    try:
+        from tts_service import tts_service
+        wav_bytes = tts_service.synthesize(data.text, voice=data.voice, speed=data.speed)
+        if not wav_bytes:
+            raise HTTPException(status_code=500, detail="Failed to synthesize speech")
+        return Response(
+            content=wav_bytes,
+            media_type="audio/wav",
+            headers={
+                "Content-Type": "audio/wav",
+                "Cache-Control": "public, max-age=86400",
+                "Content-Disposition": "inline; filename=\"speech.wav\""
+            }
+        )
+    except Exception as e:
+        logging.error(f"[api/tts] error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- Custom Web Push Notifications (RFC 8291 VAPID) ---
+class PushSubscribeInput(BaseModel):
+    subscription: dict
+    omd_key: Optional[str] = ""
+    default_storage: Optional[str] = ""
+    device_label: Optional[str] = ""
+    settings: Optional[dict] = None
+
+
+class PushUnsubscribeInput(BaseModel):
+    endpoint: str
+    omd_key: Optional[str] = ""
+
+
+class PushStatusInput(BaseModel):
+    endpoint: Optional[str] = ""
+    omd_key: Optional[str] = ""
+
+
+class PushTestInput(BaseModel):
+    endpoint: Optional[str] = ""
+    omd_key: Optional[str] = ""
+    default_storage: Optional[str] = ""
+    title: Optional[str] = ""
+    body: Optional[str] = ""
+
+
+def _resolve_push_caller_owner(request: Request, omd_key: str = "") -> tuple[user_context.UserContext, bool]:
+    eff_key = (omd_key or "").strip() or (_extract_omd_key(request) or "").strip()
+    ctx = get_ctx(eff_key)
+    ctx.private_mode = trusted_private_access(request, ctx)
+    ctx.trusted_owner = trusted_owner_access(request)
+    is_owner = False
+    try:
+        is_owner = bool(
+            validated_node_owner(ctx)
+            or getattr(ctx, "trusted_owner", False)
+            or getattr(ctx, "private_mode", False)
+            or trusted_owner_access(request)
+        )
+    except Exception:
+        is_owner = bool(getattr(ctx, "trusted_owner", False))
+    return ctx, is_owner
+
+
+@app.get("/push/vapid-key")
+async def get_push_vapid_key():
+    import push_service
+    return {"publicKey": push_service.get_public_vapid_key()}
+
+
+@app.post("/push/subscribe")
+async def push_subscribe_endpoint(request: Request, data: PushSubscribeInput):
+    import push_service
+    ctx, is_owner = _resolve_push_caller_owner(request, data.omd_key or "")
+    default_storage = (data.default_storage or "").strip()
+    if not default_storage and isinstance(data.settings, dict):
+        default_storage = str(data.settings.get("defaultStorage") or "").strip()
+    try:
+        entry = push_service.save_subscription(
+            subscription=data.subscription,
+            user_id=ctx.user_id if ctx.user_id != "guest" else "",
+            omd_key=data.omd_key or _extract_omd_key(request) or "",
+            default_storage=default_storage,
+            device_label=data.device_label or "",
+            user_agent=request.headers.get("User-Agent", ""),
+            is_owner=is_owner,
+        )
+        return {
+            "status": "ok",
+            "is_owner": entry.get("is_owner", False),
+            "default_storage": entry.get("default_storage", ""),
+        }
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        logging.error(f"[/push/subscribe] error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/push/unsubscribe")
+async def push_unsubscribe_endpoint(data: PushUnsubscribeInput):
+    import push_service
+    removed = push_service.remove_subscription(data.endpoint)
+    return {"status": "ok", "removed": removed}
+
+
+@app.post("/push/status")
+async def push_status_endpoint(request: Request, data: Optional[PushStatusInput] = None):
+    import push_service
+    ep = (data.endpoint if data else "") or ""
+    key = (data.omd_key if data else "") or _extract_omd_key(request) or ""
+    ctx, is_owner = _resolve_push_caller_owner(request, key)
+    subs = push_service.list_subscriptions(
+        owner_only=is_owner,
+        user_id="" if is_owner else (ctx.user_id if ctx.user_id != "guest" else ""),
+        omd_key="" if is_owner else key,
+    )
+    matched = any(s.get("endpoint") == ep for s in subs) if ep else len(subs) > 0
+    return {
+        "subscribed": matched,
+        "device_count": len(subs),
+        "is_owner": is_owner,
+        "publicKey": push_service.get_public_vapid_key(),
+    }
+
+
+@app.post("/push/test")
+async def push_test_endpoint(request: Request, data: Optional[PushTestInput] = None):
+    import push_service
+    ep = (data.endpoint if data else "") or ""
+    key = (data.omd_key if data else "") or _extract_omd_key(request) or ""
+    ctx, is_owner = _resolve_push_caller_owner(request, key)
+    title = (data.title if data and data.title else "") or "On My Disk — Push активен"
+    body = (data.body if data and data.body else "") or "Кастомные уведомления работают! Превью и кнопки модерации готовы к приёму."
+    res = await push_service.send_custom_push(
+        title=title,
+        body=body,
+        target_endpoint=ep,
+        owner_only=is_owner if not ep else False,
+        user_id="" if (ep or is_owner) else (ctx.user_id if ctx.user_id != "guest" else ""),
+        omd_key="" if (ep or is_owner) else key,
+        fallback_storage=(data.default_storage if data else "") or "",
+        tag="omd-push-test",
+        require_interaction=False,
+    )
+    return {"status": "ok", **res}
+
+
+# --- On My Document: native Univer docs converter (odt/docx -> univer.json) ---
+import ondoc as _ondoc_module
+_ondoc_module.mount(app)
+
+# --- AI Horde Dreamer Worker & Console (/horde) ---
+try:
+    import horde_dreamer as _horde_dreamer_module
+    _horde_dreamer_module.mount_horde_dreamer(app)
+except Exception as _hd_mount_err:
+    logging.error(f"[api] AI Horde Dreamer mount error: {_hd_mount_err}")
+
+try:
+    import extensions as _extensions_module
+    if hasattr(_extensions_module, "mount") and callable(_extensions_module.mount):
+        _extensions_module.mount(app)
+except ImportError:
+    pass
+except Exception as _ext_mount_err:
+    logging.error(f"[api] Optional extensions mount error: {_ext_mount_err}")
+
+
+def _load_configured_node_apps() -> list[dict]:
+    """Load optional user-defined local web apps from [apps] in config.ini."""
+    out: list[dict] = []
+    cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.ini")
+    if not os.path.isfile(cfg_path):
+        return out
+    try:
+        parser = configparser.ConfigParser()
+        parser.read(cfg_path, encoding="utf-8")
+        if not parser.has_section("apps"):
+            return out
+        for raw_slug, raw_val in parser.items("apps"):
+            slug = re.sub(r"[^a-z0-9_-]", "", raw_slug.strip().lower())
+            val = (raw_val or "").strip()
+            if not slug or not val:
+                continue
+            if val.lower() in ("0", "false", "off", "disabled", "none"):
+                out.append({"slug": slug, "disabled": True})
+                continue
+            if val.startswith("{"):
+                try:
+                    parsed = json.loads(val)
+                    if isinstance(parsed, dict) and int(parsed.get("port", 0)) > 0:
+                        ep = str(parsed.get("entryPath") or parsed.get("path") or "/").strip() or "/"
+                        if not ep.startswith("/"):
+                            ep = "/" + ep
+                        out.append({
+                            "slug": slug,
+                            "name": str(parsed.get("name") or slug.capitalize()),
+                            "port": int(parsed["port"]),
+                            "entryPath": ep,
+                            "icon": str(parsed.get("icon") or "window-stack"),
+                            "description": str(parsed.get("description") or ""),
+                            "probe": bool(parsed.get("probe", True)),
+                        })
+                except Exception:
+                    pass
+                continue
+            parts = [p.strip() for p in val.split("|")]
+            if len(parts) == 1 and parts[0].isdigit():
+                out.append({
+                    "slug": slug,
+                    "name": slug.capitalize(),
+                    "port": int(parts[0]),
+                    "entryPath": "/",
+                    "icon": "window-stack",
+                    "description": "",
+                    "probe": True,
+                })
+            elif len(parts) >= 2 and parts[1].isdigit():
+                ep = parts[2] if len(parts) >= 3 and parts[2] else "/"
+                if not ep.startswith("/"):
+                    ep = "/" + ep
+                out.append({
+                    "slug": slug,
+                    "name": parts[0] or slug.capitalize(),
+                    "port": int(parts[1]),
+                    "entryPath": ep,
+                    "icon": parts[3] if len(parts) >= 4 and parts[3] else "window-stack",
+                    "description": parts[4] if len(parts) >= 5 else "",
+                    "probe": True,
+                })
+    except Exception as e:
+        logging.debug(f"[_load_configured_node_apps] {e}")
+    return out
+
+
+def _is_local_port_open_sync(port: int) -> bool:
+    """Fast loopback TCP check so stopped apps in [apps] stay hidden."""
+    import socket
+    for host in ("127.0.0.1", "::1"):
+        try:
+            with socket.create_connection((host, port), timeout=0.15):
+                return True
+        except OSError:
+            continue
+    return False
+
+
+@app.get("/api/node/apps")
+async def list_node_apps(request: Request):
+    """Zero-config App Proxy discovery for the paired Node Owner only."""
+    if not trusted_owner_access(request):
+        return {"apps": []}
+
+    discovered: dict[str, dict] = {}
+    self_port = int(os.environ.get("PORT", 4000))
+
+    # 1. Built-in Autopilot & AI Horde extensions mounted on this node
+    has_autopilot = any(getattr(r, "path", "") == "/autopilot" for r in app.routes)
+    if has_autopilot:
+        discovered["autopilot"] = {
+            "slug": "autopilot",
+            "name": "Autopilot",
+            "port": self_port,
+            "entryPath": "/autopilot",
+            "icon": "rocket-takeoff-fill",
+            "description": "Autonomous Persona & Social Studio",
+        }
+
+    has_horde = any(getattr(r, "path", "") == "/horde" for r in app.routes)
+    if has_horde:
+        discovered["horde"] = {
+            "slug": "horde",
+            "name": "AI Horde",
+            "port": self_port,
+            "entryPath": "/horde",
+            "icon": "gpu-card",
+            "description": "AI Horde Dreamer Worker Console",
+        }
+
+    # 2. Load [apps] from config.ini (probing local ports concurrently)
+    configured = _load_configured_node_apps()
+    to_probe = [
+        item for item in configured
+        if not item.get("disabled") and item.get("probe", True) and int(item.get("port", 0)) != self_port
+    ]
+    probe_results: dict[str, bool] = {}
+    if to_probe:
+        checks = await asyncio.gather(
+            *(asyncio.to_thread(_is_local_port_open_sync, int(it["port"])) for it in to_probe)
+        )
+        for it, ok in zip(to_probe, checks):
+            probe_results[it["slug"]] = ok
+
+    for item in configured:
+        slug = item.get("slug")
+        if not slug:
+            continue
+        if item.get("disabled"):
+            discovered.pop(slug, None)
+            continue
+        if slug in probe_results and not probe_results[slug]:
+            discovered.pop(slug, None)
+            continue
+        clean_item = {k: v for k, v in item.items() if k != "probe"}
+        discovered[slug] = clean_item
+
+    return {"apps": list(discovered.values())}
+
+
+if __name__ == "__main__":
+    import uvicorn
+    import sys
+    import os
+    
+    port = int(os.environ.get("PORT", 4000))
+    if len(sys.argv) > 1 and sys.argv[1].isdigit():
+        port = int(sys.argv[1])
+        
+    print(f"Starting OnMyChat API directly via uvicorn on port {port}...")
+    uvicorn.run("api:app", host="0.0.0.0", port=port, reload=False)

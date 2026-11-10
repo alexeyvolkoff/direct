@@ -1,0 +1,1185 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <link rel="shortcut icon" href="favicon.ico" />
+  <link rel="icon" href="/customtheme/favicon.ico" />
+
+  <title>{APPTITLE} &mdash; Your Files &amp; Private AI, Straight From Your Computer</title>
+  <meta name="description" content="Open-source peer-to-peer file sharing and private local AI assistant. Built on On My Disk Direct — access your folders, edit docs, and chat with your own data without third-party cloud storage."/>
+  <meta name="robots" content="index, follow"/>
+  <meta name="author" content="{COMPANY}"/>
+
+  <!-- OpenGraph / Social Preview -->
+  <meta property="og:type" content="website"/>
+  <meta property="og:title" content="{APPTITLE} — Private P2P AI &amp; Direct File Sharing"/>
+  <meta property="og:description" content="Share files straight from your computer and run a private AI over your own documents. Zero cloud middlemen, zero telemetry, 100% open source."/>
+  <meta name="twitter:card" content="summary_large_image"/>
+  <meta name="twitter:title" content="{APPTITLE} — Private P2P AI &amp; Direct File Sharing"/>
+  <meta name="twitter:description" content="Share files straight from your computer and run a private AI over your own documents. Zero cloud middlemen, zero telemetry, 100% open source."/>
+
+  <!--
+    SMART ROOT GUARD:
+    - On `/about` (or `/about.html`), ALWAYS render this landing page.
+    - On `/` (root), if the visitor already has an existing app workspace in localStorage
+      OR opened an app deep-link hash (e.g. `/#/chat`, `/#/files`), set the `omd_entered=1`
+      cookie and enter the web app seamlessly without an extra click.
+  -->
+  <script>
+    (function () {
+      try {
+        var path = window.location.pathname || "/";
+        if (path === "/" || path === "/index.html") {
+          var landingAnchors = { "#how-it-works": 1, "#features": 1, "#quickstart": 1, "#faq": 1 };
+          var hash = window.location.hash || "";
+          var hasAppHash = hash.length > 1 && !landingAnchors[hash.toLowerCase()];
+          var hasExistingWorkspace =
+            localStorage.getItem("omd_entered") === "1" ||
+            !!localStorage.getItem("omd_local_linkid");
+          if (hasAppHash || hasExistingWorkspace) {
+            document.cookie = "omd_entered=1; path=/; max-age=31536000; SameSite=Lax";
+            window.location.replace("/?launch=1" + hash);
+          }
+        }
+      } catch (e) {}
+    })();
+
+    function launchApp(targetHash) {
+      try {
+        document.cookie = "omd_entered=1; path=/; max-age=31536000; SameSite=Lax";
+        localStorage.setItem("omd_entered", "1");
+        if (window.__aboutCurrentLang) {
+          localStorage.setItem("omd_locale", window.__aboutCurrentLang);
+        }
+      } catch (e) {}
+      window.location.href = "/?launch=1" + (targetHash || "");
+      return false;
+    }
+  </script>
+  <script src="/about-i18n.js?v=20261106a" defer></script>
+
+  <style>
+    /* ==================== DESIGN TOKENS (Easy to customize) ==================== */
+    :root {
+      --bg: #080c14;
+      --bg-elevated: #0f1624;
+      --card-bg: rgba(17, 24, 39, 0.78);
+      --card-border: rgba(148, 163, 184, 0.14);
+      --card-border-hover: rgba(56, 189, 248, 0.38);
+      --text-main: #f8fafc;
+      --text-muted: #cbd5e1;
+      --text-sub: #94a3b8;
+      --primary: #38bdf8;
+      --primary-strong: #0284c7;
+      --primary-glow: rgba(56, 189, 248, 0.16);
+      --accent-purple: #a855f7;
+      --accent-emerald: #10b981;
+      --code-bg: #0c1322;
+      --code-border: rgba(148, 163, 184, 0.2);
+      --code-text: #e2e8f0;
+      --copy-bg: rgba(255, 255, 255, 0.06);
+      --copy-border: rgba(148, 163, 184, 0.24);
+      --copy-text: #f8fafc;
+      --radius-sm: 10px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
+      --max-w: 1080px;
+    }
+
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f8fafc;
+        --bg-elevated: #ffffff;
+        --card-bg: rgba(255, 255, 255, 0.92);
+        --card-border: #e2e8f0;
+        --card-border-hover: #38bdf8;
+        --text-main: #0f172a;
+        --text-muted: #334155;
+        --text-sub: #64748b;
+        --primary: #0284c7;
+        --primary-strong: #0369a1;
+        --primary-glow: rgba(2, 132, 199, 0.1);
+        --code-bg: #f1f5f9;
+        --code-border: #cbd5e1;
+        --code-text: #0f172a;
+        --copy-bg: #ffffff;
+        --copy-border: #cbd5e1;
+        --copy-text: #0f172a;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      background-image:
+        radial-gradient(ellipse 80% 50% at 50% -15%, var(--primary-glow), transparent),
+        radial-gradient(ellipse 50% 40% at 85% 20%, rgba(168, 85, 247, 0.07), transparent);
+      color: var(--text-main);
+      line-height: 1.65;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+
+    .container {
+      max-width: var(--max-w);
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* ==================== TOP NAVBAR ==================== */
+    .navbar {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      background: color-mix(in srgb, var(--bg) 82%, transparent);
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    .navbar-inner {
+      max-width: var(--max-w);
+      margin: 0 auto;
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .brand picture {
+      display: none;
+    }
+
+    .brand:not([data-app*="Chat" i]) .logo-files {
+      display: inline-flex;
+    }
+
+    .brand[data-app*="Chat" i] .logo-chat {
+      display: inline-flex;
+    }
+
+    .brand img {
+      height: 34px;
+      width: auto;
+      display: block;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 22px;
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .nav-links a {
+      color: var(--text-sub);
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: color 0.15s ease;
+    }
+
+    .nav-links a:hover {
+      color: var(--text-main);
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .lang-select {
+      appearance: none;
+      -webkit-appearance: none;
+      background-color: var(--card-bg);
+      color: var(--text-main);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-sm);
+      padding: 9px 28px 9px 11px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      max-width: 138px;
+      text-overflow: ellipsis;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 9px center;
+      transition: border-color 0.15s ease;
+    }
+
+    .lang-select:hover,
+    .lang-select:focus {
+      outline: none;
+      border-color: var(--card-border-hover);
+    }
+
+    [dir="rtl"] .lang-select {
+      padding: 9px 11px 9px 28px;
+      background-position: left 9px center;
+    }
+
+    /* ==================== BUTTONS ==================== */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 18px;
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+      color: #ffffff !important;
+      box-shadow: 0 4px 16px rgba(2, 132, 199, 0.32);
+    }
+
+    .btn-primary:hover {
+      box-shadow: 0 6px 22px rgba(2, 132, 199, 0.46);
+    }
+
+    .btn-outline {
+      background: var(--card-bg);
+      color: var(--text-main) !important;
+      border-color: var(--card-border);
+    }
+
+    .btn-outline:hover {
+      border-color: var(--card-border-hover);
+    }
+
+    .btn-lg {
+      padding: 13px 24px;
+      font-size: 15px;
+      border-radius: 12px;
+    }
+
+    /* ==================== HERO SECTION ==================== */
+    .hero {
+      padding: 34px 0 52px;
+      text-align: center;
+    }
+
+    .lineage-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      color: var(--text-muted);
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 24px;
+    }
+
+    .lineage-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent-emerald);
+      box-shadow: 0 0 8px var(--accent-emerald);
+    }
+
+    .hero-title {
+      font-size: clamp(32px, 5vw, 54px);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.12;
+      max-width: 860px;
+      margin: 0 auto 20px;
+    }
+
+    .hero-gradient {
+      background: linear-gradient(135deg, #38bdf8 0%, #818cf8 55%, #c084fc 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero-sub {
+      font-size: clamp(16px, 2.1vw, 19px);
+      color: var(--text-sub);
+      max-width: 690px;
+      margin: 0 auto 34px;
+    }
+
+    .hero-cta {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .hero-note {
+      font-size: 13px;
+      color: var(--text-sub);
+    }
+
+    /* ==================== P2P DIAGRAM STRIP ==================== */
+    .diagram-card {
+      margin: 20px auto 68px;
+      padding: 28px 26px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-lg);
+    }
+
+    .diagram-label {
+      text-align: center;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--primary);
+      margin-bottom: 20px;
+    }
+
+    .diagram-flow {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: 18px;
+    }
+
+    .diagram-node {
+      padding: 18px 20px;
+      border-radius: var(--radius-md);
+      background: var(--bg-elevated);
+      border: 1px solid var(--card-border);
+    }
+
+    .diagram-node h3 {
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .diagram-node p {
+      font-size: 13.5px;
+      color: var(--text-sub);
+    }
+
+    .diagram-bridge {
+      text-align: center;
+      padding: 10px 16px;
+    }
+
+    .bridge-line {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      background: var(--primary-glow);
+      border: 1px solid var(--card-border-hover);
+      color: var(--primary);
+      font-size: 12.5px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .diagram-bridge small {
+      display: block;
+      font-size: 12px;
+      color: var(--text-sub);
+      max-width: 220px;
+      margin: 0 auto;
+    }
+
+    /* ==================== SECTION HEADERS ==================== */
+    .section {
+      padding: 36px 0 56px;
+    }
+
+    .section-head {
+      text-align: center;
+      max-width: 680px;
+      margin: 0 auto 38px;
+    }
+
+    .section-head h2 {
+      font-size: clamp(24px, 3.4vw, 34px);
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 10px;
+    }
+
+    .section-head p {
+      color: var(--text-sub);
+      font-size: 16px;
+    }
+
+    /* ==================== FEATURE GRID ==================== */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px;
+    }
+
+    .feature-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-md);
+      padding: 24px;
+      transition: border-color 0.2s ease, transform 0.2s ease;
+    }
+
+    .feature-card:hover {
+      border-color: var(--card-border-hover);
+      transform: translateY(-2px);
+    }
+
+    .feature-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: var(--primary-glow);
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 16px;
+    }
+
+    .feature-card h3 {
+      font-size: 17px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      letter-spacing: -0.01em;
+    }
+
+    .feature-card p {
+      font-size: 14.5px;
+      color: var(--text-sub);
+    }
+
+    /* ==================== TWO WAYS / QUICKSTART ==================== */
+    .modes-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 20px;
+    }
+
+    .mode-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-lg);
+      padding: 28px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 20px;
+      min-width: 0;
+    }
+
+    .mode-tag {
+      display: inline-block;
+      font-size: 11.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--primary-glow);
+      color: var(--primary);
+      margin-bottom: 12px;
+    }
+
+    .mode-card h3 {
+      font-size: 21px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .mode-card p {
+      font-size: 14.5px;
+      color: var(--text-sub);
+    }
+
+    .qs-installer {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      width: 100%;
+      margin-top: 2px;
+    }
+
+    .qs-controls {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .qs-os-pills {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px;
+      border-radius: 999px;
+      background: var(--bg);
+      border: 1px solid var(--card-border);
+      gap: 2px;
+    }
+
+    .qs-os-pill {
+      appearance: none;
+      border: none;
+      background: transparent;
+      color: var(--text-sub);
+      font-family: inherit;
+      font-size: 12.5px;
+      font-weight: 600;
+      padding: 5px 13px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+      line-height: 1.3;
+    }
+
+    .qs-os-pill:hover {
+      color: var(--text-main);
+    }
+
+    .qs-os-pill.active {
+      background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+      color: #ffffff;
+      box-shadow: 0 2px 8px rgba(2, 132, 199, 0.28);
+    }
+
+    .qs-gpu-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      cursor: pointer;
+      user-select: none;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--card-border);
+      background: var(--bg);
+      transition: border-color 0.15s ease;
+    }
+
+    .qs-gpu-toggle:hover {
+      border-color: var(--card-border-hover);
+    }
+
+    .qs-gpu-toggle input {
+      width: 15px;
+      height: 15px;
+      accent-color: #0284c7;
+      cursor: pointer;
+      margin: 0;
+    }
+
+    .qs-cmd-box {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      background: var(--code-bg);
+      border: 1px solid var(--code-border);
+      border-radius: var(--radius-sm);
+      padding: 7px 7px 7px 13px;
+      width: 100%;
+      min-width: 0;
+      transition: border-color 0.15s ease;
+    }
+
+    .qs-cmd-box:hover {
+      border-color: var(--card-border-hover);
+    }
+
+    .qs-cmd-prompt {
+      display: inline-flex;
+      align-items: center;
+      color: var(--primary);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12.5px;
+      line-height: 20px;
+      font-weight: 700;
+      user-select: none;
+      flex-shrink: 0;
+    }
+
+    .qs-cmd-code {
+      flex: 1;
+      min-width: 0;
+      display: block;
+      overflow-x: auto;
+      overflow-y: hidden;
+      white-space: nowrap;
+      color: var(--code-text);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12.5px;
+      line-height: 20px;
+      padding-right: 12px;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+      -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent 100%);
+      mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent 100%);
+    }
+
+    .qs-cmd-code::-webkit-scrollbar {
+      display: none;
+      width: 0;
+      height: 0;
+    }
+
+    .qs-copy-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      flex-shrink: 0;
+      padding: 6px 11px;
+      border-radius: 7px;
+      border: 1px solid var(--copy-border);
+      background: var(--copy-bg);
+      color: var(--copy-text);
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      line-height: 1.2;
+      cursor: pointer;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+      transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+    }
+
+    .qs-copy-btn:hover {
+      background: var(--primary-glow);
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+
+    .qs-copy-btn.copied {
+      background: rgba(16, 185, 129, 0.14);
+      border-color: rgba(16, 185, 129, 0.55);
+      color: #059669;
+    }
+
+    /* ==================== COMMUNITY BANNER ==================== */
+    .community-card {
+      margin: 16px 0 60px;
+      padding: 36px 30px;
+      border-radius: var(--radius-lg);
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 20px;
+    }
+
+    .community-card h3 {
+      font-size: 22px;
+      font-weight: 800;
+      margin-bottom: 6px;
+    }
+
+    .community-card p {
+      font-size: 15px;
+      color: var(--text-sub);
+      max-width: 620px;
+      margin: 0 auto;
+    }
+
+    .community-links {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    /* ==================== FOOTER ==================== */
+    .footer {
+      border-top: 1px solid var(--card-border);
+      padding: 32px 0 48px;
+      font-size: 13.5px;
+      color: var(--text-sub);
+    }
+
+    .footer-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .footer-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 18px;
+    }
+
+    .footer-links a {
+      color: var(--text-sub);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: color 0.15s ease;
+    }
+
+    .footer-links a:hover {
+      color: var(--text-main);
+    }
+
+    /* ==================== RESPONSIVE ==================== */
+    @media (max-width: 900px) {
+      .features-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      .diagram-flow,
+      .modes-grid {
+        grid-template-columns: 1fr;
+      }
+      .nav-links {
+        display: none;
+      }
+    }
+
+    @media (max-width: 600px) {
+      .hero {
+        padding: 22px 0 32px;
+      }
+      .features-grid {
+        grid-template-columns: 1fr;
+      }
+      .navbar-inner {
+        padding: 12px 16px;
+      }
+      .btn-hide-mobile {
+        display: none;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- ==================== 1. TOP NAVIGATION ==================== -->
+  <header class="navbar">
+    <div class="navbar-inner">
+      <a href="/about" class="brand" data-app="{APPTITLE}" aria-label="{APPTITLE}">
+        <picture class="logo-chat">
+          <source srcset="/customtheme/logo-chat-dark.svg" media="(prefers-color-scheme: light)" />
+          <img src="/customtheme/logo-chat.svg" alt="{APPTITLE}" height="34" />
+        </picture>
+        <picture class="logo-files">
+          <source srcset="/img/logo-dark.svg" media="(prefers-color-scheme: light)" />
+          <img src="/img/logo.svg" alt="{APPTITLE}" height="34" />
+        </picture>
+      </a>
+
+      <nav class="nav-links">
+        <a href="#how-it-works" data-i18n="nav_how">How It Works</a>
+        <a href="#features" data-i18n="nav_features">Features</a>
+        <a href="#quickstart" data-i18n="nav_selfhost">Self-Host</a>
+        <a href="https://discord.gg/qAQpfmrBPW" target="_blank" rel="noopener noreferrer">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.32 4.37a19.8 19.8 0 0 0-4.89-1.51.07.07 0 0 0-.07.04c-.21.38-.44.87-.61 1.25a18.27 18.27 0 0 0-5.5 0 12.64 12.64 0 0 0-.62-1.25.08.08 0 0 0-.07-.04c-1.72.3-3.37.83-4.89 1.51a.07.07 0 0 0-.03.03C.53 9.05-.32 13.58.1 18.06a.08.08 0 0 0 .03.05 19.9 19.9 0 0 0 5.99 3.03.08.08 0 0 0 .08-.03c.46-.63.87-1.3 1.22-2a.08.08 0 0 0-.04-.11 13.1 13.1 0 0 1-1.87-.9.08.08 0 0 1-.01-.12c.13-.09.25-.19.37-.29a.07.07 0 0 1 .08-.01c3.93 1.79 8.18 1.79 12.07 0a.07.07 0 0 1 .08.01c.12.1.25.2.37.29a.08.08 0 0 1 0 .12c-.6.35-1.22.65-1.87.9a.08.08 0 0 0-.04.1c.36.7.77 1.37 1.22 2a.08.08 0 0 0 .08.03 19.83 19.83 0 0 0 6-3.03.08.08 0 0 0 .03-.05c.5-5.18-.84-9.68-3.55-13.66a.06.06 0 0 0-.03-.03ZM8.02 15.33c-1.18 0-2.16-1.08-2.16-2.42 0-1.33.96-2.42 2.16-2.42 1.21 0 2.18 1.1 2.16 2.42 0 1.34-.96 2.42-2.16 2.42Zm7.97 0c-1.18 0-2.16-1.08-2.16-2.42 0-1.33.96-2.42 2.16-2.42 1.21 0 2.18 1.1 2.16 2.42 0 1.34-.95 2.42-2.16 2.42Z"/></svg>
+          <span>Discord</span>
+        </a>
+        <a href="https://t.me/+QbXU7T_6vPEyNzdk" target="_blank" rel="noopener noreferrer">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
+          <span>Telegram</span>
+        </a>
+      </nav>
+
+      <div class="nav-actions">
+        <select id="about-lang-select" class="lang-select" aria-label="Language"></select>
+        <a class="btn btn-outline btn-hide-mobile" href="https://github.com/alexeyvolkoff/onmydisk" target="_blank" rel="noopener noreferrer">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.09 3.29 9.4 7.86 10.92.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.38-3.88-1.38-.52-1.33-1.28-1.68-1.28-1.68-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.18-3.09-.12-.29-.51-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11.02 11.02 0 0 1 5.78 0c2.2-1.49 3.16-1.18 3.16-1.18.63 1.59.24 2.76.12 3.05.74.81 1.18 1.83 1.18 3.09 0 4.41-2.7 5.38-5.27 5.67.42.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.51 11.51 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z"/></svg>
+          <span>GitHub</span>
+        </a>
+        <a class="btn btn-primary" href="/?launch=1" onclick="return launchApp('');">
+          <span data-i18n="nav_open_app">Open App &rarr;</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+
+    <!-- ==================== 2. HERO ==================== -->
+    <section class="hero">
+      <div class="lineage-pill">
+        <span class="lineage-dot"></span>
+        <span data-i18n-html="hero_pill">Open Source &bull; Run by community &bull; The next chapter of <strong>On My Disk</strong></span>
+      </div>
+
+      <h1 class="hero-title">
+        <span data-i18n="hero_title_1">Your files and your AI &mdash;</span><br/>
+        <span class="hero-gradient" data-i18n="hero_title_grad">straight from your own computer.</span>
+      </h1>
+
+      <p class="hero-sub" data-i18n="hero_sub">
+        Turn any home PC, laptop, or mini-server into your personal cloud and private AI assistant.
+        Share folders of any size directly from your disk, edit office docs in the browser, and chat with your own documents &mdash; with zero cloud middlemen and zero data harvesting.
+      </p>
+
+      <div class="hero-cta">
+        <a class="btn btn-primary btn-lg" href="/?launch=1" onclick="return launchApp('');">
+          <span data-i18n="hero_cta_app">Open App &rarr;</span>
+        </a>
+        <a class="btn btn-outline btn-lg" href="https://github.com/alexeyvolkoff/onmydisk" target="_blank" rel="noopener noreferrer">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.09 3.29 9.4 7.86 10.92.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.38-3.88-1.38-.52-1.33-1.28-1.68-1.28-1.68-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.18-3.09-.12-.29-.51-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11.02 11.02 0 0 1 5.78 0c2.2-1.49 3.16-1.18 3.16-1.18.63 1.59.24 2.76.12 3.05.74.81 1.18 1.83 1.18 3.09 0 4.41-2.7 5.38-5.27 5.67.42.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.51 11.51 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z"/></svg>
+          <span data-i18n="hero_cta_github">Source on GitHub</span>
+        </a>
+        <a class="btn btn-outline btn-lg" href="https://discord.gg/qAQpfmrBPW" target="_blank" rel="noopener noreferrer">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M20.32 4.37a19.8 19.8 0 0 0-4.89-1.51.07.07 0 0 0-.07.04c-.21.38-.44.87-.61 1.25a18.27 18.27 0 0 0-5.5 0 12.64 12.64 0 0 0-.62-1.25.08.08 0 0 0-.07-.04c-1.72.3-3.37.83-4.89 1.51a.07.07 0 0 0-.03.03C.53 9.05-.32 13.58.1 18.06a.08.08 0 0 0 .03.05 19.9 19.9 0 0 0 5.99 3.03.08.08 0 0 0 .08-.03c.46-.63.87-1.3 1.22-2a.08.08 0 0 0-.04-.11 13.1 13.1 0 0 1-1.87-.9.08.08 0 0 1-.01-.12c.13-.09.25-.19.37-.29a.07.07 0 0 1 .08-.01c3.93 1.79 8.18 1.79 12.07 0a.07.07 0 0 1 .08.01c.12.1.25.2.37.29a.08.08 0 0 1 0 .12c-.6.35-1.22.65-1.87.9a.08.08 0 0 0-.04.1c.36.7.77 1.37 1.22 2a.08.08 0 0 0 .08.03 19.83 19.83 0 0 0 6-3.03.08.08 0 0 0 .03-.05c.5-5.18-.84-9.68-3.55-13.66a.06.06 0 0 0-.03-.03ZM8.02 15.33c-1.18 0-2.16-1.08-2.16-2.42 0-1.33.96-2.42 2.16-2.42 1.21 0 2.18 1.1 2.16 2.42 0 1.34-.96 2.42-2.16 2.42Zm7.97 0c-1.18 0-2.16-1.08-2.16-2.42 0-1.33.96-2.42 2.16-2.42 1.21 0 2.18 1.1 2.16 2.42 0 1.34-.95 2.42-2.16 2.42Z"/></svg>
+          <span data-i18n="hero_cta_discord">Join Discord</span>
+        </a>
+      </div>
+
+      <p class="hero-note" data-i18n="hero_note">
+        Works right in your browser &mdash; no sign-up wall, no port forwarding, no rented servers required.
+      </p>
+    </section>
+
+    <!-- ==================== 3. HOW IT WORKS (PLAIN LANGUAGE DIAGRAM) ==================== -->
+    <section class="diagram-card" id="how-it-works">
+      <div class="diagram-label" data-i18n="diag_label">How Direct Peer-to-Peer Works</div>
+      <div class="diagram-flow">
+        <div class="diagram-node">
+          <h3 data-i18n="diag_left_title">📱 Your Browser or Phone</h3>
+          <p data-i18n-html="diag_left_desc">Open <strong>onmychat.com</strong> from anywhere. Chat with AI, browse folders, edit office documents, or stream videos.</p>
+        </div>
+
+        <div class="diagram-bridge">
+          <div class="bridge-line">
+            <span data-i18n="diag_bridge_pill">&larr; Encrypted WebRTC P2P &rarr;</span>
+          </div>
+          <small data-i18n="diag_bridge_note">The signaling gateway only introduces your devices &mdash; your files and chats never sit on a third-party cloud.</small>
+        </div>
+
+        <div class="diagram-node">
+          <h3 data-i18n="diag_right_title">🏠 Your Home Computer / NAS</h3>
+          <p data-i18n="diag_right_desc">Runs the lightweight open-source node over your existing folders, local LLMs (Ollama / NPU), and GPU.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== 4. CORE FEATURES ==================== -->
+    <section class="section" id="features">
+      <div class="section-head">
+        <h2 data-i18n="feat_head_title">Everything in one private workspace</h2>
+        <p data-i18n-html="feat_head_sub">Powered by <strong>On My Disk Direct</strong> for peer-to-peer file sharing &mdash; paired with <strong>On My Chat</strong> so your local AI works right next to your files.</p>
+      </div>
+
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          </div>
+          <h3 data-i18n="feat1_title">Share straight from your drive</h3>
+          <p data-i18n="feat1_desc">Send a link to a folder, photo album, or 20 GB video right from your laptop. Friends download or stream directly from your disk without cloud upload limits.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 0 1 7-7z"/><path d="M9 21h6"/></svg>
+          </div>
+          <h3 data-i18n="feat2_title">AI that knows your documents</h3>
+          <p data-i18n="feat2_desc">Point On My Chat at your PDFs, books, notes, and photos. Local semantic search (RAG) and on-device vision find answers by meaning while keeping every file at home.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          </div>
+          <h3 data-i18n="feat3_title">Built-in Office &amp; Media viewers</h3>
+          <p data-i18n="feat3_desc">View and edit Word documents, spreadsheets, and presentations right inside the browser (WordCraft, GridCraft, DeckCraft), or have your AI draft formatted docs for you.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+          </div>
+          <h3 data-i18n="feat4_title">Remote P2P browser terminal</h3>
+          <p data-i18n="feat4_desc">Open a terminal to your home machine from any browser over WebRTC &mdash; no VPN, static IP, or router setup. Drive coding agents like OpenCode, Claude Code, or Aider remotely.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          </div>
+          <h3 data-i18n="feat5_title">Creative Studio &amp; AI Companions</h3>
+          <p data-i18n="feat5_desc">Create illustrations, visual stories, and custom AI companions on your own GPU or shared community nodes &mdash; and share your creations directly on CivitAI.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          </div>
+          <h3 data-i18n="feat6_title">Cryptographic identity, zero accounts</h3>
+          <p data-i18n="feat6_desc">No central password database to breach. Your identity is a cryptographic DID keypair generated in your browser, keeping settings and chat history encrypted end-to-end.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== 5. TRY IN BROWSER VS SELF-HOST ==================== -->
+    <section class="section" id="quickstart">
+      <div class="section-head">
+        <h2 data-i18n="qs_head_title">Start in 5 seconds &mdash; or host your own node</h2>
+        <p data-i18n="qs_head_sub">No lock-in. Use the web client immediately, then connect your own hardware whenever you want.</p>
+      </div>
+
+      <div class="modes-grid">
+        <div class="mode-card">
+          <div>
+            <span class="mode-tag" data-i18n="qs1_tag">Zero Installation</span>
+            <h3 data-i18n="qs1_title">1. Try right in your browser</h3>
+            <p data-i18n-html="qs1_desc">
+              Launch the web app immediately &mdash; mount a local folder right from your browser, test the public P2P AI node, or open the standalone file manager at
+              <a href="https://direct.onmydisk.net" target="_blank" rel="noopener noreferrer">direct.onmydisk.net</a>.
+            </p>
+          </div>
+          <div>
+            <a class="btn btn-primary" href="/?launch=1" onclick="return launchApp('');">
+              <span data-i18n="qs1_btn">Launch Web App &rarr;</span>
+            </a>
+          </div>
+        </div>
+
+        <div class="mode-card">
+          <div>
+            <span class="mode-tag" data-i18n="qs2_tag">Linux &bull; Windows &bull; macOS &bull; SBC &bull; OpenWrt</span>
+            <h3 data-i18n="qs2_title">2. Run your own AI &amp; storage node</h3>
+            <p data-i18n-html="qs2_desc">
+              Install <strong>On My Disk Direct</strong> &amp; <strong>On My Chat</strong> on your desktop PC, home server, or Rockchip NPU alongside Ollama and pair it with your browser or mobile app in minutes.
+            </p>
+          </div>
+          <div class="qs-installer">
+            <div class="qs-controls">
+              <div class="qs-os-pills" role="tablist" aria-label="Operating system">
+                <button type="button" class="qs-os-pill active" data-os="linux" role="tab" aria-selected="true">Linux</button>
+                <button type="button" class="qs-os-pill" data-os="windows" role="tab" aria-selected="false">Windows</button>
+                <button type="button" class="qs-os-pill" data-os="macos" role="tab" aria-selected="false">macOS</button>
+              </div>
+              <label class="qs-gpu-toggle">
+                <input type="checkbox" id="qs-gpu-check" />
+                <span data-i18n="qs2_gpu_label">Local GPU</span>
+              </label>
+            </div>
+            <div class="qs-cmd-box">
+              <span class="qs-cmd-prompt" id="qs-cmd-prompt">$</span>
+              <code class="qs-cmd-code" id="qs-cmd-code" onclick="window.__selectQsCmd && window.__selectQsCmd(this)">curl -fsSL https://forge.onmydisk.net/repo/Linux/install-onmydisk.sh | bash -s -- --agentic</code>
+              <button type="button" class="qs-copy-btn" id="qs-copy-btn">
+                <svg id="qs-copy-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                <span id="qs-copy-label" data-i18n="qs2_copy">Copy</span>
+              </button>
+            </div>
+            <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 12px; margin-top: 2px;">
+              <a class="btn btn-outline" href="https://onmydisk.org/advanced/" target="_blank" rel="noopener noreferrer">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                <span data-i18n="qs2_adv_btn">Advanced Configuration &rarr;</span>
+              </a>
+              <div style="font-size: 13px; color: var(--text-sub);" data-i18n-html="qs2_footer">
+                Repositories on GitHub:
+                <a href="https://github.com/alexeyvolkoff/onmydisk" target="_blank" rel="noopener noreferrer">On My Disk Direct (Platform)</a> &bull;
+                <a href="https://github.com/alexeyvolkoff/onmychat" target="_blank" rel="noopener noreferrer">On My Chat (AI Node)</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== 6. OPEN COMMUNITY ==================== -->
+    <section class="community-card">
+      <div>
+        <h3 data-i18n="comm_title">Built in the open with the community</h3>
+        <p data-i18n="comm_desc">Have questions about setting up a home node, local LLMs, or P2P storage? Jump into our Discord, follow updates on Telegram, or contribute on GitHub.</p>
+      </div>
+      <div class="community-links">
+        <a class="btn btn-outline" href="https://discord.gg/qAQpfmrBPW" target="_blank" rel="noopener noreferrer">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.32 4.37a19.8 19.8 0 0 0-4.89-1.51.07.07 0 0 0-.07.04c-.21.38-.44.87-.61 1.25a18.27 18.27 0 0 0-5.5 0 12.64 12.64 0 0 0-.62-1.25.08.08 0 0 0-.07-.04c-1.72.3-3.37.83-4.89 1.51a.07.07 0 0 0-.03.03C.53 9.05-.32 13.58.1 18.06a.08.08 0 0 0 .03.05 19.9 19.9 0 0 0 5.99 3.03.08.08 0 0 0 .08-.03c.46-.63.87-1.3 1.22-2a.08.08 0 0 0-.04-.11 13.1 13.1 0 0 1-1.87-.9.08.08 0 0 1-.01-.12c.13-.09.25-.19.37-.29a.07.07 0 0 1 .08-.01c3.93 1.79 8.18 1.79 12.07 0a.07.07 0 0 1 .08.01c.12.1.25.2.37.29a.08.08 0 0 1 0 .12c-.6.35-1.22.65-1.87.9a.08.08 0 0 0-.04.1c.36.7.77 1.37 1.22 2a.08.08 0 0 0 .08.03 19.83 19.83 0 0 0 6-3.03.08.08 0 0 0 .03-.05c.5-5.18-.84-9.68-3.55-13.66a.06.06 0 0 0-.03-.03ZM8.02 15.33c-1.18 0-2.16-1.08-2.16-2.42 0-1.33.96-2.42 2.16-2.42 1.21 0 2.18 1.1 2.16 2.42 0 1.34-.96 2.42-2.16 2.42Zm7.97 0c-1.18 0-2.16-1.08-2.16-2.42 0-1.33.96-2.42 2.16-2.42 1.21 0 2.18 1.1 2.16 2.42 0 1.34-.95 2.42-2.16 2.42Z"/></svg>
+          <span data-i18n="comm_discord">Discord Community</span>
+        </a>
+        <a class="btn btn-outline" href="https://t.me/+QbXU7T_6vPEyNzdk" target="_blank" rel="noopener noreferrer">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
+          <span data-i18n="comm_telegram">Telegram Channel</span>
+        </a>
+        <a class="btn btn-outline" href="https://github.com/alexeyvolkoff/onmydisk" target="_blank" rel="noopener noreferrer">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.09 3.29 9.4 7.86 10.92.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.38-3.88-1.38-.52-1.33-1.28-1.68-1.28-1.68-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.18-3.09-.12-.29-.51-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11.02 11.02 0 0 1 5.78 0c2.2-1.49 3.16-1.18 3.16-1.18.63 1.59.24 2.76.12 3.05.74.81 1.18 1.83 1.18 3.09 0 4.41-2.7 5.38-5.27 5.67.42.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.51 11.51 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z"/></svg>
+          <span data-i18n="comm_github">GitHub</span>
+        </a>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ==================== 7. FOOTER ==================== -->
+  <footer class="footer">
+    <div class="container footer-inner">
+      <div>
+        &copy; {COMPANY} &bull; <span data-i18n-html="foot_license">Licensed under <strong>Apache 2.0</strong></span>
+      </div>
+      <div class="footer-links">
+        <a href="/?launch=1" onclick="return launchApp('');" data-i18n="foot_open_app">Open App</a>
+        <a href="https://direct.onmydisk.net" target="_blank" rel="noopener noreferrer" data-i18n="foot_files">File Manager</a>
+        <a href="https://github.com/alexeyvolkoff/onmydisk" target="_blank" rel="noopener noreferrer">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.09 3.29 9.4 7.86 10.92.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.38-3.88-1.38-.52-1.33-1.28-1.68-1.28-1.68-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.18-3.09-.12-.29-.51-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11.02 11.02 0 0 1 5.78 0c2.2-1.49 3.16-1.18 3.16-1.18.63 1.59.24 2.76.12 3.05.74.81 1.18 1.83 1.18 3.09 0 4.41-2.7 5.38-5.27 5.67.42.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.51 11.51 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z"/></svg>
+          <span data-i18n="foot_github">GitHub (On My Disk Direct)</span>
+        </a>
+        <a href="https://github.com/alexeyvolkoff/onmychat" target="_blank" rel="noopener noreferrer">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.09 3.29 9.4 7.86 10.92.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.38-3.88-1.38-.52-1.33-1.28-1.68-1.28-1.68-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.18-3.09-.12-.29-.51-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11.02 11.02 0 0 1 5.78 0c2.2-1.49 3.16-1.18 3.16-1.18.63 1.59.24 2.76.12 3.05.74.81 1.18 1.83 1.18 3.09 0 4.41-2.7 5.38-5.27 5.67.42.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.51 11.51 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z"/></svg>
+          <span data-i18n="foot_github_node">GitHub (AI Node)</span>
+        </a>
+        <a href="https://discord.gg/qAQpfmrBPW" target="_blank" rel="noopener noreferrer">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.32 4.37a19.8 19.8 0 0 0-4.89-1.51.07.07 0 0 0-.07.04c-.21.38-.44.87-.61 1.25a18.27 18.27 0 0 0-5.5 0 12.64 12.64 0 0 0-.62-1.25.08.08 0 0 0-.07-.04c-1.72.3-3.37.83-4.89 1.51a.07.07 0 0 0-.03.03C.53 9.05-.32 13.58.1 18.06a.08.08 0 0 0 .03.05 19.9 19.9 0 0 0 5.99 3.03.08.08 0 0 0 .08-.03c.46-.63.87-1.3 1.22-2a.08.08 0 0 0-.04-.11 13.1 13.1 0 0 1-1.87-.9.08.08 0 0 1-.01-.12c.13-.09.25-.19.37-.29a.07.07 0 0 1 .08-.01c3.93 1.79 8.18 1.79 12.07 0a.07.07 0 0 1 .08.01c.12.1.25.2.37.29a.08.08 0 0 1 0 .12c-.6.35-1.22.65-1.87.9a.08.08 0 0 0-.04.1c.36.7.77 1.37 1.22 2a.08.08 0 0 0 .08.03 19.83 19.83 0 0 0 6-3.03.08.08 0 0 0 .03-.05c.5-5.18-.84-9.68-3.55-13.66a.06.06 0 0 0-.03-.03ZM8.02 15.33c-1.18 0-2.16-1.08-2.16-2.42 0-1.33.96-2.42 2.16-2.42 1.21 0 2.18 1.1 2.16 2.42 0 1.34-.96 2.42-2.16 2.42Zm7.97 0c-1.18 0-2.16-1.08-2.16-2.42 0-1.33.96-2.42 2.16-2.42 1.21 0 2.18 1.1 2.16 2.42 0 1.34-.95 2.42-2.16 2.42Z"/></svg>
+          <span>Discord</span>
+        </a>
+        <a href="https://t.me/+QbXU7T_6vPEyNzdk" target="_blank" rel="noopener noreferrer">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
+          <span>Telegram</span>
+        </a>
+        <a href="/tos" data-i18n="foot_tos">Terms &amp; Privacy</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    (function () {
+      var osState = "linux";
+      try {
+        var ua = (navigator.userAgent || "") + " " + (navigator.platform || "");
+        if (/Win/i.test(ua)) osState = "windows";
+        else if (/Mac/i.test(ua) && !/iPhone|iPad|iPod/i.test(ua)) osState = "macos";
+      } catch (e) {}
+
+      var pills = document.querySelectorAll(".qs-os-pill");
+      var gpuCheck = document.getElementById("qs-gpu-check");
+      var promptEl = document.getElementById("qs-cmd-prompt");
+      var codeEl = document.getElementById("qs-cmd-code");
+      var copyBtn = document.getElementById("qs-copy-btn");
+      var copyLabel = document.getElementById("qs-copy-label");
+      var copyIcon = document.getElementById("qs-copy-icon");
+      var copyTimer = null;
+
+      var ICON_COPY = '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>';
+      var ICON_CHECK = '<polyline points="20 6 9 17 4 12"/>';
+
+      function buildCmd(os, gpu) {
+        if (os === "windows") {
+          var wFlag = gpu ? "-Gpu" : "-Agentic";
+          return "& ([scriptblock]::Create((irm https://forge.onmydisk.net/repo/Windows/install-onmydisk.ps1))) " + wFlag;
+        }
+        var uFlag = gpu ? "--gpu" : "--agentic";
+        var dir = os === "macos" ? "macOS" : "Linux";
+        return "curl -fsSL https://forge.onmydisk.net/repo/" + dir + "/install-onmydisk.sh | bash -s -- " + uFlag;
+      }
+
+      function renderInstaller() {
+        var hasGpu = !!(gpuCheck && gpuCheck.checked);
+        for (var i = 0; i < pills.length; i++) {
+          var isAct = pills[i].getAttribute("data-os") === osState;
+          pills[i].classList.toggle("active", isAct);
+          pills[i].setAttribute("aria-selected", isAct ? "true" : "false");
+        }
+        if (promptEl) promptEl.textContent = osState === "windows" ? "PS>" : "$";
+        if (codeEl) codeEl.textContent = buildCmd(osState, hasGpu);
+      }
+
+      for (var i = 0; i < pills.length; i++) {
+        pills[i].addEventListener("click", function (ev) {
+          osState = ev.currentTarget.getAttribute("data-os") || "linux";
+          renderInstaller();
+        });
+      }
+      if (gpuCheck) {
+        gpuCheck.addEventListener("change", renderInstaller);
+      }
+
+      window.__selectQsCmd = function (el) {
+        try {
+          var range = document.createRange();
+          range.selectNodeContents(el);
+          var sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(range);
+        } catch (e) {}
+      };
+
+      if (copyBtn) {
+        copyBtn.addEventListener("click", function () {
+          var cmd = codeEl ? codeEl.textContent : "";
+          if (!cmd) return;
+          var done = function () {
+            if (copyTimer) clearTimeout(copyTimer);
+            copyBtn.classList.add("copied");
+            if (copyIcon) copyIcon.innerHTML = ICON_CHECK;
+            if (copyLabel) {
+              var copiedStr = window.getAboutString ? window.getAboutString("qs2_copied", "Copied!") : "Copied!";
+              copyLabel.textContent = copiedStr;
+            }
+            copyTimer = setTimeout(function () {
+              copyBtn.classList.remove("copied");
+              if (copyIcon) copyIcon.innerHTML = ICON_COPY;
+              if (copyLabel) {
+                var copyStr = window.getAboutString ? window.getAboutString("qs2_copy", "Copy") : "Copy";
+                copyLabel.textContent = copyStr;
+              }
+            }, 1800);
+          };
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(cmd).then(done).catch(function () {
+              window.__selectQsCmd(codeEl);
+              try { document.execCommand("copy"); } catch (e) {}
+              done();
+            });
+          } else {
+            window.__selectQsCmd(codeEl);
+            try { document.execCommand("copy"); } catch (e) {}
+            done();
+          }
+        });
+      }
+
+      renderInstaller();
+    })();
+  </script>
+</body>
+</html>
+

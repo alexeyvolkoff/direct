@@ -1,0 +1,120 @@
+@import url("https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css");
+
+/* Hide standard SVG masks and apply Bootstrap Icons only for specified buttons */
+#sidebarToggle::before,
+#viewFind::before,
+#zoomOut::before,
+#zoomIn::before,
+#presentationMode::before,
+#print::before, #secondaryPrint::before,
+#download::before, #secondaryDownload::before,
+#openFile::before, #secondaryOpenFile::before,
+#viewThumbnail::before,
+#viewOutline::before,
+#viewAttachments::before,
+#viewLayers::before,
+#previous::before, #pageUp::before, #findPrevious::before,
+#next::before, #pageDown::before, #findNext::before,
+#editorHighlight::before,
+#editorFreeText::before,
+#editorInk::before,
+#editorStamp::before,
+#secondaryToolbarToggle::before,
+#currentOutlineItem::before,
+#documentProperties::before,
+#spreadNone::before,
+#spreadOdd::before,
+#spreadEven::before,
+#firstPage::before,
+#lastPage::before,
+#pageRotateCw::before,
+#pageRotateCcw::before,
+#cursorSelectTool::before,
+#cursorHandTool::before,
+#scrollPage::before,
+#scrollVertical::before,
+#scrollHorizontal::before,
+#scrollWrapped::before,
+#customSign::before,
+#customShare::before,
+#customClose::before,
+#customFullscreen::before {
+    -webkit-mask-image: none !important;
+    mask-image: none !important;
+    background: none !important;
+    font-family: "bootstrap-icons" !important;
+    font-size: 16px !important;
+    line-height: 1 !important;
+    -webkit-font-smoothing: antialiased;
+    color: var(--toolbar-icon-color) !important;
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Map specific buttons to BI unicodes */
+#sidebarToggle::before { content: "\f462"; }
+#viewFind::before { content: "\f52a"; }
+#zoomOut::before { content: "\f62d"; }
+#zoomIn::before { content: "\f62c"; }
+#presentationMode::before { content: "\f3df"; }
+#print::before, #secondaryPrint::before { content: "\f501"; }
+#download::before, #secondaryDownload::before { content: "\f30a"; }
+#openFile::before, #secondaryOpenFile::before { content: "\f3d8"; }
+#viewThumbnail::before { content: "\f3fc"; }
+#viewOutline::before { content: "\f478"; }
+#viewAttachments::before { content: "\f4b3"; }
+#viewLayers::before { content: "\f45b"; }
+#previous::before, #pageUp::before, #findPrevious::before { content: "\f286"; }
+#next::before, #pageDown::before, #findNext::before { content: "\f282"; }
+
+#editorHighlight::before { content: "\f7f8"; } /* bi-highlighter */
+#editorFreeText::before { content: "\f5f7"; } /* bi-type */
+#editorInk::before { content: "\f4cb"; } /* bi-pencil */
+#editorStamp::before { content: "\f42a"; } /* bi-image */
+#secondaryToolbarToggle::before { content: "\f276"; } /* bi-chevron-double-right */
+#currentOutlineItem::before { content: "\f3e8"; } /* bi-geo-alt */
+
+#documentProperties::before { content: "\f437"; } /* bi-info-circle */
+#spreadNone::before { content: "\f3e0"; }
+#spreadOdd::before { content: "\f3e0"; }
+#spreadEven::before { content: "\f3e0"; }
+#firstPage::before { content: "\f284"; } 
+#lastPage::before { content: "\f285"; }
+#pageRotateCw::before { content: "\f12e"; } /* bi-arrow-clockwise */
+#pageRotateCcw::before { content: "\f12f"; } /* bi-arrow-counterclockwise */
+#cursorSelectTool::before { content: "\f2fc"; } /* bi-cursor */
+#cursorHandTool::before { content: "\f406"; } /* bi-hand-index */
+#scrollPage::before { content: "\f3e0"; } 
+#scrollVertical::before { content: "\f147"; }
+#scrollHorizontal::before { content: "\f144"; }
+#scrollWrapped::before { content: "\f3e0"; }
+
+/* Custom buttons */
+#customSign::before { content: "\f4c8"; }
+#customShare::before { content: "\f52e"; }
+#customClose::before { content: "\f659"; }
+#customFullscreen::before { content: "\f3df"; } /* bi-fullscreen */
+#customFullscreen.toggled::before { content: "\f3de"; } /* bi-fullscreen-exit */
+
+/* Page number input field & label styling to match toolbar font size */
+#pageNumber {
+    font-size: 12px !important;
+    font-weight: 500 !important;
+    font-family: inherit !important;
+    height: 24px !important;
+    line-height: 22px !important;
+    padding: 0 6px !important;
+    border-radius: 4px !important;
+    text-align: center !important;
+    box-sizing: border-box !important;
+}
+
+#numPages.toolbarLabel,
+.toolbarLabel {
+    font-size: 12px !important;
+    font-weight: 400 !important;
+    font-family: inherit !important;
+    line-height: 24px !important;
+    padding: 0 4px !important;
+}

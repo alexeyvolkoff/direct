@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Encoding=UTF-8
+Name=On My Disk Client
+Comment=Share your files over internet with On My Disk service
+Exec=onmydisk
+Categories=Application;
+Icon=onmydisk
+Terminal=false

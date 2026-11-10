@@ -1,0 +1,19 @@
+#!/bin/sh /etc/rc.common
+# Copyright (C) 2006 OpenWrt.org
+START=62
+
+USE_PROCD=1
+PROG=/usr/bin/python3
+
+start_service() {
+	procd_open_instance
+	procd_set_param command "$PROG"
+	procd_append_param command /opt/bin/wsdd -i br-lan -w WORKGROUP --shortlog
+	procd_set_param respawn
+	procd_close_instance
+}
+
+reload_service() {
+	procd_send_signal "$PROG"
+}
+

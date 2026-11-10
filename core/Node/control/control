@@ -1,0 +1,7 @@
+Package: onmydisk
+Version: version
+License: Apache 2.0
+Section: net
+Maintainer: Alexey Volkov <alexey@onmydisk.com>
+Architecture: arch
+Description: On My Disk filesystem backend

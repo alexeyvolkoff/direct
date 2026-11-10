@@ -1,0 +1,771 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <link rel="shortcut icon" href="favicon.ico" />
+  <link rel="icon" href="/customtheme/favicon.ico" />
+  <title>Legal &amp; Privacy Policies &mdash; {APPTITLE}</title>
+
+  <meta name="robots" content="index, nofollow"/>
+  <meta name="author" content="{COMPANY}"/>
+  <meta name="description" content="{APPTITLE} &mdash; {SLOGAN}"/>
+
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --card-border: #e2e8f0;
+      --text-main: #0f172a;
+      --text-muted: #475569;
+      --text-sub: #64748b;
+      --primary: #0284c7;
+      --primary-hover: #0369a1;
+      --primary-gradient: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+      --accent-soft: #f0f9ff;
+      --accent-border: #bae6fd;
+      --pill-bg: #f1f5f9;
+      --pill-text: #334155;
+      --pill-active-bg: #0284c7;
+      --pill-active-text: #ffffff;
+      --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+      --shadow-card: 0 4px 20px -2px rgba(15, 23, 42, 0.06), 0 2px 6px -1px rgba(15, 23, 42, 0.03);
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #090d16;
+        --card-bg: #111827;
+        --card-border: #1f2937;
+        --text-main: #f8fafc;
+        --text-muted: #cbd5e1;
+        --text-sub: #94a3b8;
+        --primary: #38bdf8;
+        --primary-hover: #0ea5e9;
+        --primary-gradient: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+        --accent-soft: rgba(56, 189, 248, 0.08);
+        --accent-border: rgba(56, 189, 248, 0.2);
+        --pill-bg: #1e293b;
+        --pill-text: #cbd5e1;
+        --pill-active-bg: #0284c7;
+        --pill-active-text: #ffffff;
+        --shadow-card: 0 4px 24px -2px rgba(0, 0, 0, 0.4);
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+      scroll-padding-top: 86px;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-size: 15px;
+      line-height: 1.65;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      padding: 0 16px 60px;
+    }
+
+    .container {
+      max-width: 880px;
+      margin: 0 auto;
+    }
+
+    /* Header */
+    .page-header {
+      text-align: center;
+      padding: 40px 16px 28px;
+    }
+
+    .brand-logo-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 18px;
+      text-decoration: none;
+    }
+
+    .brand-logo-link picture {
+      display: none;
+    }
+
+    .brand-logo-link:not([data-app*="Chat" i]) .logo-files {
+      display: inline-flex;
+    }
+
+    .brand-logo-link[data-app*="Chat" i] .logo-chat {
+      display: inline-flex;
+    }
+
+    .brand-logo-link img {
+      height: 38px;
+      width: auto;
+      display: block;
+    }
+
+    .page-title {
+      font-size: 32px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text-main);
+      margin-bottom: 8px;
+    }
+
+    .page-subtitle {
+      font-size: 15px;
+      color: var(--text-sub);
+      max-width: 580px;
+      margin: 0 auto 12px;
+    }
+
+    .page-meta {
+      font-size: 13px;
+      color: var(--text-sub);
+    }
+
+    .page-meta a {
+      color: var(--primary);
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    .page-meta a:hover {
+      text-decoration: underline;
+    }
+
+    /* Sticky Navigation Bar */
+    .sticky-nav-wrapper {
+      position: sticky;
+      top: 12px;
+      z-index: 50;
+      margin-bottom: 32px;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      background: rgba(248, 250, 252, 0.85);
+      padding: 6px;
+      border-radius: var(--radius-md);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+      border: 1px solid var(--card-border);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .sticky-nav-wrapper {
+        background: rgba(17, 24, 39, 0.85);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+      }
+    }
+
+    .sticky-nav {
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .sticky-nav::-webkit-scrollbar {
+      display: none;
+    }
+
+    .nav-pill {
+      flex: 1 0 auto;
+      text-align: center;
+      padding: 8px 14px;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--pill-text);
+      text-decoration: none;
+      background: transparent;
+      transition: all 0.15s ease-in-out;
+      white-space: nowrap;
+    }
+
+    .nav-pill:hover {
+      background: var(--pill-bg);
+      color: var(--text-main);
+    }
+
+    /* Policy Card */
+    .policy-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-card);
+      padding: 36px 32px;
+      margin-bottom: 28px;
+      transition: border-color 0.2s ease;
+    }
+
+    .policy-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      padding-bottom: 24px;
+      margin-bottom: 28px;
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    .policy-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: var(--radius-md);
+      background: var(--accent-soft);
+      border: 1px solid var(--accent-border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      flex-shrink: 0;
+    }
+
+    .policy-header-content {
+      flex: 1;
+    }
+
+    .policy-title {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text-main);
+      letter-spacing: -0.01em;
+      margin-bottom: 4px;
+    }
+
+    .policy-desc {
+      font-size: 14px;
+      color: var(--text-sub);
+    }
+
+    /* Clause Items */
+    .clause-list {
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+    }
+
+    .clause {
+      padding-left: 0;
+    }
+
+    .clause-header {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+
+    .clause-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .clause-body {
+      font-size: 14.5px;
+      color: var(--text-muted);
+      line-height: 1.68;
+    }
+
+    .clause-body a {
+      color: var(--primary);
+      text-decoration: none;
+      font-weight: 500;
+      border-bottom: 1px solid transparent;
+      transition: border-color 0.15s ease;
+    }
+
+    .clause-body a:hover {
+      border-bottom-color: var(--primary);
+    }
+
+    /* Callout Note */
+    .callout-box {
+      margin-top: 14px;
+      padding: 14px 18px;
+      background: var(--accent-soft);
+      border-left: 3px solid var(--primary);
+      border-radius: 4px var(--radius-sm) var(--radius-sm) 4px;
+      font-size: 13.5px;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    /* Action Footer */
+    .actions-section {
+      text-align: center;
+      margin: 40px 0 24px;
+    }
+
+    .btn-agree {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--primary-gradient);
+      color: #ffffff;
+      padding: 14px 32px;
+      border-radius: var(--radius-md);
+      font-size: 15px;
+      font-weight: 600;
+      text-decoration: none;
+      box-shadow: 0 4px 14px rgba(2, 132, 199, 0.3);
+      transition: all 0.2s ease;
+      cursor: pointer;
+    }
+
+    .btn-agree:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 18px rgba(2, 132, 199, 0.4);
+    }
+
+    .page-footer {
+      text-align: center;
+      font-size: 13px;
+      color: var(--text-sub);
+      padding-top: 24px;
+      border-top: 1px solid var(--card-border);
+      margin-top: 32px;
+    }
+
+    .page-footer a {
+      color: var(--text-muted);
+      text-decoration: none;
+      margin: 0 8px;
+    }
+
+    .page-footer a:hover {
+      color: var(--primary);
+      text-decoration: underline;
+    }
+
+    @media (max-width: 640px) {
+      .page-header {
+        padding: 32px 8px 20px;
+      }
+      .page-title {
+        font-size: 26px;
+      }
+      .policy-card {
+        padding: 24px 18px;
+      }
+      .policy-header {
+        gap: 12px;
+      }
+      .policy-title {
+        font-size: 19px;
+      }
+      .btn-agree {
+        width: 100%;
+        justify-content: center;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+
+    <!-- Header -->
+    <header class="page-header">
+      <a href="/" class="brand-logo-link" data-app="{APPTITLE}" aria-label="{APPTITLE}">
+        <picture class="logo-chat">
+          <source srcset="/customtheme/logo-chat.svg" media="(prefers-color-scheme: dark)" />
+          <img src="/customtheme/logo-chat-dark.svg" alt="{APPTITLE}" height="38" />
+        </picture>
+        <picture class="logo-files">
+          <source srcset="/img/logo.svg" media="(prefers-color-scheme: dark)" />
+          <img src="/img/logo-dark.svg" alt="{APPTITLE}" height="38" />
+        </picture>
+      </a>
+      <h1 class="page-title">Terms of Service &amp; Policies</h1>
+      <p class="page-subtitle">{SLOGAN}</p>
+      <div class="page-meta">
+        Operated by <a href="{COMPANYURL}" target="_blank" rel="noopener noreferrer">{COMPANY}</a> &bull; Effective for all users
+      </div>
+    </header>
+
+    <!-- Sticky Navigation Bar -->
+    <div class="sticky-nav-wrapper">
+      <nav class="sticky-nav">
+        <a class="nav-pill" href="#tos">Terms of Service</a>
+        <a class="nav-pill" href="#cookies">Cookies Policy</a>
+        <a class="nav-pill" href="#gdpr">GDPR Privacy</a>
+        <a class="nav-pill" href="#ai">AI Policy</a>
+      </nav>
+    </div>
+
+    <!-- 1. Terms of Service -->
+    <section class="policy-card" id="tos">
+      <div class="policy-header">
+        <div class="policy-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+          </svg>
+        </div>
+        <div class="policy-header-content">
+          <h2 class="policy-title">Terms of Service</h2>
+          <p class="policy-desc">Rules and responsibilities governing your use of {APPTITLE}</p>
+        </div>
+      </div>
+
+      <div class="clause-list">
+        <div class="clause">
+          <div class="clause-header">
+            <h3 class="clause-title">1. Introduction</h3>
+          </div>
+          <p class="clause-body">
+            {APPTITLE} is a personal peer-to-peer cloud and private AI service operated by <a href="{COMPANYURL}" target="_blank" rel="noopener noreferrer">{COMPANY}</a>. These terms of service (&ldquo;Terms&rdquo;) govern your use of {APPTITLE}&rsquo;s services and website (collectively, the &ldquo;Service&rdquo;). By using the Service, you agree to be bound by these Terms. If you do not agree to these Terms, you may not use the Service.
+          </p>
+        </div>
+
+        <div class="clause">
+          <div class="clause-header">
+            <h3 class="clause-title">2. Service Description</h3>
+          </div>
+          <p class="clause-body">
+            {APPTITLE} allows users to store, access, and share their personal files, photos, videos, and other content (&ldquo;User Content&rdquo;) from any device with an internet connection. The Service also provides users with the ability to collaborate with others by sharing User Content with others.
+          </p>
+        </div>
+
+        <div class="clause">
+          <div class="clause-header">
+            <h3 class="clause-title">3. User Account and Responsibility</h3>
+          </div>
+          <p class="clause-body">
+            To use the Service, you must create an account and provide accurate and complete contact information (username, e-mail). Alternatively, you can use limited account corresponding to your {APPTITLE}-enabled device identified by the device key. You are responsible for maintaining the confidentiality of your account password or device key for all activities that occur under your account. You agree to immediately notify {APPTITLE} of any unauthorized use of your password or key.
+          </p>
+        </div>
+
+        <div class="clause">
+          <div class="clause-header">
+            <h3 class="clause-title">4. User Content</h3>
+          </div>
+          <p class="clause-body">
+            {APPTITLE} does not claim ownership of User Content, but you grant {APPTITLE} a non-exclusive, transferable, sub-licensable, royalty-free, worldwide license to use, copy and distribute User Content shared publicly on your choice (shared by link with no password). You are solely responsible for the User Content you make available through the Service. You represent and warrant that: (i) you either are the sole and exclusive owner of all User Content or you have all rights, licenses, consents, and releases necessary to grant {APPTITLE} the rights in such User Content, as contemplated under these Terms; and (ii) neither the User Content, nor your submission, uploading, publishing, or otherwise making available of such User Content, nor {APPTITLE}&rsquo;s use of the User Content as permitted herein will infringe, misappropriate or violate a third party&rsquo;s patent, copyright, trademark, trade secret, moral rights or other proprietary or intellectual property rights, or rights of publicity or privacy, or result in the violation of any applicable law or regulation.
+          </p>
+        </div>
+
+        <div class="clause">
+          <div class="clause-header">
+            <h3 class="clause-title">5. Proprietary Rights</h3>
+          </div>
+          <p class="clause-body">
+            {APPTITLE} and its licensors retain all right, title, and interest in and to the Service, including all software, technology, and other proprietary components thereof, and any derivative works thereof. Except for the limited rights granted to you in these Terms, {APPTITLE} and its licensors reserve all rights in the Service.
+          </p>
+        </div>
+
+        <div class="clause">
+          <div class="clause-header">
+            <h3 class="clause-title">6. User Conduct</h3>
+          </div>
+          <p class="clause-body">
+            You may not use the Service to store, host, or transmit any User Content that: (i) is illegal, harmful, fraudulent, infringing, or otherwise malicious, or that could expose {APPTITLE} or its users to harm; (ii) is violent, obscene, defamatory, or otherwise objectionable; or (iii) violates the privacy rights of others. {APPTITLE} maintains a zero-tolerance policy for objectionable content, abusive behavior, and illegal materials. Any reported violations will be investigated promptly and addressed within 24 hours, resulting in content removal and account termination.
+          </p>
+        </div>
+
+        <div class="clause">
+          <div class="clause-header">
+            <h3 class="clause-title">7. Contact &amp; Support</h3>
+          </div>
+          <p class="clause-body">
+            For any questions regarding these Terms, the Service, or technical support inquiries, reach out via our official <a href="https://discord.gg/qAQpfmrBPW" target="_blank" rel="noopener noreferrer">Discord Support Community</a>, our <a href="https://t.me/+QbXU7T_6vPEyNzdk" target="_blank" rel="noopener noreferrer">Telegram Community</a>, or open an issue on <a href="{COMPANYURL}" target="_blank" rel="noopener noreferrer">GitHub</a>.
+          </p>
+        </div>
+
+        <div class="clause">
+          <div class="clause-header">
+            <h3 class="clause-title">8. Disclaimers</h3>
+          </div>
+          <p class="clause-body">
+            The Service is provided on an &ldquo;as is&rdquo; and &ldquo;as available&rdquo; basis. {APPTITLE} does not guarantee the accuracy or completeness of the User Content or the Service. {APPTITLE} and its licensors make no representations or warranties of any kind, express or implied, as to the operation of the Service, or the information, content, materials, or products included on the Service. {APPTITLE} and its licensors will not be liable for any damages of any kind arising from the use of the Service, including but not limited to direct, indirect, incidental, punitive, and consequential damages.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. Cookies Policy -->
+    <section class="policy-card" id="cookies">
+      <div class="policy-header">
+        <div class="policy-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"></path>
+            <path d="M8.5 8.5v.01"></path>
+            <path d="M16 15.5v.01"></path>
+            <path d="M12 12v.01"></path>
+            <path d="M11 17v.01"></path>
+            <path d="M7 13v.01"></path>
+          </svg>
+        </div>
+        <div class="policy-header-content">
+          <h2 class="policy-title">Cookies Policy</h2>
+          <p class="policy-desc">Information on how session identifiers and cookies operate</p>
+        </div>
+      </div>
+
+      <div class="clause-list">
+        <div class="clause">
+          <div class="clause-header">
+            <h3 class="clause-title">1. Introduction</h3>
+          </div>
+          <p class="clause-body">
+            {APPTITLE} uses cookies to identify users and provide them with a more personalized experience when using the Service. This Cookies Policy explains what cookies are, how they are used by the Service, and your choices regarding cookies.
+          </p>
+        </div>
+
+        <div class="clause">
+          <div class="clause-header">
+            <h3 class="clause-title">2. What are Cookies</h3>
+          </div>
+          <p class="clause-body">
+            Cookies are small data files that are stored on your device when you visit a website. They are used to remember your preferences, track your browsing habits, and provide a more personalized experience when using the Service.
+          </p>
+        </div>
+
+        <div class="clause">
+          <div class="clause-header">
+            <h3 class="clause-title">3. Cookies Used by {APPTITLE}</h3>
+          </div>
+          <p class="clause-body">
+            {APPTITLE} uses cookies for user identification purposes only. The cookies used on the Service are session cookies, which are temporary cookies that are deleted when you close your browser.
+          </p>
+        </div>
+
+        <div class="clause">
+          <div class="clause-header">
+            <h3 class="clause-title">4. Your Choices Regarding Cookies</h3>
+          </div>
+          <p class="clause-body">
+            Most web browsers are set to accept cookies by default. If you prefer, you can usually choose to set your browser to remove or reject cookies. However, doing so may limit your ability to use the full functionality of {APPTITLE}&rsquo;s Service.
+          </p>
+        </div>
+
+        <div class="clause">
+          <div class="clause-header">
+            <h3 class="clause-title">5. Changes to this Cookies Policy</h3>
+          </div>
+          <p class="clause-body">
+            {APPTITLE} may modify this Cookies Policy from time to time. Your continued use of the Service after any changes to this Cookies Policy will mean that you accept the updated policy. By using {APPTITLE}&rsquo;s Service, you agree to our use of cookies as described in this Cookies Policy.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. GDPR Privacy Policy -->
+    <section class="policy-card" id="gdpr">
+      <div class="policy-header">
+        <div class="policy-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+            <path d="m9 12 2 2 4-4"></path>
+          </svg>
+        </div>
+        <div class="policy-header-content">
+          <h2 class="policy-title">GDPR Privacy Policy</h2>
+          <p class="policy-desc">Commitment to personal data protection and statutory EU regulations</p>
+        </div>
+      </div>
+
+      <div class="clause-list">
+        <div class="clause">
+          <div class="clause-header">
+            <h3 class="clause-title">1. General Data Protection Regulation (GDPR)</h3>
+          </div>
+          <p class="clause-body">
+            {APPTITLE} complies with the EU General Data Protection Regulation (GDPR). The GDPR sets out rules for the processing of personal data of individuals in the European Union (EU). {APPTITLE} is committed to protecting the privacy and personal data of its users.
+          </p>
+        </div>
+
+        <div class="clause">
+          <div class="clause-header">
+            <h3 class="clause-title">2. Data Processing &amp; Purpose</h3>
+          </div>
+          <p class="clause-body">
+            {APPTITLE} collects and processes personal data in accordance with the GDPR. Personal data is any information that can be used to identify a natural person, such as name, email address, or IP address. {APPTITLE} processes personal data to provide the Service, including user identification and account management.
+          </p>
+        </div>
+
+        <div class="clause">
+          <div class="clause-header">
+            <h3 class="clause-title">3. Lawful Basis for Processing</h3>
+          </div>
+          <p class="clause-body">
+            {APPTITLE} processes personal data based on the lawful basis of user consent or legitimate interests. Users may withdraw their consent at any time through the application settings or by reaching out via our official <a href="https://discord.gg/qAQpfmrBPW" target="_blank" rel="noopener noreferrer">Discord Support Community</a>. However, withdrawing consent may result in the inability to use the Service.
+          </p>
+        </div>
+
+        <div class="clause">
+          <div class="clause-header">
+            <h3 class="clause-title">4. User Rights</h3>
+          </div>
+          <p class="clause-body">
+            Users have the right to access, rectify, erase, restrict, or object to the processing of their personal data. Users may exercise these rights at any time through the application settings or via our official <a href="https://discord.gg/qAQpfmrBPW" target="_blank" rel="noopener noreferrer">Discord Support Community</a>. {APPTITLE} will respond to and fulfill all verified requests within the statutory timeframes required by the GDPR and applicable regulations.
+          </p>
+        </div>
+
+        <div class="clause">
+          <div class="clause-header">
+            <h3 class="clause-title">5. Account &amp; Data Deletion</h3>
+          </div>
+          <p class="clause-body">
+            You may request the permanent deletion of your account and all associated personal data and stored files at any time via the application settings or by opening a support request in our official <a href="https://discord.gg/qAQpfmrBPW" target="_blank" rel="noopener noreferrer">Discord Support Community</a>. Upon confirmation, your account and personal data will be permanently erased from our active databases and servers within 30 days.
+          </p>
+        </div>
+
+        <div class="clause">
+          <div class="clause-header">
+            <h3 class="clause-title">6. Support &amp; Help Desk</h3>
+          </div>
+          <p class="clause-body">
+            For customer support, technical inquiries, or community discussion channels, join our official <a href="https://discord.gg/qAQpfmrBPW" target="_blank" rel="noopener noreferrer">Discord Server</a>, our <a href="https://t.me/+QbXU7T_6vPEyNzdk" target="_blank" rel="noopener noreferrer">Telegram Community</a>, or open an issue on <a href="{COMPANYURL}" target="_blank" rel="noopener noreferrer">GitHub</a>.
+          </p>
+        </div>
+
+        <div class="clause">
+          <div class="clause-header">
+            <h3 class="clause-title">7. Data Security</h3>
+          </div>
+          <p class="clause-body">
+            {APPTITLE} implements appropriate technical and organizational measures to ensure the security of personal data. This includes the use of encryption, access controls, and regular security assessments.
+          </p>
+        </div>
+
+        <div class="clause">
+          <div class="clause-header">
+            <h3 class="clause-title">8. Data Transfer</h3>
+          </div>
+          <p class="clause-body">
+            {APPTITLE} displays user name on the shared link pages created by users in order to identify the user who made the content publicly available. No other personal data is disclosed. {APPTITLE} may transfer this part of personal data outside of the EU, to countries that do not have the same data protection laws as the EU. In such cases, {APPTITLE} will ensure that appropriate safeguards are in place to protect personal data.
+          </p>
+        </div>
+
+        <div class="clause">
+          <div class="clause-header">
+            <h3 class="clause-title">9. Data Breaches</h3>
+          </div>
+          <p class="clause-body">
+            {APPTITLE} has implemented procedures to detect, investigate, and report data breaches. In the event of a data breach, {APPTITLE} will notify affected users as required by the GDPR.
+          </p>
+        </div>
+
+        <div class="clause">
+          <div class="clause-header">
+            <h3 class="clause-title">10. Changes to the TOS</h3>
+          </div>
+          <p class="clause-body">
+            {APPTITLE} may modify these Terms of Service to comply with changes in applicable law or regulations, including the GDPR. Users will be notified of any changes to these Terms of Service via the Service or official community channels.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. AI Policy -->
+    <section class="policy-card" id="ai">
+      <div class="policy-header">
+        <div class="policy-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="11" width="18" height="10" rx="2"></rect>
+            <circle cx="12" cy="5" r="2"></circle>
+            <path d="M12 7v4"></path>
+            <line x1="8" y1="16" x2="8" y2="16.01"></line>
+            <line x1="16" y1="16" x2="16" y2="16.01"></line>
+          </svg>
+        </div>
+        <div class="policy-header-content">
+          <h2 class="policy-title">AI Policy</h2>
+          <p class="policy-desc">Responsible Use Agreement for AI features, agents, and public nodes</p>
+        </div>
+      </div>
+
+      <div class="clause-list">
+        <div class="clause">
+          <div class="clause-header">
+            <h3 class="clause-title">1. Responsible Use Agreement &mdash; Shared Public Node</h3>
+          </div>
+          <p class="clause-body">
+            You are about to connect to the On My Chat Public Node &mdash; a shared system node operated over a direct peer-to-peer channel. Chats, history, and your personal knowledge stay encrypted on your side; public knowledge and queries are processed by the public node.
+          </p>
+          <div class="callout-box">
+            <b>Privacy by Design:</b> Your private conversations, chat histories, and local documents remain end-to-end encrypted on your device. The shared public node only processes your ephemeral queries.
+          </div>
+        </div>
+
+        <div class="clause">
+          <div class="clause-header">
+            <h3 class="clause-title">2. Responsible &amp; Lawful Use</h3>
+          </div>
+          <p class="clause-body">
+            You agree to use the service responsibly and lawfully, and in particular NOT to generate unlawful, harmful, or abusive content, including content involving minors, violence, weapons, malware, or any activity prohibited by applicable law. Attempting to bypass content filters or abusing shared resources is not allowed.
+          </p>
+        </div>
+
+        <div class="clause">
+          <div class="clause-header">
+            <h3 class="clause-title">3. Disclaimers &amp; Limitation of Liability</h3>
+          </div>
+          <p class="clause-body">
+            The service is provided on an &ldquo;as is&rdquo; basis without warranties. Usage may be rate-limited, and access may be revoked in case of abuse. Your acceptance is stored in your encrypted settings.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Actions / CTA -->
+    <div class="actions-section">
+      <a class="btn-agree" href="javascript:history.back()">
+        <span>&larr;</span>
+        <span>By using {APPTITLE}, I agree to these Terms</span>
+      </a>
+    </div>
+
+    <!-- Footer -->
+    <footer class="page-footer">
+      <p>&copy; {COMPANY} &bull; {APPTITLE} &bull; All rights reserved.</p>
+      <p style="margin-top: 6px;">
+        <a href="#tos">Terms of Service</a> &bull;
+        <a href="#cookies">Cookies</a> &bull;
+        <a href="#gdpr">GDPR</a> &bull;
+        <a href="#ai">AI Policy</a> &bull;
+        <a href="https://discord.gg/qAQpfmrBPW" target="_blank" rel="noopener noreferrer">Discord Support</a> &bull;
+        <a href="https://t.me/+QbXU7T_6vPEyNzdk" target="_blank" rel="noopener noreferrer">Telegram</a> &bull;
+        <a href="{COMPANYURL}" target="_blank" rel="noopener noreferrer">GitHub</a>
+      </p>
+    </footer>
+
+  </div>
+  <script>
+    (function () {
+      try {
+        var host = (window.location && window.location.hostname ? window.location.hostname : "")
+          .trim()
+          .toLowerCase()
+          .replace(/\.+$/, "");
+        var isChat = host === "onmychat.com" || /\.onmychat\.com$/.test(host);
+        var brand = isChat ? "On My Chat" : "On My Disk";
+        if (document.title.indexOf("{") !== -1) {
+          document.title = document.title.replace(/\{APPTITLE\}|\{TITLE\}/g, brand);
+        }
+        var brandLink = document.querySelector(".brand-logo-link[data-app]");
+        if (brandLink && (brandLink.getAttribute("data-app") || "").indexOf("{") !== -1) {
+          brandLink.setAttribute("data-app", brand);
+          brandLink.setAttribute("aria-label", brand);
+        }
+      } catch (e) {}
+    })();
+  </script>
+</body>
+</html>

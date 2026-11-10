@@ -1,0 +1,45 @@
+
+
+#toolbar{
+    background: #f8f8f8;
+    border-bottom: 1px solid #aaaaaa;
+}
+
+#statusbar{
+    background: #f8f8f8;
+    border-top: 1px solid #aaaaaa;
+}
+
+
+#bookmarksView {
+    border: none;
+    border-right: 1px solid #aaaaaa;
+    background: #eeeeee;
+    show-decoration-selected: 1;
+}
+
+
+
+QTreeView::item {
+  padding: 4px;
+}
+
+
+QListView {
+    show-decoration-selected: 1;
+}
+
+
+QListView::item {
+  border: none;
+  padding: 10px;
+}
+
+
+QListView::item:selected {
+ background: qlineargradient(x1: 1, y1: 0, x2: 0, y2: 3, stop: 0 @highlight, stop: 1 #bfcde4);
+}
+
+QListView::item:hover:!selected {
+    background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 #e7effd, stop: 1 #cbdaf1);
+}

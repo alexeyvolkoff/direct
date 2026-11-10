@@ -1,0 +1,6 @@
+<RCC>
+    <qresource prefix="/filemanager">
+        <file alias="favicon.ico">public/favicon.ico</file>
+        <file alias="service-worker.js">public/service-worker.js</file>
+    </qresource>
+</RCC>

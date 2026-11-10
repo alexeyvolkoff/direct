@@ -1,0 +1,26 @@
+Generate descriptive visual tags for the scene based on the conversation and characters.
+
+Use the RECENT CONVERSATION HISTORY to extract the current scene context: location, activity, clothing/outfit, pose, mood/lighting.
+
+Companion character visual appearance:
+{appearance}
+
+User profile / persona:
+{user_info}
+
+User request: "{prompt}"
+
+Tag Guidelines (Danbooru style):
+- Output ONLY comma-separated visual tags in English, lowercase.
+- Determine character and subject tags accurately based on the participant descriptions above:
+  - If only one character is depicted in the frame: use `solo` with the appropriate gender tag (e.g. `1girl, solo` or `1boy, solo`).
+  - If multiple participants interact in the frame: use corresponding subject tags matching their defined genders and roles.
+- Output ONLY bare tags. Absolutely NO names, NO parenthetical explanations, and NO commentary.
+- NO sentences, NO narrative phrases, NO exclamation marks, NO dialogues.
+- DO NOT include meta words like "sdxl", "pony", "prompt", "pose", "action", "tags".
+- Describe what is visually seen: subjects, clothing, physical activity, location, atmosphere.
+
+Example:
+Image: 1girl, solo, standing near window, soft daylight, living room, looking at viewer
+
+Format: Image: comma-separated tags

@@ -1,0 +1,1783 @@
+"""
+unified_memory.py  —  OMD 3.0 RAG
+Единая ChromaDB коллекция omd_unified вместо трёх legacy баз.
+
+Схема metadata:
+    type        : "memory_card" | "file_chunk" | "qa"
+    tags        : строка через запятую, напр. "omd,docs,personal"
+    owner       : user_id владельца записи
+    document_id : исходный путь/URL документа
+    chunk_id    : "0", "1", ... (для чанков)
+    title       : заголовок
+    relevance   : "contextual" | "permanent" | "document_chunk"
+    timestamp   : ISO-строка
+"""
+
+import os
+import re
+import math
+import time
+import uuid
+import logging
+import shutil
+import subprocess
+import tempfile
+from datetime import datetime
+from typing import Optional
+
+import chromadb
+from chromadb.config import Settings
+from sentence_transformers import SentenceTransformer
+
+from config import SETTINGS, BASE_INDEX_DIR
+import user_context
+
+logger = logging.getLogger(__name__)
+
+# ─── Пути ────────────────────────────────────────────────────────────────────
+
+UNIFIED_DB_DIR = os.path.join(BASE_INDEX_DIR, "unified_index")
+os.makedirs(UNIFIED_DB_DIR, exist_ok=True)
+
+# Публичные теги — для гостей (читается из config.ini)
+PUBLIC_TAGS: list[str] = [
+    t.strip()
+    for t in SETTINGS.get("PUBLIC_KNOWLEDGE_TAGS", "omd").split(",")
+    if t.strip()
+]
+
+RAG_THRESHOLD   = float(SETTINGS.get("RAG_THRESHOLD",   "0.75"))
+SEARCH_THRESHOLD = float(SETTINGS.get("SEARCH_THRESHOLD", "0.75"))
+RAG_TOP_K       = int(SETTINGS.get("RAG_TOP_K",   "15"))
+SEARCH_TOP_K    = int(SETTINGS.get("SEARCH_TOP_K", "30"))
+
+# Буст «свежести» файла при RAG-поиске (факт-инъекциях):
+# более новый файл получает усиление к оценке релевантности.
+# RECENCY_WEIGHT        - максимальный множитель (0 = отключено)
+# RECENCY_HALF_LIFE_DAYS- возраст файла в днях, на котором буст падает вдвое
+RECENCY_WEIGHT         = float(SETTINGS.get("RECENCY_WEIGHT", "0.35"))
+RECENCY_HALF_LIFE_DAYS = float(SETTINGS.get("RECENCY_HALF_LIFE_DAYS", "30"))
+
+# ─── Embedding model ──────────────────────────────────────────────────────────
+# Мультиязычная модель: связывает запросы/теги на разных языках (напр. «Ужгород»
+# ↔ "Uzhhorod"). Смените через `EMBEDDING_MODEL` в config.ini.
+EMBEDDING_MODEL = SETTINGS.get("EMBEDDING_MODEL", "paraphrase-multilingual-MiniLM-L12-v2")
+
+_model: Optional[SentenceTransformer] = None
+
+def get_model() -> SentenceTransformer:
+    global _model
+    if _model is None:
+        import torch
+        # Default lightweight MiniLM embeddings to CPU (like face_engine) so uvicorn
+        # does not permanently lock ~680 MiB of CUDA context VRAM away from ComfyUI/Ollama.
+        use_gpu = (
+            SETTINGS.get("FORCE_GPU_EMBEDDINGS", "false").lower() == "true"
+            and SETTINGS.get("FORCE_CPU_EMBEDDINGS", "false").lower() != "true"
+            and os.environ.get("OMD_FORCE_CPU") != "true"
+            and torch.cuda.is_available()
+        )
+        device = "cuda" if use_gpu else "cpu"
+        logger.info(f"[unified] Loading SentenceTransformer {EMBEDDING_MODEL} on {device}...")
+        _model = SentenceTransformer(EMBEDDING_MODEL, device=device)
+    return _model
+
+
+def embed(text: str) -> list:
+    return get_model().encode(text, show_progress_bar=False).tolist()
+
+
+# ─── ChromaDB клиент ──────────────────────────────────────────────────────────
+
+_client: Optional[chromadb.PersistentClient] = None
+_collection = None
+
+
+def _get_client():
+    global _client
+    if _client is None:
+        _client = chromadb.PersistentClient(
+            path=UNIFIED_DB_DIR,
+            settings=Settings(anonymized_telemetry=False),
+        )
+    return _client
+
+
+def get_collection():
+    """Возвращает коллекцию omd_unified, пересоздаёт при ошибке."""
+    global _collection, _client
+    try:
+        if _collection is not None:
+            _collection.count()
+            return _collection
+    except Exception:
+        logger.warning("[unified] Collection stale, re-initializing")
+        _client = None
+        _collection = None
+
+    _collection = _get_client().get_or_create_collection(
+        name="omd_unified",
+        metadata={"hnsw:space": "cosine"},
+    )
+    return _collection
+
+
+_faces_collection = None
+
+
+def get_faces_collection():
+    """Возвращает коллекцию omd_faces, пересоздаёт при ошибке."""
+    global _faces_collection, _client
+    try:
+        if _faces_collection is not None:
+            _faces_collection.count()
+            return _faces_collection
+    except Exception:
+        logger.warning("[unified] Faces collection stale, re-initializing")
+        _faces_collection = None
+
+    _faces_collection = _get_client().get_or_create_collection(
+        name="omd_faces",
+        metadata={"hnsw:space": "cosine"},
+    )
+    return _faces_collection
+
+
+# ─── Вспомогательные ─────────────────────────────────────────────────────────
+
+def _normalize_tag(t) -> str:
+    """' #OMD  ' -> 'omd'"""
+    if not t:
+        return ""
+    norm = str(t).strip().lstrip("#").lower()
+    return re.sub(r"[^\w-]", "_", norm)
+
+
+def _tags_meta(tags: list) -> dict:
+    """
+    ['omd', '#docs'] -> {'t_omd': 1, 't_docs': 1, 'tags': 'docs,omd'}
+    Каждый тег — отдельное поле t_<tag>: 1 (для $eq-фильтрации).
+    Поле 'tags' сохраняется как человекочитаемая строка.
+    """
+    clean = sorted(set(_normalize_tag(t) for t in (tags or []) if _normalize_tag(t)))
+    meta = {"tags": ",".join(clean)}
+    for t in clean:
+        meta[f"t_{t}"] = 1
+    return meta
+
+
+def auto_extract_tags(text: str, filename: str = "", extra_tags: list = None) -> list[str]:
+    """
+    Автоматически извлекает теги:
+    1. Хештеги из текста: #tag (например, #omd, #architecture, #rag, #docs)
+    2. Ключевые слова из имени файла или текста
+    3. Дополнительные переданные теги (extra_tags, например унаследованные от папки)
+    """
+    tags = set(_normalize_tag(t) for t in (extra_tags or []) if _normalize_tag(t))
+
+    if text:
+        found = re.findall(r'(?:^|[\s\(\[\{<])#([a-zA-Zа-яА-ЯёЁ0-9_-]{2,30})\b', text)
+        for t in found:
+            norm = _normalize_tag(t)
+            if norm and not norm.isdigit():
+                tags.add(norm)
+
+    if filename:
+        clean_fn = os.path.splitext(os.path.basename(filename))[0]
+        tokens = re.split(r"[-_.\s]+", clean_fn.lower())
+        KNOWN_KEYWORDS = {
+            "omd", "mcp", "rag", "p2p", "did", "webrtc", "svar", "gundb",
+            "guide", "architecture", "specification", "nas", "fastmcp", "team"
+        }
+        for token in tokens:
+            if token in KNOWN_KEYWORDS:
+                tags.add(token)
+
+    return sorted(t for t in tags if t)
+
+
+def append_tags_to_card_text(text: str, tags: list[str]) -> str:
+    """
+    Добавляет недостающие теги в виде #хештегов в конец тела карточки,
+    чтобы они отображались в UI карточки и сохранялись в тексте.
+    """
+    clean_tags = sorted(set(_normalize_tag(t) for t in (tags or []) if _normalize_tag(t)))
+    if not clean_tags:
+        return text or ""
+    clean_text = (text or "").strip()
+
+    existing_hashtags = set(
+        _normalize_tag(t)
+        for t in re.findall(r'(?:^|[\s\(\[\{<])#([a-zA-Zа-яА-ЯёЁ0-9_-]{2,30})\b', clean_text)
+    )
+    missing = [t for t in clean_tags if t not in existing_hashtags]
+    if not missing:
+        return clean_text
+
+    tags_line = " ".join(f"#{t}" for t in missing)
+    if not clean_text:
+        return tags_line
+    return f"{clean_text}\n\n{tags_line}"
+
+
+def _tags_match_filter(tags_filter: list) -> dict:
+    """
+    ChromaDB where-фильтр: хотя бы один из тегов присутствует.
+    Использует отдельные t_<tag> поля с $eq (обход бага $contains в ChromaDB 1.5.x).
+    """
+    if not tags_filter:
+        return {}
+    if len(tags_filter) == 1:
+        return {f"t_{_normalize_tag(tags_filter[0])}": {"$eq": 1}}
+    return {"$or": [{f"t_{_normalize_tag(t)}": {"$eq": 1}} for t in tags_filter]}
+
+
+def _cosine(a: list, b: list) -> float:
+    dot = sum(x * y for x, y in zip(a, b))
+    return dot / _norm(a) / _norm(b) if _norm(a) and _norm(b) else 0.0
+
+def _norm(v: list) -> float:
+    return math.sqrt(sum(x * x for x in v))
+
+
+def _parse_meta_time(value) -> Optional[datetime]:
+    """
+    ISO-строка метады (source_stamp — mtime файла, либо timestamp — время
+    индексации) → aware-datetime в локальной таймзоне. None при ошибке.
+    """
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except Exception:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=datetime.now().astimezone().tzinfo)
+    return dt
+
+
+def _recency_factor(ts: datetime, now: datetime, half_life_days: float) -> float:
+    """Гармонический спад: 1.0 при ts == now, ~0.5 на half_life, → 0 со временем."""
+    age_days = max(0.0, (now - ts).total_seconds() / 86400.0)
+    return 1.0 / (1.0 + age_days / max(half_life_days, 1.0))
+
+
+def _apply_recency_rerank(rows: list, half_life_days: float = RECENCY_HALF_LIFE_DAYS) -> None:
+    """
+    Переранжирует найденные записи по relevance × recency на месте (in-place):
+    свежие файлы/заметки поднимаются выше при сопоставимой релевантности.
+    Для каждой записи заполняет recency_factor, recency_boost и combined final_score.
+    """
+    if RECENCY_WEIGHT <= 0:
+        return
+    now = datetime.now().astimezone()
+    for r in rows:
+        ts = _parse_meta_time(r.get("source_stamp") or r.get("timestamp"))
+        if ts is not None:
+            rf = _recency_factor(ts, now, half_life_days)
+            r["recency_factor"] = round(rf, 4)
+            r["recency_boost"]  = round(RECENCY_WEIGHT * rf, 4)
+        else:
+            r["recency_factor"] = 0.0
+            r["recency_boost"]  = 0.0
+        r["final_score"] = round(float(r.get("relevance", 0.0)) * (1.0 + r.get("recency_boost", 0.0)), 3)
+    rows.sort(key=lambda x: x.get("final_score", 0.0), reverse=True)
+
+
+# ─── Поиск ───────────────────────────────────────────────────────────────────
+
+def search(
+    query: str,
+    tags_filter=None,
+    owner=None,
+    top_k=None,
+    threshold=None,
+    record_types=None,
+    document_id=None,
+    recent_first=False,
+    required_tags=None,
+) -> list:
+    """
+    Единая точка поиска.
+
+    Args:
+        query         - поисковый запрос
+        tags_filter   - список тегов: только записи с хотя бы одним из тегов
+        owner         - фильтр по владельцу
+        top_k         - максимум результатов
+        threshold     - косинусное расстояние (0=идентично, ниже=лучше)
+        record_types  - фильтр по type: ["file_chunk", "memory_card", ...]
+        document_id   - фильтр по document_id (напр. "/Documents/a.pdf" для
+                        /learn — граничит факты конкретно этим файлом/карточкой)
+        recent_first  - переранжировать по relevance × recency: свежие файлы
+                        (source_stamp/timestamp) поднимаются выше
+        required_tags - обязательный фильтр тегов (например PUBLIC_TAGS для гостей),
+                        применяется через $and вместе с tags_filter
+    """
+    if top_k is None:
+        top_k = RAG_TOP_K
+    if threshold is None:
+        threshold = RAG_THRESHOLD
+
+    coll = get_collection()
+    if coll.count() == 0:
+        return []
+
+    query_emb = embed(query)
+
+    conditions = []
+    if document_id:
+        conditions.append({"document_id": {"$eq": document_id}})
+    if required_tags:
+        conditions.append(_tags_match_filter(required_tags))
+    if tags_filter:
+        conditions.append(_tags_match_filter(tags_filter))
+    if owner:
+        conditions.append({"owner": {"$eq": owner}})
+    if record_types:
+        if len(record_types) == 1:
+            conditions.append({"type": {"$eq": record_types[0]}})
+        else:
+            conditions.append({"type": {"$in": record_types}})
+
+    where = None
+    if len(conditions) == 1:
+        where = conditions[0]
+    elif len(conditions) > 1:
+        where = {"$and": conditions}
+
+    try:
+        fetch_k = max(top_k * 5, 50)
+        n_results = min(fetch_k, max(coll.count(), 1))
+        kwargs = dict(query_embeddings=[query_emb], n_results=n_results)
+        if where:
+            kwargs["where"] = where
+        results = coll.query(**kwargs)
+    except Exception as e:
+        logger.error(f"[unified] search error: {e}")
+        return []
+
+    out = []
+    ids   = results.get("ids",   [[]])[0]
+    metas = results.get("metadatas", [[]])[0]
+    docs  = results.get("documents", [[]])[0]
+    dists = results.get("distances", [[]])[0]
+
+    for i in range(len(ids)):
+        dist = dists[i] if i < len(dists) else 1.0
+        if dist <= threshold:
+            score = round((1.0 - dist) * 100, 1)
+            row = {"id": ids[i], "text": docs[i], "distance": dist}
+            row.update(metas[i])
+            row["relevance"] = score
+            row["score"] = score
+            out.append(row)
+
+    # Метадата-boost: токены запроса, буквально встречающиеся в document_id/title
+    # (напр. «vieste» в «Bineon_račun_Vieste_29.pdf»),bridging multilingual-модели,
+    # которая не тянет перекрёстные языки (račun ↮ invoice).
+    try:
+        import re as _re
+        tokens = set(_re.findall(r"[a-zA-Zа-яА-ЯёЁ0-9]{3,}", query.lower()))
+        if tokens:
+            search_terms = set(tokens)
+            COMMON_SYNONYMS = {
+                "кот": ["cat", "cats", "kitten", "kittens", "feline", "коты", "кошка", "кошки", "котик", "котики", "кошачий"],
+                "кош": ["cat", "cats", "kitten", "kittens", "feline", "кот", "коты", "кошка", "кошки", "котик", "котики"],
+                "cat": ["кот", "коты", "кошка", "кошки", "котик", "котики", "кошачий", "kitten", "kittens", "feline"],
+                "соб": ["dog", "dogs", "puppy", "puppies", "hound", "собака", "собаки", "пес", "пёс"],
+                "dog": ["собака", "собаки", "пес", "пёс", "щенок", "puppy", "puppies"],
+                "маш": ["car", "cars", "vehicle", "automobile", "авто", "машина", "автомобиль"],
+                "car": ["машина", "машины", "авто", "автомобиль", "vehicle"],
+                "доку": ["doc", "document", "contract", "invoice", "документ", "договор", "счет", "счёт"],
+                "фото": ["photo", "image", "picture", "фото", "снимок", "кадр"],
+            }
+            for tok in list(tokens):
+                for pfx, syn_list in COMMON_SYNONYMS.items():
+                    if tok.startswith(pfx):
+                        search_terms.update(syn_list)
+
+            # Бустим уже найденные векторные результаты, если в них совпали ключевые слова
+            for r in out:
+                r_text = f"{r.get('document_id', '')} {r.get('title', '')} {r.get('tags', '')} {r.get('text', '')}".lower()
+                hits = sum(1 for term in search_terms if _re.search(r'\b' + _re.escape(term) + r'\b', r_text))
+                if hits > 0:
+                    r["distance"] = max(0.0, r["distance"] * (0.65 ** min(hits, 3)))
+                    r["relevance"] = round((1.0 - r["distance"]) * 100, 1)
+                    r["score"] = r["relevance"]
+
+            get_kwargs = dict(include=["metadatas", "documents"])
+            if where:
+                get_kwargs["where"] = where
+            all_recs = coll.get(**get_kwargs)
+            got = set(ids)
+            kw_ids = []
+            for rid, meta, doc in zip(all_recs.get("ids", []), all_recs.get("metadatas", []), all_recs.get("documents", [])):
+                if rid in got:
+                    continue
+                if document_id and meta.get("document_id") != document_id:
+                    continue
+                d = doc or ""
+                if d.startswith("/9j/") or d.startswith("data:image"):
+                    d = ""
+                content = f"{meta.get('document_id', '')} {meta.get('title', '')} {meta.get('tags', '')} {d}".lower()
+                if any(_re.search(r'\b' + _re.escape(term) + r'\b', content) for term in search_terms):
+                    kw_ids.append(rid)
+
+            if kw_ids:
+                kw_docs = coll.get(ids=kw_ids, include=["embeddings", "metadatas", "documents"])
+                kw_boost = float(SETTINGS.get("META_KEYWORD_BOOST", "0.6"))
+                for rid, emb, meta, doc in zip(
+                    kw_docs.get("ids", []),
+                    kw_docs.get("embeddings", []),
+                    kw_docs.get("metadatas", []),
+                    kw_docs.get("documents", []),
+                ):
+                    dist = (1.0 - _cosine(query_emb, list(emb))) * kw_boost
+                    if dist <= threshold:
+                        score = round((1.0 - dist) * 100, 1)
+                        row = {"id": rid, "text": doc or "", "distance": dist}
+                        row.update(meta)
+                        row["relevance"] = score
+                        row["score"] = score
+                        out.append(row)
+    except Exception as e:
+        logger.warning(f"[unified] metadata boost error: {e}")
+
+    out.sort(key=lambda x: x["distance"])
+
+    # Relative score cutoff: filter out results that are much weaker than the top hit
+    if out:
+        best_score = max(r.get("relevance", 0.0) for r in out)
+        relative_ratio = float(SETTINGS.get("RAG_RELATIVE_RATIO", "0.35"))
+        min_rel_cutoff = best_score * relative_ratio
+        out = [r for r in out if r.get("relevance", 0.0) >= min_rel_cutoff]
+
+    seen = set()
+    seen_doc_chunks = set()
+    deduped = []
+    for r in out:
+        if r["id"] in seen:
+            continue
+        doc_id = r.get("document_id")
+        rec_type = r.get("type")
+        chunk_id = r.get("chunk_id")
+        if doc_id:
+            # If doc_id already has a chunk:0, skip duplicate memory_card for that doc_id
+            if rec_type == "memory_card" and (doc_id, "0") in seen_doc_chunks:
+                continue
+            if rec_type == "file_chunk" and (doc_id, "card") in seen_doc_chunks and (chunk_id == "0" or chunk_id == 0):
+                continue
+            key = (doc_id, str(chunk_id) if chunk_id is not None else "card")
+            if key in seen_doc_chunks:
+                continue
+            seen_doc_chunks.add(key)
+        seen.add(r["id"])
+        deduped.append(r)
+    if recent_first:
+        _apply_recency_rerank(deduped)
+    return deduped[:top_k]
+
+
+# ─── Карточки памяти и сопроводительные Readme.md ──────────────────────────
+
+def _doc_path_candidates(path: str, user: str) -> list:
+    """Варианты реального пути на диске для виртуального пути."""
+    out = []
+    if os.path.exists(path):
+        out.append(path)
+    if path.startswith("/"):
+        out.append(f"/home/{user}{path}")
+    norm = "/" + path.strip("/")
+    if norm.startswith("/home/"):
+        parts = norm.split("/", 3)
+        if len(parts) == 4:
+            out.append(f"/home/{user}/{parts[3]}")
+    return out
+
+
+def _strip_device_namespace(path: str) -> str | None:
+    """`/<устройство>/<путь>` → `/<путь>`.
+
+    Полный логический путь начинается с префикса устройства (hostname, напр.
+    /beelink), которого нет на диске ноды — файлы лежат в /home/<user>/<путь>.
+    `home` пропускаем, это реальный сегмент пути, а не устройство.
+    """
+    parts = path.split("/")
+    if len(parts) > 2 and parts[1] and parts[1] != "home":
+        return "/" + "/".join(parts[2:])
+    return None
+
+
+def find_document_id(doc_ref: str, public_only: bool = False) -> str | None:
+    """Находит полный document_id в ChromaDB по фрагменту пути или имени файла."""
+    if not doc_ref or doc_ref.startswith(("http", "user:")):
+        return None
+    clean = doc_ref.strip()
+    pub_tags = set(t.lower() for t in PUBLIC_TAGS)
+    try:
+        coll = get_collection()
+    except Exception:
+        return None
+
+    # 1. Прямая проверка по кандидатам
+    candidates = [clean]
+    stripped = _strip_device_namespace(clean)
+    if stripped and stripped not in candidates:
+        candidates.append(stripped)
+    if not clean.startswith("/"):
+        candidates.append("/" + clean)
+
+    for c in candidates:
+        try:
+            res = coll.get(where={"document_id": {"$eq": c}}, include=["metadatas"], limit=5)
+            metas = res.get("metadatas", [])
+            if metas:
+                if not public_only:
+                    return metas[0].get("document_id") or c
+                for meta in metas:
+                    meta_tags = set(k[2:].lower() for k in meta if k.startswith("t_"))
+                    if meta.get("tags"):
+                        meta_tags.update(t.strip().lower() for t in str(meta["tags"]).split(",") if t.strip())
+                    if meta_tags & pub_tags:
+                        return meta.get("document_id") or c
+        except Exception:
+            pass
+
+    # 2. Поиск по окончанию пути или имени файла
+    target_name = clean.split("/")[-1].lower()
+    try:
+        where_filter = _tags_match_filter(PUBLIC_TAGS) if public_only else None
+        res = coll.get(where=where_filter, include=["metadatas"], limit=1000)
+        for meta in res.get("metadatas", []):
+            did = meta.get("document_id") or ""
+            if not did:
+                continue
+            did_name = did.split("/")[-1].lower()
+            if did == clean or did.endswith(clean) or did_name == target_name:
+                return did
+    except Exception as e:
+        logger.warning(f"[find_document_id] search failed: {e}")
+
+    return None
+
+
+def resolve_doc_path(document_id: str) -> str | None:
+    """Виртуальный путь документа (document_id) → реальный путь на диске ноды,
+    если файл/папка существует, иначе None.
+
+    Принимает и старый вид без устройства (`/Pictures/photo.png`), и полный
+    логический путь (`/beelink/Pictures/photo.png`) — сначала пробуем как есть,
+    и только если не нашлось — отбрасываем сегмент устройства.
+    """
+    if not document_id or document_id.startswith(("http", "user:")):
+        return None
+    import getpass
+    user = getpass.getuser()
+
+    for c in _doc_path_candidates(document_id, user):
+        if os.path.exists(c):
+            return c
+
+    # Полный логический путь: первый сегмент — префикс устройства, не часть пути.
+    rest = _strip_device_namespace(document_id)
+    if rest:
+        for c in _doc_path_candidates(rest, user):
+            if os.path.exists(c):
+                return c
+
+    # Фолбэк: если передан короткий путь или имя файла — ищем полный document_id в ChromaDB
+    try:
+        found_did = find_document_id(document_id, public_only=False)
+        if found_did and found_did != document_id:
+            for c in _doc_path_candidates(found_did, user):
+                if os.path.exists(c):
+                    return c
+            rest = _strip_device_namespace(found_did)
+            if rest:
+                for c in _doc_path_candidates(rest, user):
+                    if os.path.exists(c):
+                        return c
+    except Exception:
+        pass
+
+    return None
+
+
+def resolve_companion_readme(document_id: str) -> tuple[str | None, str | None]:
+    """
+    Разрешает путь к сопроводительному Readme.md на локальном диске для document_id.
+    Возвращает (readme_path, content_if_exists).
+    """
+    if not document_id or document_id.startswith("http") or document_id.startswith("user:note:"):
+        return None, None
+    import getpass
+    user = getpass.getuser()
+
+    real_path = resolve_doc_path(document_id)
+    if not real_path:
+        real_path = f"/home/{user}/{document_id.lstrip('/')}"
+
+    # Для папки: Readme.md внутри папки
+    if os.path.isdir(real_path):
+        for name in ("Readme.md", "readme.md", "README.md"):
+            p = os.path.join(real_path, name)
+            if os.path.isfile(p):
+                try:
+                    with open(p, "r", encoding="utf-8", errors="replace") as f:
+                        return p, f.read().strip()
+                except Exception:
+                    pass
+        return os.path.join(real_path, "Readme.md"), None
+
+    # Для файла: <file>.Readme.md (без исходного расширения, напр. photo.Readme.md)
+    base_path = os.path.splitext(real_path)[0]
+    for suffix in (".Readme.md", ".readme.md", ".README.md"):
+        p = base_path + suffix
+        if os.path.isfile(p):
+            try:
+                with open(p, "r", encoding="utf-8", errors="replace") as f:
+                    return p, f.read().strip()
+            except Exception:
+                pass
+        p_full = real_path + suffix
+        if os.path.isfile(p_full):
+            try:
+                with open(p_full, "r", encoding="utf-8", errors="replace") as f:
+                    return p_full, f.read().strip()
+            except Exception:
+                pass
+    return base_path + ".Readme.md", None
+
+
+def save_companion_readme(document_id: str, text: str) -> str | None:
+    """Сохраняет текст в сопроводительный Readme.md на диске."""
+    readme_path, _ = resolve_companion_readme(document_id)
+    if not readme_path:
+        return None
+    try:
+        os.makedirs(os.path.dirname(readme_path), exist_ok=True)
+        with open(readme_path, "w", encoding="utf-8") as f:
+            f.write(text.strip() + "\n")
+        _invalidate_indexed_docs_cache()
+        return readme_path
+    except Exception as e:
+        logger.error(f"[unified] save_companion_readme error {readme_path}: {e}")
+        return None
+
+
+def get_document_tags(document_id: str) -> list[str]:
+    """Возвращает теги документа или папки из ChromaDB и companion readme."""
+    if not document_id:
+        return []
+    coll = get_collection()
+    candidates = [document_id]
+    stripped = _strip_device_namespace(document_id)
+    if stripped and stripped not in candidates:
+        candidates.append(stripped)
+
+    tags = set()
+    for c_id in candidates:
+        try:
+            res = coll.get(where={"$and": [{"type": {"$eq": "memory_card"}}, {"document_id": {"$eq": c_id}}]}, include=["metadatas", "documents"])
+            for meta in res.get("metadatas", []):
+                tags.update(k[2:] for k in meta if k.startswith("t_"))
+                if meta.get("tags"):
+                    tags.update(_normalize_tag(t) for t in str(meta["tags"]).split(",") if t.strip())
+            for doc in res.get("documents", []):
+                if doc:
+                    tags.update(auto_extract_tags(doc))
+            if not tags:
+                res_fc = coll.get(where={"$and": [{"type": {"$eq": "file_chunk"}}, {"document_id": {"$eq": c_id}}]}, include=["metadatas"], limit=5)
+                for meta in res_fc.get("metadatas", []):
+                    tags.update(k[2:] for k in meta if k.startswith("t_"))
+                    if meta.get("tags"):
+                        tags.update(_normalize_tag(t) for t in str(meta["tags"]).split(",") if t.strip())
+        except Exception as e:
+            logger.debug(f"[unified] get_document_tags error for {c_id}: {e}")
+
+    try:
+        real_path, readme_content = resolve_companion_readme(document_id)
+        if readme_content:
+            tags.update(auto_extract_tags(readme_content))
+    except Exception:
+        pass
+
+    return sorted(t for t in tags if t)
+
+
+def get_inherited_folder_tags(doc_or_folder_id: str) -> list[str]:
+    """
+    Обходит иерархию родительских папок вверх и собирает накопленные теги.
+    Например, для /beelink/Knowledge/OMD/3.0/file.md проверяет:
+    /beelink/Knowledge/OMD/3.0, /beelink/Knowledge/OMD, /beelink/Knowledge.
+    """
+    if not doc_or_folder_id:
+        return []
+    tags = set()
+    curr = doc_or_folder_id.rstrip("/")
+    parent = os.path.dirname(curr)
+    while parent and parent not in ("/", "\\", ""):
+        parts = [p for p in parent.split("/") if p]
+        if len(parts) >= 1:
+            p_tags = get_document_tags(parent)
+            tags.update(p_tags)
+        parent = os.path.dirname(parent)
+    return sorted(tags)
+
+
+def propagate_folder_tags(folder_doc_id: str, tags: list[str]) -> int:
+    """
+    Распространяет теги папки на все дочерние карточки памяти и file_chunk в ChromaDB.
+    Также добавляет недостающие хештеги в текст карточек и сохраняет в companion Readme.
+    """
+    clean_tags = sorted(set(_normalize_tag(t) for t in (tags or []) if _normalize_tag(t)))
+    if not clean_tags or not folder_doc_id:
+        return 0
+    coll = get_collection()
+    folder_prefix = folder_doc_id.rstrip("/") + "/"
+    stripped = _strip_device_namespace(folder_doc_id)
+    prefixes = [folder_prefix]
+    if stripped:
+        prefixes.append(stripped.rstrip("/") + "/")
+
+    updated_count = 0
+    try:
+        # 1. Обновляем memory_cards дочерних элементов
+        cards_res = coll.get(where={"type": {"$eq": "memory_card"}}, include=["metadatas", "documents"])
+        ids_to_update = []
+        metas_to_update = []
+        docs_to_update = []
+        for cid, meta, doc in zip(cards_res.get("ids", []), cards_res.get("metadatas", []), cards_res.get("documents", [])):
+            doc_id = meta.get("document_id") or ""
+            if any(doc_id.startswith(p) for p in prefixes):
+                cur_tags = set(k[2:] for k in meta if k.startswith("t_"))
+                if meta.get("tags"):
+                    cur_tags.update(_normalize_tag(t) for t in str(meta["tags"]).split(",") if t.strip())
+                new_tags_set = cur_tags | set(clean_tags)
+                if new_tags_set != cur_tags:
+                    new_meta = dict(meta)
+                    new_meta.update(_tags_meta(list(new_tags_set)))
+                    new_doc = append_tags_to_card_text(doc or "", clean_tags)
+                    ids_to_update.append(cid)
+                    metas_to_update.append(new_meta)
+                    docs_to_update.append(new_doc)
+                    if doc_id and not meta.get("is_folder"):
+                        save_companion_readme(doc_id, new_doc)
+
+        if ids_to_update:
+            coll.update(ids=ids_to_update, metadatas=metas_to_update, documents=docs_to_update)
+            updated_count += len(ids_to_update)
+
+        # 2. Обновляем file_chunks дочерних элементов
+        chunks_res = coll.get(where={"type": {"$eq": "file_chunk"}}, include=["metadatas"])
+        c_ids_to_update = []
+        c_metas_to_update = []
+        for cid, meta in zip(chunks_res.get("ids", []), chunks_res.get("metadatas", [])):
+            doc_id = meta.get("document_id") or ""
+            if any(doc_id.startswith(p) for p in prefixes):
+                cur_tags = set(k[2:] for k in meta if k.startswith("t_"))
+                if meta.get("tags"):
+                    cur_tags.update(_normalize_tag(t) for t in str(meta["tags"]).split(",") if t.strip())
+                new_tags_set = cur_tags | set(clean_tags)
+                if new_tags_set != cur_tags:
+                    new_meta = dict(meta)
+                    new_meta.update(_tags_meta(list(new_tags_set)))
+                    c_ids_to_update.append(cid)
+                    c_metas_to_update.append(new_meta)
+
+        if c_ids_to_update:
+            coll.update(ids=c_ids_to_update, metadatas=c_metas_to_update)
+            updated_count += len(c_ids_to_update)
+
+        if updated_count:
+            _invalidate_indexed_docs_cache()
+            logger.info(f"[unified] propagated tags {clean_tags} to {updated_count} items under {folder_doc_id}")
+    except Exception as e:
+        logger.error(f"[unified] propagate_folder_tags error: {e}")
+
+    return updated_count
+
+
+def find_memory_card_id(document_id: str, title: str = None) -> str | None:
+    """Возвращает memory_id существующей карточки по document_id (или title), либо None."""
+    if not (document_id or title):
+        return None
+    conditions = [{"type": {"$eq": "memory_card"}}]
+    if document_id:
+        conditions.append({"document_id": {"$eq": document_id}})
+    elif title:
+        conditions.append({"title": {"$eq": title}})
+    try:
+        res = get_collection().get(where={"$and": conditions}, include=["metadatas"], limit=2)
+        ids = res.get("ids", [])
+        if not ids:
+            return None
+        if document_id:
+            return ids[0]
+        # По имени карточку документа ищем только среди карточек документов
+        for i, rid in enumerate(ids):
+            if res["metadatas"][i].get("document_id"):
+                return rid
+        return ids[0] if len(ids) == 1 else None
+    except Exception as e:
+        logger.error(f"[unified] find_memory_card_id error: {e}")
+        return None
+
+
+def upsert_memory_card(
+    text: str,
+    mem_id=None,
+    owner=None,
+    tags=None,
+    title="",
+    document_id=None,
+    relevance="contextual",
+    image_preview="",
+    is_folder=False,
+) -> str:
+    """Добавляет/обновляет карточку памяти. Возвращает mem_id.
+
+    Дедуп: при document_id (или одинаковом title) обновляем существующую
+    карточку этого документа вместо создания новой — старые дубли удаляются.
+    """
+    if not owner:
+        owner = user_context.node_owner()
+
+    # Сначала схлопываем старые карточки этого документа (если есть),
+    # затем вставляем/обновляем свежую — на дисплее остаётся одна.
+    if document_id:
+        try:
+            get_collection().delete(where={"$and": [
+                {"type":        {"$eq": "memory_card"}},
+                {"document_id": {"$eq": document_id}},
+            ]})
+        except Exception as e:
+            logger.warning(f"[unified] dedupe stale memory_cards error: {e}")
+
+    if not mem_id and (document_id or title):
+        mem_id = None
+    if not mem_id:
+        mem_id = str(uuid.uuid4())
+
+    folder_flag = is_folder or (bool(document_id) and not os.path.splitext(document_id)[1])
+    clean_tags = auto_extract_tags(text, title or (document_id.split("/")[-1] if document_id else ""), tags or [])
+    final_text = append_tags_to_card_text(text, clean_tags)
+
+    metadata = {
+        "type":      "memory_card",
+        "owner":     owner,
+        "title":     title,
+        "relevance": relevance,
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+    }
+    if folder_flag:
+        metadata["is_folder"] = True
+        metadata["contentType"] = "folder"
+    if image_preview:
+        metadata["image_preview"] = image_preview
+    metadata.update(_tags_meta(clean_tags))
+    if document_id:
+        metadata["document_id"] = document_id
+
+    get_collection().upsert(
+        ids=[mem_id],
+        embeddings=[embed(final_text)],
+        documents=[final_text.strip()],
+        metadatas=[metadata],
+    )
+    _invalidate_indexed_docs_cache()
+
+    if folder_flag and document_id and clean_tags:
+        propagate_folder_tags(document_id, clean_tags)
+
+    return mem_id
+
+
+def update_memory_card(mem_id: str, text: str = None, title: str = None, tags=None) -> str | None:
+    """Обновляет существующую memory_card (текст/заголовок/теги), сохраняя document_id/owner/relevance."""
+    coll = get_collection()
+    try:
+        # Поддержка виртуального id документа document::<document_id>
+        if mem_id and mem_id.startswith("document::"):
+            doc_id = mem_id[len("document::"):]
+            existing_id = find_memory_card_id(doc_id)
+            if existing_id:
+                mem_id = existing_id
+            else:
+                new_text = (text or "").strip()
+                if not new_text:
+                    _, readme_content = resolve_companion_readme(doc_id)
+                    new_text = readme_content or ""
+                return upsert_memory_card(
+                    new_text,
+                    document_id=doc_id,
+                    title=title or doc_id.split("/")[-1],
+                    tags=tags or [],
+                    relevance="permanent",
+                )
+
+        res = coll.get(ids=[mem_id], include=["documents", "metadatas"])
+        if not res.get("ids"):
+            return None
+        meta = res["metadatas"][0]
+        old_text = res["documents"][0] if res.get("documents") else ""
+        new_text = (text if text is not None else old_text).strip()
+        old_tags = [t for t in (meta.get("tags") or "").split(",") if t]
+        new_tags = [t for t in (tags or [])] if tags is not None else old_tags
+        clean_new_tags = auto_extract_tags(new_text, title or meta.get("title", ""), new_tags)
+        new_text_with_tags = append_tags_to_card_text(new_text, clean_new_tags)
+        doc_id = meta.get("document_id")
+        is_folder = meta.get("is_folder") or (bool(doc_id) and not os.path.splitext(doc_id)[1])
+
+        ret = upsert_memory_card(
+            new_text_with_tags,
+            mem_id=mem_id,
+            owner=meta.get("owner"),
+            tags=clean_new_tags,
+            title=title if title is not None else meta.get("title", ""),
+            document_id=doc_id,
+            relevance=meta.get("relevance", "contextual"),
+            image_preview=meta.get("image_preview", ""),
+            is_folder=is_folder,
+        )
+
+        if doc_id:
+            try:
+                fc_res = coll.get(where={"$and": [{"type": {"$eq": "file_chunk"}}, {"document_id": {"$eq": doc_id}}]}, include=["metadatas"])
+                if fc_res.get("ids"):
+                    fc_metas = []
+                    for fm in fc_res["metadatas"]:
+                        nfm = dict(fm)
+                        nfm.update(_tags_meta(clean_new_tags))
+                        fc_metas.append(nfm)
+                    coll.update(ids=fc_res["ids"], metadatas=fc_metas)
+            except Exception as e_fc:
+                logger.warning(f"[unified] update file_chunks tags error for {doc_id}: {e_fc}")
+
+        if is_folder and doc_id and clean_new_tags:
+            propagate_folder_tags(doc_id, clean_new_tags)
+
+        return ret
+    except Exception as e:
+        logger.error(f"[unified] update_memory_card error: {e}")
+        return None
+
+
+def add_person_to_document(document_id: str, person_name: str) -> bool:
+    """
+    Привязывает человека к документу:
+    1. Обновляет тег в tags metadata.
+    2. Вставляет/дополняет строку '**Люди на фото:** Имя' в тексте описания и в файле .Readme.md на диске.
+    3. Пересчитывает эмбеддинги карточки памяти (и file_chunk), делая фото искабельным в семантическом RAG.
+    """
+    clean_name = person_name.strip()
+    if not clean_name or not document_id:
+        return False
+    try:
+        coll = get_collection()
+        card_id = find_memory_card_id(document_id)
+        current_text = ""
+        existing_tags = set()
+        owner = "anonymous"
+        title = document_id.split("/")[-1]
+
+        if card_id:
+            res = coll.get(ids=[card_id], include=["documents", "metadatas"])
+            if res.get("ids"):
+                current_text = (res["documents"][0] if res.get("documents") else "") or ""
+                meta = res["metadatas"][0]
+                existing_tags = set(t.strip() for t in (meta.get("tags") or "").split(",") if t.strip())
+                existing_tags.update(k[2:] for k in meta if k.startswith("t_"))
+                owner = meta.get("owner") or owner
+                title = meta.get("title") or title
+
+        if not current_text:
+            _, readme_content = resolve_companion_readme(document_id)
+            if readme_content:
+                current_text = readme_content
+
+        if not current_text:
+            current_text = f"# {title}"
+
+        people_match = re.search(r"\*\*(?:Люди на фото|People):\*\*\s*(.+)", current_text)
+        current_people = set()
+        if people_match:
+            current_people = set(p.strip() for p in people_match.group(1).split(",") if p.strip())
+        current_people.add(clean_name)
+        people_line = f"**Люди на фото:** {', '.join(sorted(current_people))}"
+
+        if people_match:
+            new_text = re.sub(r"\*\*(?:Люди на фото|People):\*\*.*", people_line, current_text)
+        else:
+            new_text = current_text.rstrip() + f"\n\n{people_line}\n"
+
+        existing_tags.add(clean_name.lower())
+        tags_list = sorted(list(existing_tags))
+
+        save_companion_readme(document_id, new_text)
+
+        upsert_memory_card(
+            text=new_text,
+            mem_id=card_id,
+            owner=owner,
+            tags=tags_list,
+            title=title,
+            document_id=document_id,
+            relevance="permanent",
+        )
+
+        fc_res = coll.get(
+            where={"$and": [{"type": {"$eq": "file_chunk"}}, {"document_id": {"$eq": document_id}}]},
+            include=["metadatas", "documents"]
+        )
+        if fc_res.get("ids"):
+            for cid, cmeta, cdoc in zip(fc_res["ids"], fc_res["metadatas"], fc_res["documents"]):
+                cmeta[f"t_{_normalize_tag(clean_name)}"] = 1
+                ctags = set(t.strip() for t in (cmeta.get("tags") or "").split(",") if t.strip())
+                ctags.add(clean_name.lower())
+                cmeta["tags"] = ",".join(sorted(ctags))
+
+                chunk_text = cdoc or ""
+                if cid.endswith(":chunk:0") or len(fc_res["ids"]) == 1:
+                    if "**Люди на фото:**" in chunk_text:
+                        chunk_text = re.sub(r"\*\*Люди на фото:\*\*.*", people_line, chunk_text)
+                    elif "**People:**" in chunk_text:
+                        chunk_text = re.sub(r"\*\*People:\*\*.*", people_line, chunk_text)
+                    else:
+                        chunk_text = chunk_text.rstrip() + f"\n\n{people_line}\n"
+                chunk_emb = embed(chunk_text)
+                coll.update(ids=[cid], embeddings=[chunk_emb], documents=[chunk_text], metadatas=[cmeta])
+
+        _invalidate_indexed_docs_cache()
+        return True
+    except Exception as e:
+        logger.error(f"[unified] add_person_to_document error: {e}")
+        return False
+
+
+def add_tag_to_document(document_id: str, tag: str, is_person: bool = False) -> bool:
+    """Добавляет тег к карточке документа (или виртуальному документу)."""
+    if is_person:
+        return add_person_to_document(document_id, tag)
+    clean_tag = _normalize_tag(tag)
+    if not clean_tag or not document_id:
+        return False
+    try:
+        mem_id = find_memory_card_id(document_id)
+        if mem_id:
+            res = get_collection().get(ids=[mem_id], include=["metadatas"])
+            if res.get("ids"):
+                old_tags = [t for t in (res["metadatas"][0].get("tags") or "").split(",") if t]
+                if clean_tag not in [_normalize_tag(t) for t in old_tags]:
+                    update_memory_card(mem_id, tags=old_tags + [tag.strip()])
+                    _invalidate_indexed_docs_cache()
+                    return True
+                return False
+        update_memory_card(f"document::{document_id}", tags=[tag.strip()])
+        _invalidate_indexed_docs_cache()
+        return True
+    except Exception as e:
+        logger.error(f"[unified] add_tag_to_document error: {e}")
+        return False
+
+
+def delete_memory_card(mem_id=None, document_id=None):
+    """Удаляет карточку памяти по id или document_id."""
+    coll = get_collection()
+    try:
+        if mem_id:
+            coll.delete(ids=[mem_id])
+        elif document_id:
+            coll.delete(where={"$and": [
+                {"type": {"$eq": "memory_card"}},
+                {"document_id": {"$eq": document_id}},
+            ]})
+        _invalidate_indexed_docs_cache()
+    except Exception as e:
+        logger.error(f"[unified] delete_memory_card error: {e}")
+
+
+# ─── Кэш списка проиндексированных документов ─────────────────────────────────
+# get_indexed_documents читает ВСЕ file_chunk + ВСЕ memory_card на каждый вызов
+# (главный источник медленного /api/device_memory при тысячах записей).
+# Кэшируем с TTL и инвалидируем при любой записи в unified коллекцию.
+
+_INDEXED_DOCS_CACHE_TTL = 30.0
+_indexed_docs_cache: dict = {"valid": False, "ts": 0.0, "data": None}
+_cards_cache: dict = {"valid": False, "ts": 0.0, "data": None}
+
+
+def _invalidate_indexed_docs_cache():
+    _indexed_docs_cache["valid"] = False
+    _cards_cache["valid"] = False
+
+
+def _indexed_docs_cache_fresh() -> bool:
+    return bool(
+        _indexed_docs_cache["valid"]
+        and (_indexed_docs_cache["ts"] + _INDEXED_DOCS_CACHE_TTL) > time.time()
+    )
+
+
+def get_all_memory_cards(owner=None) -> list:
+    """Возвращает все карточки памяти (для листинга в UI).
+
+    owner=None (UI-листинг) — результат кэшируется с TTL 30s + инвалидация
+    при записи, обходить можно опциональным owner (см. get_indexed_documents).
+    """
+    coll = get_collection()
+    try:
+        if owner is None and _cards_cache["valid"] and (_cards_cache["ts"] + _INDEXED_DOCS_CACHE_TTL) > time.time():
+            return [dict(c) for c in _cards_cache["data"]]
+        where = {"type": {"$eq": "memory_card"}}
+        if owner:
+            where = {"$and": [where, {"owner": {"$eq": owner}}]}
+        results = coll.get(where=where, include=["documents", "metadatas"])
+        out = []
+        for i, doc_id in enumerate(results.get("ids", [])):
+            meta = results["metadatas"][i]
+            # Карточки-документы дублируются группой file_chunk из get_indexed_documents,
+            # для них не плодим отдельные записи в списке.
+            if meta.get("type") == "memory_card" and meta.get("document_id"):
+                continue
+            out.append({
+                "memory_id": doc_id,
+                "_id": doc_id,
+                "text": results["documents"][i],
+                **meta,
+                "tags": [k[2:] for k in meta if k.startswith("t_")],
+            })
+        if owner is None:
+            _cards_cache["valid"] = True
+            _cards_cache["ts"] = time.time()
+            _cards_cache["data"] = out
+        return out
+    except Exception as e:
+        logger.error(f"[unified] get_all_memory_cards error: {e}")
+        return []
+
+
+def get_indexed_documents(owner=None) -> list:
+    """Возвращает проиндексированные документы (file_chunk), сгруппированные по document_id.
+
+    Результат кэшируется (TTL 30s + инвалидация при записи), т.к. перечитывание
+    ВСЕХ чанков и карточек на каждый вызов стоит секунды при тысячах записей.
+    Опциональный owner минует кэш (на практике вызовы идут с owner=None).
+    """
+    if owner is None and _indexed_docs_cache_fresh():
+        return [dict(d) for d in _indexed_docs_cache["data"]]
+
+    coll = get_collection()
+    try:
+        where = {"type": {"$eq": "file_chunk"}}
+        if owner:
+            where = {"$and": [where, {"owner": {"$eq": owner}}]}
+        results = coll.get(where=where, include=["metadatas"])
+        docs: dict = {}
+        for i, rid in enumerate(results.get("ids", [])):
+            meta = results["metadatas"][i]
+            doc_id = meta.get("document_id") or "(no path)"
+            title = meta.get("title") or doc_id.split("/")[-1]
+            d = docs.setdefault(doc_id, {
+                "memory_id": f"document::{doc_id}",
+                "type": "document",
+                "document_id": doc_id,
+                "title": title,
+                "owner": meta.get("owner", ""),
+                "timestamp": meta.get("timestamp", ""),
+                "tags_list": set(),
+                "chunks": 0,
+                "has_preview": False,
+                "is_folder": False,
+            })
+            d["chunks"] += 1
+            if meta.get("is_folder"):
+                d["is_folder"] = True
+            # Превью не тащим в листинг (base64 по картинке = сотни МБ при тысячах
+            # фото). Оставляем только флаг для ленивой подгрузки thumb-эндпоинтом.
+            if meta.get("image_preview"):
+                d["has_preview"] = True
+            d["tags_list"].update(k[2:] for k in meta if k.startswith("t_"))
+            ts = meta.get("timestamp", "")
+            if ts and ts > d["timestamp"]:
+                d["timestamp"] = ts
+        for d in docs.values():
+            d["tags"] = sorted(d.pop("tags_list"))
+        # Обогащаем группы чанков аннотацией и тегами memory_card этого документа.
+        ann_where = {"type": {"$eq": "memory_card"}}
+        if owner:
+            ann_where = {"$and": [{"type": {"$eq": "memory_card"}}, {"owner": {"$eq": owner}}]}
+        try:
+            ann_res = coll.get(where=ann_where, include=["documents", "metadatas"], limit=10000)
+            enriched = 0
+            for i, rid in enumerate(ann_res.get("ids", [])):
+                am = ann_res["metadatas"][i]
+                adoc = am.get("document_id")
+                if not adoc:
+                    continue
+                # Извлекаем теги из карточки памяти (включая t_* префиксы и tags строку)
+                card_tags = set(k[2:] for k in am if k.startswith("t_"))
+                if am.get("tags"):
+                    card_tags.update(t.strip() for t in str(am["tags"]).split(",") if t.strip())
+
+                if adoc in docs:
+                    docs[adoc]["annotation"] = ann_res["documents"][i]
+                    docs[adoc]["text"] = ann_res["documents"][i]
+                    docs[adoc]["relevance"] = am.get("relevance", "permanent")
+                    if card_tags:
+                        docs[adoc]["tags"] = sorted(set(docs[adoc].get("tags", [])) | card_tags)
+                    enriched += 1
+                else:
+                    docs[adoc] = {
+                        "memory_id": rid or f"document::{adoc}",
+                        "type": "document",
+                        "document_id": adoc,
+                        "title": am.get("title") or adoc.split("/")[-1],
+                        "owner": am.get("owner", ""),
+                        "timestamp": am.get("timestamp", ""),
+                        "tags": sorted(card_tags),
+                        "chunks": 0,
+                        "has_preview": bool(am.get("image_preview") or am.get("has_preview")),
+                        "is_folder": bool(am.get("is_folder")),
+                        "annotation": ann_res["documents"][i],
+                        "text": ann_res["documents"][i],
+                        "relevance": am.get("relevance", "permanent"),
+                    }
+                    enriched += 1
+            if enriched:
+                logger.info(f"[unified] enriched {enriched} documents with annotations and tags")
+        except Exception as e:
+            logger.warning(f"[unified] get_indexed_documents annotation enrichment error: {e}")
+
+        # Автоматически обогащаем из companion Readme.md на диске, если в ChromaDB ещё нет memory_card
+        for doc_id, d in docs.items():
+            if not d.get("text"):
+                _, readme_content = resolve_companion_readme(doc_id)
+                if readme_content:
+                    d["text"] = readme_content
+                    d["annotation"] = readme_content
+                    try:
+                        upsert_memory_card(
+                            readme_content,
+                            owner=d.get("owner"),
+                            tags=d.get("tags"),
+                            title=d.get("title"),
+                            document_id=doc_id,
+                            relevance="permanent",
+                        )
+                    except Exception as err:
+                        logger.debug(f"[unified] auto-sync memory_card for {doc_id}: {err}")
+
+        out = list(docs.values())
+        if owner is None:
+            _indexed_docs_cache["valid"] = True
+            _indexed_docs_cache["ts"] = time.time()
+            _indexed_docs_cache["data"] = out
+            return [dict(d) for d in out]
+        return out
+    except Exception as e:
+        logger.error(f"[unified] get_indexed_documents error: {e}")
+        return []
+
+
+def delete_document(document_id: str):
+    """Удаляет все чанки документа (по document_id)."""
+    if not document_id:
+        return
+    coll = get_collection()
+    try:
+        coll.delete(where={"document_id": {"$eq": document_id}})
+        _invalidate_indexed_docs_cache()
+    except Exception as e:
+        logger.error(f"[unified] delete_document error: {e}")
+
+
+# ─── Индексация файловых чанков ───────────────────────────────────────────────
+
+def has_document(document_id: str, source_stamp: str = None) -> bool:
+    """Есть ли в индексе чанки документа; source_stamp — для проверки неизменённости."""
+    try:
+        where = {"document_id": {"$eq": document_id}}
+        if source_stamp:
+            where = {"$and": [where, {"source_stamp": {"$eq": source_stamp}}]}
+        res = get_collection().get(where=where, include=["metadatas"], limit=1)
+        return bool(res.get("ids"))
+    except Exception as e:
+        logger.error(f"[unified] has_document error: {e}")
+        return False
+
+
+def chunk_and_index_document(
+    text: str,
+    document_id: str,
+    owner=None,
+    tags=None,
+    title="",
+    chunk_size=500,
+    overlap=50,
+    source_stamp=None,
+    image_preview="",
+    is_folder=False,
+) -> int:
+    """
+    Разбивает текст на чанки и индексирует в unified коллекцию.
+    Предварительно удаляет старые чанки этого документа.
+    Возвращает количество созданных чанков.
+    """
+    if not owner:
+        owner = user_context.node_owner()
+
+    try:
+        get_collection().delete(where={"$and": [
+            {"type":        {"$eq": "file_chunk"}},
+            {"document_id": {"$eq": document_id}},
+        ]})
+    except Exception as e:
+        logger.warning(f"[unified] Could not delete old chunks for {document_id}: {e}")
+
+    words = text.split()
+    chunks = []
+    i = 0
+    while i < len(words):
+        chunks.append(" ".join(words[i : i + chunk_size]))
+        i += chunk_size - overlap
+
+    if not chunks:
+        return 0
+
+    # Поисковый буст: имя файла нередко содержит ключевые слова (клиент, тип),
+    # которых нет в тексте документа (напр. «račun_Vieste» при англ. запросе).
+    if title:
+        chunks[0] = f"[File: {title}]\n{chunks[0]}"
+
+    clean_tags = auto_extract_tags(text, title or document_id.split("/")[-1], tags or [])
+    tags_dict = _tags_meta(clean_tags)
+    ts = datetime.now().isoformat(timespec="seconds")
+    title = title or document_id.split("/")[-1]
+
+    ids        = [f"{document_id}:chunk:{idx}" for idx in range(len(chunks))]
+    embeddings = get_model().encode(chunks, show_progress_bar=False).tolist()
+    metadatas  = [
+        {
+            "type":        "file_chunk",
+            "owner":       owner,
+            "document_id": document_id,
+            "chunk_id":    str(idx),
+            "title":       title,
+            "relevance":   "document_chunk",
+            "timestamp":   ts,
+            **({"source_stamp": source_stamp} if source_stamp else {}),
+            **({"image_preview": image_preview} if image_preview and idx == 0 else {}),
+            **({"is_folder": True, "contentType": "folder"} if is_folder else {}),
+            **tags_dict,
+        }
+        for idx in range(len(chunks))
+    ]
+
+    try:
+        get_collection().upsert(
+            ids=ids,
+            embeddings=embeddings,
+            documents=chunks,
+            metadatas=metadatas,
+        )
+    except Exception as e:
+        if "DuplicateIDError" not in type(e).__name__ and "Expected IDs to be unique" not in str(e):
+            logger.error(f"[unified] chunk upsert error: {e}")
+
+    _invalidate_indexed_docs_cache()
+    return len(chunks)
+
+
+def delete_document(document_id: str):
+    """Удаляет все записи документа из индекса."""
+    try:
+        get_collection().delete(where={"document_id": {"$eq": document_id}})
+        _invalidate_indexed_docs_cache()
+    except Exception as e:
+        logger.error(f"[unified] delete_document error {document_id}: {e}")
+
+
+def delete_path_prefix(path_prefix: str):
+    """
+    Удаляет все записи, у которых document_id начинается с path_prefix.
+    Используется при удалении шары или каталога.
+    """
+    coll = get_collection()
+    try:
+        results = coll.get(include=["metadatas"])
+        ids_to_delete = [
+            results["ids"][i]
+            for i, meta in enumerate(results.get("metadatas", []))
+            if meta.get("document_id", "").startswith(path_prefix)
+        ]
+        if ids_to_delete:
+            coll.delete(ids=ids_to_delete)
+            logger.info(f"[unified] Deleted {len(ids_to_delete)} records for prefix {path_prefix}")
+    except Exception as e:
+        logger.error(f"[unified] delete_path_prefix error: {e}")
+
+
+def move_file(old_path: str, new_path: str):
+    """Обновляет document_id при переименовании/перемещении."""
+    coll = get_collection()
+    try:
+        results = coll.get(
+            where={"document_id": {"$eq": old_path}},
+            include=["documents", "metadatas", "embeddings"],
+        )
+        if not results["ids"]:
+            return
+        coll.delete(ids=results["ids"])
+        new_ids = [doc_id.replace(old_path, new_path, 1) for doc_id in results["ids"]]
+        new_metas = [{**meta, "document_id": new_path} for meta in results["metadatas"]]
+        coll.upsert(
+            ids=new_ids,
+            embeddings=results["embeddings"],
+            documents=results["documents"],
+            metadatas=new_metas,
+        )
+    except Exception as e:
+        logger.error(f"[unified] move_file error {old_path} -> {new_path}: {e}")
+
+
+# ─── QA-индекс ───────────────────────────────────────────────────────────────
+
+def load_qa_entries(entries: list) -> int:
+    """Загружает Q&A пары (заменяет старый qa_index)."""
+    if not entries:
+        return 0
+    coll = get_collection()
+    try:
+        existing = coll.get(where={"type": {"$eq": "qa"}}, include=[])
+        if existing["ids"]:
+            coll.delete(ids=existing["ids"])
+    except Exception:
+        pass
+
+    questions  = [e["question"] for e in entries]
+    answers    = [e["answer"]   for e in entries]
+    ids        = [f"qa:{i}" for i in range(len(questions))]
+    embeddings = get_model().encode(questions, show_progress_bar=False).tolist()
+    metadatas  = [
+        {"type": "qa", "answer": a, "owner": "system", "t_qa": 1, "t_omd": 1, "tags": "qa,omd"}
+        for a in answers
+    ]
+    coll.upsert(ids=ids, embeddings=embeddings, documents=questions, metadatas=metadatas)
+    return len(questions)
+
+
+def match_qa(question: str, min_score: float = 0.8, top_k: int = 1) -> dict:
+    """Поиск ответа в QA-индексе."""
+    results = search(
+        question,
+        tags_filter=["qa"],
+        top_k=top_k,
+        threshold=1.0 - min_score,
+        record_types=["qa"],
+    )
+    if not results:
+        return {"answer": None, "score": 0.0}
+    best = results[0]
+    return {"answer": best.get("answer", ""), "score": round(best["relevance"] / 100.0, 4)}
+
+
+_PRIVATE_MEDIA_PATH_PREFIXES = (
+    "/data/",
+    "/onmychat/generated/",
+    "/private/",
+    "/pictures/",
+    "/photos/",
+)
+
+
+def _is_private_media_path(doc_id: str) -> bool:
+    """Возвращает True, если путь заведомо относится к личным медиа/генерациям владельца ноды."""
+    if not doc_id:
+        return False
+    norm = ("/" + str(doc_id).strip().lstrip("/")).lower()
+    if any(norm.startswith(p) for p in _PRIVATE_MEDIA_PATH_PREFIXES):
+        return True
+    stripped = _strip_device_namespace(str(doc_id).strip())
+    if stripped:
+        s_norm = stripped.lower()
+        if any(s_norm.startswith(p) for p in _PRIVATE_MEDIA_PATH_PREFIXES):
+            return True
+    return False
+
+
+def _is_record_allowed_public(meta: dict) -> bool:
+    """Жёсткая серверная ACL-проверка записи для гостевого (не-приватного) режима."""
+    if not isinstance(meta, dict):
+        return False
+    doc_id = str(meta.get("document_id") or "").strip()
+    if doc_id and _is_private_media_path(doc_id):
+        return False
+    pub_tags = set(_normalize_tag(t) for t in PUBLIC_TAGS if _normalize_tag(t))
+    if not pub_tags:
+        return False
+    for pt in pub_tags:
+        if meta.get(f"t_{pt}") == 1:
+            return True
+    raw_tags = meta.get("tags")
+    if isinstance(raw_tags, str):
+        rec_tags = set(_normalize_tag(t) for t in raw_tags.split(",") if _normalize_tag(t))
+    elif isinstance(raw_tags, (list, tuple, set)):
+        rec_tags = set(_normalize_tag(t) for t in raw_tags if _normalize_tag(t))
+    else:
+        rec_tags = set()
+    return bool(rec_tags & pub_tags)
+
+
+def is_document_public(doc_id: str) -> bool:
+    """Проверяет, помечен ли документ или карточка одним из PUBLIC_TAGS."""
+    if not doc_id or _is_private_media_path(doc_id):
+        return False
+    pub_tags = set(t.lower() for t in PUBLIC_TAGS)
+    coll = get_collection()
+    candidates = [doc_id]
+    stripped = _strip_device_namespace(doc_id)
+    if stripped and stripped not in candidates:
+        candidates.append(stripped)
+    for c in candidates:
+        try:
+            res = coll.get(where={"document_id": {"$eq": c}}, include=["metadatas"], limit=10)
+            for meta in res.get("metadatas", []):
+                meta_tags = set(k[2:].lower() for k in meta if k.startswith("t_"))
+                if meta.get("tags"):
+                    meta_tags.update(t.strip().lower() for t in str(meta["tags"]).split(",") if t.strip())
+                if meta_tags & pub_tags:
+                    return True
+        except Exception:
+            pass
+
+    # Если передан путь без устройства (напр. /Knowledge/OMD), сверяем с публичными карточками
+    clean_target = stripped or ("/" + doc_id.strip("/"))
+    try:
+        pub_filter = _tags_match_filter(PUBLIC_TAGS)
+        res = coll.get(where=pub_filter, include=["metadatas"], limit=500)
+        for meta in res.get("metadatas", []):
+            did = meta.get("document_id") or ""
+            did_stripped = _strip_device_namespace(did) or did
+            if did == clean_target or did_stripped == clean_target or did.endswith(clean_target):
+                return True
+    except Exception:
+        pass
+
+    return False
+
+
+# ─── Высокоуровневые RAG-запросы ──────────────────────────────────────────────
+
+def search_for_rag(
+    query: str,
+    private_mode: bool = False,
+    top_k=None,
+    tags_filter=None,
+    document_id=None,
+) -> list:
+    """
+    Поиск для RAG-инъекции:
+    - private_mode=False (гость)       -> ВСЕГДА только PUBLIC_TAGS (и пересечение с tags_filter, если задан)
+    - private_mode=True + tags_filter  -> только эти теги
+    - private_mode=True + document_id  -> только чанки/карточка этого файла (теги не фильтруем)
+    - private_mode=True + нет тегов    -> вся база (владелец ноды)
+    - recency: результат ранжируется relevance × recency (свежие файлы выше)
+    """
+    if top_k is None:
+        top_k = RAG_TOP_K
+    required_tags = None
+    if not private_mode:
+        required_tags = PUBLIC_TAGS
+        tag_filter = tags_filter or None
+        if document_id and _is_private_media_path(document_id):
+            return []
+    elif tags_filter:
+        tag_filter = tags_filter
+    elif document_id:
+        tag_filter = None
+    else:
+        tag_filter = None
+
+    # Явный фокус (/learn <файл>, прикреплённый документ) — пользователь сам
+    # указал документ, его семантическая близость к вопросу не валидна:
+    # «посмотри, нормально ли получилось» по эмбеддингу далёк от текста
+    # презентации, и порог RAG_THRESHOLD отрезал бы все чанки. Пропускаем всё.
+    focus_threshold = 2.0 if document_id else RAG_THRESHOLD
+    rows = search(
+        query,
+        tags_filter=tag_filter,
+        required_tags=required_tags,
+        top_k=top_k,
+        threshold=focus_threshold,
+        record_types=["file_chunk", "memory_card"],
+        document_id=document_id,
+        recent_first=True,
+    )
+    if not private_mode:
+        rows = [r for r in rows if _is_record_allowed_public(r)]
+    return rows
+
+
+def search_files_for_ui(
+    query: str,
+    private_mode: bool = True,
+    top_k=None,
+) -> list:
+    """
+    Поиск файлов для файлового менеджера.
+    """
+    if top_k is None:
+        top_k = SEARCH_TOP_K
+    required_tags = None if private_mode else PUBLIC_TAGS
+    rows = search(
+        query,
+        required_tags=required_tags,
+        top_k=top_k,
+        threshold=SEARCH_THRESHOLD,
+        record_types=["file_chunk"],
+    )
+    if not private_mode:
+        rows = [r for r in rows if _is_record_allowed_public(r)]
+    return rows
+
+
+def chunk_document(text: str, chunk_size=500, overlap=50) -> list[str]:
+    """Разбивает текст на чанки (без индексации). Используется stateless /learn."""
+    words = text.split()
+    chunks = []
+    i = 0
+    while i < len(words):
+        chunks.append(" ".join(words[i : i + chunk_size]))
+        i += chunk_size - overlap
+    return chunks
+
+
+# ─── Локальная конвертация raw-документов (гостевой/персональный слой) ────────
+
+PANDOC_FORMATS = {
+    "docx", "odt", "epub", "fb2", "html", "htm", "csv", "md", "markdown",
+    "rst", "rtf", "org", "mediawiki", "tex", "typst",
+}
+
+def _split_filename(name: str) -> tuple[str, str]:
+    base = (name or "").split("?")[0]
+    ext = os.path.splitext(base)[1].lower().lstrip(".")
+    return base, ext
+
+
+def convert_bytes_to_text(data: bytes, filename: str = "") -> str:
+    """
+    Конвертирует сырые байты документа в текст ЛОКАЛЬНО (без шлюза).
+    PDF → pdftotext; docx/odt/epub/fb2/html/md/... → pandoc; текст как есть.
+    Временный файл удаляется после конвертации.
+    """
+    base, ext = _split_filename(filename)
+    if not data:
+        return ""
+
+    # Текстовые файлы — просто декодируем
+    if ext in ("txt", "text") or base.lower().endswith((".txt", ".text")):
+        try:
+            return data.decode("utf-8", errors="replace").strip()
+        except Exception:
+            return ""
+
+    tmp_path = None
+    try:
+        suffix = "." + ext if ext else ""
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix or ".bin") as tmp:
+            tmp.write(data)
+            tmp_path = tmp.name
+
+        # PDF → pdftotext (poppler-utils)
+        if ext == "pdf":
+            if not shutil.which("pdftotext"):
+                logger.error("[unified] pdftotext not available")
+                return ""
+            try:
+                res = subprocess.run(
+                    ["pdftotext", "-layout", "-enc", "UTF-8", tmp_path, "-"],
+                    capture_output=True, timeout=120,
+                )
+                text = (res.stdout or b"").decode("utf-8", errors="replace")
+                return text.strip()
+            except Exception as e:
+                logger.error(f"[unified] pdftotext failed: {e}")
+                return ""
+
+        # Остальное → pandoc
+        if ext in PANDOC_FORMATS:
+            if not shutil.which("pandoc"):
+                logger.error("[unified] pandoc not available")
+                return ""
+            try:
+                res = subprocess.run(
+                    ["pandoc", tmp_path, "-t", "markdown"],
+                    capture_output=True, timeout=120,
+                )
+                if res.returncode != 0:
+                    logger.error(f"[unified] pandoc failed ({res.returncode}): {res.stderr[:300]}")
+                    return ""
+                text = (res.stdout or b"").decode("utf-8", errors="replace")
+                return text.strip()
+            except Exception as e:
+                logger.error(f"[unified] pandoc error: {e}")
+                return ""
+
+        # Неизвестный тип — пробуем прочитать как текст
+        try:
+            return data.decode("utf-8", errors="replace").strip()
+        except Exception:
+            return ""
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
+
+
+def cleanup_guest_data(owners_to_keep: list[str]) -> int:
+    """
+    Удаляет из ChromaDB все записи, чей owner НЕ в owners_to_keep,
+    за исключением записей с t_omd=1 (публичные знания владельца).
+    Возвращает количество удалённых записей.
+    """
+    coll = get_collection()
+    if coll.count() == 0:
+        return 0
+    try:
+        results = coll.get(include=["metadatas"])
+    except Exception as e:
+        logger.error(f"[unified] cleanup_guest_data get error: {e}")
+        return 0
+
+    ids_to_delete = []
+    for i, meta in enumerate(results.get("metadatas", [])):
+        owner = meta.get("owner", "")
+        has_omd = meta.get("t_omd", 0) == 1
+        if owner not in owners_to_keep and not has_omd:
+            ids_to_delete.append(results["ids"][i])
+
+    if ids_to_delete:
+        coll.delete(ids=ids_to_delete)
+        logger.info(f"[unified] Cleanup: deleted {len(ids_to_delete)} guest records (kept owners={owners_to_keep})")
+    return len(ids_to_delete)
+
+
+# ─── Инициализация ────────────────────────────────────────────────────────────
+
+def init():
+    """
+    Инициализация. Вызывается при старте api.py.
+    Создаёт базу, если её нет.
+    """
+    try:
+        coll = get_collection()
+        count = coll.count()
+        logger.info(f"[unified] omd_unified initialized, {count} records in {UNIFIED_DB_DIR}")
+    except Exception as e:
+        logger.error(f"[unified] init error: {e}")
+        raise

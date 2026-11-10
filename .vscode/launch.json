@@ -1,0 +1,175 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug Staging Client (onmydisk)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/Node/target/usr/bin/onmydisk",
+            "args": [
+                "-c",
+                "/tmp/onmydisk-staging.conf",
+                "/tmp/staging_share"
+            ],
+            "preLaunchTask": "Build Embedded Debug",
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/Node/target/usr/bin",
+            "environment": [
+                {
+                    "name": "LD_LIBRARY_PATH",
+                    "value": "${workspaceFolder}/Node/target/usr/lib"
+                }
+            ],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
+        },
+        {
+            "name": "Run Staging Client (onmydisk)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/Node/target/usr/bin/onmydisk",
+            "args": [
+                "-c",
+                "/tmp/onmydisk-staging.conf",
+                "/tmp/staging_share"
+            ],
+            "preLaunchTask": "Build Embedded Release",
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/Node/target/usr/bin",
+            "environment": [
+                {
+                    "name": "LD_LIBRARY_PATH",
+                    "value": "${workspaceFolder}/Node/target/usr/lib"
+                }
+            ],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
+        },
+        {
+            "name": "Debug omd-server (Kylin WSL)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/run/bin_d/omd-server",
+            "args": [
+                "-c",
+                "../etc/config/local.conf"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/run/bin_d",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
+        },
+        {
+            "name": "Debug omd-server (Native Debug WSL)",
+            "type": "gdb",
+            "request": "launch",
+            "target": "${workspaceFolder}/run/bin_d/omd-server",
+            "arguments": "-c ../etc/config/local.conf",
+            "cwd": "${workspaceFolder}/run/bin_d",
+            "gdbpath": "/usr/bin/gdb",
+            "valuesFormatting": "prettyPrinters"
+        },
+        {
+            "name": "Debug omd-server (WSL Pipe)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "/home/alexey/projects/onmydisk/run/bin_d/omd-server",
+            "args": [
+                "-c",
+                "../etc/config/local.conf"
+            ],
+            "stopAtEntry": false,
+            "cwd": "/home/alexey/projects/onmydisk/run/bin_d",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",
+            "pipeTransport": {
+                "pipeCwd": "${workspaceFolder}",
+                "pipeProgram": "C:\\Windows\\System32\\wsl.exe",
+                "pipeArgs": [],
+                "debuggerPath": "/usr/bin/gdb"
+            },
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
+        },
+        {
+            "name": "Run omd-server",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/run/bin/omd-server",
+            "args": [
+                "-c",
+                "../etc/config/local.conf"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/run/bin",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
+        },
+        {
+            "name": "Run onmydisk (Embedded)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/Node/target/usr/bin/onmydisk",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/Node/target/usr/bin",
+            "environment": [
+                {
+                    "name": "LD_LIBRARY_PATH",
+                    "value": "${workspaceFolder}/Node/target/usr/lib"
+                }
+            ],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
+        }
+    ]
+}

@@ -1,0 +1,14 @@
+[Unit]
+Description=On My Disk Sites Service
+After=network.target
+
+[Service]
+Type=simple
+#User=alexey
+WorkingDirectory=/usr/lib/onmydisk/sites
+
+ExecStart=/bin/bash /usr/lib/onmydisk/sites/serve-all.sh
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

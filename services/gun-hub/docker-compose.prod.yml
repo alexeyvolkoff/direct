@@ -1,0 +1,25 @@
+version: '3.3'
+
+services:
+  omd-gun-hub:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: omd-gun-hub
+    restart: always
+    environment:
+      - REPO_PATH=/data
+      - NODE_ENV=production
+      - GOOGLE_CLIENT_ID=959849209352-vbi0vfimrqj904598felj8ieeb6to8s2.apps.googleusercontent.com
+    volumes:
+      - ./data:/data
+      - ./hub.js:/app/hub.js
+      - ./canonical_dids.json:/app/canonical_dids.json
+    ports:
+      - "127.0.0.1:8765:8765"
+    command: ["node", "hub.js"]
+
+networks:
+  default:
+    external:
+      name: omd-network-prod

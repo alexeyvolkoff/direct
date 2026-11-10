@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Loading site…</title>
+<style>
+    :root { color-scheme: light dark; }
+    body {
+        margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        background: #f4f6f8; color: #1e293b;
+    }
+    @media (prefers-color-scheme: dark) {
+        body { background: #0f172a; color: #e2e8f0; }
+        .card { background: #1e293b !important; }
+    }
+    .card {
+        background: #ffffff; border-radius: 12px; padding: 32px 40px; text-align: center;
+        box-shadow: 0 4px 24px rgba(0,0,0,.08); max-width: 420px; margin: 16px;
+    }
+    .spinner {
+        width: 42px; height: 42px; margin: 0 auto 16px;
+        border: 4px solid #cbd5e1; border-top-color: #2563eb; border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #status { font-size: 15px; color: #64748b; }
+    #error { color: #dc2626; font-size: 14px; margin-top: 12px; white-space: pre-wrap; }
+    .tos { text-align: left; font-size: 14px; line-height: 1.5; }
+    .tos a { color: #2563eb; }
+    .btn {
+        margin-top: 16px; width: 100%; padding: 10px 16px; border: 0; border-radius: 8px;
+        background: #2563eb; color: #fff; font-size: 15px; cursor: pointer;
+    }
+    .btn:hover { background: #1d4ed8; }
+    [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="card">
+    <div id="loader">
+        <div class="spinner"></div>
+        <div id="status">Loading site…</div>
+        <div id="error" hidden></div>
+    </div>
+    <div id="tos" class="tos" hidden>
+        <h3 style="margin-top:0">Terms of Service</h3>
+        <p>This site is served <b>directly from its owner's device</b> over an encrypted
+        peer-to-peer connection. No copy of the content is stored on the gateway.</p>
+        <p>By continuing you accept the
+        <a href="https://direct.onmydisk.net/tos" target="_blank" rel="noopener">Terms of Service</a> and
+        <a href="https://direct.onmydisk.net/tos#gdpr" target="_blank" rel="noopener">Privacy Policy</a>.</p>
+        <button class="btn" id="accept">I accept — continue</button>
+    </div>
+</div>
+<script>
+(function () {
+'use strict';
+
+const CACHE_NAME = 'omd-sites-v1';
+const SITE_TTL_MS = 24 * 3600 * 1000; //cached copy is refreshed on the next visit after expiry
+
+const parts = location.pathname.split('/').filter(Boolean);
+const siteName = (parts[0] === 'sites' && parts[1]) ? parts[1] : '';
+const SITE_ROOT = 'sites/' + siteName;      //node-side scope path
+const SITE_URL_ROOT = '/p2p/' + SITE_ROOT;  //SW-served URL prefix
+
+const statusEl = document.getElementById('status');
+const errorEl = document.getElementById('error');
+function setStatus(t) { statusEl.textContent = t; }
+function fail(t) { statusEl.hidden = true; errorEl.hidden = false; errorEl.textContent = t; }
+
+// ── stable client device id (same scheme as svar/local-client) ──
+function localId() {
+    try {
+        let id = localStorage.getItem('omd_local_linkid');
+        if (id && id.startsWith('browser-')) id = id.slice(8);
+        if (!id) {
+            const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+            id = ''; for (let i = 0; i < 10; i++) id += chars[Math.floor(Math.random() * chars.length)];
+            localStorage.setItem('omd_local_linkid', id);
+        }
+        return id;
+    } catch (e) { return ''; }
+}
+// ── visitor DID (persistent identity, if the browser has one) ──
+function didPub() {
+    try {
+        const saved = JSON.parse(localStorage.getItem('omd_identity') || 'null');
+        return (saved && saved.mainPub) || '';
+    } catch (e) { return ''; }
+}
+
+// ── mini P2P drive: the svar drive protocol, trimmed to connect + JSON RPC ──
+class MiniDrive {
+    constructor(targetLinkId) {
+        this.targetLinkId = targetLinkId;
+        this.tunnelId = 'p2p-tunnel-' + Math.random().toString(36).substring(2, 10);
+        this.reqId = 1;
+        this.pending = new Map();
+        this.msgBuffer = '';
+        this.dc = null;
+        this.pc = null;
+    }
+    async signaling(kind, payload) {
+        try {
+            const resp = await fetch('/api/signaling', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({
+                    linkID: this.targetLinkId, ID: this.tunnelId, kind: kind,
+                    payload: btoa(payload || ''), port: 0, service: '',
+                    senderId: localId(), token: ''
+                })
+            });
+            if (!resp.ok) return { status: 'error', code: resp.status };
+            return await resp.json();
+        } catch (e) { return { status: 'error' }; }
+    }
+    async handleSignal(kind, payloadB64) {
+        if (!this.pc) return;
+        let payload = payloadB64 || '';
+        try { payload = atob(payloadB64 || ''); } catch (e) {}
+        const clean = (raw) => { if (!raw) return ''; let s = raw.trim(); if (s.startsWith('a=')) s = s.substring(2); return s; };
+        if (kind === 'answer') {
+            if (this.pc.remoteDescription) return;
+            try { await this.pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: payload })); } catch (e) { return; }
+            const pending = this._pending || []; this._pending = [];
+            for (const cand of pending) { try { await this.pc.addIceCandidate(new RTCIceCandidate({ candidate: cand, sdpMLineIndex: 0 })); } catch (e) {} }
+        } else if (kind === 'candidate') {
+            const cand = clean(payload);
+            if (!cand) return;
+            if (!this.pc.remoteDescription) { (this._pending = this._pending || []).push(cand); }
+            else { try { await this.pc.addIceCandidate(new RTCIceCandidate({ candidate: cand, sdpMLineIndex: 0 })); } catch (e) {} }
+        } else if (kind === 'done') {
+            if (this.pc && this.pc.remoteDescription) { try { await this.pc.addIceCandidate(null); } catch (e) {} }
+        }
+    }
+    async connect() {
+        this.pc = new RTCPeerConnection({
+            iceServers: [
+                { urls: 'stun:direct.onmydisk.net:3478' },
+                { urls: 'stun:stun.l.google.com:19302' }
+            ]
+        });
+        this.dc = this.pc.createDataChannel('p2p-tunnel');
+        const ready = new Promise((res) => { this._resolveReady = res; setTimeout(res, 5000); });
+        this.dc.onmessage = (event) => {
+            let raw = '';
+            if (typeof event.data === 'string') raw = event.data;
+            else if (event.data instanceof ArrayBuffer && event.data.byteLength < 32) raw = new TextDecoder().decode(new Uint8Array(event.data));
+            else if (event.data instanceof Blob) { event.data.text().then(t => this.dc.onmessage({ data: t })); return; }
+            if (raw === '__ping__') { try { this.dc.send('__pong__'); } catch (e) {} return; }
+            if (raw === '__pong__' || raw === '__ready__') {
+                if (raw === '__ready__' && this._resolveReady) { const r = this._resolveReady; this._resolveReady = null; r(); }
+                return;
+            }
+            //JSON RPC responses (newline-embedded objects)
+            this.msgBuffer += raw;
+            let idx;
+            while ((idx = this.msgBuffer.indexOf('}')) !== -1) {
+                const candidate = this.msgBuffer.substring(0, this.msgBuffer.indexOf('}') + 1);
+                //find the matching opening brace
+                const start = this.msgBuffer.indexOf('{');
+                if (start === -1) { this.msgBuffer = ''; break; }
+                const obj = this.safeParse(this.msgBuffer.substring(start));
+                if (obj) {
+                    this.msgBuffer = '';
+                    if (obj.id && this.pending.has(obj.id)) {
+                        const p = this.pending.get(obj.id); this.pending.delete(obj.id); p(obj);
+                    }
+                    break; //one RPC per chunk (node replies are single objects)
+                } else {
+                    this.msgBuffer = this.msgBuffer.substring(start + 1);
+                }
+            }
+        };
+        this.pc.onicecandidate = (e) => { if (e.candidate) this.signaling('candidate', e.candidate.candidate); };
+        //poll for the node's answer/candidates while connecting
+        const poll = setInterval(async () => {
+            if ((this.dc && this.dc.readyState === 'open') || !this.pc) { clearInterval(poll); return; }
+            try {
+                const res = await this.signaling('poll', '');
+                (res && res.signals || []).forEach(sig => this.handleSignal(sig.kind, sig.payload));
+            } catch (e) {}
+        }, 300);
+        const offer = await this.pc.createOffer();
+        await this.pc.setLocalDescription(offer);
+        const res = await this.signaling('offer', offer.sdp);
+        if (res && res.status === 'error') throw new Error('Device is offline');
+        (res && res.signals || []).forEach(sig => this.handleSignal(sig.kind, sig.payload));
+        await ready;
+        if (this.dc.readyState !== 'open') {
+            await new Promise((res, rej) => {
+                this.dc.onopen = res;
+                setTimeout(() => rej(new Error('Connection timeout')), 15000);
+            });
+        }
+    }
+    safeParse(text) {
+        //progressive: try to parse the text as JSON; shrink trailing garbage
+        try { return JSON.parse(text); } catch (e) { return null; }
+    }
+    rpc(cmd, params = {}, timeoutMs = 30000) {
+        return new Promise((resolve, reject) => {
+            const id = this.reqId++;
+            const timer = setTimeout(() => { this.pending.delete(id); reject(new Error(cmd + ' timeout')); }, timeoutMs);
+            this.pending.set(id, (obj) => { clearTimeout(timer); resolve(obj); });
+            try { this.dc.send(JSON.stringify(Object.assign({ id: id, cmd: cmd }, params))); }
+            catch (e) { clearTimeout(timer); this.pending.delete(id); reject(e); }
+        });
+    }
+}
+
+// ── prefetch the site tree into CacheStorage (rewriting /sites/ URLs to /p2p/) ──
+async function prefetchTree(drive, cache, nodePath, urlPath) {
+    const info = await drive.rpc('FileInfo', { path: nodePath });
+    if (info.status !== 'ok' || !info.result || !info.result.isDir) return;
+    const files = (info.result.files || []);
+    for (const f of files) {
+        const childNodePath = nodePath + '/' + f.name;
+        const childUrl = urlPath + '/' + f.name;
+        if (f.isDir) {
+            await prefetchTree(drive, cache, childNodePath, childUrl);
+        } else {
+            setStatus('Loading: ' + f.name);
+            let blob;
+            if ((f.size || 0) <= 512 * 1024) {
+                const read = await drive.rpc('Read', { path: childNodePath, offset: 0, size: 0 });
+                if (read.status !== 'ok') continue;
+                blob = base64ToBlob(read.data, f.mimeType || 'application/octet-stream');
+            } else {
+                blob = await readLarge(drive, childNodePath, f.size, f.mimeType);
+            }
+            if (!blob) continue;
+            //rewrite the site's own HTML: /sites/<name>/… → /p2p/sites/<name>/…
+            if ((f.mimeType || '').includes('html') || f.name.endsWith('.html')) {
+                let html = await blob.text();
+                html = html.split('/' + SITE_ROOT + '/').join(SITE_URL_ROOT + '/');
+                html = html.split('"' + SITE_ROOT + '/').join('"' + SITE_URL_ROOT + '/');
+                blob = new Blob([html], { type: 'text/html' });
+            }
+            const headers = { 'Content-Type': f.mimeType || 'application/octet-stream', 'Cache-Control': 'max-age=86400' };
+            await cache.put(childUrl, new Response(blob, { status: 200, headers: headers }));
+        }
+    }
+    //index.html alias for the directory URL
+    if (files.some(f => f.name === 'index.html')) {
+        const cached = await cache.match(urlPath + '/index.html');
+        if (cached) await cache.put(urlPath, cached.clone());
+    }
+}
+async function readLarge(drive, path, size, mime) {
+    const chunks = []; let offset = 0;
+    const total = size || 0;
+    while (total === 0 || offset < total) {
+        const read = await drive.rpc('Read', { path: path, offset: offset, size: 262144 });
+        if (read.status !== 'ok' || !read.data) break;
+        chunks.push(base64ToBlob(read.data, 'application/octet-stream'));
+        offset += (read.size || 0);
+        if (!read.data.length || (total && offset >= total)) break;
+    }
+    return new Blob(chunks, { type: mime || 'application/octet-stream' });
+}
+function base64ToBlob(b64, mime) {
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new Blob([bytes], { type: mime || 'application/octet-stream' });
+}
+
+// ── ToS acceptance (once per browser) ──
+function tosAccepted() { try { return localStorage.getItem('omd-site-tos') === '1'; } catch (e) { return false; } }
+function askToS() {
+    return new Promise((resolve) => {
+        if (tosAccepted()) return resolve();
+        document.getElementById('tos').hidden = false;
+        document.getElementById('loader').hidden = true;
+        document.getElementById('accept').onclick = function () {
+            try { localStorage.setItem('omd-site-tos', '1'); } catch (e) {}
+            document.getElementById('tos').hidden = true;
+            document.getElementById('loader').hidden = false;
+            resolve();
+        };
+    });
+}
+
+// ── main flow ──
+async function run() {
+    try {
+        if (!siteName) throw new Error('Invalid site URL');
+        //register the SW early so it takes over after the reload
+        if ('serviceWorker' in navigator) {
+            try { await navigator.serviceWorker.register('/service-worker.js', { scope: '/' }); } catch (e) {}
+        }
+        setStatus('Looking up the site…');
+        const meta = await fetch('/api/site-meta?name=' + encodeURIComponent(siteName), { credentials: 'same-origin' }).then(r => r.json());
+        if (meta.status !== 'ok') throw new Error(meta.error || 'Site not found');
+        const linkId = meta.result.linkId;
+
+        setStatus('Connecting to the device…');
+        const drive = new MiniDrive(linkId);
+        await drive.connect();
+
+        setStatus('Authorizing…');
+        const info = await drive.rpc('AuthInfo', { didPub: didPub(), deviceId: localId(), pairingSecret: '' });
+        const r = (info && info.result) || {};
+        if (r.authLevel !== 'admin') {
+            if (!r.guestPairing) throw new Error('Guest access is not enabled on this device');
+            await askToS();
+            setStatus('Authorizing…');
+            const gp = await drive.rpc('GuestPair', { didPub: didPub() });
+            if (gp.status !== 'ok') throw new Error(gp.error || 'Guest access failed');
+        }
+
+        setStatus('Authorizing… (scope)');
+        const sc = await drive.rpc('SetScope', { path: SITE_ROOT });
+        if (sc.status !== 'ok') throw new Error(sc.error || 'Access denied');
+
+        setStatus('Loading the site…');
+        const cache = await caches.open(CACHE_NAME);
+        await prefetchTree(drive, cache, SITE_ROOT, SITE_URL_ROOT);
+
+        setStatus('Opening…');
+        const target = location.pathname.replace(/^\/sites\//, '/p2p/sites/') + location.search;
+        location.replace(target || (SITE_URL_ROOT + '/'));
+    } catch (e) {
+        fail(e && e.message ? e.message : 'Failed to load the site');
+    }
+}
+run();
+})();
+</script>
+</body>
+</html>

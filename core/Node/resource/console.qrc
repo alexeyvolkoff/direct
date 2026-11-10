@@ -1,0 +1,11 @@
+<RCC>
+    <qresource prefix="/icons">
+        <file>onmydisk.png</file>
+        <file>states/icon_disconnected.png</file>
+        <file>states/icon_wait_04.png</file>
+        <file>states/icon_wait_03.png</file>
+        <file>states/icon_wait_02.png</file>
+        <file>states/icon_wait_01.png</file>
+        <file>states/icon_online.png</file>
+    </qresource>
+</RCC>

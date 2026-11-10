@@ -1,0 +1,22 @@
+[Unit]
+Description=OnMyDisk
+After=network.target
+After=nginx.service
+Requires=nginx.service
+Wants=nginx.service
+
+[Service]
+Type=simple
+PIDFile=/tmp/onmydisk.pid
+RemainAfterExit=no
+Restart=always
+RestartSec=1s
+User=root
+Group=root
+
+Environment=_ENV=production
+ExecStart=/usr/bin/omd-server -c /etc/onmydisk/server.conf
+TimeoutSec=300
+
+[Install]
+WantedBy=multi-user.target

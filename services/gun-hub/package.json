@@ -1,0 +1,18 @@
+{
+  "name": "omd-gun-hub",
+  "version": "1.0.0",
+  "description": "OnMyDisk GunDB Hub and Auth Server",
+  "type": "module",
+  "main": "hub.js",
+  "scripts": {
+    "start": "node hub.js",
+    "audit": "node audit.mjs",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "engines": {
+    "node": ">= 22"
+  },
+  "dependencies": {
+    "gun": "^0.2020.1240"
+  }
+}

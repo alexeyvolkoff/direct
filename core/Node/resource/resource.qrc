@@ -1,0 +1,19 @@
+<RCC>
+    <qresource prefix="/resource">
+        <file>style.qss</file>
+        <file>window-close-symbolic.symbolic.png</file>
+        <file>background.jpg</file>
+        <file>object-select-symbolic.symbolic.png</file>
+        <file>fa-status-warning.png</file>
+        <file>fa-status-ok.png</file>
+        <file>fa-status-error.png</file>
+        <file>fa-icon-share.png</file>
+        <file>fa-icon-remove.png</file>
+        <file>add-icon.png</file>
+        <file>settings-icon.png</file>
+        <file>logo-wide.png</file>
+        <file>spinner-16px.svg</file>
+        <file>onmydisk.ico</file>
+        <file>DejaVuSans.ttf</file>
+    </qresource>
+</RCC>

@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en" prefix="og: http://ogp.me/ns#">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#202A2F" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="{APPTITLE}" />
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="shortcut icon" href="/customtheme/onmydisk.svg" />
+    <link rel="apple-touch-icon" sizes="192x192" href="/customtheme/onmydisk.svg" />
+    <link rel="icon" type="image/svg+xml" href="/customtheme/onmydisk.svg" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <title>{TITLE}</title>
+    <!--{if isShared}-->
+    <meta name="author" content="{OWNER}" />
+    <meta name="description" content="{DESCRIPTION}" />
+
+    <!-- Twitter Card data -->
+    <meta name="twitter:card" content="{CARD}" />
+    <meta name="twitter:title" content="{TITLE}" />
+    <meta name="twitter:description" content="{DESCRIPTION}" />
+    <meta name="twitter:image" content="{SERVERURL}{LINKURL}?preview&ext=.jpg&v={COVERVERSION}" />
+    <meta name="twitter:site" content="{APPTITLE}" />
+
+    <!-- Open Graph data -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="{TITLE}" />
+    <meta property="og:url" content="{SERVERURL}{LINKURL}" />
+    <meta property="og:image" content="{SERVERURL}{LINKURL}?preview&ext=.jpg&v={COVERVERSION}" />
+    <meta property="og:image:url" content="{SERVERURL}{LINKURL}?preview&ext=.jpg&v={COVERVERSION}" />
+    <meta property="og:image:secure_url" content="{SERVERURL}{LINKURL}?preview&ext=.jpg&v={COVERVERSION}" />
+    <meta property="og:image:type" content="image/jpeg" />
+    <meta property="og:image:width" content="{IMG_WIDTH}" />
+    <meta property="og:image:height" content="{IMG_HEIGHT}" />
+    <meta property="og:description" content="{DESCRIPTION}" />
+    <meta property="og:site_name" content="{APPTITLE}" />
+    <meta property="og:author" content="@{OWNER}" />
+    <link rel="image_src" href="{SERVERURL}{LINKURL}?preview&ext=.jpg&v={COVERVERSION}" />
+    <!--{end isShared}-->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script>
+      window.__omdAppVersion = "{VERSION}";
+      window.__omdAppMode = "{APP_MODE}";
+      // Static bundles (Capacitor / OTA / offline) bypass the gateway template
+      // parser; never let an unresolved placeholder select the wrong mode.
+      if (!window.__omdAppMode || window.__omdAppMode.indexOf("{") === 0) {
+        window.__omdAppMode = "";
+      }
+      (function () {
+        var h = String((window.location && window.location.hostname) || "").toLowerCase();
+        var fallbackBrand = (h === "onmychat.com" || h.endsWith(".onmychat.com")) ? "On My Chat" : "On My Disk";
+        if (!document.title || document.title.indexOf("{") !== -1) {
+          document.title = fallbackBrand;
+        }
+        var appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+        if (appleTitle && (!appleTitle.content || appleTitle.content.indexOf("{") !== -1)) {
+          appleTitle.content = fallbackBrand;
+        }
+      })();
+    </script>
+    <style>
+      *::-webkit-scrollbar-corner,
+      textarea::-webkit-scrollbar-corner {
+        background: transparent !important;
+        background-color: transparent !important;
+      }
+      *::-webkit-resizer,
+      textarea::-webkit-resizer {
+        background-color: transparent !important;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10' fill='none'%3E%3Cpath d='M9 2L2 9M9 6L6 9' stroke='%2364748b' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E") !important;
+        background-repeat: no-repeat !important;
+        background-position: bottom 3px right 3px !important;
+        background-size: 8px 8px !important;
+      }
+      select.select-styled,
+      .select-styled {
+        appearance: none !important;
+        -webkit-appearance: none !important;
+        -moz-appearance: none !important;
+        padding-right: 36px !important;
+        background-repeat: no-repeat !important;
+        background-position: calc(100% - 12px) center !important;
+        background-size: 14px 14px !important;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E") !important;
+        cursor: pointer;
+        box-sizing: border-box;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="omd-app-splash" role="status" aria-live="polite">
+      <div class="omd-splash-spinner" aria-hidden="true"></div>
+    </div>
+    <style>
+      html {
+        color-scheme: light dark;
+      }
+      html, body { background-color: Canvas; }
+      #omd-app-splash {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        background: Canvas;
+        color: CanvasText;
+        color-scheme: light dark;
+        transition: opacity .24s ease;
+        will-change: opacity;
+        z-index: 2147483647;
+        pointer-events: none;
+        opacity: 1;
+      }
+      #omd-app-splash[data-hidden="true"] {
+        opacity: 0;
+      }
+      .omd-splash-spinner {
+        width: 1.4rem;
+        height: 1.4rem;
+        border: 2px solid CanvasText;
+        border-top-color: CanvasText;
+        border-radius: 50%;
+        border-style: solid;
+        animation: omd-splash-spin .7s linear infinite;
+        border-color: CanvasText transparent transparent transparent;
+      }
+      @keyframes omd-splash-spin {
+        to { transform: rotate(360deg); }
+      }
+    </style>
+    <script type="module">
+      (function () {
+        const app = document.getElementById('app');
+        const splash = document.getElementById('omd-app-splash');
+        if (!app || !splash) return;
+        let hidden = false;
+        function hideSplash() {
+          if (hidden) return false;
+          if (app.children.length === 0) return false;
+          hidden = true;
+          splash.dataset.hidden = 'true';
+          setTimeout(() => {
+            if (splash && splash.parentNode) splash.parentNode.removeChild(splash);
+          }, 260);
+          return true;
+        }
+        if (hideSplash()) return;
+        const observer = new MutationObserver(() => {
+          if (hideSplash()) observer.disconnect();
+        });
+        observer.observe(app, { childList: true });
+        setTimeout(() => {
+          if (hidden) return;
+          hidden = true;
+          splash.dataset.hidden = 'true';
+          setTimeout(() => {
+            if (splash && splash.parentNode) splash.parentNode.removeChild(splash);
+          }, 260);
+        }, 4000);
+      })();
+    </script>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
