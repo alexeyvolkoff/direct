@@ -122,7 +122,7 @@
   let items = [];
   let generationNotice = "";
   $: rawNoticeUrl = generationNotice ? ((generationNotice.match(/https?:\/\/[^\s)\]]+/i) || [])[0] || "").replace(/[.,;!?]+$/, "") : "";
-  $: mappedNoticeUrl = rawNoticeUrl.replace("https://whop.com/checkout/prod_wuSw81wT1wivN", "https://whop.com/onmychat/on-my-chat-creative-studio");
+  $: mappedNoticeUrl = rawNoticeUrl.replace("https://whop.com/checkout/prod_wuSw81wT1wivN", "https://whop.com/ai-studio-direct/creative-studio-direct");
   $: noticeUrl = (isIosNative() && isExternalCheckoutUrl(mappedNoticeUrl)) ? "" : mappedNoticeUrl;
   $: noticeText = generationNotice
     ? (isIosNative()

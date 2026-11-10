@@ -27,7 +27,7 @@ const ALL_PRESET_MCP_APPS = [
   {
     id: "club_pass",
     name: "Club Pass",
-    url: "https://whop.com/onmychat/on-my-chat-creative-studio",
+    url: "https://whop.com/ai-studio-direct/creative-studio-direct",
     placeholder: "pass_... / muse_...",
     description: "Creative Studio Club Pass or Muse Pass",
     badgeColor: "#8B5CF6",
