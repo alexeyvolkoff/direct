@@ -2168,7 +2168,7 @@
               <div class="setting-row">
                 <div class="row-text">
                   <span class="row-label">{$_("support_help", {}, "Support & Help")}</span>
-                  <span class="row-sub">{$_("support_help_sub", {}, "Community Discord, Telegram channel, and GitHub discussions")}</span>
+                  <span class="row-sub">{$_("support_help_sub", {}, "Community Discord and GitHub discussions")}</span>
                 </div>
                 <div class="row-value-badge">
                   <a

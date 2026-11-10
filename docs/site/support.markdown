@@ -15,10 +15,8 @@ Need help setting up **On My Disk** on your iPhone, iPad, Android device, browse
 
 | Channel | Link | Best For |
 | :--- | :--- | :--- |
-| **💬 Discord Support & Community** | [**discord.gg/qAQpfmrBPW**](https://discord.gg/qAQpfmrBPW) | Fastest interactive help: node setup (`#setup-and-nodes`), mobile pairing, local LLMs (`#local-models`), bug reports (`#bug-reports`), and feature requests (`#feature-requests`) |
-| **✈️ Telegram Community** | [**Join Telegram Group**](https://t.me/+QbXU7T_6vPEyNzdk) | Release announcements, mobile & node updates, quick tips, and community discussion |
-| **🐙 GitHub Issues — Platform & Apps** | [**github.com/alexeyvolkoff/onmydisk/issues**](https://github.com/alexeyvolkoff/onmydisk/issues) | Bug reports, reproducible WebRTC/P2P issues, and feature requests for the mobile app, web client, C++ node, and OpenWrt packages |
-| **🤖 GitHub Issues — AI & RAG Node** | [**github.com/alexeyvolkoff/onmychat/issues**](https://github.com/alexeyvolkoff/onmychat/issues) | Bug reports and technical questions for **On My Chat**, local RAG (`ChromaDB`), `Ollama` / `RKLLAMA`, `ComfyUI`, and **MCP** tools |
+| **💬 Discord Support & Community** | [**discord.gg/qAQpfmrBPW**](https://discord.gg/qAQpfmrBPW) | Fastest interactive help: node setup (`#setup-and-nodes`), mobile pairing, local LLMs (`#models-and-prompts`), bug reports (`#bug-reports`), and feature requests (`#feature-requests`) |
+| **🐙 GitHub Issues & Source** | [**github.com/alexeyvolkoff/direct/issues**](https://github.com/alexeyvolkoff/direct/issues) | Bug reports, reproducible WebRTC/P2P issues, and feature requests for Disk Direct (`core/`, `web/`, `mobile/`) and AI Assistant (`ai/`) |
 | **✉️ Direct Email** | [**info@disk.direct**](mailto:info@disk.direct) | Account & privacy/GDPR inquiries, responsible security disclosures, and direct maintainer contact |
 
 > **Tip when reporting a technical issue:** Please mention your platform (`iOS`, `Android`, `Web`, `Linux`, `Windows`, `macOS`, `Docker`, or `OpenWrt`), app/node version, and steps to reproduce — never share your private cryptographic recovery key (`DID` secret) in public channels.
