@@ -3985,32 +3985,32 @@
 
   /* Light Theme Overrides */
   .creations-app.light-theme {
-    background-color: #F2E5ED;
-    color: #0F0A10;
+    background-color: #FAF9FB;
+    color: #1D1823;
   }
 
   .creations-app.light-theme .creations-header {
-    background-color: #FCF7FA;
+    background-color: #FFFFFF;
     border-bottom: none;
   }
 
   .creations-app.light-theme .creations-feed {
-    background-color: #F7ECF2;
+    background-color: #FAF9FB;
   }
 
   .creations-app.light-theme .header-title {
-    color: #0F0A10;
+    color: #1D1823;
   }
 
   .creations-app.light-theme .creation-card {
     background: #ffffff;
-    border-color: rgba(0, 0, 0, 0.08);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+    border-color: #E6E2ED;
+    box-shadow: 0 2px 12px rgba(24, 18, 32, 0.05);
   }
 
   .creations-app.light-theme .card-header-bar {
-    background: #FCF7FA;
-    border-bottom-color: rgba(0, 0, 0, 0.05);
+    background: #FAFAFC;
+    border-bottom-color: #F0EDF5;
   }
 
   .creations-app.light-theme .card-footer {
@@ -4018,13 +4018,13 @@
   }
 
   .creations-app.light-theme .prompt-expanded-content {
-    background: #F7ECF2;
-    color: #1A121D;
-    border-color: rgba(0, 0, 0, 0.06);
+    background: #F4F3F7;
+    color: #1D1823;
+    border-color: #E6E2ED;
   }
 
   .creations-app.light-theme .creations-footer {
-    background: linear-gradient(180deg, rgba(247, 236, 242, 0) 0%, #F7ECF2 25%);
+    background: linear-gradient(180deg, rgba(250, 249, 251, 0) 0%, #FAF9FB 25%);
   }
 
   .creations-app.light-theme .composer-pill {
@@ -4049,43 +4049,43 @@
   }
 
   .creations-app.light-theme .gen-styles-pills {
-    background: #F7ECF2;
-    border-color: #F2E5ED;
+    background: #F3F1F6;
+    border-color: #E6E2ED;
   }
 
   .creations-app.light-theme .gen-style-pill {
-    color: #664D5F;
+    color: #5E5468;
   }
 
   .creations-app.light-theme .gen-style-pill:hover {
-    background: rgba(0, 0, 0, 0.05);
-    color: #0F0A10;
+    background: rgba(0, 0, 0, 0.04);
+    color: #1D1823;
   }
 
   .creations-app.light-theme .gen-style-pill.active,
   .creations-app.light-theme .gen-style-pill.active:hover,
   .creations-app.light-theme .gen-style-pill.active:focus,
   .creations-app.light-theme .gen-style-pill.active:focus-visible {
-    background: var(--accent-blue, #9D174D);
+    background: var(--accent-blue, #DB2777);
     color: #ffffff !important;
-    box-shadow: 0 2px 8px rgba(236, 72, 153, 0.35);
+    box-shadow: 0 2px 8px rgba(219, 39, 119, 0.30);
   }
 
   .creations-app.light-theme .gen-lora-chip {
-    background: #FCF7FA;
-    border-color: #F2E5ED;
-    color: #664D5F;
+    background: #FAF9FB;
+    border-color: #E6E2ED;
+    color: #5E5468;
   }
 
   .creations-app.light-theme .gen-lora-chip:hover {
-    background: #F7ECF2;
-    color: #0F0A10;
+    background: #F3F1F6;
+    color: #1D1823;
   }
 
   .creations-app.light-theme .gen-lora-chip.active,
   .creations-app.light-theme .gen-lora-chip.active:hover,
   .creations-app.light-theme .gen-lora-chip.active:focus {
-    background: #FCE7F3;
+    background: rgba(219, 39, 119, 0.09);
     border-color: #DB2777;
     color: #BE185D !important;
     font-weight: 600;
@@ -4097,8 +4097,8 @@
   }
 
   .creations-app.light-theme .wx-modes .wx-segmented {
-    background-color: #F7ECF2;
-    border-color: #E6D3DF;
+    background-color: #F3F1F6;
+    border-color: #E6E2ED;
   }
 
   .creations-app.light-theme .wx-modes .wx-segmented button {

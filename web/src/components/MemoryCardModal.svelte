@@ -1489,6 +1489,10 @@
     width: 100%;
   }
 
+  .memory-modal-backdrop.light-theme .card-preview-wrap {
+    background: #F4F3F7;
+  }
+
   .image-stage-wrap {
     position: relative;
     display: inline-flex;

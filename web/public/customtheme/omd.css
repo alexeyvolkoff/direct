@@ -24,16 +24,16 @@
   --Gray-900: #0D0B12;
   --Gray-Black: #08060C;
 
-  /* AI Assistant Velvet-Plum Scale */
-  --ChatGray-100: #FCF7FA;
-  --ChatGray-200: #F7ECF2;
-  --ChatGray-300: #E6D3DF;
-  --ChatGray-400: #D4BECF;
-  --ChatGray-500: #998094;
-  --ChatGray-600: #664D5F;
-  --ChatGray-700: #352339;
-  --ChatGray-800: #1A121D;
-  --ChatGray-900: #0F0A10;
+  /* AI Assistant Neutral-Plum Pearl Scale */
+  --ChatGray-100: #FAF9FB;
+  --ChatGray-200: #F3F1F6;
+  --ChatGray-300: #E6E2ED;
+  --ChatGray-400: #CEC8D8;
+  --ChatGray-500: #8E8498;
+  --ChatGray-600: #5E5468;
+  --ChatGray-700: #2F2738;
+  --ChatGray-800: #18141D;
+  --ChatGray-900: #0F0C12;
 
   /* Amethyst Brand Scale (Disk Direct — Duplex Stream) */
   --Amethyst-100: #F3E8FF;
@@ -378,29 +378,29 @@ html.skin-chat .light-theme,
 .skin-chat .light-theme {
   --skin-name: "chat-light";
 
-  --bg-primary: #FCF7FA;
+  --bg-primary: #FAF9FB;
   --bg-secondary: #FFFFFF;
   --bg-card: #FFFFFF;
-  --bg-card-hover: #F7ECF2;
+  --bg-card-hover: #F3F1F6;
   --bg-elevated: #FFFFFF;
-  --bg-soft: rgba(219, 39, 119, 0.06);
-  --bg-hover: rgba(219, 39, 119, 0.08);
+  --bg-soft: #F4F2F7;
+  --bg-hover: #F3F1F6;
   --sidebar-bg: #FFFFFF;
-  --sidebar-shadow: 3px 0 16px rgba(33, 18, 29, 0.05);
+  --sidebar-shadow: 3px 0 16px rgba(24, 18, 32, 0.05);
 
-  --border-color: #E6D3DF;
-  --border-subtle: #F2E5ED;
+  --border-color: #E6E2ED;
+  --border-subtle: #F0EDF5;
 
-  --text-primary: #21121D;
-  --text-secondary: #664D5F;
-  --text-muted: #967B8E;
+  --text-primary: #1D1823;
+  --text-secondary: #5E5468;
+  --text-muted: #8E8498;
 
   --accent: #DB2777;
   --accent-hover: #EC4899;
   --accent-active: #BE185D;
-  --accent-soft: #FCE7F3;
-  --accent-border: rgba(219, 39, 119, 0.35);
-  --accent-glow: rgba(236, 72, 153, 0.28);
+  --accent-soft: rgba(219, 39, 119, 0.08);
+  --accent-border: rgba(219, 39, 119, 0.30);
+  --accent-glow: rgba(236, 72, 153, 0.24);
   --accent-gradient: linear-gradient(135deg, #DB2777 0%, #9333EA 100%);
   --accent-on-brand: #FFFFFF;
 
@@ -409,19 +409,19 @@ html.skin-chat .light-theme,
   --accent-blue-active: var(--accent-soft);
   --Primary: var(--accent);
 
-  --user-bubble-bg: #FCE7F3;
-  --user-bubble-border: #F5C2DE;
+  --user-bubble-bg: #F2F0F5;
+  --user-bubble-border: #E3DFEC;
   --pill-bg: #FFFFFF;
 
-  --scrollbar-thumb: #DEC2D4;
-  --scrollbar-thumb-hover: #C9A3BC;
+  --scrollbar-thumb: #D4CEDE;
+  --scrollbar-thumb-hover: #BCB3CA;
   --scrollbar-track: transparent;
 
   --top-menu-color: #DB2777;
   --top-menu-hover-color: #EC4899;
   --wx-color-primary: #DB2777;
   --wx-color-primary-hover: #EC4899;
-  --wx-color-primary-selected: #FCE7F3;
+  --wx-color-primary-selected: rgba(219, 39, 119, 0.10);
   --logo-url: url('/customtheme/logo-chat-dark.svg');
 
   --var---sds-color-background-brand-default-: var(--accent);
@@ -444,29 +444,29 @@ html.skin-chat .dark-theme,
 .skin-chat .dark-theme {
   --skin-name: "chat-dark";
 
-  --bg-primary: #0F0A10;
-  --bg-secondary: #1A121D;
-  --bg-card: #1A121D;
-  --bg-card-hover: #271B2C;
-  --bg-elevated: #221727;
-  --bg-soft: rgba(236, 72, 153, 0.11);
-  --bg-hover: rgba(244, 114, 182, 0.08);
-  --sidebar-bg: #1A121D;
+  --bg-primary: #0F0C12;
+  --bg-secondary: #18141D;
+  --bg-card: #18141D;
+  --bg-card-hover: #231D2B;
+  --bg-elevated: #201A27;
+  --bg-soft: rgba(255, 255, 255, 0.05);
+  --bg-hover: rgba(255, 255, 255, 0.04);
+  --sidebar-bg: #18141D;
   --sidebar-shadow: 4px 0 20px rgba(0, 0, 0, 0.38);
 
-  --border-color: #352339;
-  --border-subtle: #261929;
+  --border-color: #2F2738;
+  --border-subtle: #231D2A;
 
-  --text-primary: #FDF8FC;
-  --text-secondary: #D4BECF;
-  --text-muted: #998094;
+  --text-primary: #FAF8FC;
+  --text-secondary: #CEC6D6;
+  --text-muted: #93889E;
 
   --accent: #EC4899;
   --accent-hover: #F472B6;
   --accent-active: #DB2777;
-  --accent-soft: rgba(236, 72, 153, 0.20);
-  --accent-border: rgba(244, 114, 182, 0.42);
-  --accent-glow: rgba(236, 72, 153, 0.36);
+  --accent-soft: rgba(236, 72, 153, 0.14);
+  --accent-border: rgba(244, 114, 182, 0.38);
+  --accent-glow: rgba(236, 72, 153, 0.34);
   --accent-gradient: linear-gradient(135deg, #EC4899 0%, #A855F7 100%);
   --accent-on-brand: #FFFFFF;
 
@@ -475,19 +475,19 @@ html.skin-chat .dark-theme,
   --accent-blue-active: var(--accent-soft);
   --Primary: var(--accent);
 
-  --user-bubble-bg: #291628;
-  --user-bubble-border: #4A2547;
-  --pill-bg: #1A121D;
+  --user-bubble-bg: #221C29;
+  --user-bubble-border: #352C40;
+  --pill-bg: #18141D;
 
-  --scrollbar-thumb: #4B2E4E;
-  --scrollbar-thumb-hover: #68406C;
+  --scrollbar-thumb: #433750;
+  --scrollbar-thumb-hover: #5B4B6C;
   --scrollbar-track: transparent;
 
   --top-menu-color: #EC4899;
   --top-menu-hover-color: #F472B6;
   --wx-color-primary: #EC4899;
   --wx-color-primary-hover: #F472B6;
-  --wx-color-primary-selected: rgba(236, 72, 153, 0.22);
+  --wx-color-primary-selected: rgba(236, 72, 153, 0.16);
   --logo-url: url('/customtheme/logo-chat.svg');
 
   --var---sds-color-background-brand-default-: var(--Magenta-200);

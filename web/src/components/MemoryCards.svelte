@@ -1813,7 +1813,7 @@
 
   /* 5. Memory Card */
   .memory-card {
-    background: var(--bg-secondary, #1A121D);
+    background: var(--bg-secondary, #18141D);
     border-radius: 16px;
     border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
     overflow: hidden;
@@ -1832,6 +1832,17 @@
     border-color: rgba(236, 72, 153, 0.35);
   }
 
+  .memory-app.light-theme .memory-card {
+    background: #ffffff;
+    border-color: var(--border-color, #E6E2ED);
+    box-shadow: 0 2px 10px rgba(24, 18, 32, 0.05);
+  }
+
+  .memory-app.light-theme .memory-card:hover {
+    box-shadow: 0 8px 24px rgba(24, 18, 32, 0.09);
+    border-color: rgba(219, 39, 119, 0.28);
+  }
+
   .memory-card:focus-visible {
     border-color: #F472B6;
     box-shadow: 0 0 0 2px rgba(236, 72, 153, 0.4);
@@ -1844,9 +1855,15 @@
     gap: 8px;
     padding: 10px 14px;
     font-size: 11.5px;
-    color: var(--text-muted, #998094);
-    background: rgba(0, 0, 0, 0.15);
-    border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.04));
+    color: var(--text-muted, #93889E);
+    background: rgba(255, 255, 255, 0.025);
+    border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.05));
+  }
+
+  .memory-app.light-theme .memory-card-header {
+    background: #FAFAFC;
+    border-bottom: 1px solid var(--border-subtle, #F0EDF5);
+    color: var(--text-secondary, #5E5468);
   }
 
   .card-kind-label {
@@ -1891,6 +1908,36 @@
     background: rgba(245, 158, 11, 0.14);
     color: #fbbf24;
     border: 1px solid rgba(245, 158, 11, 0.3);
+  }
+
+  .memory-app.light-theme .memory-card.kind-folder .card-kind-label {
+    background: rgba(126, 34, 206, 0.08);
+    color: #7E22CE;
+    border-color: rgba(126, 34, 206, 0.18);
+  }
+
+  .memory-app.light-theme .memory-card.kind-image .card-kind-label {
+    background: rgba(5, 150, 105, 0.08);
+    color: #059669;
+    border-color: rgba(5, 150, 105, 0.18);
+  }
+
+  .memory-app.light-theme .memory-card.kind-doc .card-kind-label {
+    background: rgba(190, 24, 93, 0.08);
+    color: #BE185D;
+    border-color: rgba(190, 24, 93, 0.18);
+  }
+
+  .memory-app.light-theme .memory-card.kind-link .card-kind-label {
+    background: rgba(22, 163, 74, 0.08);
+    color: #15803D;
+    border-color: rgba(22, 163, 74, 0.18);
+  }
+
+  .memory-app.light-theme .memory-card.kind-note .card-kind-label {
+    background: rgba(180, 83, 9, 0.08);
+    color: #B45309;
+    border-color: rgba(180, 83, 9, 0.18);
   }
 
   .card-time {
@@ -1977,8 +2024,20 @@
     align-items: center;
     justify-content: center;
     height: 120px;
-    background: var(--bg-hover, rgba(255, 255, 255, 0.03));
-    color: var(--accent-blue, #EC4899);
+    background: var(--bg-hover, rgba(255, 255, 255, 0.04));
+    border-color: var(--border-subtle, rgba(255, 255, 255, 0.07));
+    color: #B8A6CA;
+    transition: color 0.18s ease, background 0.18s ease;
+  }
+
+  .memory-app.light-theme .card-image-preview-wrap.card-folder-wrap {
+    background: #F4F3F7;
+    border-color: #E8E4F0;
+    color: #7D6D90;
+  }
+
+  .memory-card:hover .card-image-preview-wrap.card-folder-wrap {
+    color: var(--accent, #DB2777);
   }
 
   .card-folder-icon {
@@ -1997,12 +2056,12 @@
     display: flex;
     align-items: center;
     gap: 5px;
-    background: var(--bg-card-hover, rgba(0, 0, 0, 0.2));
+    background: var(--bg-card-hover, rgba(255, 255, 255, 0.04));
     border: 1px solid var(--border-color, rgba(255, 255, 255, 0.06));
     padding: 4px 9px;
     border-radius: 7px;
     font-size: 11.5px;
-    color: var(--accent-blue, #EC4899);
+    color: var(--text-secondary, #CEC6D6);
     transition: all 0.12s ease;
     overflow: hidden;
   }
@@ -2012,21 +2071,30 @@
   }
 
   .card-source-bar.clickable:hover {
-    background: var(--accent-blue-active, rgba(236, 72, 153, 0.12));
+    background: var(--accent-blue-active, rgba(236, 72, 153, 0.10));
     border-color: var(--accent-blue, #EC4899);
+    color: var(--accent-blue, #EC4899);
   }
 
   .card-source-bar.static {
-    color: var(--text-secondary, #998094);
+    color: var(--text-secondary, #93889E);
     cursor: default;
   }
 
   .memory-app.light-theme .card-source-bar {
-    color: var(--accent-blue, #9D174D);
+    background: #F4F3F7;
+    border-color: #E8E4F0;
+    color: #4E4459;
+  }
+
+  .memory-app.light-theme .card-source-bar.clickable:hover {
+    background: rgba(219, 39, 119, 0.07);
+    border-color: rgba(219, 39, 119, 0.32);
+    color: var(--accent, #DB2777);
   }
 
   .memory-app.light-theme .card-source-bar.static {
-    color: var(--text-secondary, #664D5F);
+    color: var(--text-secondary, #5E5468);
   }
 
   .kind-icon-svg {
@@ -2090,6 +2158,29 @@
     border-radius: 999px;
     padding: 1px 7px;
     white-space: nowrap;
+  }
+
+  .memory-app.light-theme .card-tag-chip {
+    color: #BE185D;
+    background: rgba(219, 39, 119, 0.07);
+    border-color: rgba(219, 39, 119, 0.18);
+  }
+
+  .memory-app.light-theme .count-pill {
+    background: rgba(219, 39, 119, 0.08);
+    color: #BE185D;
+    border-color: rgba(219, 39, 119, 0.22);
+  }
+
+  .memory-app.light-theme .cat-pill.active {
+    background: rgba(219, 39, 119, 0.08);
+    border-color: rgba(219, 39, 119, 0.30);
+    color: #BE185D;
+  }
+
+  .memory-app.light-theme .header-icon-btn:hover {
+    background: rgba(29, 24, 35, 0.05);
+    color: var(--text-primary, #1D1823);
   }
 
   .card-chunks {
@@ -2217,13 +2308,13 @@
 
   .memory-app.light-theme .empty-action-btn.secondary {
     background: #ffffff;
-    border-color: #E6D3DF;
-    color: #352339;
+    border-color: #E6E2ED;
+    color: #2F2738;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
   }
 
   .memory-app.light-theme .empty-action-btn.secondary:hover {
-    background: #FCF7FA;
+    background: #FAF9FB;
     border-color: #DB2777;
     color: #DB2777;
     box-shadow: 0 4px 14px rgba(236, 72, 153, 0.15);

@@ -6521,6 +6521,10 @@ function lastFreshTitle(messages) {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
   }
 
+  .chat-container.light-theme .user-bubble {
+    box-shadow: 0 1px 3px rgba(24, 18, 32, 0.04);
+  }
+
   .user-text {
     white-space: pre-wrap;
     word-break: break-word;
@@ -6644,9 +6648,14 @@ function lastFreshTitle(messages) {
     font-size: 0.72rem;
     padding: 1px 6px;
     border-radius: 4px;
-    background: rgba(236, 72, 153, 0.15);
+    background: rgba(236, 72, 153, 0.14);
     color: var(--accent-blue);
     font-weight: 500;
+  }
+
+  .chat-container.light-theme .assistant-tag {
+    background: rgba(219, 39, 119, 0.08);
+    color: #BE185D;
   }
 
   /* Markdown Styling */
@@ -6697,6 +6706,11 @@ function lastFreshTitle(messages) {
     font-family: 'Roboto Mono', monospace;
     font-size: 0.88rem;
     margin: 14px 0;
+  }
+
+  .chat-container.light-theme .markdown-body :global(pre) {
+    background: #F4F3F7;
+    color: #1D1823;
   }
 
   .markdown-body :global(code) {
@@ -8387,6 +8401,14 @@ function lastFreshTitle(messages) {
     min-height: 260px;
     width: 100%;
     aspect-ratio: 1 / 1;
+  }
+
+  .chat-container.light-theme .chat-image-card {
+    box-shadow: 0 2px 12px rgba(24, 18, 32, 0.06);
+  }
+
+  .chat-container.light-theme .chat-image-wrap {
+    background: #F4F3F7;
   }
 
   .chat-image-wrap.has-error {

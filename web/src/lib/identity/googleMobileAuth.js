@@ -290,7 +290,7 @@ export function mountMobileGoogleBridgeIfRequested(targetEl) {
     : (prefersDark ? "#C084FC" : "#7E22CE");
 
   targetEl.innerHTML = `
-    <div style="min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;font-family:'Inter',system-ui,-apple-system,sans-serif;background:${prefersDark ? (isChatHost ? "#0F0A10" : "#0D0B12") : (isChatHost ? "#FCF7FA" : "#F8F7FC")};color:${prefersDark ? "#F8F7FC" : "#181326"};">
+    <div style="min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;font-family:'Inter',system-ui,-apple-system,sans-serif;background:${prefersDark ? (isChatHost ? "#0F0C12" : "#0D0B12") : (isChatHost ? "#FAF9FB" : "#F8F7FC")};color:${prefersDark ? "#F8F7FC" : "#181326"};">
       <div style="width:100%;max-width:380px;background:${prefersDark ? (isChatHost ? "#1A121D" : "#16131F") : "#FFFFFF"};border:1px solid ${prefersDark ? "rgba(255,255,255,0.1)" : "rgba(24,19,38,0.1)"};border-radius:18px;padding:32px 24px;box-shadow:0 16px 40px rgba(0,0,0,0.22);text-align:center;">
         <img src="${bridgeIcon}" alt="${bridgeAlt}" style="width:52px;height:52px;margin:0 auto 16px;display:block;border-radius:12px;" />
         <h1 id="omd-bridge-title" style="font-size:20px;font-weight:700;margin:0 0 8px;">${copy.title}</h1>

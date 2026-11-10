@@ -400,7 +400,7 @@
       metaTheme.setAttribute(
         "content",
         isChatSkin
-          ? (isDarkTheme ? "#0F0A10" : "#FCF7FA")
+          ? (isDarkTheme ? "#0F0C12" : "#FAF9FB")
           : (isDarkTheme ? "#0D0B12" : "#F8F7FC")
       );
     }
