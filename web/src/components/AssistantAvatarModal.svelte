@@ -109,7 +109,7 @@
   async function loadSavedAvatars() {
     if (!httpDrive) return;
     try {
-      const storagePath = defaultStorage || "/Private/onmychat";
+      const storagePath = defaultStorage || "/Private/AIAssistant";
       const listPath = `${storagePath}/generated/avatars`.replace(/\/+/g, "/");
       const res = await httpDrive.fetch(`/api/v1/files?path=${encodeURIComponent(listPath)}`);
       if (res.ok) {
@@ -168,7 +168,7 @@
           style: avatarStyle,
           character_lora: avatarCharacter,
           prompt: promptText,
-          storage: defaultStorage || "/Private/onmychat",
+          storage: defaultStorage || "/Private/AIAssistant",
           omd_key: omdKey,
         };
         try {

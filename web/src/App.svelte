@@ -2479,6 +2479,8 @@
             f.mimeType === "application/x-chat" ||
             f.customAttributes?.uiAction === "chat" ||
             f.name === "Chats" ||
+            f.name === "AIAssistant" ||
+            f.name?.toLowerCase() === "aiassistant" ||
             f.name === "OnMyChat" ||
             f.name?.toLowerCase() === "onmychat" ||
             f.name?.toLowerCase() === "chats"

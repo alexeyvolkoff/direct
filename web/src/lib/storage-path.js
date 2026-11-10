@@ -5,12 +5,12 @@ import { isNativeStorageAvailable } from "./native-drive.js";
 
 export function getDefaultStoragePath() {
   if (typeof window !== "undefined" && isNativeStorageAvailable()) {
-    return "/Documents/OnMyChat";
+    return "/Documents/AIAssistant";
   }
-  return "/Private/OnMyChat";
+  return "/Private/AIAssistant";
 }
 
-export const DEFAULT_STORAGE_PATH = "/Private/OnMyChat";
+export const DEFAULT_STORAGE_PATH = "/Private/AIAssistant";
 
 /**
  * Normalizes a virtual path:
