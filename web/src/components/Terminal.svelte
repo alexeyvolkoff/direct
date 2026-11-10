@@ -222,7 +222,7 @@
 
   onMount(() => {
     const curr = typeof document !== "undefined" ? document.title : "";
-    prevDocTitle = (!curr || curr === "~" || curr.startsWith("~")) ? "On My Disk" : curr;
+    prevDocTitle = (!curr || curr === "~" || curr.startsWith("~")) ? "Disk Direct" : curr;
     term = new Terminal({
       cursorBlink: true,
       fontFamily: 'Consolas, "Ubuntu Mono", Menlo, "Courier New", monospace',

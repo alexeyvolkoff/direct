@@ -30,7 +30,7 @@
       </div>
 
       <div class="ota-banner-content">
-        <h4 class="ota-banner-title">{$_("update_available_title", {}, "On My Disk Update Available")}</h4>
+        <h4 class="ota-banner-title">{$_("update_available_title", {}, "Disk Direct Update Available")}</h4>
         <p class="ota-banner-sub">
           {#if $otaState.isNative}
             {$_("update_available_sub", { version: $otaState.serverVersion || $otaState.newVersion }, `Version v${$otaState.serverVersion || $otaState.newVersion} is ready to install.`)}
@@ -105,11 +105,11 @@
         <div class="ota-logo-container">
           <div class="ota-spin-ring"></div>
           <div class="ota-logo-inner">
-            <img src="/img/icon-512.png" alt="On My Disk Logo" class="ota-logo-img" />
+            <img src="/img/icon-512.png" alt="Disk Direct Logo" class="ota-logo-img" />
           </div>
         </div>
 
-        <h2 class="ota-updating-title">{$_("updating_app_title", {}, "Updating On My Disk...")}</h2>
+        <h2 class="ota-updating-title">{$_("updating_app_title", {}, "Updating Disk Direct...")}</h2>
         <p class="ota-updating-sub">
           {$otaState.statusText || $_("updating_app_sub", {}, "Downloading and applying the latest update. Please wait...")}
         </p>

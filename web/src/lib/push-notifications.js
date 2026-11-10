@@ -163,7 +163,7 @@ export async function subscribeToNodeWebPush({
   // ── Path A: Native Android / iOS App (Capacitor) ──
   if (isNativeApp()) {
     if (!isNativePushAvailable()) {
-      throw new Error(translate("push_err_update_app", {}, "Update the On My Disk mobile app to enable native Push notifications."));
+      throw new Error(translate("push_err_update_app", {}, "Update the Disk Direct mobile app to enable native Push notifications."));
     }
     const platform = Capacitor.getPlatform(); // 'android' | 'ios'
     const token = await registerNativeDeviceToken();

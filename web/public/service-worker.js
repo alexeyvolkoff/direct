@@ -175,7 +175,7 @@ async function findHostWindowClient(excludeClientId) {
 async function handleAppProxyFetch(event, linkId, appSlug, targetPathWithQuery) {
     const hostClient = await findHostWindowClient(event.clientId);
     if (!hostClient) {
-        return new Response('On My Disk P2P host window is not open. Please open this app from your node workspace.', {
+        return new Response('Disk Direct P2P host window is not open. Please open this app from your node workspace.', {
             status: 503,
             headers: { 'Content-Type': 'text/plain; charset=utf-8' }
         });
@@ -639,7 +639,7 @@ self.addEventListener('push', event => {
                 if (payload.silentWhenFocused && isFocused) {
                     return null;
                 }
-                const title = payload.title || 'On My Disk';
+                const title = payload.title || 'Disk Direct';
                 const opts = {
                     body: payload.body || '',
                     icon: payload.icon || '/customtheme/onmydisk.svg',

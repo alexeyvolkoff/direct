@@ -22,7 +22,7 @@
   import { resolveAppMode, APP_MODE_CHAT } from "../lib/app-mode.js";
 
   $: isChatDomain = resolveAppMode() === APP_MODE_CHAT;
-  $: brandName = isChatDomain ? "On My Chat" : "On My Disk";
+  $: brandName = isChatDomain ? "AI Assistant" : "Disk Direct";
   $: brandLogoSrc = isChatDomain
     ? (isDarkTheme ? "/customtheme/logo-chat.svg" : "/customtheme/logo-chat-dark.svg")
     : (isDarkTheme ? "/img/logo.svg" : "/img/logo-dark.svg");
@@ -1122,7 +1122,7 @@
 
   <!-- SingleView Brand Footer -->
   <footer class="singleview-bottom-footer">
-    <span>{$_("powered_by_omd", {}, "Direct P2P Storage Powered by")} <a href="https://disk.direct" target="_blank" rel="noreferrer">On My Disk</a></span>
+    <span>{$_("powered_by_omd", {}, "Direct P2P Storage Powered by")} <a href="https://disk.direct" target="_blank" rel="noreferrer">Disk Direct</a></span>
   </footer>
 </div>
 

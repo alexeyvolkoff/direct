@@ -77,8 +77,8 @@
     for (const d of allDevs) {
       if (d.local === true || d.isAiNode === true) continue;
       if (d.type === "ai" || d.type === "ai-node") continue;
-      const pubName = $_("public_ai_node_name", {}, "On My Chat Public Node");
-      if (d.name === pubName || d.name === "On My Chat Public Node") continue;
+      const pubName = $_("public_ai_node_name", {}, "AI Assistant Public Node");
+      if (d.name === pubName || d.name === "AI Assistant Public Node" || d.name === "AI Assistant Public Node") continue;
       push(d);
     }
     const local = getLocalDevice() || deviceRegistry.list().find((d) => d.local);

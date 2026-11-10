@@ -93,7 +93,7 @@ OnMyDiskHttpNode::OnMyDiskHttpNode(QString configFile, QObject *parent) : OnMyDi
     TemplateParser::instance().setStaticVar("COMPANY", m_systemSettings.value(QStringLiteral("Company"), QStringLiteral("Innbox")));
     TemplateParser::instance().setStaticVar("SLOGAN", m_systemSettings.value(QStringLiteral("Slogan"), QStringLiteral("Innbox &mdash; World in a box")));
     #else
-    TemplateParser::instance().setStaticVar("APPTITLE", m_systemSettings.value(QStringLiteral("AppTitle"), QStringLiteral("On My Disk")));
+    TemplateParser::instance().setStaticVar("APPTITLE", m_systemSettings.value(QStringLiteral("AppTitle"), QStringLiteral("Disk Direct")));
     TemplateParser::instance().setStaticVar("COMPANY", m_systemSettings.value(QStringLiteral("Company"), QStringLiteral("Bineon")));
     TemplateParser::instance().setStaticVar("SLOGAN", m_systemSettings.value(QStringLiteral("Slogan"), QStringLiteral("Delivering content right from your disk")));
     #endif
@@ -137,7 +137,7 @@ OnMyDiskHttpNode::OnMyDiskHttpNode(QString configFile, QObject *parent) : OnMyDi
     TemplateParser::instance().setStaticVar("MEET_LOGO_OG", "meet-loogo-og.jpg");
     TemplateParser::instance().setStaticVar("MEET_APPTITLE", m_systemSettings.value(QStringLiteral("MeetTitle"), QStringLiteral("On My Meet")));
     TemplateParser::instance().setStaticVar("MEET_SLOGAN", m_systemSettings.value(QStringLiteral("MeetSlogan"), QStringLiteral("Secure Meet & Share service")));
-    TemplateParser::instance().setStaticVar("CHATS_APPTITLE", m_systemSettings.value(QStringLiteral("ChatsTitle"), QStringLiteral("On My Chat")));
+    TemplateParser::instance().setStaticVar("CHATS_APPTITLE", m_systemSettings.value(QStringLiteral("ChatsTitle"), QStringLiteral("AI Assistant")));
     QString aiServer = m_systemSettings.value(QStringLiteral("AiServer"), QStringLiteral("http://localhost:4000")).toString();
     TemplateParser::instance().setStaticVar("AI_SERVER", aiServer);
     TemplateParser::instance().setStaticVar("CHAT_SERVER", aiServer.replace("http://", "").replace("https://", ""));
@@ -674,7 +674,7 @@ void OnMyDiskHttpNode::sendClaimPage(QHttpRequest *req, QHttpResponse *resp)
         "<head>\n"
         "  <meta charset=\"UTF-8\">\n"
         "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n"
-        "  <title>On My Disk &mdash; ") + deviceName.toHtmlEscaped() + QStringLiteral("</title>\n"
+        "  <title>Disk Direct &mdash; ") + deviceName.toHtmlEscaped() + QStringLiteral("</title>\n"
         "  <style>\n"
         "    :root{--bg:#0f172a;--card:#1e293b;--border:#334155;--text:#f8fafc;--muted:#94a3b8;\n"
         "      --primary:#38bdf8;--primary-h:#0ea5e9;--green:#22c55e;--warn:#f59e0b;}\n"
@@ -717,7 +717,7 @@ void OnMyDiskHttpNode::sendClaimPage(QHttpRequest *req, QHttpResponse *resp)
         "  <div class=\"card\">\n"
         "    <div class=\"badge\">&#9679; Online</div>\n"
         "    <h1>") + deviceName.toHtmlEscaped() + QStringLiteral("</h1>\n"
-        "    <p class=\"sub\">Scan the QR code or click the button below to connect this device to your On My Disk account.</p>\n"
+        "    <p class=\"sub\">Scan the QR code or click the button below to connect this device to your Disk Direct account.</p>\n"
         "    <div class=\"qr-wrap\" id=\"qr\"><img id=\"qr-img\"\n"
         "      src=\"https://api.qrserver.com/v1/create-qr-code/?size=180x180&amp;data=") + claimUrlHtml + QStringLiteral("\"\n"
         "      width=\"180\" height=\"180\" alt=\"QR Code\"/></div>\n"
@@ -731,7 +731,7 @@ void OnMyDiskHttpNode::sendClaimPage(QHttpRequest *req, QHttpResponse *resp)
         "      This links all your devices into a private, encrypted P2P storage mesh without relying on centralized servers.\n"
         "    </div>\n"
         "    <a href=\"") + claimUrlHtml + QStringLiteral("\" class=\"btn\" target=\"_blank\" rel=\"noopener\">\n"
-        "      Connect in On My Disk &rarr;\n"
+        "      Connect in Disk Direct &rarr;\n"
         "    </a>\n"
         "  </div>\n"
         "  <script>\n"

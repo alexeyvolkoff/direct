@@ -245,34 +245,34 @@ export function mountMobileGoogleBridgeIfRequested(targetEl) {
 
   const copy = isRu
     ? {
-        title: "Вход в On My Disk",
-        desc: `Продолжите вход через ${providerLabel} для мобильного приложения On My Disk.`,
+        title: "Вход в Disk Direct",
+        desc: `Продолжите вход через ${providerLabel} для мобильного приложения Disk Direct.`,
         btnApple: "Войти через Apple",
         verifying: "Подтверждаем вход...",
         doneTitle: "Вход выполнен!",
-        doneDesc: "Возвращаемся в приложение On My Disk...",
-        openAppBtn: "Открыть On My Disk",
+        doneDesc: "Возвращаемся в приложение Disk Direct...",
+        openAppBtn: "Открыть Disk Direct",
         errPrefix: "Ошибка авторизации: ",
       }
     : isSl
     ? {
-        title: "Prijava v On My Disk",
-        desc: `Nadaljujte prijavo prek računa ${providerLabel} za mobilno aplikacijo On My Disk.`,
+        title: "Prijava v Disk Direct",
+        desc: `Nadaljujte prijavo prek računa ${providerLabel} za mobilno aplikacijo Disk Direct.`,
         btnApple: "Prijava z računom Apple",
         verifying: "Preverjanje prijave...",
         doneTitle: "Prijava uspešna!",
-        doneDesc: "Vračanje v aplikacijo On My Disk...",
-        openAppBtn: "Odpri On My Disk",
+        doneDesc: "Vračanje v aplikacijo Disk Direct...",
+        openAppBtn: "Odpri Disk Direct",
         errPrefix: "Napaka pri prijavi: ",
       }
     : {
-        title: "Sign in to On My Disk",
-        desc: `Continue with your ${providerLabel} account to sign in to the On My Disk mobile app.`,
+        title: "Sign in to Disk Direct",
+        desc: `Continue with your ${providerLabel} account to sign in to the Disk Direct mobile app.`,
         btnApple: "Sign in with Apple",
         verifying: "Verifying sign-in...",
         doneTitle: "Signed in!",
-        doneDesc: "Returning to the On My Disk app...",
-        openAppBtn: "Open On My Disk",
+        doneDesc: "Returning to the Disk Direct app...",
+        openAppBtn: "Open Disk Direct",
         errPrefix: "Sign-in error: ",
       };
 
@@ -282,7 +282,7 @@ export function mountMobileGoogleBridgeIfRequested(targetEl) {
   targetEl.innerHTML = `
     <div style="min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;font-family:'Inter',system-ui,-apple-system,sans-serif;background:${prefersDark ? "#101C22" : "#F6F8F9"};color:${prefersDark ? "#F1F5F9" : "#0F172A"};">
       <div style="width:100%;max-width:380px;background:${prefersDark ? "#182630" : "#FFFFFF"};border:1px solid ${prefersDark ? "rgba(255,255,255,0.1)" : "rgba(15,23,42,0.1)"};border-radius:18px;padding:32px 24px;box-shadow:0 16px 40px rgba(0,0,0,0.22);text-align:center;">
-        <img src="/customtheme/onmydisk.svg" alt="On My Disk" style="width:52px;height:52px;margin:0 auto 16px;display:block;" />
+        <img src="/customtheme/onmydisk.svg" alt="Disk Direct" style="width:52px;height:52px;margin:0 auto 16px;display:block;" />
         <h1 id="omd-bridge-title" style="font-size:20px;font-weight:700;margin:0 0 8px;">${copy.title}</h1>
         <p id="omd-bridge-desc" style="font-size:14px;line-height:1.5;margin:0 0 24px;color:${prefersDark ? "#94A3B8" : "#475569"};">${copy.desc}</p>
         <div id="omd-bridge-btn" style="display:flex;justify-content:center;min-height:44px;"></div>

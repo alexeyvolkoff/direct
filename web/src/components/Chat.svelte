@@ -4946,7 +4946,7 @@ function lastFreshTitle(messages) {
 
         <h1 class="hero-greeting">
           <span class="gradient-text">
-            {userName ? `${$_("hello", {}, "Hello")}, ${userName}` : $_("welcome_to_chat", {}, "Welcome to OnMyChat")}
+            {userName ? `${$_("hello", {}, "Hello")}, ${userName}` : $_("welcome_to_chat", {}, "Welcome to AI Assistant")}
           </span>
         </h1>
         <p class="hero-sub">
@@ -4957,7 +4957,7 @@ function lastFreshTitle(messages) {
         <div class="suggestion-grid">
           <button
             class="suggestion-card"
-            on:click={() => setQuickPrompt($_("prompt_rag_sample", {}, "Explain how RAG is implemented in OnMyChat?"))}
+            on:click={() => setQuickPrompt($_("prompt_rag_sample", {}, "Explain how RAG is implemented in AI Assistant?"))}
           >
             <div class="suggestion-icon">💡</div>
             <div class="suggestion-text">
@@ -6126,7 +6126,7 @@ function lastFreshTitle(messages) {
       </form>
 
       <div class="composer-disclaimer">
-        <span>{$_("chat_disclaimer", {}, "On My Chat · AI that keeps your data yours")}</span>
+        <span>{$_("chat_disclaimer", {}, "AI Assistant · AI that keeps your data yours")}</span>
       </div>
     </div>
   </div>

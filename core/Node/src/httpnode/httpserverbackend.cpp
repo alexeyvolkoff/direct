@@ -60,12 +60,12 @@ HttpServerBackend::HttpServerBackend(QSettings *settings, QObject *parent) : QOb
     //Template parser
     TemplateParser::instance().setKeyLogin(m_keyLogin);
     TemplateParser::instance().setSessionAuth(&m_sessionProvider);
-    TemplateParser::instance().setStaticVar("FILES_APPTITLE", m_Settings->value(QStringLiteral("AppTitle"), QStringLiteral("On My Disk")));
-    TemplateParser::instance().setStaticVar("APPTITLE", m_Settings->value(QStringLiteral("AppTitle"), QStringLiteral("On My Disk")));
-    TemplateParser::instance().setStaticVar("CHATS_APPTITLE", m_Settings->value(QStringLiteral("ChatsTitle"), QStringLiteral("On My Chat")));
+    TemplateParser::instance().setStaticVar("FILES_APPTITLE", m_Settings->value(QStringLiteral("AppTitle"), QStringLiteral("Disk Direct")));
+    TemplateParser::instance().setStaticVar("APPTITLE", m_Settings->value(QStringLiteral("AppTitle"), QStringLiteral("Disk Direct")));
+    TemplateParser::instance().setStaticVar("CHATS_APPTITLE", m_Settings->value(QStringLiteral("ChatsTitle"), QStringLiteral("AI Assistant")));
     TemplateParser::instance().setStaticVar("COMPANYURL", m_Settings->value(QStringLiteral("AppUrl"), QStringLiteral("https://github.com/alexeyvolkoff/onmydisk")));
     TemplateParser::instance().setStaticVar("TERMSURL", m_Settings->value(QStringLiteral("TermsUrl"), QStringLiteral("https://disk.direct/tos")));
-    TemplateParser::instance().setStaticVar("COMPANY", m_Settings->value(QStringLiteral("Company"), QStringLiteral("On My Chat community")));
+    TemplateParser::instance().setStaticVar("COMPANY", m_Settings->value(QStringLiteral("Company"), QStringLiteral("Direct community")));
     TemplateParser::instance().setStaticVar("FILES_SLOGAN", m_Settings->value(QStringLiteral("Slogan"), QStringLiteral("Sharing your files right from your disk")));
     TemplateParser::instance().setStaticVar("SLOGAN", m_Settings->value(QStringLiteral("Slogan"), QStringLiteral("Sharing your files right from your disk")));
     TemplateParser::instance().setStaticVar("MEET_APPTITLE", m_Settings->value(QStringLiteral("MeetTitle"), QStringLiteral("On My Meet")));

@@ -941,7 +941,7 @@
                 />
                 <div class="option-body">
                   <div class="option-top">
-                    <span class="option-title">{$_("onboarding_storage_remote_title", {}, "Подключить устройство On My Disk")}</span>
+                    <span class="option-title">{$_("onboarding_storage_remote_title", {}, "Подключить устройство Disk Direct")}</span>
                     {#if didHasConfiguredStorage}
                       <span class="badge-rec">{$_("onboarding_recommended", {}, "Рекомендуется")}</span>
                     {/if}
@@ -952,7 +952,7 @@
                   {#if storageChoice === 'remote_device'}
                     <div class="option-expand-content">
                       <p class="option-desc">
-                        {$_("onboarding_storage_remote_desc", {}, "Подключите узел или клиент On My Disk (Desktop, NAS, Raspberry Pi), используя 10-значный Link ID. Папка по умолчанию: OnMyChat на этом устройстве.")}
+                        {$_("onboarding_storage_remote_desc", {}, "Подключите узел или клиент Disk Direct (Desktop, NAS, Raspberry Pi), используя 10-значный Link ID. Папка по умолчанию: OnMyChat на этом устройстве.")}
                       </p>
                       {#if selectedRemoteDevice}
                         <div class="option-path-preview">
@@ -1050,7 +1050,7 @@
               <div class="promo-box client-promo">
                 <div class="promo-icon">⚡</div>
                 <div class="promo-content">
-                  <div class="promo-title">{$_("onboarding_promo_advanced_title", {}, "Продвинутый клиент On My Disk для ОС")}</div>
+                  <div class="promo-title">{$_("onboarding_promo_advanced_title", {}, "Продвинутый клиент Disk Direct для ОС")}</div>
                   <div class="promo-text">
                     {$_("onboarding_promo_advanced_text", {}, "Хотите фоновую синхронизацию фотографий с мобильного телефона, бэкап важных документов со всех ваших устройств, базу знаний с поиском по документам и фотографиям?")}
                   </div>
@@ -1108,7 +1108,7 @@
                   {#if selectedAiChoice === AI_NODE_MODE_AUTO}
                     <div class="option-expand-content">
                       <p class="option-desc">
-                        {$_("onboarding_ai_auto_desc", {}, "Использует вашу персональную AI-ноду, если она подключена и онлайн. Если своей ноды нет — автоматически переключается на защищённую публичную ноду On My Chat.")}
+                        {$_("onboarding_ai_auto_desc", {}, "Использует вашу персональную AI-ноду, если она подключена и онлайн. Если своей ноды нет — автоматически переключается на защищённую публичную ноду AI Assistant.")}
                       </p>
                     </div>
                   {/if}
@@ -1175,7 +1175,7 @@
                 />
                 <div class="option-body">
                   <div class="option-top">
-                    <span class="option-title">{$_("onboarding_ai_public_title", {}, "Публичная облачная AI-нода On My Chat")}</span>
+                    <span class="option-title">{$_("onboarding_ai_public_title", {}, "Публичная облачная AI-нода AI Assistant")}</span>
                     {#if didHasConfiguredAiNode && selectedAiChoice === AI_NODE_MODE_PUBLIC}
                       <span class="badge-rec">{$_("onboarding_recommended", {}, "Рекомендуется")}</span>
                     {/if}
@@ -1254,7 +1254,7 @@
             <label class="terms-accept-box">
               <input type="checkbox" bind:checked={termsAccepted} />
               <span>
-                {$_("onboarding_terms_agree", {}, "Я принимаю")} <a href={Capacitor.isNativePlatform() ? "https://aiassistant.direct/tos#ai" : "/tos#ai"} target="_blank" rel="noopener noreferrer">{$_("onboarding_terms_tos", {}, "условия ответственного использования ИИ")}</a> {$_("onboarding_terms_privacy", {}, "и политику конфиденциальности On My Disk.")}
+                {$_("onboarding_terms_agree", {}, "Я принимаю")} <a href={Capacitor.isNativePlatform() ? "https://aiassistant.direct/tos#ai" : "/tos#ai"} target="_blank" rel="noopener noreferrer">{$_("onboarding_terms_tos", {}, "условия ответственного использования ИИ")}</a> {$_("onboarding_terms_privacy", {}, "и политику конфиденциальности Disk Direct.")}
               </span>
             </label>
 
@@ -1333,7 +1333,7 @@
                     {#if selectedAiChoice === AI_NODE_MODE_AUTO}
                       {$_("onboarding_summary_ainode_auto", {}, "Автоматически (Auto)")}
                     {:else if selectedAiChoice === AI_NODE_MODE_PUBLIC}
-                      {$_("onboarding_summary_ainode_public", {}, "Публичная облачная нода On My Chat")}
+                      {$_("onboarding_summary_ainode_public", {}, "Публичная облачная нода AI Assistant")}
                     {:else if isEmbeddedDeviceSelected}
                       {selectedEmbeddedDeviceName || $_("onboarding_ai_own_device", {}, "Моё устройство")}
                     {:else if selectedAiChoice === 'custom'}
@@ -1373,14 +1373,14 @@
                 <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2">
                   <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
                 </svg>
-                <span>{$_("onboarding_btn_start_chat", {}, "Начать общение в On My Chat")}</span>
+                <span>{$_("onboarding_btn_start_chat", {}, "Начать общение в AI Assistant")}</span>
               </button>
 
               <button class="btn-secondary btn-large" on:click={handleStartFiles}>
                 <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
                 </svg>
-                <span>{$_("onboarding_btn_start_files", {}, "Открыть On My Disk с файлами")}</span>
+                <span>{$_("onboarding_btn_start_files", {}, "Открыть Disk Direct с файлами")}</span>
               </button>
             </div>
           </div>

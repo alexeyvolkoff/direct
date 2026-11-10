@@ -697,7 +697,7 @@
             <h3 class="clause-title">1. Responsible Use Agreement &mdash; Shared Public Node</h3>
           </div>
           <p class="clause-body">
-            You are about to connect to the On My Chat Public Node &mdash; a shared system node operated over a direct peer-to-peer channel. Chats, history, and your personal knowledge stay encrypted on your side; public knowledge and queries are processed by the public node.
+            You are about to connect to the AI Assistant Public Node &mdash; a shared system node operated over a direct peer-to-peer channel. Chats, history, and your personal knowledge stay encrypted on your side; public knowledge and queries are processed by the public node.
           </p>
           <div class="callout-box">
             <b>Privacy by Design:</b> Your private conversations, chat histories, and local documents remain end-to-end encrypted on your device. The shared public node only processes your ephemeral queries.
@@ -755,7 +755,7 @@
           .toLowerCase()
           .replace(/\.+$/, "");
         var isChat = host === "aiassistant.direct" || /\.onmychat\.com$/.test(host);
-        var brand = isChat ? "On My Chat" : "On My Disk";
+        var brand = isChat ? "AI Assistant" : "Disk Direct";
         if (document.title.indexOf("{") !== -1) {
           document.title = document.title.replace(/\{APPTITLE\}|\{TITLE\}/g, brand);
         }

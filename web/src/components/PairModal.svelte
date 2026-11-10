@@ -136,7 +136,7 @@
         </div>
         <div class="header-text">
           <h3>{$_("pair_device_title", {}, "Connect Storage Device")}</h3>
-          <p class="header-sub">{deviceName ? deviceName : $_("omd_node", {}, "On My Disk Node")} ({linkId})</p>
+          <p class="header-sub">{deviceName ? deviceName : $_("omd_node", {}, "Disk Direct Node")} ({linkId})</p>
         </div>
         <button class="close-btn" on:click={handleClose} aria-label={$_("close", {}, "Close")}>
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">

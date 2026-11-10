@@ -137,7 +137,7 @@
   $: if (currentApp === "chat") chatAppMounted = true;
   $: filesOverlay = appMode === APP_MODE_CHAT && currentApp === "filemanager";
   let settingsSection = "profile";
-  let rootName = "On My Disk";
+  let rootName = "Disk Direct";
   let terminalPort = 22;
   let activeDeviceId = null;
   let activeWebApp = null; // { linkId, deviceName, slug, name, port, entryPath, icon }
@@ -197,9 +197,9 @@
       })
       .catch(() => {});
   }
-  // Brand follows the resolved deployment domain: "On My Chat" for the chat
-  // applet and "On My Disk" everywhere else. Login widgets mirror this.
-  $: brandName = appMode === APP_MODE_CHAT ? "On My Chat" : "On My Disk";
+  // Brand follows the resolved deployment domain: "AI Assistant" for the chat
+  // applet and "Disk Direct" everywhere else. Login widgets mirror this.
+  $: brandName = appMode === APP_MODE_CHAT ? "AI Assistant" : "Disk Direct";
   $: brandLogoSrc = appMode === APP_MODE_CHAT
     ? (isDarkTheme ? "/customtheme/logo-chat.svg" : "/customtheme/logo-chat-dark.svg")
     : (isDarkTheme ? "/img/logo.svg" : "/img/logo-dark.svg");
@@ -1265,7 +1265,7 @@
       isEphemeral: isEph,
       isPersistent: identityType === "persistent",
       did: identityDid || (identity?.did) || "",
-      name: currentProfileData.name || identity?.profile?.name || identity?.name || (identityEmail ? identityEmail.split('@')[0] : (isEph ? "demo" : "On My Disk User")),
+      name: currentProfileData.name || identity?.profile?.name || identity?.name || (identityEmail ? identityEmail.split('@')[0] : (isEph ? "demo" : "Disk Direct User")),
       user: currentProfileData.user || identity?.profile?.user || (identityEmail ? identityEmail.split('@')[0] : (identityDid ? identityDid.slice(0, 10) : (isEph ? "demo" : ""))),
       email: currentProfileData.email || identity?.profile?.email || identityEmail || identity?.email || "",
       image: currentProfileData.image || identity?.profile?.image || identity?.image || identity?.picture || "",
@@ -1958,7 +1958,7 @@
     }
   }
 
-  // ─── Public AI node ("On My Chat Public Node") ─────────────────────────────
+  // ─── Public AI node ("AI Assistant Public Node") ─────────────────────────────
   // Guest-only, chat-only pseudo device. Never published to the DID device
   // graph; pairing is a *guest* pairing only (no password): the node stores
   // the DID in its GuestDIDs (requires Settings/GuestPairing=true on the
@@ -2031,8 +2031,8 @@
     if (!d || d.isAiNode || d.type === "ai" || d.type === "ai-node") return false;
     const publicLinkId = $aiNodeStore?.info?.linkID;
     if (publicLinkId && (d.linkId === publicLinkId || d.deviceId === publicLinkId)) return false;
-    const pubName = $_("public_ai_node_name", {}, "On My Chat Public Node");
-    if (d.name === pubName || d.name === "On My Chat Public Node") return false;
+    const pubName = $_("public_ai_node_name", {}, "AI Assistant Public Node");
+    if (d.name === pubName || d.name === "AI Assistant Public Node" || d.name === "AI Assistant Public Node") return false;
     if (Array.isArray(d.capabilities) && d.capabilities.includes("chat")) return true;
     return false;
   }
@@ -2070,7 +2070,7 @@
       return publicAiDevice || {
         deviceId: pubLinkId,
         linkId: pubLinkId,
-        name: $_("public_ai_node_name", {}, "On My Chat Public Node"),
+        name: $_("public_ai_node_name", {}, "AI Assistant Public Node"),
         type: "ai",
         capabilities: ["chat"],
         isAiNode: true,
@@ -2223,7 +2223,7 @@
 
     if (active) {
       const linkId = st.info.linkID;
-      const deviceName = $_("public_ai_node_name", {}, "On My Chat Public Node");
+      const deviceName = $_("public_ai_node_name", {}, "AI Assistant Public Node");
       // Not a visible device: no registry entry, no tree/card node, no device
       // items - only the shortcut entry in SERVICE_SECTIONS ("Чаты") shows the
       // node status via the online dot.
@@ -2596,8 +2596,8 @@
     if (linkId === getOrCreateLocalLinkId()) return;
     const publicLinkId = $aiNodeStore?.info?.linkID;
     if (publicLinkId && linkId === publicLinkId) return;
-    const pubName = $_("public_ai_node_name", {}, "On My Chat Public Node");
-    if (devName === pubName || devName === "On My Chat Public Node") return;
+    const pubName = $_("public_ai_node_name", {}, "AI Assistant Public Node");
+    if (devName === pubName || devName === "AI Assistant Public Node" || devName === "AI Assistant Public Node") return;
 
     const savedDev = identity && identity.devices && identity.devices.get ? identity.devices.get(linkId) : null;
     const resolvedName = devName || savedDev?.name || linkId;
@@ -6776,7 +6776,7 @@ async function blobToBase64(blob) {
               </div>
               <h2 class="empty-root-title">{$_("connect_device", {}, "Connect Device")}</h2>
               <p class="empty-root-desc">
-                {$_("connect_device_desc", {}, "Connect an On My Disk node or client (Desktop, NAS, Raspberry Pi) using a 10-character Link ID.")}
+                {$_("connect_device_desc", {}, "Connect a Disk Direct node or client (Desktop, NAS, Raspberry Pi) using a 10-character Link ID.")}
               </p>
               <form
                 on:submit|preventDefault={() => {
@@ -7196,7 +7196,7 @@ async function blobToBase64(blob) {
               <h3>{$_("ai_public_agreement_title", {}, "Responsible Use Agreement")}</h3>
             </div>
             <div class="confirm-modal-body" style="max-height: 45vh; overflow-y: auto; text-align: left;">
-              <p>{$_("ai_public_agreement_body_1", {}, "You are about to connect to the On My Chat Public Node — a shared system node operated over a direct peer-to-peer channel. Chats, history, and your personal knowledge stay encrypted on your side; public knowledge and queries are processed by the public node.")}</p>
+              <p>{$_("ai_public_agreement_body_1", {}, "You are about to connect to the AI Assistant Public Node — a shared system node operated over a direct peer-to-peer channel. Chats, history, and your personal knowledge stay encrypted on your side; public knowledge and queries are processed by the public node.")}</p>
               <p>{$_("ai_public_agreement_body_2", {}, "You agree to use the service responsibly and lawfully, and in particular NOT to generate unlawful, harmful, or abusive content, including content involving minors, violence, weapons, malware, or any activity prohibited by applicable law. Attempting to bypass content filters or abusing shared resources is not allowed.")}</p>
               <p class="confirm-modal-subtext">{$_("ai_public_agreement_body_3", {}, "The service is provided on an \"as is\" basis without warranties. Usage may be rate-limited, and access may be revoked in case of abuse. Your acceptance is stored in your encrypted settings.")}</p>
             </div>

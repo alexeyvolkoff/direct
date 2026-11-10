@@ -993,7 +993,7 @@
 
         <img
           src={logoChatSrc}
-          alt="OnMyChat"
+          alt="AI Assistant"
           class="sidebar-logo-img"
         />
 

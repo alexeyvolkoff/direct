@@ -474,10 +474,10 @@
   let scanningDetected = false;
 
   function refreshDevices() {
-    // AI pseudo nodes (e.g. On My Chat Public Node, guest AI nodes) are not devices:
+    // AI pseudo nodes (e.g. AI Assistant Public Node, guest AI nodes) are not devices:
     // never listed, never counted as sync/storage destinations.
     const publicLinkId = $aiNodeStore?.info?.linkID;
-    const pubName = $_("public_ai_node_name", {}, "On My Chat Public Node");
+    const pubName = $_("public_ai_node_name", {}, "AI Assistant Public Node");
     const customLinkIds = new Set(($aiNodeStore?.customNodes || []).map(c => c.linkId));
     devices = deviceRegistry.list().filter(d =>
       !d.isAiNode &&
@@ -487,7 +487,7 @@
       !customLinkIds.has(d.deviceId) &&
       (!publicLinkId || (d.linkId !== publicLinkId && d.deviceId !== publicLinkId)) &&
       d.name !== pubName &&
-      d.name !== "On My Chat Public Node"
+      d.name !== "AI Assistant Public Node" && d.name !== "AI Assistant Public Node"
     );
   }
 
@@ -934,8 +934,8 @@
     for (const d of allDevs) {
       if (d.local === true || d.isAiNode === true) continue;
       if (d.type === "ai" || d.type === "ai-node") continue;
-      const pubName = $_("public_ai_node_name", {}, "On My Chat Public Node");
-      if (d.name === pubName || d.name === "On My Chat Public Node") continue;
+      const pubName = $_("public_ai_node_name", {}, "AI Assistant Public Node");
+      if (d.name === pubName || d.name === "AI Assistant Public Node" || d.name === "AI Assistant Public Node") continue;
       push(d);
     }
     const local = getLocalDevice() || devices.find(d => d.local) || deviceRegistry.list().find(d => d.local);
@@ -1005,8 +1005,8 @@
     if (customLinkIds.has(d.linkId) || customLinkIds.has(d.deviceId)) return false;
     const publicLinkId = $aiNodeStore?.info?.linkID;
     if (publicLinkId && (d.linkId === publicLinkId || d.deviceId === publicLinkId)) return false;
-    const pubName = $_("public_ai_node_name", {}, "On My Chat Public Node");
-    if (d.name === pubName || d.name === "On My Chat Public Node") return false;
+    const pubName = $_("public_ai_node_name", {}, "AI Assistant Public Node");
+    if (d.name === pubName || d.name === "AI Assistant Public Node" || d.name === "AI Assistant Public Node") return false;
     if (Array.isArray(d.capabilities) && d.capabilities.includes("chat")) return true;
     if (!d.isLocal && (d.type === "node" || d.deviceType === "node" || !d.type)) return true;
     return false;
@@ -1048,7 +1048,7 @@
     setAiNodeChoice(choice);
     await persistAiNodeChoice();
     aiNodeStatusMsg = choice === AI_NODE_MODE_PUBLIC
-      ? $_("ai_node_public_selected", {}, "Connected to On My Chat Public Node.")
+      ? $_("ai_node_public_selected", {}, "Connected to AI Assistant Public Node.")
       : "";
     setTimeout(() => { aiNodeStatusMsg = ""; }, 3000);
   }
@@ -1109,7 +1109,7 @@
     aiNodeChoice = AI_NODE_MODE_PUBLIC;
     setAiNodeChoice(AI_NODE_MODE_PUBLIC);
     await persistAiNodeChoice();
-    aiNodeStatusMsg = $_("ai_node_public_selected", {}, "Connected to On My Chat Public Node.");
+    aiNodeStatusMsg = $_("ai_node_public_selected", {}, "Connected to AI Assistant Public Node.");
     setTimeout(() => { aiNodeStatusMsg = ""; }, 3000);
   }
 
@@ -2514,7 +2514,7 @@
               <!-- Add Device Card -->
               <div class="card">
                 <h4 class="card-title">{$_("connect_new_device", {}, "Connect a New Device")}</h4>
-                <p class="card-subtitle">{$_("connect_new_device_desc", {}, "Enter the 10-character Link ID of your On My Disk node (e.g. Raspberry Pi, NAS, or Desktop client).")}</p>
+                <p class="card-subtitle">{$_("connect_new_device_desc", {}, "Enter the 10-character Link ID of your Disk Direct node (e.g. Raspberry Pi, NAS, or Desktop client).")}</p>
                 
                 <div class="connect-input-row">
                   <input
@@ -2760,7 +2760,7 @@
               <div class="setting-row">
                 <div class="row-text">
                   <span class="row-label">{$_("target_storage_node", {}, "Destination Storage Node")}</span>
-                  <span class="row-sub">{$_("target_node_sub", {}, "Computer or NAS running On My Disk")}</span>
+                  <span class="row-sub">{$_("target_node_sub", {}, "Computer or NAS running Disk Direct")}</span>
                 </div>
                 <div class="row-input-wrap">
                   <select class="text-input select-input" bind:value={selectedSyncTarget} disabled={$syncState.isSyncing}>
@@ -3039,7 +3039,7 @@
               {#if !webPushSupported}
                 <p class="row-sub" style="margin-top: 8px;">
                   {isNativeApp()
-                    ? $_("push_unsupported_native", {}, "Update the On My Disk mobile app to the latest version to enable native Push notifications.")
+                    ? $_("push_unsupported_native", {}, "Update the Disk Direct mobile app to the latest version to enable native Push notifications.")
                     : $_("push_unsupported_web", {}, "Your browser does not support Web Push (on iOS, add the web app to your Home Screen or use the native app).")}
                 </p>
               {:else}
@@ -3121,7 +3121,7 @@
                         <option value={cNode.linkId}>{cNode.name ? `${cNode.name} (${$_("guest_node_tag", {}, "гостевая")})` : cNode.linkId}</option>
                       {/each}
                     {/if}
-                    <option value="public">{$_("public_ai_node_name", {}, "On My Chat Public Node")}</option>
+                    <option value="public">{$_("public_ai_node_name", {}, "AI Assistant Public Node")}</option>
                     <option value="custom">{$_("ai_node_custom", {}, "Указанная...")}</option>
                   </select>
                   {#if isCurrentCustomNode}
@@ -3280,7 +3280,7 @@
                       on:change={onInferenceNodeChange}
                     >
                       {#if $aiNodeStore.info}
-                        <option value={$aiNodeStore.info.linkID}>{$_("public_ai_node_name", {}, "On My Chat Public Node")}</option>
+                        <option value={$aiNodeStore.info.linkID}>{$_("public_ai_node_name", {}, "AI Assistant Public Node")}</option>
                       {/if}
                       {#each aiNodeDeviceOptions as opt}
                         <option value={opt.value}>{opt.label}</option>
@@ -3591,7 +3591,7 @@
 
             <!-- 6b. ONMYCHAT API KEY -->
             <div class="card">
-              <h4 class="card-title">{$_("omd_api_key", {}, "On My Disk API Key")}</h4>
+              <h4 class="card-title">{$_("omd_api_key", {}, "Disk Direct API Key")}</h4>
               <p class="omd-key-hint">
                 {$_("omd_key_hint", {}, "API key to access your AI chats and knowledge base across multiple devices and from external apps. Stored encrypted in your DID graph — only this browser's identity can read it.")}
               </p>
@@ -3991,7 +3991,7 @@
       <h3 class="modal-title">{$_("ai_public_agreement_title", {}, "Responsible Use Agreement")}</h3>
       <div class="agreement-text" style="max-height: 50vh; overflow-y: auto; text-align: left; font-size: 14px; line-height: 1.6; margin: 12px 0;">
         <p>{$_("ai_public_agreement_body_1", {},
-          "You are about to connect to the On My Chat Public Node — a shared system node operated over a direct peer-to-peer channel. Chats, history, and your personal knowledge stay encrypted on your side; public knowledge and queries are processed by the public node.")}</p>
+          "You are about to connect to the AI Assistant Public Node — a shared system node operated over a direct peer-to-peer channel. Chats, history, and your personal knowledge stay encrypted on your side; public knowledge and queries are processed by the public node.")}</p>
         <p>{$_("ai_public_agreement_body_2", {},
           "You agree to use the service responsibly and lawfully, and in particular NOT to generate unlawful, harmful, or abusive content, including content involving minors, violence, weapons, malware, or any activity prohibited by applicable law. Attempting to bypass content filters or abusing shared resources is not allowed.")}</p>
         <p>{$_("ai_public_agreement_body_3", {},
