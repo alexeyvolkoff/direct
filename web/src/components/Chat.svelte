@@ -7220,9 +7220,22 @@ function lastFreshTitle(messages) {
     width: 28px;
     height: 28px;
     border-radius: 6px;
-    background: rgba(236, 72, 153, 0.12);
-    color: var(--accent-blue);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-secondary);
     flex-shrink: 0;
+    transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  }
+
+  .chat-container.light-theme .source-card-icon {
+    background: #F4F3F7;
+    border-color: #E6E2ED;
+    color: #5E5468;
+  }
+
+  .source-card:hover .source-card-icon {
+    color: var(--accent-blue);
+    border-color: var(--accent-border);
   }
 
   .source-card-icon.has-preview {
@@ -7266,25 +7279,39 @@ function lastFreshTitle(messages) {
   .markdown-body :global(.inline-file-chip) {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: 6px;
     max-width: 100%;
     margin: 0 2px;
-    padding: 2px 8px 2px 3px;
+    padding: 2px 9px 2px 3px;
     border-radius: 7px;
-    background: rgba(236, 72, 153, 0.10);
-    border: 1px solid rgba(236, 72, 153, 0.28);
-    color: var(--accent-blue);
+    background: var(--bg-card-hover, #231D2B);
+    border: 1px solid var(--border-color, #332B3D);
+    color: var(--text-primary, #FAF8FC);
     text-decoration: none;
     vertical-align: middle;
     cursor: pointer;
     line-height: 1.25;
     font-weight: 500;
     box-sizing: border-box;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
   }
 
   .markdown-body :global(.inline-file-chip:hover) {
-    background: rgba(236, 72, 153, 0.18);
-    border-color: var(--accent-blue);
+    background: #2B2336;
+    border-color: rgba(236, 72, 153, 0.45);
+    color: #FFFFFF;
+  }
+
+  .chat-container.light-theme .markdown-body :global(.inline-file-chip) {
+    background: #F4F3F7;
+    border-color: #E4E0EC;
+    color: #231D2B;
+  }
+
+  .chat-container.light-theme .markdown-body :global(.inline-file-chip:hover) {
+    background: #EDEAF3;
+    border-color: rgba(219, 39, 119, 0.38);
+    color: #1D1823;
   }
 
   .markdown-body :global(.inline-file-thumb) {
@@ -7301,18 +7328,35 @@ function lastFreshTitle(messages) {
     align-items: center;
     justify-content: center;
     min-width: 26px;
-    height: 26px;
-    padding: 0 4px;
+    height: 24px;
+    padding: 0 5px;
     flex-shrink: 0;
-    border-radius: 6px;
-    background: rgba(236, 72, 153, 0.14);
-    border: 1px solid rgba(236, 72, 153, 0.28);
-    color: var(--accent-blue);
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    color: var(--text-secondary, #CEC6D6);
     font-size: 0.62rem;
     font-weight: 700;
     letter-spacing: 0.03em;
     line-height: 1;
     box-sizing: border-box;
+    transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  }
+
+  .chat-container.light-theme .markdown-body :global(.inline-file-icon) {
+    background: #FFFFFF;
+    border-color: #DFDAE8;
+    color: #5E5468;
+  }
+
+  .markdown-body :global(.inline-file-chip:hover .inline-file-icon) {
+    color: #F472B6;
+    border-color: rgba(236, 72, 153, 0.35);
+  }
+
+  .chat-container.light-theme .markdown-body :global(.inline-file-chip:hover .inline-file-icon) {
+    color: #DB2777;
+    border-color: rgba(219, 39, 119, 0.30);
   }
 
   .markdown-body :global(.inline-file-name) {
@@ -7925,8 +7969,8 @@ function lastFreshTitle(messages) {
   }
 
   .import-result-card {
-    border: 1px solid rgba(236, 72, 153, 0.3);
-    background: rgba(236, 72, 153, 0.06);
+    border: 1px solid var(--border-color);
+    background: var(--bg-card);
     border-radius: 14px;
     padding: 12px 16px;
     margin: 8px 0;
