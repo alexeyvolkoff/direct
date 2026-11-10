@@ -1122,7 +1122,7 @@
 
   <!-- SingleView Brand Footer -->
   <footer class="singleview-bottom-footer">
-    <span>{$_("powered_by_omd", {}, "Direct P2P Storage Powered by")} <a href="https://onmydisk.net" target="_blank" rel="noreferrer">On My Disk</a></span>
+    <span>{$_("powered_by_omd", {}, "Direct P2P Storage Powered by")} <a href="https://disk.direct" target="_blank" rel="noreferrer">On My Disk</a></span>
   </footer>
 </div>
 

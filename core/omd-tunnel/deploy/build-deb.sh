@@ -48,7 +48,7 @@ Section: net
 Priority: optional
 Architecture: amd64
 Depends: libqt5core5a | libqt5core5t64, libqt5network5 | libqt5network5t64, libssl3
-Maintainer: OMD <dev@onmydisk.net>
+Maintainer: OMD <dev@disk.direct>
 Description: TCP tunnel over an OMD gateway (ssh ProxyCommand)
  Standalone tunnel client that connects through an OMD gateway to a device
  by its LinkID and forwards stdin/stdout as a raw TCP stream.

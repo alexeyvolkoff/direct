@@ -12,7 +12,7 @@
 #include <QCoreApplication>
 #include "version.h"
 
-static const QString OTA_VERSION_URL = QStringLiteral("https://forge.onmydisk.net/repo/OnMyDisk/Connector/version.json");
+static const QString OTA_VERSION_URL = QStringLiteral("https://forge.disk.direct/repo/OnMyDisk/Connector/version.json");
 static const QString UPDATE_HELPER_SCRIPT = QStringLiteral("/usr/share/onmydisk/omd-updater.sh");
 static const QString TEMP_DEB_PATH = QStringLiteral("/tmp/onmydisk-update.deb");
 

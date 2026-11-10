@@ -15,7 +15,7 @@ export const config = ({ privateKey, port, websocketPort } = {}) => {
         `/ip4/0.0.0.0/tcp/${websocketPort || 0}/ws`
       ],
       announce: [
-        '/dns4/staging.onmydisk.net/tcp/4002/wss'
+        '/dns4/disk.direct/tcp/4002/wss'
       ]
     },
     transports: [

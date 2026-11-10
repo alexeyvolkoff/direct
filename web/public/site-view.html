@@ -49,8 +49,8 @@
         <p>This site is served <b>directly from its owner's device</b> over an encrypted
         peer-to-peer connection. No copy of the content is stored on the gateway.</p>
         <p>By continuing you accept the
-        <a href="https://direct.onmydisk.net/tos" target="_blank" rel="noopener">Terms of Service</a> and
-        <a href="https://direct.onmydisk.net/tos#gdpr" target="_blank" rel="noopener">Privacy Policy</a>.</p>
+        <a href="https://disk.direct/tos" target="_blank" rel="noopener">Terms of Service</a> and
+        <a href="https://disk.direct/tos#gdpr" target="_blank" rel="noopener">Privacy Policy</a>.</p>
         <button class="btn" id="accept">I accept — continue</button>
     </div>
 </div>
@@ -141,7 +141,7 @@ class MiniDrive {
     async connect() {
         this.pc = new RTCPeerConnection({
             iceServers: [
-                { urls: 'stun:direct.onmydisk.net:3478' },
+                { urls: 'stun:disk.direct:3478' },
                 { urls: 'stun:stun.l.google.com:19302' }
             ]
         });

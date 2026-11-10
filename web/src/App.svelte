@@ -1662,7 +1662,7 @@
         const { SignInWithApple } = await import("@capacitor-community/apple-sign-in");
         const res = await SignInWithApple.authorize({
           clientId: "net.onmydisk.app",
-          redirectURI: "https://onmydisk.net",
+          redirectURI: "https://disk.direct",
           scopes: "email name",
         });
         if (!res?.response?.identityToken) {
@@ -1690,7 +1690,7 @@
         if (!window.AppleID) throw new Error("Apple Sign In SDK not available");
 
         const redirectURI = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-          ? "https://direct.onmydisk.net"
+          ? "https://disk.direct"
           : window.location.origin;
 
         window.AppleID.auth.init({
@@ -7590,8 +7590,8 @@ async function blobToBase64(blob) {
 
                   <div class="login-footer-terms">
                     {$_("terms_continue_agree", {}, "By continuing, you agree to our")} 
-                    <a href={Capacitor.isNativePlatform() ? "https://onmychat.com/tos" : "/tos"} target="_blank" rel="noopener noreferrer">{$_("terms_of_service", {}, "Terms of Service")}</a> &amp; 
-                    <a href={Capacitor.isNativePlatform() ? "https://onmychat.com/tos#gdpr" : "/tos#gdpr"} target="_blank" rel="noopener noreferrer">{$_("gdpr_cookies_ai_policy", {}, "GDPR, Cookies and AI Policy")}</a>.
+                    <a href={Capacitor.isNativePlatform() ? "https://aiassistant.direct/tos" : "/tos"} target="_blank" rel="noopener noreferrer">{$_("terms_of_service", {}, "Terms of Service")}</a> &amp; 
+                    <a href={Capacitor.isNativePlatform() ? "https://aiassistant.direct/tos#gdpr" : "/tos#gdpr"} target="_blank" rel="noopener noreferrer">{$_("gdpr_cookies_ai_policy", {}, "GDPR, Cookies and AI Policy")}</a>.
                   </div>
                 </div>
 
@@ -7755,8 +7755,8 @@ async function blobToBase64(blob) {
 
               <div class="login-footer-terms">
                 {$_("by_creating_agree", {}, "By creating an ID, you agree to our")} 
-                <a href={Capacitor.isNativePlatform() ? "https://onmychat.com/tos" : "/tos"} target="_blank" rel="noopener noreferrer">{$_("terms_of_service", {}, "Terms of Service")}</a> &amp; 
-                <a href={Capacitor.isNativePlatform() ? "https://onmychat.com/tos#gdpr" : "/tos#gdpr"} target="_blank" rel="noopener noreferrer">{$_("gdpr_cookies_ai_policy", {}, "GDPR, Cookies and AI Policy")}</a>.
+                <a href={Capacitor.isNativePlatform() ? "https://aiassistant.direct/tos" : "/tos"} target="_blank" rel="noopener noreferrer">{$_("terms_of_service", {}, "Terms of Service")}</a> &amp; 
+                <a href={Capacitor.isNativePlatform() ? "https://aiassistant.direct/tos#gdpr" : "/tos#gdpr"} target="_blank" rel="noopener noreferrer">{$_("gdpr_cookies_ai_policy", {}, "GDPR, Cookies and AI Policy")}</a>.
               </div>
             </div>
 

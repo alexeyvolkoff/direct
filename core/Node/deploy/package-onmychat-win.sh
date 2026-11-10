@@ -3,7 +3,7 @@
 # Produces onmychat-latest.zip (code + requirements + config example, no venv/user data).
 # Usage:
 #   ./Node/deploy/package-onmychat-win.sh [onmychat_dir] [out_zip]
-#   scp out_zip repo@forge.onmydisk.net:/opt/repo/Windows/onmychat-latest.zip
+#   scp out_zip repo@forge.disk.direct:/opt/repo/Windows/onmychat-latest.zip
 set -euo pipefail
 
 SRC="${1:-${ONMYCHAT_DIR:-/home/alexey/projects/omd/onmychat}}"

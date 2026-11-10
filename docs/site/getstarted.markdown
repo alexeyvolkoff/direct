@@ -12,7 +12,7 @@ Welcome to **On My Disk Direct** — your decentralized personal cloud and priva
 
 ## 1. Sign In or Create Your Decentralized ID (DID)
 
-Open [**direct.onmydisk.net**](https://direct.onmydisk.net) in any modern browser, or launch the native **On My Disk** Android / iOS app.
+Open [**disk.direct**](https://disk.direct) in any modern browser, or launch the native **On My Disk** Android / iOS app.
 
 ![Sign in or connect](/images/login.png)
 
@@ -93,7 +93,7 @@ Right-click any file or folder for quick actions:
 
 ### Public P2P Links
 1. Right-click a file or folder and select **Share Link...**.
-2. A live **Public P2P Link** (`https://direct.onmydisk.net/shared/...`) is generated — click **Copy link** to share it immediately, or configure optional protections and click **Update Share**:
+2. A live **Public P2P Link** (`https://disk.direct/shared/...`) is generated — click **Copy link** to share it immediately, or configure optional protections and click **Update Share**:
    * **Password Protection**: Require a password to decrypt and view the share.
    * **Link Expiration**: Choose **Never Expires** or automatically disable access after a time limit.
    * **Folder Write Access**: When sharing a folder, optionally allow visitors to upload/edit files inside that shared directory (`ScopedGuest` sandbox).

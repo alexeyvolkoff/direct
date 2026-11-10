@@ -9,8 +9,8 @@ import { PushNotifications } from "@capacitor/push-notifications";
 import { translate } from "./i18n/index.js";
 
 const NATIVE_SUB_STORAGE_KEY = "omd_native_push_sub";
-const DEFAULT_RELAY_URL = "https://direct.onmydisk.net:8765/api/push/native";
-const DEFAULT_PUBLIC_ORIGIN = "https://direct.onmydisk.net";
+const DEFAULT_RELAY_URL = "https://disk.direct:8765/api/push/native";
+const DEFAULT_PUBLIC_ORIGIN = "https://disk.direct";
 
 let _nativeListenersBound = false;
 

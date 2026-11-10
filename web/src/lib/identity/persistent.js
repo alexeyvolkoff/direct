@@ -9,9 +9,9 @@ import {
   clearSessionEverywhere,
 } from "./sessionBackup.js";
 
-const RELAY_URL = "wss://direct.onmydisk.net:8765/gun";
-const HUB_URL = "https://direct.onmydisk.net:8765";
-const AUTH_URL = "https://direct.onmydisk.net:8765";
+const RELAY_URL = "wss://disk.direct:8765/gun";
+const HUB_URL = "https://disk.direct:8765";
+const AUTH_URL = "https://disk.direct:8765";
 const STORAGE_PREFIX = "omd_did_";
 
 function accountDeletedError() {

@@ -576,9 +576,9 @@ class AgenticManager:
     # -- request hooks ------------------------------------------------------ #
 
     async def _discover_public_ai_node(self) -> str:
-        gw = str(_sget(self._section, "GATEWAY_URL", "") or "https://direct.onmydisk.net").rstrip("/")
-        if "onmydisk.net" in gw and "direct.onmydisk.net" not in gw:
-            gw = "https://direct.onmydisk.net"
+        gw = str(_sget(self._section, "GATEWAY_URL", "") or "https://disk.direct").rstrip("/")
+        if "onmydisk.net" in gw and "disk.direct" not in gw:
+            gw = "https://disk.direct"
         url = f"{gw}/api/ai-node"
         try:
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=8)) as s:

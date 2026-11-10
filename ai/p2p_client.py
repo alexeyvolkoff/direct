@@ -96,7 +96,7 @@ def _random_id(prefix: str, length: int = 9) -> str:
     return prefix + "".join(random.choice(alphabet) for _ in range(length))
 
 
-def default_ice_servers(host: str = "direct.onmydisk.net") -> List[Dict[str, Any]]:
+def default_ice_servers(host: str = "disk.direct") -> List[Dict[str, Any]]:
     """ICE servers mirroring `turnServers()` in svar/src/lib/webrtc-drive.js."""
     return [
         {"urls": f"stun:{host}:3478"},
@@ -112,7 +112,7 @@ def default_ice_servers(host: str = "direct.onmydisk.net") -> List[Dict[str, Any
 class P2PSettings:
     """Runtime configuration, normally sourced from config.ini [settings]."""
 
-    signaling_url: str = "https://direct.onmydisk.net/api/signaling"
+    signaling_url: str = "https://disk.direct/api/signaling"
     token: str = ""                 # omd_key of the user whose data we access
     sender_id: str = ""             # our linkID-like id for gateway routing
     ice_servers: List[Dict[str, Any]] = field(default_factory=default_ice_servers)
@@ -150,7 +150,7 @@ class P2PSettings:
             except (TypeError, ValueError):
                 return default
 
-        host = str(get("P2P_ICE_HOST", "") or "direct.onmydisk.net")
+        host = str(get("P2P_ICE_HOST", "") or "disk.direct")
         return cls(
             signaling_url=str(get("P2P_SIGNALING_URL", "") or cls.signaling_url),
             # token намеренно не берётся из конфига: omd_key живёт в запросе

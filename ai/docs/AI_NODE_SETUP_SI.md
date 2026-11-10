@@ -59,9 +59,9 @@ Vnaprej zgrajeni `.deb` paketi so na voljo za **amd64** in **arm64**:
 
 | Arhitektura | URL za prenos |
 |-------------|---------------|
-| x86_64 (amd64) | `https://forge.onmydisk.net/repo/Ubuntu/focal/onmydisk-connector-amd64.deb` |
-| ARM64 | `https://forge.onmydisk.net/repo/Ubuntu/focal/onmydisk-connector-arm64.deb` |
-| ARMHF (armv7) | `https://forge.onmydisk.net/repo/Ubuntu/focal/onmydisk-connector-armhf.deb` |
+| x86_64 (amd64) | `https://forge.disk.direct/repo/Ubuntu/focal/onmydisk-connector-amd64.deb` |
+| ARM64 | `https://forge.disk.direct/repo/Ubuntu/focal/onmydisk-connector-arm64.deb` |
+| ARMHF (armv7) | `https://forge.disk.direct/repo/Ubuntu/focal/onmydisk-connector-armhf.deb` |
 
 Lahko ga tudi zgradite iz izvorne kode (glejte [Razvijalski priročnik](DEVELOPERS_GUIDE.md)).
 
@@ -114,10 +114,10 @@ Connector privzeto posluša na **vratih 80**. Odprite `http://<ip-ali-ime-vaše-
 
 Na začetku bo vaša naprava delovala v anonimnem načinu, brez povezave z računom On My Disk, dostopna le v lokalnem omrežju. Za dostop do naprave prek interneta, iz mobilne aplikacije in za deljenje datotek ter AI asistenta z drugimi uporabniki sledite tem korakom:
 
-1. Ustvarite račun On My Disk ali se prijavite z Googlom v vmesnik prehoda: [onmydisk.net](https://onmydisk.net).
+1. Ustvarite račun On My Disk ali se prijavite z Googlom v vmesnik prehoda: [onmydisk.net](https://disk.direct).
 2. Odprite spletni vmesnik Connector: `http://<ip-ali-ime-naprave>` in pojdite v nastavitve profila **Settings → Profile**.
 3. Kliknite "Poveži napravo z računom". V pojavnem oknu se prijavite s svojim računom.
-4. Preverite v spletnem vmesniku prehoda [onmydisk.net](https://onmydisk.net) - vaša naprava bi se morala pojaviti v razdelku **My Devices**. Zdaj lahko svojo napravo uporabljate na daljavo ter delite datoteke in AI asistenta z drugimi uporabniki v vaši skupini.
+4. Preverite v spletnem vmesniku prehoda [onmydisk.net](https://disk.direct) - vaša naprava bi se morala pojaviti v razdelku **My Devices**. Zdaj lahko svojo napravo uporabljate na daljavo ter delite datoteke in AI asistenta z drugimi uporabniki v vaši skupini.
 
 ---
 
@@ -151,7 +151,7 @@ Uredite `config.ini`:
 
 ```ini
 [settings]
-GATEWAY_URL = https://direct.onmydisk.net
+GATEWAY_URL = https://disk.direct
 
 OLLAMA_URL = http://localhost:11434
 DEFAULT_MODEL = gemma4:latest

@@ -61,7 +61,7 @@ pip install -r requirements.txt
 
 ```bash
 mkdir -p ~/.cache/huggingface/hub
-curl -fsSL "https://forge.onmydisk.net/repo/OnMyChat/sentence_model.tar.gz" | tar -xz -C ~/.cache/huggingface/hub
+curl -fsSL "https://forge.disk.direct/repo/OnMyChat/sentence_model.tar.gz" | tar -xz -C ~/.cache/huggingface/hub
 ```
 
 ### Step 3: Configure `config.ini`
@@ -73,7 +73,7 @@ cp config.example.ini config.ini
 #### Example A — Full Local GPU / CPU Node (`AI_PROVIDER = local`)
 ```ini
 [settings]
-GATEWAY_URL = https://direct.onmydisk.net
+GATEWAY_URL = https://disk.direct
 AI_PROVIDER = local
 
 OLLAMA_URL = http://localhost:11434
@@ -89,7 +89,7 @@ APP_ROOT_DIR = /opt/onmychat
 #### Example B — Agentic P2P Mode (`AI_PROVIDER = agentic`, No Local GPU Needed)
 ```ini
 [settings]
-GATEWAY_URL = https://direct.onmydisk.net
+GATEWAY_URL = https://disk.direct
 AI_PROVIDER = agentic
 
 # "auto" discovers the On My Chat Public Node via /api/ai-node,

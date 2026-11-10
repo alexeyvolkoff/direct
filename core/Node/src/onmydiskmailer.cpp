@@ -104,7 +104,7 @@ Email OnMyDiskMailer::createEmail(QString subject, QString body, QString appName
 {
     Q_UNUSED(appName)
     // Create the credentials EmailAddress
-    QString login = m_settings->value("smtplogin", "noreply@onmydisk.net").toString();
+    QString login = m_settings->value("smtplogin", "noreply@disk.direct").toString();
     QString pass = m_settings->value("smtppass", "").toString();
     QString senderName = m_settings->value("smtpsendername", "Alexey Volkov (OnMyDisk)").toString();
 
@@ -177,7 +177,7 @@ void OnMyDiskMailer::sendCallNotification(const CallInfo &callInfo)
         QString server =  TemplateParser::instance().staticVar("SERVER").toString();
         QString serverName =  TemplateParser::instance().staticVar("MEET_APPTITLE").toString();
         QString companyName =  TemplateParser::instance().staticVar("COMPANY").toString();
-        QString serverEMail = m_settings->value("smtplogin", "noreply@onmydisk.net").toString();
+        QString serverEMail = m_settings->value("smtplogin", "noreply@disk.direct").toString();
 
         QString ending = "";
         QDateTime meetDate;
@@ -287,7 +287,7 @@ void OnMyDiskMailer::sendLinkNotification(const QString &sender, const QString &
         QString server =  TemplateParser::instance().staticVar("SERVER").toString();
         QString serverName =  TemplateParser::instance().staticVar("APPTITLE").toString();
         QString companyName =  TemplateParser::instance().staticVar("COMPANY").toString();
-        QString serverEMail = m_settings->value("smtplogin", "noreply@onmydisk.net").toString();
+        QString serverEMail = m_settings->value("smtplogin", "noreply@disk.direct").toString();
 
         QString linkUrl = "https://" + server + link;
         //check if meeting is set
@@ -430,12 +430,12 @@ void OnMyDiskMailer::publicLinkAdded(QString linkID, const VariantHash &linkResp
       return;
   }
   QString userName = userId;
-  QString userEMail = m_settings->value("smtplogin", "noreply@onmydisk.net").toString();
+  QString userEMail = m_settings->value("smtplogin", "noreply@disk.direct").toString();
   Q_UNUSED(userId)
 #else
     Q_UNUSED(linkID)
     QString userName = TemplateParser::instance().staticVar("APPTITLE").toString();
-    QString userEMail = m_settings->value("smtplogin", "noreply@onmydisk.net").toString();
+    QString userEMail = m_settings->value("smtplogin", "noreply@disk.direct").toString();
 #endif
 
   QHash<QString, QVariant> linkData = linkResponseData["linkData"].toHash();

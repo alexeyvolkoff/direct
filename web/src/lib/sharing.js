@@ -1,7 +1,7 @@
 import Gun from "gun/gun";
 import "gun/sea";
 
-const RELAY_URL = "wss://direct.onmydisk.net:8765/gun";
+const RELAY_URL = "wss://disk.direct:8765/gun";
 
 import { sharedLinkUrl, sanitizeShareUrl } from "./public-origin.js";
 
@@ -12,7 +12,7 @@ import { sharedLinkUrl, sanitizeShareUrl } from "./public-origin.js";
 function authBaseUrl() {
   if (typeof window === "undefined" || !window.location.hostname ||
       window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
-    return "https://direct.onmydisk.net:8765";
+    return "https://disk.direct:8765";
   }
   const host = window.location.hostname;
   const proto = (window.location.protocol === "http:") ? "http:" : "https:";
@@ -188,8 +188,8 @@ export async function createShare(options = {}) {
   try {
     const hubHost = (typeof window !== "undefined" && window.location.hostname && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1")
       ? window.location.hostname
-      : "direct.onmydisk.net";
-    const hubProtocol = (typeof window !== "undefined" && window.location.protocol === "http:" && hubHost !== "direct.onmydisk.net") ? "http:" : "https:";
+      : "disk.direct";
+    const hubProtocol = (typeof window !== "undefined" && window.location.protocol === "http:" && hubHost !== "disk.direct") ? "http:" : "https:";
     const hubUrl = `${hubProtocol}//${hubHost}:8765`;
 
     fetch(`${hubUrl}/api/share-record`, {

@@ -29,7 +29,7 @@
   // поэтому по нему одному список получался неполным.
   export let ownLinkIds = [];
   export let activeView = "chat"; // 'chat' | 'creations' | 'memory'
-  // When the chat is the root app (onmychat.com), it has no close button and
+  // When the chat is the root app (aiassistant.direct), it has no close button and
   // exposes a "Files" entry in the sidebar instead.
   export let isMainApp = false;
   export let showFilesEntry = true;

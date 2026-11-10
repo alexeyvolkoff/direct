@@ -9,7 +9,7 @@ Welcome to **On My Disk** — your private personal cloud platform. Unlike tradi
 You can start using **On My Disk** instantly by choosing one of the two access methods.
 
 ### Anonymous Login
-If you are opening [**onmydisk**.net](https://onmydisk.net) for the first time, the system will offer a quick setup:
+If you are opening [**onmydisk**.net](https://disk.direct) for the first time, the system will offer a quick setup:
 1.  **Device Name**: Enter a name for your current browser (e.g., "My Laptop").
 2.  **Agreement**: Accept the Terms of Service (ToS) and GDPR Privacy Policy.
 3.  **Connect a Folder**: You will be prompted to select a local folder for sharing. You can skip this step and add folders later.

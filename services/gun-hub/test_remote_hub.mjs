@@ -37,7 +37,7 @@ if (!Proto.getPeerId) { Proto.getPeerId = function() { const str = this.toString
 if (!Proto.stringTuples) { Proto.stringTuples = function() { return [[4, '127.0.0.1'], [6, '0']] } }
 if (!Proto.getComponents) { Proto.getComponents = function() { return [] } }
 
-const HUB_ADDRESS = '/dns4/staging.onmydisk.net/tcp/4002/wss/p2p/12D3KooWLSpRc8cFn58yePGEV9SfgwqC1FCZjLDyVUkqUQmuNnaB'
+const HUB_ADDRESS = '/dns4/disk.direct/tcp/4002/wss/p2p/12D3KooWLSpRc8cFn58yePGEV9SfgwqC1FCZjLDyVUkqUQmuNnaB'
 const HUB_PEER_ID = '12D3KooWLSpRc8cFn58yePGEV9SfgwqC1FCZjLDyVUkqUQmuNnaB'
 const ADDR_FILE = './test_remote_hub_addr.txt'
 

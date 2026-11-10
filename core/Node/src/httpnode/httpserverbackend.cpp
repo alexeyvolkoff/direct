@@ -64,7 +64,7 @@ HttpServerBackend::HttpServerBackend(QSettings *settings, QObject *parent) : QOb
     TemplateParser::instance().setStaticVar("APPTITLE", m_Settings->value(QStringLiteral("AppTitle"), QStringLiteral("On My Disk")));
     TemplateParser::instance().setStaticVar("CHATS_APPTITLE", m_Settings->value(QStringLiteral("ChatsTitle"), QStringLiteral("On My Chat")));
     TemplateParser::instance().setStaticVar("COMPANYURL", m_Settings->value(QStringLiteral("AppUrl"), QStringLiteral("https://github.com/alexeyvolkoff/onmydisk")));
-    TemplateParser::instance().setStaticVar("TERMSURL", m_Settings->value(QStringLiteral("TermsUrl"), QStringLiteral("https://onmydisk.com/terms.html")));
+    TemplateParser::instance().setStaticVar("TERMSURL", m_Settings->value(QStringLiteral("TermsUrl"), QStringLiteral("https://disk.direct/tos")));
     TemplateParser::instance().setStaticVar("COMPANY", m_Settings->value(QStringLiteral("Company"), QStringLiteral("On My Chat community")));
     TemplateParser::instance().setStaticVar("FILES_SLOGAN", m_Settings->value(QStringLiteral("Slogan"), QStringLiteral("Sharing your files right from your disk")));
     TemplateParser::instance().setStaticVar("SLOGAN", m_Settings->value(QStringLiteral("Slogan"), QStringLiteral("Sharing your files right from your disk")));
@@ -89,12 +89,12 @@ HttpServerBackend::HttpServerBackend(QSettings *settings, QObject *parent) : QOb
     TemplateParser::instance().setCondition("SEARCHSERVERENABLED", true);
     //TemplateParser::instance().setStaticVar("AI_SERVER", QString("http://localhost:8080%1").arg(CHAT_PREFIX));
     //TemplateParser::instance().setStaticVar("CHATSERVER", QString("%1:8080").arg(CHAT_DOMAIN));
-    TemplateParser::instance().setStaticVar("AI_SERVER", QString("https://onmychat.com%1").arg(CHAT_PREFIX));
+    TemplateParser::instance().setStaticVar("AI_SERVER", QString("https://aiassistant.direct%1").arg(CHAT_PREFIX));
     TemplateParser::instance().setStaticVar("CHATSERVER", CHAT_DOMAIN);
     #ifdef P2P_ENABLED
-    TemplateParser::instance().setStaticVar("GUN_HUB_URL", QString("https://direct.onmydisk.net:8765"));
+    TemplateParser::instance().setStaticVar("GUN_HUB_URL", QString("https://disk.direct:8765"));
     #else
-    TemplateParser::instance().setStaticVar("GUN_HUB_URL", QString("https://staging.onmydisk.net:8765"));
+    TemplateParser::instance().setStaticVar("GUN_HUB_URL", QString("https://disk.direct:8765"));
     #endif
     TemplateParser::instance().setCondition("DEV", true);
     TemplateParser::instance().setCondition("PROD", false);
@@ -110,9 +110,9 @@ HttpServerBackend::HttpServerBackend(QSettings *settings, QObject *parent) : QOb
     TemplateParser::instance().setStaticVar("AI_SERVER", QString("https://%1%2").arg(CHAT_DOMAIN, CHAT_PREFIX));
     TemplateParser::instance().setStaticVar("CHATSERVER", m_Settings->value(QStringLiteral("ChatServer"), QString(CHAT_DOMAIN)));
     #ifdef P2P_ENABLED
-    TemplateParser::instance().setStaticVar("GUN_HUB_URL", m_Settings->value(QStringLiteral("GunHubUrl"), QString("https://direct.onmydisk.net:8765")));
+    TemplateParser::instance().setStaticVar("GUN_HUB_URL", m_Settings->value(QStringLiteral("GunHubUrl"), QString("https://disk.direct:8765")));
     #else
-    TemplateParser::instance().setStaticVar("GUN_HUB_URL", m_Settings->value(QStringLiteral("GunHubUrl"), QString("https://staging.onmydisk.net:8765")));
+    TemplateParser::instance().setStaticVar("GUN_HUB_URL", m_Settings->value(QStringLiteral("GunHubUrl"), QString("https://disk.direct:8765")));
     #endif
     TemplateParser::instance().setCondition("PROD", true);
     TemplateParser::instance().setCondition("DEV", false);

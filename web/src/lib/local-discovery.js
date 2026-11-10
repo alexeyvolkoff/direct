@@ -10,12 +10,12 @@ export async function fetchNearbyDevices(gatewayUrl = "") {
     if (!baseUrl) {
       if (typeof window !== "undefined") {
         if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
-          baseUrl = "https://direct.onmydisk.net";
+          baseUrl = "https://disk.direct";
         } else {
           baseUrl = window.location.origin;
         }
       } else {
-        baseUrl = "https://direct.onmydisk.net";
+        baseUrl = "https://disk.direct";
       }
     }
 

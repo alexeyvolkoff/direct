@@ -16,7 +16,7 @@ P2PTunnel::P2PTunnel(Role role, QObject *parent)
     : QObject(parent), m_role(role), m_started(false), m_open(false)
 {
     m_keepaliveTimer.setParent(this);
-    m_stun << QStringLiteral("stun:direct.onmydisk.net:3478")
+    m_stun << QStringLiteral("stun:disk.direct:3478")
            << QStringLiteral("stun:stun.cloudflare.com:3478")
            << QStringLiteral("stun:stun.l.google.com:19302")
            << QStringLiteral("stun:stun1.l.google.com:19302");
@@ -102,9 +102,9 @@ bool P2PTunnel::start()
 
             int colon = fullTurn.lastIndexOf(QLatin1Char(':'));
 #ifdef P2P_ENABLED
-            std::string host = "direct.onmydisk.net";
+            std::string host = "disk.direct";
 #else
-            std::string host = "staging.onmydisk.net";
+            std::string host = "disk.direct";
 #endif
             uint16_t port = 3478;
 

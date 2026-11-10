@@ -13,17 +13,17 @@ For most laptops, desktops, and mini-PCs, run **one command** to install the **O
 
 **🐧 Linux (`Ubuntu / Debian / Armbian`)**
 ```bash
-curl -fsSL https://forge.onmydisk.net/repo/Linux/install-onmydisk.sh | bash -s -- --agentic
+curl -fsSL https://forge.disk.direct/repo/Linux/install-onmydisk.sh | bash -s -- --agentic
 ```
 
 **🪟 Windows 10 / 11 (`PowerShell` — per-user, no Administrator rights needed)**
 ```powershell
-& ([scriptblock]::Create((irm https://forge.onmydisk.net/repo/Windows/install-onmydisk.ps1))) -Agentic
+& ([scriptblock]::Create((irm https://forge.disk.direct/repo/Windows/install-onmydisk.ps1))) -Agentic
 ```
 
 **🍎 macOS (`Terminal`, Apple Silicon — per-user, no `sudo` needed)**
 ```bash
-curl -fsSL https://forge.onmydisk.net/repo/macOS/install-onmydisk.sh | bash -s -- --agentic
+curl -fsSL https://forge.disk.direct/repo/macOS/install-onmydisk.sh | bash -s -- --agentic
 ```
 
 > **Have a GPU? Run Full Local AI**: Replace `--agentic` with **`--gpu`** (Linux / macOS Apple Silicon) or `-Agentic` with **`-Gpu`** (Windows NVIDIA GPU) to install **Ollama** locally and run all LLM inference directly on your own hardware (`AI_PROVIDER = local`). See the [mode details below](#1-supported-node-installation--operating-modes).
@@ -31,12 +31,12 @@ curl -fsSL https://forge.onmydisk.net/repo/macOS/install-onmydisk.sh | bash -s -
 
 > **Storage-Only Node (No AI)** — Need only P2P file sharing and remote SSH access without **On My Chat**? Run the basic installer instead:
 >
-> - **Linux:** `curl -fsSL https://forge.onmydisk.net/repo/Linux/install-onmydisk.sh | bash`
-> - **Windows (`PowerShell`):** `irm https://forge.onmydisk.net/repo/Windows/install-onmydisk.ps1 | iex`
-> - **macOS:** `curl -fsSL https://forge.onmydisk.net/repo/macOS/install-onmydisk.sh | bash`
+> - **Linux:** `curl -fsSL https://forge.disk.direct/repo/Linux/install-onmydisk.sh | bash`
+> - **Windows (`PowerShell`):** `irm https://forge.disk.direct/repo/Windows/install-onmydisk.ps1 | iex`
+> - **macOS:** `curl -fsSL https://forge.disk.direct/repo/macOS/install-onmydisk.sh | bash`
 {: .note }
 
-**After installation:** Sign in at [**direct.onmydisk.net**](https://direct.onmydisk.net) and connect your device from **Settings → Devices** (or open `http://localhost:8081` on Windows/macOS, `http://localhost/` on Linux).
+**After installation:** Sign in at [**disk.direct**](https://disk.direct) and connect your device from **Settings → Devices** (or open `http://localhost:8081` on Windows/macOS, `http://localhost/` on Linux).
 
 ---
 
@@ -44,7 +44,7 @@ curl -fsSL https://forge.onmydisk.net/repo/macOS/install-onmydisk.sh | bash -s -
 
 The **On My Disk 3.0 Node** (packaged as **OnMyDisk Connector** on Linux and **On My Disk Node** on Windows and macOS) is a lightweight, native C++/Qt P2P daemon with statically linked **WebRTC DataChannels** (`libdatachannel`). It turns any Linux server, single-board computer (SBC), NAS, OpenWrt Wi-Fi router, Windows PC, or Mac into an always-on personal cloud storage node, SSH/TCP tunnel endpoint, and **On My Chat** AI host.
 
-> **OMD 3.0 Headless Architecture**: Unlike legacy 2.x builds, the 3.0 P2P node does not bundle a heavy local web interface. Locally it serves only a lightweight **Claim Page** (`:80` on Linux Connector, `:8081` on OpenWrt routers, Windows, and macOS per-user installs) to pair the device with your decentralized DID account (`PairedDIDs`). All file management, AI chats, Creations, device settings, and WebSSH terminal sessions run from the [**On My Disk Web App**](https://direct.onmydisk.net) or mobile app directly over encrypted P2P DataChannels.
+> **OMD 3.0 Headless Architecture**: Unlike legacy 2.x builds, the 3.0 P2P node does not bundle a heavy local web interface. Locally it serves only a lightweight **Claim Page** (`:80` on Linux Connector, `:8081` on OpenWrt routers, Windows, and macOS per-user installs) to pair the device with your decentralized DID account (`PairedDIDs`). All file management, AI chats, Creations, device settings, and WebSSH terminal sessions run from the [**On My Disk Web App**](https://disk.direct) or mobile app directly over encrypted P2P DataChannels.
 {: .important }
 
 ---
@@ -105,19 +105,19 @@ Supported architectures: **`x86_64` (`amd64`)**, **`ARM64` (`aarch64` — Raspbe
 
 ```bash
 # 1) Agentic AI Node (CPU RAG + remote P2P GPU — no local GPU required):
-curl -fsSL https://forge.onmydisk.net/repo/Linux/install-onmydisk.sh | bash -s -- --agentic
+curl -fsSL https://forge.disk.direct/repo/Linux/install-onmydisk.sh | bash -s -- --agentic
 
 # 2) Full Local GPU AI Node (installs Connector + OnMyChat + local Ollama):
-curl -fsSL https://forge.onmydisk.net/repo/Linux/install-onmydisk.sh | bash -s -- --gpu
+curl -fsSL https://forge.disk.direct/repo/Linux/install-onmydisk.sh | bash -s -- --gpu
 
 # 3) Rockchip RK3588 / RK3576 NPU Node (points OnMyChat to RKLLAMA on :8080):
-curl -fsSL https://forge.onmydisk.net/repo/Linux/install-onmydisk.sh | bash -s -- --rkllama
+curl -fsSL https://forge.disk.direct/repo/Linux/install-onmydisk.sh | bash -s -- --rkllama
 
 # 4) Storage-only P2P Node:
-curl -fsSL https://forge.onmydisk.net/repo/Linux/install-onmydisk.sh | bash
+curl -fsSL https://forge.disk.direct/repo/Linux/install-onmydisk.sh | bash
 
 # 5) Uninstall services and packages:
-curl -fsSL https://forge.onmydisk.net/repo/Linux/install-onmydisk.sh | bash -s -- --uninstall
+curl -fsSL https://forge.disk.direct/repo/Linux/install-onmydisk.sh | bash -s -- --uninstall
 ```
 
 ### Manual `.deb` Installation
@@ -128,23 +128,23 @@ Pre-built `.deb` packages work out of the box on **Ubuntu 22.04 LTS** and **Ubun
 
 | Architecture | Direct `.deb` Download |
 |--------------|------------------------|
-| **x86_64 (`amd64`)** | [onmydisk-connector-amd64.deb](https://forge.onmydisk.net/repo/OnMyDisk/Connector/onmydisk-connector-amd64.deb) |
-| **ARM64 (`aarch64`)** | [onmydisk-connector-arm64.deb](https://forge.onmydisk.net/repo/OnMyDisk/Connector/onmydisk-connector-arm64.deb) |
-| **ARMHF (`armv7`)** | [onmydisk-connector-armhf.deb](https://forge.onmydisk.net/repo/Ubuntu/focal/onmydisk-connector-armhf.deb) |
+| **x86_64 (`amd64`)** | [onmydisk-connector-amd64.deb](https://forge.disk.direct/repo/OnMyDisk/Connector/onmydisk-connector-amd64.deb) |
+| **ARM64 (`aarch64`)** | [onmydisk-connector-arm64.deb](https://forge.disk.direct/repo/OnMyDisk/Connector/onmydisk-connector-arm64.deb) |
+| **ARMHF (`armv7`)** | [onmydisk-connector-armhf.deb](https://forge.disk.direct/repo/Ubuntu/focal/onmydisk-connector-armhf.deb) |
 
 ```bash
 sudo apt update
 
 # x86_64 (amd64)
-wget https://forge.onmydisk.net/repo/OnMyDisk/Connector/onmydisk-connector-amd64.deb
+wget https://forge.disk.direct/repo/OnMyDisk/Connector/onmydisk-connector-amd64.deb
 sudo apt install ./onmydisk-connector-amd64.deb
 
 # ARM64 (Raspberry Pi 4/5, Orange Pi 5, Firefly RK3588, etc.)
-# wget https://forge.onmydisk.net/repo/OnMyDisk/Connector/onmydisk-connector-arm64.deb
+# wget https://forge.disk.direct/repo/OnMyDisk/Connector/onmydisk-connector-arm64.deb
 # sudo apt install ./onmydisk-connector-arm64.deb
 
 # ARMHF (32-bit ARMv7)
-# wget https://forge.onmydisk.net/repo/Ubuntu/focal/onmydisk-connector-armhf.deb
+# wget https://forge.disk.direct/repo/Ubuntu/focal/onmydisk-connector-armhf.deb
 # sudo apt install ./onmydisk-connector-armhf.deb
 ```
 
@@ -169,7 +169,7 @@ systemctl status onmydisk
 
 #### Step 3: Claim the Linux Node into Your Account
 
-1. Sign in to [**direct.onmydisk.net**](https://direct.onmydisk.net) in your browser.
+1. Sign in to [**disk.direct**](https://disk.direct) in your browser.
 2. Open the node's local **Claim Page** at `http://<device-lan-ip>/` (or `http://localhost/`, port `80`).
 3. Click **Connect in On My Disk** to authorize your DID keypair (`PairedDIDs`).
 4. Your Linux machine immediately appears in the sidebar and workspace with P2P file access, settings, and WebSSH terminal support.
@@ -180,7 +180,7 @@ See **[Personal AI Node](/ainode/)** for the full manual setup. Make sure `uvico
 * **Local GPU / CPU**: `AI_PROVIDER = local` + `Ollama` (`:11434`) or `RKLLAMA` (`:8080`).
 * **Agentic Mode (no local GPU)**: install CPU-only PyTorch (`pip install torch --index-url https://download.pytorch.org/whl/cpu`), skip Ollama, and set in `/opt/onmychat/config.ini`:
   ```ini
-  GATEWAY_URL = https://direct.onmydisk.net
+  GATEWAY_URL = https://disk.direct
   AI_PROVIDER = agentic
   INFERENCE_NODE = auto
   INFERENCE_BIND_OLLAMA = 21434
@@ -203,10 +203,10 @@ The exact same native C++ P2P Linux node (`DEFINES+=ROUTER`, compiled against `m
 
 | Architecture | Typical Router SoCs / Targets | Package (`.ipk`) |
 |--------------|-------------------------------|------------------|
-| **`mips`** *(big-endian)* | Qualcomm Atheros (`ath79`), Lantiq, Realtek, InnBox (`mips_24kc`) | [onmydisk-latest-mips.ipk](https://forge.onmydisk.net/repo/OpenWrt/onmydisk-latest-mips.ipk) |
-| **`mipsel`** *(little-endian)* | MediaTek `MT7621`, `MT7628` (`ramips` / `mipsel_24kc`) | [onmydisk-latest-mipsel.ipk](https://forge.onmydisk.net/repo/OpenWrt/onmydisk-latest-mipsel.ipk) |
-| **`armv7`** *(32-bit ARM)* | Cortex-A7 / Cortex-A9 (`ipq40xx`, `mvebu`, `bcm53xx`) | [onmydisk-latest-armv7.ipk](https://forge.onmydisk.net/repo/OpenWrt/onmydisk-latest-armv7.ipk) |
-| **`arm64`** *(`aarch64`)* | MediaTek Filogic (`mt7981`/`mt7986`), Qualcomm `ipq807x`, Rockchip, RPi | [onmydisk-latest-arm64.ipk](https://forge.onmydisk.net/repo/OpenWrt/onmydisk-latest-arm64.ipk) |
+| **`mips`** *(big-endian)* | Qualcomm Atheros (`ath79`), Lantiq, Realtek, InnBox (`mips_24kc`) | [onmydisk-latest-mips.ipk](https://forge.disk.direct/repo/OpenWrt/onmydisk-latest-mips.ipk) |
+| **`mipsel`** *(little-endian)* | MediaTek `MT7621`, `MT7628` (`ramips` / `mipsel_24kc`) | [onmydisk-latest-mipsel.ipk](https://forge.disk.direct/repo/OpenWrt/onmydisk-latest-mipsel.ipk) |
+| **`armv7`** *(32-bit ARM)* | Cortex-A7 / Cortex-A9 (`ipq40xx`, `mvebu`, `bcm53xx`) | [onmydisk-latest-armv7.ipk](https://forge.disk.direct/repo/OpenWrt/onmydisk-latest-armv7.ipk) |
+| **`arm64`** *(`aarch64`)* | MediaTek Filogic (`mt7981`/`mt7986`), Qualcomm `ipq807x`, Rockchip, RPi | [onmydisk-latest-arm64.ipk](https://forge.disk.direct/repo/OpenWrt/onmydisk-latest-arm64.ipk) |
 
 > **Ensure Sufficient Storage Space**: Because the `.ipk` bundles a self-contained P2P binary (`/opt/bin/onmydisk`), routers with small internal NOR flash (`16 MB`) should have **OpenWrt `extroot`** (or `/opt` mounted on an external USB flash/SSD drive) before installing. Routers with `128 MB+` NAND/eMMC install directly to internal flash.
 {: .note }
@@ -220,7 +220,7 @@ SSH into your OpenWrt router (`ssh root@192.168.1.1`), check the target architec
 opkg print-architecture
 
 # 2. Download the matching package (replace arm64 with mips, mipsel, or armv7):
-wget -O /tmp/onmydisk.ipk https://forge.onmydisk.net/repo/OpenWrt/onmydisk-latest-arm64.ipk
+wget -O /tmp/onmydisk.ipk https://forge.disk.direct/repo/OpenWrt/onmydisk-latest-arm64.ipk
 
 # 3. Install package and start the service:
 opkg update
@@ -236,7 +236,7 @@ rm -f /tmp/onmydisk.ipk
 To avoid conflicting with OpenWrt's **LuCI** web interface on port `80`, the router configuration (`/etc/onmydisk/onmydisk.conf`) binds its local Claim Page on **port `8081`** and automatically ignores internal flash partitions (`/dev/mmcblk0`, `/dev/zram`):
 
 1. Plug a USB flash drive or external USB SSD/HDD into your router.
-2. While signed in to [**direct.onmydisk.net**](https://direct.onmydisk.net), open **`http://192.168.1.1:8081`** (or your router's LAN IP on `:8081`).
+2. While signed in to [**disk.direct**](https://disk.direct), open **`http://192.168.1.1:8081`** (or your router's LAN IP on `:8081`).
 3. Click **Connect in On My Disk** to pair the router with your DID identity.
 4. Your router's USB storage is now accessible worldwide over encrypted **WebRTC DataChannels**, with in-browser **WebSSH** access to `dropbear` (`:22`) and `omd-tunnel` TCP forwarding (`omd-tunnel --listen 18080 <router-linkID> 80` to reach LuCI remotely without exposing ports to the internet).
 
@@ -265,19 +265,19 @@ Open **Windows PowerShell** as your normal user:
 
 ```powershell
 # 1) Recommended for laptops & PCs without NVIDIA GPU (Agentic AI + local CPU RAG):
-& ([scriptblock]::Create((irm https://forge.onmydisk.net/repo/Windows/install-onmydisk.ps1))) -Agentic
+& ([scriptblock]::Create((irm https://forge.disk.direct/repo/Windows/install-onmydisk.ps1))) -Agentic
 
 # 2) Full Local GPU AI Node (PCs with NVIDIA GPU — installs OnMyChat + CUDA PyTorch + local Ollama):
-& ([scriptblock]::Create((irm https://forge.onmydisk.net/repo/Windows/install-onmydisk.ps1))) -Gpu
+& ([scriptblock]::Create((irm https://forge.disk.direct/repo/Windows/install-onmydisk.ps1))) -Gpu
 
 # 3) Storage-Only P2P Node (fastest, ~30 MB):
-irm https://forge.onmydisk.net/repo/Windows/install-onmydisk.ps1 | iex
+irm https://forge.disk.direct/repo/Windows/install-onmydisk.ps1 | iex
 
 # 4) Pin a specific remote GPU node LinkID in Agentic mode:
-& ([scriptblock]::Create((irm https://forge.onmydisk.net/repo/Windows/install-onmydisk.ps1))) -Agentic -InferenceNode <remote-node-linkID>
+& ([scriptblock]::Create((irm https://forge.disk.direct/repo/Windows/install-onmydisk.ps1))) -Agentic -InferenceNode <remote-node-linkID>
 
 # 5) Cleanly stop services, remove autostart tasks/shortcuts, and uninstall:
-& ([scriptblock]::Create((irm https://forge.onmydisk.net/repo/Windows/install-onmydisk.ps1))) -Uninstall
+& ([scriptblock]::Create((irm https://forge.disk.direct/repo/Windows/install-onmydisk.ps1))) -Uninstall
 ```
 
 > **Windows Firewall Prompt**: On first launch, if Windows Firewall asks to allow `onmydisk.exe`, click **Allow** so the local Claim page (`:8081`) is reachable.
@@ -326,21 +326,21 @@ Open **Terminal** on your Mac:
 
 ```bash
 # 1) Recommended ultrabook / zero-load setup (Agentic AI + local RAG, remote P2P GPU):
-curl -fsSL https://forge.onmydisk.net/repo/macOS/install-onmydisk.sh | bash -s -- --agentic
+curl -fsSL https://forge.disk.direct/repo/macOS/install-onmydisk.sh | bash -s -- --agentic
 
 # 2) Apple Silicon Unified Memory GPU mode (local Metal Ollama + OnMyChat):
-curl -fsSL https://forge.onmydisk.net/repo/macOS/install-onmydisk.sh | bash -s -- --gpu
+curl -fsSL https://forge.disk.direct/repo/macOS/install-onmydisk.sh | bash -s -- --gpu
 
 # 3) Storage-Only P2P Node:
-curl -fsSL https://forge.onmydisk.net/repo/macOS/install-onmydisk.sh | bash
+curl -fsSL https://forge.disk.direct/repo/macOS/install-onmydisk.sh | bash
 
 # 4) Uninstall background agents and files:
-curl -fsSL https://forge.onmydisk.net/repo/macOS/install-onmydisk.sh | bash -s -- --uninstall
+curl -fsSL https://forge.disk.direct/repo/macOS/install-onmydisk.sh | bash -s -- --uninstall
 ```
 
 ### Step 2: Claim Your Mac
 
-1. Sign in at [**direct.onmydisk.net**](https://direct.onmydisk.net) in Safari, Chrome, Brave, or Edge.
+1. Sign in at [**disk.direct**](https://disk.direct) in Safari, Chrome, Brave, or Edge.
 2. Open **`http://localhost:8081`** (or click **Connect** next to your Mac under **Settings → Devices → Detected in Network**).
 3. Verify status or inspect logs anytime:
    ```bash
@@ -349,7 +349,7 @@ curl -fsSL https://forge.onmydisk.net/repo/macOS/install-onmydisk.sh | bash -s -
    tail -n 40 ~/Library/Application\ Support/OnMyChat/onmychat.log
    ```
 
-> **Intel Macs & Zero-Install Browser Mode**: On any Mac (`x86_64` or `arm64`), you can also open [**direct.onmydisk.net**](https://direct.onmydisk.net) directly in the browser (or install it as a Desktop PWA) to share local folders over WebRTC P2P, manage remote nodes, open **WebSSH** terminals, and chat via the **On My Chat Public Node**.
+> **Intel Macs & Zero-Install Browser Mode**: On any Mac (`x86_64` or `arm64`), you can also open [**disk.direct**](https://disk.direct) directly in the browser (or install it as a Desktop PWA) to share local folders over WebRTC P2P, manage remote nodes, open **WebSSH** terminals, and chat via the **On My Chat Public Node**.
 {: .note }
 
 ---
@@ -364,8 +364,8 @@ If an SSH server is running on your node (`openssh-server` on Linux, **Remote Lo
 
 ### CLI TCP Forwarding with `omd-tunnel` (SSH, SFTP, IDE Remote, RDP)
 For native `ssh`, VS Code / Cursor / Antigravity Remote-SSH, `scp`, or Windows Remote Desktop (`RDP`), use the standalone **`omd-tunnel`** binary:
-* **Linux (`amd64`)**: installed automatically by `install-onmydisk.sh` (or standalone `https://forge.onmydisk.net/repo/Ubuntu/focal/omd-tunnel-amd64.deb`)
-* **Windows (`x64`)**: installed automatically at `%LOCALAPPDATA%\OnMyDisk\bin\omd-tunnel.exe` (or standalone `https://forge.onmydisk.net/repo/Windows/omd-tunnel-x64.exe`)
+* **Linux (`amd64`)**: installed automatically by `install-onmydisk.sh` (or standalone `https://forge.disk.direct/repo/Ubuntu/focal/omd-tunnel-amd64.deb`)
+* **Windows (`x64`)**: installed automatically at `%LOCALAPPDATA%\OnMyDisk\bin\omd-tunnel.exe` (or standalone `https://forge.disk.direct/repo/Windows/omd-tunnel-x64.exe`)
 * **macOS (`arm64`)**: installed automatically at `~/.local/bin/omd-tunnel` (`~/Library/Application Support/OnMyDisk/bin/omd-tunnel`)
 
 ```bash

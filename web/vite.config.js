@@ -185,12 +185,12 @@ export default defineConfig({
         secure: false,
       },
       '/api': {
-        target: 'https://direct.onmydisk.net',
+        target: 'https://disk.direct',
         changeOrigin: true,
         secure: false,
       },
       '/rest': {
-        target: 'https://direct.onmydisk.net',
+        target: 'https://disk.direct',
         changeOrigin: true,
         secure: false,
       },

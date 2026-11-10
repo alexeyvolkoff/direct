@@ -187,16 +187,16 @@ OnMyDiskLinkClient::OnMyDiskLinkClient(QSettings *settings, HostResource *root, 
     plainPort = m_omdSettings.port() + 1;
 
 #ifdef P2P_ENABLED
-    m_restApiUrl = QUrl("https://direct.onmydisk.net/pki");
+    m_restApiUrl = QUrl("https://disk.direct/pki");
     m_restApiUrl.setHost(m_omdSettings.server());
     m_restApiUrl.setPort(443);
 #elif defined(STAGING)
-    m_restApiUrl = QUrl("https://staging.onmydisk.net/pki");
+    m_restApiUrl = QUrl("https://disk.direct/pki");
     m_restApiUrl.setHost(m_omdSettings.server());
     m_restApiUrl.setPort(443);
 #else
 #ifndef QT_DEBUG
-    m_restApiUrl = QUrl("https://onmydisk.net/pki");
+    m_restApiUrl = QUrl("https://disk.direct/pki");
     m_restApiUrl.setHost(m_omdSettings.server());
     m_restApiUrl.setPort(443);
 #else

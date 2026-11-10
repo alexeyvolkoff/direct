@@ -9,7 +9,7 @@
 #-------------------------------------------------
 # Single entry point for both client flavours; all shared build logic lives in
 # Node/client.pri:
-#   connector (default) - BUILDROOT STAGING + TAGLIB, staging.onmydisk.net;
+#   connector (default) - BUILDROOT STAGING + TAGLIB, disk.direct;
 #                          web UI, optional P2P (auto-detected libdatachannel)
 #   router/InnBox        - selected from the qmake command line:
 #                          qmake DEFINES+=ROUTER ... (P2P tunnel and claim page

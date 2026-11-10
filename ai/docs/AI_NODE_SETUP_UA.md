@@ -59,9 +59,9 @@ Connector — це **просунутий клієнт** On My Disk, призн�
 
 | Архітектура | Посилання |
 |-------------|-----------|
-| x86_64 (amd64) | `https://forge.onmydisk.net/repo/Ubuntu/focal/onmydisk-connector-amd64.deb` |
-| ARM64 | `https://forge.onmydisk.net/repo/Ubuntu/focal/onmydisk-connector-arm64.deb` |
-| ARMHF (armv7) | `https://forge.onmydisk.net/repo/Ubuntu/focal/onmydisk-connector-armhf.deb` |
+| x86_64 (amd64) | `https://forge.disk.direct/repo/Ubuntu/focal/onmydisk-connector-amd64.deb` |
+| ARM64 | `https://forge.disk.direct/repo/Ubuntu/focal/onmydisk-connector-arm64.deb` |
+| ARMHF (armv7) | `https://forge.disk.direct/repo/Ubuntu/focal/onmydisk-connector-armhf.deb` |
 
 Також можна зібрати з вихідних кодів (див. [Посібник розробника](DEVELOPERS_GUIDE.md)).
 
@@ -114,10 +114,10 @@ Connector слухає **порт 80** за замовчуванням. Відк
 
 Спочатку ваш пристрій працюватиме в анонімному режимі, без прив'язки до облікового запису On My Disk, виключно в локальній мережі. Щоб отримати доступ до вашого пристрою через інтернет, з мобільного додатку, а також поділитися доступом до файлів та AI-асистента з іншими користувачами, виконайте наступні дії:
 
-1. Створіть обліковий запис On My Disk або увійдіть за допомогою Google в інтерфейс шлюзу: [onmydisk.net](https://onmydisk.net).
+1. Створіть обліковий запис On My Disk або увійдіть за допомогою Google в інтерфейс шлюзу: [onmydisk.net](https://disk.direct).
 2. Відкрийте веб-інтерфейс Connector: `http://<ip-або-ім'я-пристрою>` і перейдіть до налаштувань профілю **Settings → Profile**.
 3. Клікніть "Прив'язати пристрій до акаунту". У вікні, що з'явилося, виконайте вхід під своїм обліковим записом.
-4. Перевірте у веб-інтерфейсі шлюзу [onmydisk.net](https://onmydisk.net) - у розділі **My Devices** має з'явитися ваш пристрій. Тепер ви можете користуватися вашим пристроєм віддалено та надати доступ до файлів і AI-асистента іншим користувачам вашої групи.
+4. Перевірте у веб-інтерфейсі шлюзу [onmydisk.net](https://disk.direct) - у розділі **My Devices** має з'явитися ваш пристрій. Тепер ви можете користуватися вашим пристроєм віддалено та надати доступ до файлів і AI-асистента іншим користувачам вашої групи.
 
 ---
 
@@ -151,7 +151,7 @@ cp config.example.ini config.ini
 
 ```ini
 [settings]
-GATEWAY_URL = https://direct.onmydisk.net
+GATEWAY_URL = https://disk.direct
 
 OLLAMA_URL = http://localhost:11434
 DEFAULT_MODEL = gemma4:latest

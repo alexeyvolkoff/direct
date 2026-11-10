@@ -3,7 +3,7 @@ title: "On My Disk Documentation"
 email: your-email@example.com
 description: >- # multi-line value
    Knowledge base
-url: "http://onmydisk.org"
+url: "http://docs.disk.direct"
 baseurl: "" # the subpath of your site
 twitter_username: jekyllrb
 github_username:  jekyll

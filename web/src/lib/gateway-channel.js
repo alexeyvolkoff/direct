@@ -23,7 +23,7 @@ function loadQWebChannelScript() {
     const loc = window.location;
     const rawHost = loc.hostname || "";
     const isLocal = !rawHost || rawHost === "localhost" || rawHost === "127.0.0.1";
-    s.src = isLocal ? "https://direct.onmydisk.net/qwebchannel/qwebchannel.js" : "/qwebchannel/qwebchannel.js";
+    s.src = isLocal ? "https://disk.direct/qwebchannel/qwebchannel.js" : "/qwebchannel/qwebchannel.js";
     s.onload = () => resolve();
     s.onerror = () => reject(new Error("Failed to load " + s.src));
     document.head.appendChild(s);
@@ -35,8 +35,8 @@ function defaultGatewayUrl() {
   const loc = window.location;
   const rawHost = loc.hostname || "";
   const isLocal = !rawHost || rawHost === "localhost" || rawHost === "127.0.0.1";
-  const host = isLocal ? "direct.onmydisk.net" : rawHost;
-  const proto = (isLocal || host === "direct.onmydisk.net" || loc.protocol === "https:") ? "wss:" : "ws:";
+  const host = isLocal ? "disk.direct" : rawHost;
+  const proto = (isLocal || host === "disk.direct" || loc.protocol === "https:") ? "wss:" : "ws:";
   const port = (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_SIGNAL_PORT) || "9989";
   return `${proto}//${host}:${port}`;
 }

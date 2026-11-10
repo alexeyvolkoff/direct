@@ -90,7 +90,7 @@ FUN_PRESENCE_PENALTY = float(SETTINGS.get("FUN_PRESENCE_PENALTY", "0.5"))
 FUN_REPEAT_PENALTY = float(SETTINGS.get("FUN_REPEAT_PENALTY", "1.15"))
 FUN_REPEAT_LAST_N = int(SETTINGS.get("FUN_REPEAT_LAST_N", "128"))
 
-HUB_URL = SETTINGS.get("HUB_URL", "https://direct.onmydisk.net:8765")
+HUB_URL = SETTINGS.get("HUB_URL", "https://disk.direct:8765")
 
 
 def _simple_hash(s: str) -> str:
@@ -889,7 +889,7 @@ async def search_memory_tool(ctx: UserContext, query: str) -> str:
                         "document_id": doc_id,
                         "fullPath":    full_path,
                         "path":        full_path,
-                        "url":         f"https://onmydisk.net{full_path}",
+                        "url":         f"https://disk.direct{full_path}",
                     })
         ctx.temp_sources = sources
 
@@ -2736,7 +2736,7 @@ async def check_and_execute_mcp(ctx: UserContext, message: str, mode: str = "wor
             "title": filename,
             "owner": ctx.user_id,
             "clickable": True,
-            "url": f"https://onmydisk.net{path}",
+            "url": f"https://disk.direct{path}",
             "fullPath": path,
             "path": path,
             "size": 0,
@@ -6441,7 +6441,7 @@ def get_file_icon(filename: str) -> str:
 async def get_source_metadata(ctx: UserContext, owner: str, path: str) -> dict:
     """Запрашивает метаданные источника с учетом прав доступа."""
     import aiohttp
-    gateway_url = SETTINGS.get("GATEWAY_URL", "https://onmydisk.net").rstrip("/")
+    gateway_url = SETTINGS.get("GATEWAY_URL", "https://disk.direct").rstrip("/")
     item_path = path.lstrip("/")
     
     CRAWLER_TOKEN = "mypears-4204"
@@ -6561,7 +6561,7 @@ async def _inject_hub_card_fallback(ctx, doc_filter: str, facts: list, sources_m
                 "document_id": doc_filter,
                 "fullPath":    full_path,
                 "path":        full_path,
-                "url":         f"https://onmydisk.net{full_path}" if not full_path.startswith("http") else full_path,
+                "url":         f"https://disk.direct{full_path}" if not full_path.startswith("http") else full_path,
             }
         logging.info(f"[inject_facts] card from hub ({tag}): {doc_filter} ({len(clean_body)} chars)")
         return True
@@ -6735,7 +6735,7 @@ async def inject_facts(ctx: UserContext, query: str, collection: str = "", mem_i
                             "document_id": full_path,
                             "fullPath":    full_path,
                             "path":        full_path,
-                            "url":         f"https://onmydisk.net{full_path}" if not full_path.startswith("http") else full_path,
+                            "url":         f"https://disk.direct{full_path}" if not full_path.startswith("http") else full_path,
                         }
 
         # 1b. Chunk-level relevance: fetch chunks from hub for top cards (только при поиске по базе)

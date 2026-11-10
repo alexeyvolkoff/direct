@@ -1,5 +1,5 @@
 #Basic indexing test
-POST https://staging.onmydisk.net/sites
+POST https://disk.direct/sites
 Content-Type: application/json
 {
     "action": "list"

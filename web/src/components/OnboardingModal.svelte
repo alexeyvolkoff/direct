@@ -1056,7 +1056,7 @@
                   </div>
                 </div>
                 <a
-                  href="https://onmydisk.org/advanced/"
+                  href="https://docs.disk.direct/advanced/"
                   target="_blank"
                   rel="noopener noreferrer"
                   class="promo-action-btn"
@@ -1254,7 +1254,7 @@
             <label class="terms-accept-box">
               <input type="checkbox" bind:checked={termsAccepted} />
               <span>
-                {$_("onboarding_terms_agree", {}, "Я принимаю")} <a href={Capacitor.isNativePlatform() ? "https://onmychat.com/tos#ai" : "/tos#ai"} target="_blank" rel="noopener noreferrer">{$_("onboarding_terms_tos", {}, "условия ответственного использования ИИ")}</a> {$_("onboarding_terms_privacy", {}, "и политику конфиденциальности On My Disk.")}
+                {$_("onboarding_terms_agree", {}, "Я принимаю")} <a href={Capacitor.isNativePlatform() ? "https://aiassistant.direct/tos#ai" : "/tos#ai"} target="_blank" rel="noopener noreferrer">{$_("onboarding_terms_tos", {}, "условия ответственного использования ИИ")}</a> {$_("onboarding_terms_privacy", {}, "и политику конфиденциальности On My Disk.")}
               </span>
             </label>
 
@@ -1268,7 +1268,7 @@
                 </div>
               </div>
               <a
-                href="https://onmydisk.org/ainode/"
+                href="https://docs.disk.direct/ainode/"
                 target="_blank"
                 rel="noopener noreferrer"
                 class="promo-action-btn"

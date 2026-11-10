@@ -37,16 +37,16 @@
 #else
 #ifdef P2P_ENABLED
 #define DEFAULT_PORT   9010
-#define DEFAULT_CLOUD "direct.onmydisk.net"
+#define DEFAULT_CLOUD "disk.direct"
 #elif defined(STAGING)
 #define DEFAULT_PORT   9000
-#define DEFAULT_CLOUD "staging.onmydisk.net"
+#define DEFAULT_CLOUD "disk.direct"
 #else
 #define DEFAULT_PORT   9000
 #ifdef QT_DEBUG
 #define DEFAULT_CLOUD "localhost"
 #else
-#define DEFAULT_CLOUD "onmydisk.net"
+#define DEFAULT_CLOUD "disk.direct"
 #endif
 #endif
 #define DEFAULT_SECURE true

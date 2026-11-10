@@ -1,7 +1,7 @@
 #-------------------------------------------------
 # Unified client app project for both client flavours, included from
 # Node/embedded.pro (the single client entry point):
-#   connector (default) - BUILDROOT STAGING + TAGLIB (staging.onmydisk.net)
+#   connector (default) - BUILDROOT STAGING + TAGLIB (disk.direct)
 #   router/InnBox        - selected from the qmake command line:
 #                          qmake DEFINES+=ROUTER ...
 #

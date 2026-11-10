@@ -55,7 +55,7 @@
       }
       (function () {
         var h = String((window.location && window.location.hostname) || "").toLowerCase();
-        var fallbackBrand = (h === "onmychat.com" || h.endsWith(".onmychat.com")) ? "On My Chat" : "On My Disk";
+        var fallbackBrand = (h === "aiassistant.direct" || h.endsWith(".aiassistant.direct") || h.indexOf("chat.") === 0 || h.indexOf("ai.") === 0 || h === "onmychat.com" || h.endsWith(".onmychat.com")) ? "AI Assistant Direct" : "Disk Direct";
         if (!document.title || document.title.indexOf("{") !== -1) {
           document.title = fallbackBrand;
         }

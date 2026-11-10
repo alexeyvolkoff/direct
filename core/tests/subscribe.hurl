@@ -1,5 +1,5 @@
 #Basic indexing test
-POST https://staging.onmydisk.net
+POST https://disk.direct
 Authorization: token:{{token}}
 Content-Type: application/json
 {

@@ -16,22 +16,22 @@ import { getChatStore } from "./chat-store.js";
 
 function turnServers() {
   const h = typeof window !== "undefined" ? window.location.hostname : "";
-  const host = (!h || h === "localhost" || h === "127.0.0.1") ? "direct.onmydisk.net" : h;
+  const host = (!h || h === "localhost" || h === "127.0.0.1") ? "disk.direct" : h;
   const servers = [
     { urls: `turn:${host}:3478?transport=udp`, username: "turnuser", credential: "turnpass" },
     { urls: `turn:${host}:3478?transport=tcp`, username: "turnuser", credential: "turnpass" }
   ];
-  if (host !== "direct.onmydisk.net") {
+  if (host !== "disk.direct") {
     servers.push(
-      { urls: "turn:direct.onmydisk.net:3478?transport=udp", username: "turnuser", credential: "turnpass" },
-      { urls: "turn:direct.onmydisk.net:3478?transport=tcp", username: "turnuser", credential: "turnpass" }
+      { urls: "turn:disk.direct:3478?transport=udp", username: "turnuser", credential: "turnpass" },
+      { urls: "turn:disk.direct:3478?transport=tcp", username: "turnuser", credential: "turnpass" }
     );
   }
   return servers;
 }
 
 const ICE_SERVERS = [
-  { urls: "stun:direct.onmydisk.net:3478" },
+  { urls: "stun:disk.direct:3478" },
   { urls: "stun:stun.cloudflare.com:3478" },
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },

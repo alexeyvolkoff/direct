@@ -1,4 +1,4 @@
-export const DEFAULT_PUBLIC_ORIGIN = "https://direct.onmydisk.net";
+export const DEFAULT_PUBLIC_ORIGIN = "https://disk.direct";
 
 export function publicOrigin() {
   if (typeof window === "undefined") return DEFAULT_PUBLIC_ORIGIN;

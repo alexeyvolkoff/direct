@@ -924,7 +924,7 @@ export class LocalDrive {
         || String(obj.server).includes("localhost") || String(obj.server).includes("127.0.0.1");
       if (needsServerFix) {
         const h = typeof window !== "undefined" ? window.location.hostname : "";
-        const host = (!h || h === "localhost" || h === "127.0.0.1") ? "direct.onmydisk.net" : h;
+        const host = (!h || h === "localhost" || h === "127.0.0.1") ? "disk.direct" : h;
         obj.server = host;
         // persist migrated value so next load is correct
         try { localStorage.setItem("omd-local-settings", JSON.stringify(obj)); } catch (_) {}

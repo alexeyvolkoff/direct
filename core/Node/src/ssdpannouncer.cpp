@@ -204,11 +204,11 @@ QString SsdpAnnouncer::deviceDescriptionXml() {
     <deviceType>%1</deviceType>
     <friendlyName>%2 (%3)</friendlyName>
     <manufacturer>%4</manufacturer>
-    <manufacturerURL>https://onmydisk.com</manufacturerURL>
+    <manufacturerURL>https://disk.direct</manufacturerURL>
     <modelName>%5</modelName>
     <modelNumber>%6</modelNumber>
     <modelDescription>%7</modelDescription>
-    <modelURL>https://onmydisk.org/advanced/</modelURL>
+    <modelURL>https://docs.disk.direct/advanced/</modelURL>
     <presentationURL>%8</presentationURL>
     <UDN>%9</UDN>
     <serialNumber>%10</serialNumber>

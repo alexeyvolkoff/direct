@@ -46,7 +46,7 @@ Integration notes
    restPort=443
   
    ;Rest API url
-   restUrl=https://onmydisk.net/pki
+   restUrl=https://disk.direct/pki
 
    ;Web socket port used for dynamic notifications of Web UI. 
    ;Should be 8899 for embedded devices

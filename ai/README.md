@@ -3,8 +3,8 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-On%20My%20Disk-0070BB.svg)](https://github.com/alexeyvolkoff/onmydisk)
 [![Ollama](https://img.shields.io/badge/Ollama-Local%20LLM%20%26%20Vision-black.svg)](https://ollama.com)
-[![Web & PWA](https://img.shields.io/badge/PWA-onmychat.com-7c3aed.svg)](https://onmychat.com/?launch=1)
-[![Docs](https://img.shields.io/badge/Docs-onmydisk.org-0ea5e9.svg)](https://onmydisk.org)
+[![Web & PWA](https://img.shields.io/badge/PWA-aiassistant.direct-7c3aed.svg)](https://aiassistant.direct/?launch=1)
+[![Docs](https://img.shields.io/badge/Docs-docs.disk.direct-0ea5e9.svg)](https://docs.disk.direct)
 [![Discord](https://img.shields.io/badge/Discord-Community-5865F2.svg?logo=discord&logoColor=white)](https://discord.gg/qAQpfmrBPW)
 
 **On My Chat** is the open-source, self-hosted AI node for [**On My Disk**](https://github.com/alexeyvolkoff/onmydisk), powered by **Ollama** (or **RKLLAMA**). It runs on **Linux**, **Windows**, **macOS**, home servers, NAS boxes, and ARM SBCs — giving you private RAG over your local folders, mobile/PWA remote access over peer-to-peer WebRTC without port forwarding, and a built-in Creative Studio with an AI prompt assistant.
@@ -14,7 +14,7 @@
 ## Highlights
 
 - **Private Multilingual RAG & Photo Indexing** — Indexes local documents (`PDF`, `DOCX`, `XLSX`, `PPTX`, `MD`, code) and photos directly from your folders using ChromaDB and CPU-friendly `paraphrase-multilingual-MiniLM-L12-v2` embeddings. Bare photos are automatically captioned and OCR-indexed via Ollama vision models (e.g. `gemma4`) without uploading files to third-party clouds.
-- **Mobile & PWA Remote Access (Zero Port Forwarding)** — Connect to your home Ollama node from any phone or browser at [**onmychat.com**](https://onmychat.com) (or [**direct.onmydisk.net**](https://direct.onmydisk.net)) over encrypted P2P WebRTC DataChannels. No static IP, router setup, or VPN required.
+- **Mobile & PWA Remote Access (Zero Port Forwarding)** — Connect to your home Ollama node from any phone or browser at [**aiassistant.direct**](https://aiassistant.direct) (or [**disk.direct**](https://disk.direct)) over encrypted P2P WebRTC DataChannels. No static IP, router setup, or VPN required.
 - **Passwordless Cryptographic Identity (DID)** — Access control is based on W3C-style Decentralized Identifiers (`DID` keypairs with portable `.json` keyfiles) and P2P device pairing (`LinkID` / QR) — **no static API tokens in `config.ini`**.
 - **Creative Studio & Prompt Assistant** — Includes an Ollama-powered **AI Art Director** that writes and surgically refines visual prompts, plans multi-scene storyboards, manages character Personas, and drives local **ComfyUI** pipelines (SDXL DMD2, IP-Adapter Plus Face + ReActor FaceSwap, Auto-Inpaint retouch, Krea 2, Anima, video generation, and 1-click CivitAI publishing).
 - **Flexible Runtime Modes (`local` · `agentic` · `hybrid` · `horde`)** — Run everything on a single GPU box (`local`), keep lightweight CPU indexing on an always-on NAS/SBC while tunneling Ollama & ComfyUI over P2P to a desktop GPU (`agentic`), tap into the crowdsourced [**AI Horde**](https://aihorde.net) cluster (`horde` / `hybrid`), or run on Rockchip RK3588/RK3576 NPUs via `RKLLAMA`.
@@ -31,8 +31,8 @@
 
 ```text
 ┌───────────────────────────┐         Signaling & DID Handshake         ┌───────────────────────────┐
-│   Browser / Mobile PWA    │ <───────────────────────────────────────> │  direct.onmydisk.net /    │
-│      (onmychat.com)       │                                           │       onmychat.com        │
+│   Browser / Mobile PWA    │ <───────────────────────────────────────> │  disk.direct /    │
+│      (aiassistant.direct)       │                                           │       aiassistant.direct        │
 └─────────────┬─────────────┘                                           └─────────────▲─────────────┘
               │                                                                       │
               │            Direct Encrypted P2P Tunnel (WebRTC DataChannel)           │
@@ -71,11 +71,11 @@
   - **Clients & Edge:** Any modern browser / PWA, native Android & iOS apps, plus storage/tunnel nodes on OpenWrt routers
 - **Python:** 3.10+ *(configured automatically by the one-command installers)*
 - **Ollama:** Installed locally for GPU/Metal/CPU inference (`--gpu` / `-Gpu`), or optional in **Agentic P2P** mode (`--agentic` / `-Agentic`) where inference runs over P2P on a remote GPU
-- **On My Disk 3.0 Node:** Local P2P WebRTC daemon — installed together with **On My Chat** in one step via the [**⚡ TL;DR Quick Install Guide**](https://onmydisk.org/advanced/#-tldr--quick-install-recommended-agentic-ai-setup)
+- **On My Disk 3.0 Node:** Local P2P WebRTC daemon — installed together with **On My Chat** in one step via the [**⚡ TL;DR Quick Install Guide**](https://docs.disk.direct/advanced/#-tldr--quick-install-recommended-agentic-ai-setup)
 
 ### 2. One-Command Cross-Platform Install (Recommended)
 
-Follow the [**⚡ TL;DR — Quick Install**](https://onmydisk.org/advanced/#-tldr--quick-install-recommended-agentic-ai-setup) in the official documentation to deploy both the **On My Disk 3.0 Node** and **On My Chat** in a single command on **Linux**, **Windows (`PowerShell`)**, or **macOS (`Terminal`)** — either in lightweight **Agentic P2P** mode (`--agentic` / `-Agentic`) or full local **Ollama GPU** mode (`--gpu` / `-Gpu`).
+Follow the [**⚡ TL;DR — Quick Install**](https://docs.disk.direct/advanced/#-tldr--quick-install-recommended-agentic-ai-setup) in the official documentation to deploy both the **On My Disk 3.0 Node** and **On My Chat** in a single command on **Linux**, **Windows (`PowerShell`)**, or **macOS (`Terminal`)** — either in lightweight **Agentic P2P** mode (`--agentic` / `-Agentic`) or full local **Ollama GPU** mode (`--gpu` / `-Gpu`).
 
 ### 3. Standalone Linux / Rockchip SBC Installer (`install.sh`)
 
@@ -127,7 +127,7 @@ Key settings in [`config.example.ini`](config.example.ini):
 
 ```ini
 [settings]
-GATEWAY_URL = https://direct.onmydisk.net
+GATEWAY_URL = https://disk.direct
 
 # Inference mode: local | agentic | hybrid
 # AI_PROVIDER = local
@@ -182,20 +182,20 @@ HORDE_WORKER_MODELS = CyberRealistic Pony
 
 ## Pairing & Remote Access
 
-1. Install **On My Disk 3.0 Node** + **On My Chat** via the [**⚡ TL;DR Quick Install**](https://onmydisk.org/advanced/#-tldr--quick-install-recommended-agentic-ai-setup) (Linux, Windows, or macOS).
-2. Open [**onmychat.com**](https://onmychat.com/?launch=1) (chat-first PWA) or [**direct.onmydisk.net**](https://direct.onmydisk.net) (workspace + file manager) and create or load your **DID** identity (save your `.json` keyfile for 1-click sign-in on other devices).
+1. Install **On My Disk 3.0 Node** + **On My Chat** via the [**⚡ TL;DR Quick Install**](https://docs.disk.direct/advanced/#-tldr--quick-install-recommended-agentic-ai-setup) (Linux, Windows, or macOS).
+2. Open [**aiassistant.direct**](https://aiassistant.direct/?launch=1) (chat-first PWA) or [**disk.direct**](https://disk.direct) (workspace + file manager) and create or load your **DID** identity (save your `.json` keyfile for 1-click sign-in on other devices).
 3. Pair your machine using its **LinkID**, QR code, or local Claim page (`http://localhost:8081` on Windows/macOS, `http://localhost/` on Linux). Because you paired the node with your cryptographic DID, `onmychat` automatically recognizes you as the **Node Owner** with full private RAG and Creative Studio access — zero manual token copying required.
 
-Learn more about decentralized identity and keyfiles in the [DID Documentation](https://onmydisk.org/did/).
+Learn more about decentralized identity and keyfiles in the [DID Documentation](https://docs.disk.direct/did/).
 
 ---
 
 ## Documentation
 
-- [⚡ TL;DR — Cross-Platform Quick Install (Linux, Windows, macOS)](https://onmydisk.org/advanced/#-tldr--quick-install-recommended-agentic-ai-setup)
-- [Personal AI Node Guide](https://onmydisk.org/ainode/)
-- [On My Disk & On My Chat Documentation](https://onmydisk.org)
-- [Decentralized Identity (DID) Guide](https://onmydisk.org/did/)
+- [⚡ TL;DR — Cross-Platform Quick Install (Linux, Windows, macOS)](https://docs.disk.direct/advanced/#-tldr--quick-install-recommended-agentic-ai-setup)
+- [Personal AI Node Guide](https://docs.disk.direct/ainode/)
+- [On My Disk & On My Chat Documentation](https://docs.disk.direct)
+- [Decentralized Identity (DID) Guide](https://docs.disk.direct/did/)
 - [Personal AI Node Setup Guide (EN)](docs/AI_NODE_SETUP_EN.md) · [RU](docs/AI_NODE_SETUP_RU.md) · [UA](docs/AI_NODE_SETUP_UA.md) · [SI](docs/AI_NODE_SETUP_SI.md)
 - [Rockchip NPU (RKLLAMA) Setup Guide (EN)](docs/RKLLAMA_SETUP.md) · [RU](docs/RKLLAMA_SETUP_RU.md)
 - [Google Colab Remote GPU Node Notebook](onmydisk_colab_ai_node.ipynb)

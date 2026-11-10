@@ -1,10 +1,10 @@
 import { Capacitor } from "@capacitor/core";
 
 /**
- * Deployment mode of the svar frontend.
+ * Deployment mode of the web frontend.
  *
- * The same backend serves both the chat domain (onmychat.com) and the files
- * domain (direct.onmydisk.net), so the gateway injects the mode into
+ * The same backend serves both the chat domain (aiassistant.direct / chat.disk.direct)
+ * and the files domain (disk.direct), so the gateway injects the mode into
  * index.html per request. Static bundles (Capacitor / OTA / offline) have no
  * gateway and use the build-time value instead.
  */
@@ -114,10 +114,19 @@ function modeFromHostname() {
   const host = String(window.location.hostname || "").toLowerCase();
   if (!host) return null;
 
-  if (host === "onmychat.com" || host.endsWith(".onmychat.com") || host.startsWith("chat.")) {
+  if (
+    host === "aiassistant.direct" ||
+    host.endsWith(".aiassistant.direct") ||
+    host === "onmychat.com" ||
+    host.endsWith(".onmychat.com") ||
+    host.startsWith("chat.") ||
+    host.startsWith("ai.")
+  ) {
     return { mode: APP_MODE_CHAT, source: "hostname" };
   }
   if (
+    host === "disk.direct" ||
+    host.endsWith(".disk.direct") ||
     host === "onmydisk.net" ||
     host.endsWith(".onmydisk.net") ||
     host === "onmydisk.com" ||
@@ -198,9 +207,16 @@ export function canSwitchMainApp() {
 export function isOnMyChatDomain() {
   if (typeof window === "undefined") return false;
   const host = String(window.location?.hostname || "").toLowerCase();
-  return host === "onmychat.com" || host.endsWith(".onmychat.com");
+  return (
+    host === "aiassistant.direct" ||
+    host.endsWith(".aiassistant.direct") ||
+    host.startsWith("chat.") ||
+    host.startsWith("ai.") ||
+    host === "onmychat.com" ||
+    host.endsWith(".onmychat.com")
+  );
 }
 
 export function getDomainBrandTitle() {
-  return isOnMyChatDomain() ? "On My Chat" : "On My Disk";
+  return isOnMyChatDomain() ? "AI Assistant Direct" : "Disk Direct";
 }

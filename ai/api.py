@@ -149,8 +149,8 @@ app.add_middleware(
         "http://localhost:8080",
         "http://localhost",
         "capacitor://localhost",
-        "https://onmydisk.net",
-        "https://direct.onmydisk.net",
+        "https://disk.direct",
+        "https://disk.direct",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -527,7 +527,7 @@ def _err_text(exc: BaseException) -> str:
     return f"{type(exc).__name__}: {detail}" if detail else type(exc).__name__
 
 
-HUB_URL = SETTINGS.get("HUB_URL", "https://direct.onmydisk.net:8765")
+HUB_URL = SETTINGS.get("HUB_URL", "https://disk.direct:8765")
 
 async def fetch_chunks_from_hub(token_hash: str, memory_id: str) -> list:
     """Fetch document chunks from GunDB hub for chunk-level RAG."""

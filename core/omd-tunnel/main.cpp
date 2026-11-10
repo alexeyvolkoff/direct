@@ -234,9 +234,9 @@ int main(int argc, char *argv[])
         server = qgetenv("OMD_TUNNEL_SERVER");
     if (server.isEmpty()) {
 #ifdef P2P_ENABLED
-        server = QStringLiteral("direct.onmydisk.net");
+        server = QStringLiteral("disk.direct");
 #else
-        server = QStringLiteral("onmydisk.net");
+        server = QStringLiteral("disk.direct");
 #endif
     }
     if (parser.isSet("server"))

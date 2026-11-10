@@ -29,8 +29,8 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 VAPID_KEYS_PATH = os.path.join(BASE_DIR, "vapid_keys.json")
 SUBSCRIPTIONS_PATH = os.path.join(BASE_DIR, "push_subscriptions.json")
 
-DEFAULT_NATIVE_RELAY_URL = os.environ.get("OMD_PUSH_RELAY_URL", "https://direct.onmydisk.net:8765/api/push/native")
-DEFAULT_PUBLIC_ORIGIN = os.environ.get("OMD_PUBLIC_ORIGIN", "https://direct.onmydisk.net").rstrip("/")
+DEFAULT_NATIVE_RELAY_URL = os.environ.get("OMD_PUSH_RELAY_URL", "https://disk.direct:8765/api/push/native")
+DEFAULT_PUBLIC_ORIGIN = os.environ.get("OMD_PUBLIC_ORIGIN", "https://disk.direct").rstrip("/")
 
 _lock = threading.Lock()
 _vapid_cache: Optional[dict[str, str]] = None
@@ -58,7 +58,7 @@ def get_local_node_identity() -> tuple[str, str]:
             candidate_dirs.append((norm, from_running_proc))
 
     # 1. Inspect running `onmydisk` executables so dev/custom installs (e.g. Node/target/usr/bin/onmydisk)
-    #    connected to direct.onmydisk.net take priority over legacy /etc/onmydisk configs.
+    #    connected to disk.direct take priority over legacy /etc/onmydisk configs.
     for proc_exe in glob.glob("/proc/[0-9]*/exe"):
         try:
             exe = os.readlink(proc_exe)
@@ -173,7 +173,7 @@ def ensure_vapid_keys() -> dict[str, str]:
         keys_obj = {
             "public_key": _b64url_encode(raw_pub),
             "private_key": _b64url_encode(raw_priv),
-            "subject": "mailto:admin@onmydisk.net",
+            "subject": "mailto:admin@disk.direct",
             "created_at": int(time.time()),
         }
         tmp_path = VAPID_KEYS_PATH + ".tmp"
@@ -382,7 +382,7 @@ def _send_single_webpush_sync(sub_entry: dict[str, Any], payload_str: str, vapid
     parsed = urlparse(endpoint)
     aud = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else ""
     claims = {
-        "sub": vapid_keys.get("subject", "mailto:admin@onmydisk.net"),
+        "sub": vapid_keys.get("subject", "mailto:admin@disk.direct"),
     }
     if aud:
         claims["aud"] = aud

@@ -39,7 +39,7 @@ Native Android and iOS applications for On My Disk using [Capacitor](https://cap
 
 ## Over-The-Air (OTA) Live Updates
 
-The mobile app includes `@capgo/capacitor-updater` with self-hosted updates from `https://forge.onmydisk.net/repo/Android/`:
+The mobile app includes `@capgo/capacitor-updater` with self-hosted updates from `https://forge.disk.direct/repo/Android/`:
 - `omd-frontend.zip` (compressed static web bundle)
 - `version.json` (`{"version":"1.0.<BUILD_NUMBER>"}`)
 - Synchronous `notifyAppReady()` on startup prevents rollbacks.

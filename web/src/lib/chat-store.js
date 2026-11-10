@@ -1,10 +1,10 @@
 import Gun from "gun/gun";
 import { simpleHash, createChatCrypto } from "./omd-key.js";
 
-const RELAY_URL = "wss://direct.onmydisk.net:8765/gun";
+const RELAY_URL = "wss://disk.direct:8765/gun";
 const PEERS = [
-  "wss://direct.onmydisk.net:8765/gun",
-  "wss://staging.onmydisk.net:8765/gun"
+  "wss://disk.direct:8765/gun",
+  "wss://disk.direct:8765/gun"
 ];
 const GUN_GET_TIMEOUT = 2500;
 

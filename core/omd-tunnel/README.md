@@ -89,7 +89,7 @@ Everything is optional — defaults work out of the box.
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--server` | `onmydisk.net` (config / `OMD_TUNNEL_SERVER`) | gateway host |
+| `--server` | `disk.direct` (config / `OMD_TUNNEL_SERVER`) | gateway host |
 | `--port` | `9000` (config / `OMD_TUNNEL_PORT`) | gateway TLS port |
 | `--user` | `omd-tunnel` (config) | certificate CN / user name |
 | `--dir` | `~/.config/omd-tunnel` | identity storage |

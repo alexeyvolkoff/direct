@@ -27,7 +27,7 @@ Everything else — remote configuration, password obfuscation, and process supe
 
 ## Step 2: Add an External Disk in Device Settings
 
-1. Open the [**On My Disk Web App**](https://direct.onmydisk.net), select your Linux node in the sidebar or workspace, and open **Device Settings → External Storage / Backup**.
+1. Open the [**On My Disk Web App**](https://disk.direct), select your Linux node in the sidebar or workspace, and open **Device Settings → External Storage / Backup**.
 2. Click **+ Add external disk** and fill in the fields:
 
 | Field | Description |

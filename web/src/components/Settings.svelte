@@ -2152,7 +2152,7 @@
                 </div>
                 <div class="row-value-badge">
                   <a
-                    href={$otaState.isNative ? "https://onmychat.com/about" : "/about"}
+                    href={$otaState.isNative ? "https://aiassistant.direct/about" : "/about"}
                     target="_blank"
                     rel="noopener noreferrer"
                     class="btn-secondary-action btn-sm"
@@ -2192,7 +2192,7 @@
                 </div>
                 <div class="row-value-badge">
                   <a
-                    href={$otaState.isNative ? "https://onmychat.com/tos" : "/tos"}
+                    href={$otaState.isNative ? "https://aiassistant.direct/tos" : "/tos"}
                     target="_blank"
                     rel="noopener noreferrer"
                     class="btn-secondary-action btn-sm"
@@ -2938,7 +2938,7 @@
                   <span class="row-sub">{$_("relay_ws_sub", {}, "Encrypted decentralized graph synchronization")}</span>
                 </div>
                 <div class="code-box-inline">
-                  <code>wss://direct.onmydisk.net:8765/gun</code>
+                  <code>wss://disk.direct:8765/gun</code>
                   <span class="badge-pill success">{$_("connected", {}, "Connected")}</span>
                 </div>
               </div>
@@ -2949,7 +2949,7 @@
                   <span class="row-sub">{$_("rest_gateway_sub", {}, "Issue SEA certificates and manage account links")}</span>
                 </div>
                 <div class="code-box-inline">
-                  <code>https://direct.onmydisk.net:8765</code>
+                  <code>https://disk.direct:8765</code>
                   <span class="badge-pill success">{$_("active", {}, "Active")}</span>
                 </div>
               </div>

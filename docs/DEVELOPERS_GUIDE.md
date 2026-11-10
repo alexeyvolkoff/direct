@@ -141,7 +141,7 @@ On My Chat is the AI assistant backend that integrates with Ollama and On My Dis
 
 1.  **Clone the repository**:
     ```bash
-    git clone git@forge.onmydisk.net:onmydisk/onmychat.git ../onmychat
+    git clone git@forge.disk.direct:onmydisk/onmychat.git ../onmychat
     ```
 2.  **Setup Virtual Environment**:
     ```bash

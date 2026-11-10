@@ -9,7 +9,7 @@ Dobrodošli v **On My Disk** — vaši zasebni osebni platformi v oblaku. Za raz
 **On My Disk** lahko začnete uporabljati takoj, tako da izberete enega od dveh načinov dostopa.
 
 ### Anonimna prijava
-Če prvič odprete [**onmydisk**.net](https://onmydisk.net), vam bo sistem ponudil hitro nastavitev:
+Če prvič odprete [**onmydisk**.net](https://disk.direct), vam bo sistem ponudil hitro nastavitev:
 1.  **Ime naprave**: Vnesite ime za vaš trenutni brskalnik (npr. "Moj prenosnik").
 2.  **Pogoji**: Sprejmite pogoje uporabe (ToS) in politiko zasebnosti GDPR.
 3.  **Povezava mape**: Pozvani boste k izbiri lokalne mape za skupno rabo. Ta korak lahko preskočite in mape dodate pozneje.

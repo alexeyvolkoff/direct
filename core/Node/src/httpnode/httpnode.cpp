@@ -145,9 +145,9 @@ OnMyDiskHttpNode::OnMyDiskHttpNode(QString configFile, QObject *parent) : OnMyDi
     TemplateParser::instance().setStaticVar("SYSTEMURL", QString("https://storage.innbox.app"));
     #else
     #ifdef P2P_ENABLED
-    TemplateParser::instance().setStaticVar("SYSTEMURL", QString("https://direct.onmydisk.net"));
+    TemplateParser::instance().setStaticVar("SYSTEMURL", QString("https://disk.direct"));
     #elif defined(STAGING)
-    TemplateParser::instance().setStaticVar("SYSTEMURL", QString("https://staging.onmydisk.net"));
+    TemplateParser::instance().setStaticVar("SYSTEMURL", QString("https://disk.direct"));
     #else
     #ifdef QT_DEBUG
     TemplateParser::instance().setStaticVar("SYSTEMURL", QString("http://localhost:8080"));
@@ -158,9 +158,9 @@ OnMyDiskHttpNode::OnMyDiskHttpNode(QString configFile, QObject *parent) : OnMyDi
     #endif
     TemplateParser::instance().setStaticVar("MEETSERVER", QString("jitsi.bineon.team"));
     #ifdef P2P_ENABLED
-    TemplateParser::instance().setStaticVar("GUN_HUB_URL", m_systemSettings.value(QStringLiteral("GunHubUrl"), QString("https://direct.onmydisk.net:8765")));
+    TemplateParser::instance().setStaticVar("GUN_HUB_URL", m_systemSettings.value(QStringLiteral("GunHubUrl"), QString("https://disk.direct:8765")));
     #else
-    TemplateParser::instance().setStaticVar("GUN_HUB_URL", m_systemSettings.value(QStringLiteral("GunHubUrl"), QString("https://staging.onmydisk.net:8765")));
+    TemplateParser::instance().setStaticVar("GUN_HUB_URL", m_systemSettings.value(QStringLiteral("GunHubUrl"), QString("https://disk.direct:8765")));
     #endif
 
     TemplateParser::instance().setStaticVar("SEARCHSERVERENABLED", m_searchEnabled);
@@ -655,7 +655,7 @@ void OnMyDiskHttpNode::sendClaimPage(QHttpRequest *req, QHttpResponse *resp)
     // Use configured server, fallback to onmydisk.net
     QString server = m_omdSettings.server();
     if (server.isEmpty())
-        server = m_systemSettings.value(QStringLiteral("Settings/server"), QStringLiteral("onmydisk.net")).toString();
+        server = m_systemSettings.value(QStringLiteral("Settings/server"), QStringLiteral("disk.direct")).toString();
 
     QString claimUrl = QString("https://%1/?claimLink=%2&name=%3")
                            .arg(server,

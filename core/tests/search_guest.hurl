@@ -1,5 +1,5 @@
 #Simple search test in quest mode
-GET https://staging.onmydisk.net/search?q=Dune
+GET https://disk.direct/search?q=Dune
 HTTP 200
 Content-Type: application/json
 [Asserts]

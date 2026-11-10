@@ -3,8 +3,8 @@ import { Capacitor, registerPlugin } from "@capacitor/core";
 export const GOOGLE_WEB_CLIENT_ID =
   "959849209352-vbi0vfimrqj904598felj8ieeb6to8s2.apps.googleusercontent.com";
 
-const HUB_AUTH_URL = "https://direct.onmydisk.net:8765";
-const MOBILE_BRIDGE_BASE_URL = "https://direct.onmydisk.net";
+const HUB_AUTH_URL = "https://disk.direct:8765";
+const MOBILE_BRIDGE_BASE_URL = "https://disk.direct";
 
 const NativeGoogleAuth = registerPlugin("NativeGoogleAuth");
 
@@ -63,7 +63,7 @@ function openExternalAuthUrl(url, _isSyncGesture = true) {
 }
 
 /**
- * Opens https://direct.onmydisk.net/?mobile_google_auth=<session> in the
+ * Opens https://disk.direct/?mobile_google_auth=<session> in the
  * system browser (Safari on iOS / Chrome on Android) and polls gun-hub for the
  * verified single-use Google ID token.
  *
@@ -184,7 +184,7 @@ export function signInWithAppleMobile() {
 /**
  * Signs in with Google on native Capacitor mobile platforms:
  * 1. Uses native Android CredentialManager (NativeGoogleAuth plugin) when compiled into the binary.
- * 2. Falls back seamlessly to the system-browser bridge on https://direct.onmydisk.net
+ * 2. Falls back seamlessly to the system-browser bridge on https://disk.direct
  *    when NativeGoogleAuth is absent (e.g. untouched iOS 3.0 release) or Play Services config fails.
  */
 export async function signInWithGoogleMobile() {
@@ -217,7 +217,7 @@ export async function signInWithGoogleMobile() {
 
 /**
  * Lightweight standalone Google / Apple OAuth bridge rendered when the system browser
- * opens https://direct.onmydisk.net/?mobile_google_auth=<session> or ?mobile_apple_auth=<session>.
+ * opens https://disk.direct/?mobile_google_auth=<session> or ?mobile_apple_auth=<session>.
  */
 export function mountMobileGoogleBridgeIfRequested(targetEl) {
   if (typeof window === "undefined" || isNativeMobilePlatform()) return false;

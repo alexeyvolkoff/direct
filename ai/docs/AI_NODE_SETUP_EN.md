@@ -59,9 +59,9 @@ Pre-built `.deb` packages are available for **amd64** and **arm64**:
 
 | Architecture | Download URL |
 |-------------|--------------|
-| x86_64 (amd64) | `https://forge.onmydisk.net/repo/Ubuntu/focal/onmydisk-connector-amd64.deb` |
-| ARM64 | `https://forge.onmydisk.net/repo/Ubuntu/focal/onmydisk-connector-arm64.deb` |
-| ARMHF (armv7) | `https://forge.onmydisk.net/repo/Ubuntu/focal/onmydisk-connector-armhf.deb` |
+| x86_64 (amd64) | `https://forge.disk.direct/repo/Ubuntu/focal/onmydisk-connector-amd64.deb` |
+| ARM64 | `https://forge.disk.direct/repo/Ubuntu/focal/onmydisk-connector-arm64.deb` |
+| ARMHF (armv7) | `https://forge.disk.direct/repo/Ubuntu/focal/onmydisk-connector-armhf.deb` |
 
 You can also build from source (see [Developer's Guide](DEVELOPERS_GUIDE.md)).
 
@@ -114,10 +114,10 @@ The Connector listens on **port 80** by default. Open `http://<your-device-ip-or
 
 Initially, your device will run in anonymous mode, not linked to any **On My Disk** account, accessible only within your local network. To access your device over the Internet, from the mobile app, and share files and the AI assistant with other users, follow these steps:
 
-1. Create an **On My Disk** account or sign in using Google at the gateway interface: [**onmydisk**.net](https://onmydisk.net).
+1. Create an **On My Disk** account or sign in using Google at the gateway interface: [**onmydisk**.net](https://disk.direct).
 2. Open the Connector Web UI: `http://<ip-or-device-name>` and navigate to profile settings (**Settings → Profile**).
 3. Click "Link device to account". In the pop-up window, log in with your account.
-4. Verify in the gateway web interface [**onmydisk**.net](https://onmydisk.net) - your device should appear in the **My Devices** section. Now you can use your device remotely and share files and the AI assistant with other users in your group.
+4. Verify in the gateway web interface [**onmydisk**.net](https://disk.direct) - your device should appear in the **My Devices** section. Now you can use your device remotely and share files and the AI assistant with other users in your group.
 
 ---
 
@@ -151,7 +151,7 @@ Edit `config.ini`:
 
 ```ini
 [settings]
-GATEWAY_URL = https://direct.onmydisk.net
+GATEWAY_URL = https://disk.direct
 
 OLLAMA_URL = http://localhost:11434
 DEFAULT_MODEL = gemma4:latest

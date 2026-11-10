@@ -260,12 +260,12 @@ function readSessionCookie() {
  * editable later via the anonymous profile (storeOmdKey).
  */
 export function getGatewayBase() {
-  if (typeof window === "undefined") return "https://direct.onmydisk.net";
+  if (typeof window === "undefined") return "https://disk.direct";
   const loc = window.location;
   const rawHost = loc.hostname || "";
   const isLocal = !rawHost || rawHost === "localhost" || rawHost === "127.0.0.1";
-  const host = isLocal ? "direct.onmydisk.net" : rawHost;
-  const proto = (isLocal || host === "direct.onmydisk.net" || loc.protocol === "https:") ? "https:" : "http:";
+  const host = isLocal ? "disk.direct" : rawHost;
+  const proto = (isLocal || host === "disk.direct" || loc.protocol === "https:") ? "https:" : "http:";
   return `${proto}//${host}`;
 }
 

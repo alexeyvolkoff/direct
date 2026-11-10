@@ -592,7 +592,7 @@ static QJsonObject fetchProfileFromGateway(const QString& omdToken, QSettings* s
 #ifdef INNBOX
     QString apiUrl = QString("https://%1/").arg(settings->value(QStringLiteral("Network/server"), QString("storage.innbox.app")).toString());
 #else
-    QString apiUrl = QString("https://%1/").arg(settings->value(QStringLiteral("Network/server"), QString("onmydisk.net")).toString());
+    QString apiUrl = QString("https://%1/").arg(settings->value(QStringLiteral("Network/server"), QString("disk.direct")).toString());
 #endif
 #endif
 
@@ -3572,7 +3572,7 @@ void HttpHandler::bridgeGetProfileData(QJsonObject request)
          #ifdef INNBOX
          QString apiUrl = QString("https://%1/").arg(m_Settings->value(QStringLiteral("Network/server"), QString("storage.innbox.app")).toString());
          #else
-         QString apiUrl = QString("https://%1/").arg(m_Settings->value(QStringLiteral("Network/server"), QString("onmydisk.net")).toString());
+         QString apiUrl = QString("https://%1/").arg(m_Settings->value(QStringLiteral("Network/server"), QString("disk.direct")).toString());
          #endif
          #endif
          QNetworkRequest apiRequest(apiUrl);
@@ -3655,7 +3655,7 @@ void HttpHandler::bridgeGetProfileData(QJsonObject request)
         #ifdef INNBOX
         QString apiUrl = QString("https://%1/").arg(m_Settings->value(QStringLiteral("Network/server"), QString("storage.innbox.app")).toString();
         #else
-        QString apiUrl = QString("https://%1/").arg(m_Settings->value(QStringLiteral("Network/server"), QString("onmydisk.net")).toString());
+        QString apiUrl = QString("https://%1/").arg(m_Settings->value(QStringLiteral("Network/server"), QString("disk.direct")).toString());
         #endif
         #endif
         QNetworkRequest apiRequest(apiUrl);
@@ -3723,7 +3723,7 @@ void HttpHandler::bridgeGetPublicProfile(QJsonObject request)
         #ifdef INNBOX
         QString apiUrl = QString("https://%1/").arg(m_Settings->value(QStringLiteral("Network/server"), QString("storage.innbox.app")).toString());
         #else
-        QString apiUrl = QString("https://%1/").arg(m_Settings->value(QStringLiteral("Network/server"), QString("onmydisk.net")).toString());
+        QString apiUrl = QString("https://%1/").arg(m_Settings->value(QStringLiteral("Network/server"), QString("disk.direct")).toString());
         #endif
         #endif
         QNetworkRequest apiRequest(apiUrl);
@@ -3821,7 +3821,7 @@ bool HttpHandler::callUpstream(const QJsonObject &request, QJsonObject &response
     });
 
 #ifdef SERVER
-    QString apiUrl = QString("https://%1/signin").arg(m_Settings->value(QStringLiteral("Network/legacyServer"), QString("onmydisk.net")).toString());
+    QString apiUrl = QString("https://%1/signin").arg(m_Settings->value(QStringLiteral("Network/legacyServer"), QString("disk.direct")).toString());
 #else
     #ifdef QT_DEBUG
     QString apiUrl = QString("http://localhost:8080/signin");
@@ -3829,7 +3829,7 @@ bool HttpHandler::callUpstream(const QJsonObject &request, QJsonObject &response
     #ifdef INNBOX
     QString apiUrl = QString("https://%1/signin").arg(m_Settings->value(QStringLiteral("Network/server"), QString("storage.innbox.app")).toString());
     #else
-    QString apiUrl = QString("https://%1/signin").arg(m_Settings->value(QStringLiteral("Network/server"), QString("onmydisk.net")).toString());
+    QString apiUrl = QString("https://%1/signin").arg(m_Settings->value(QStringLiteral("Network/server"), QString("disk.direct")).toString());
     #endif
     #endif
 #endif
@@ -3957,10 +3957,10 @@ void HttpHandler::bridgeSignIn(QJsonObject request)
             //Sign in to OMD via API
             #ifdef SERVER
             //legacy gateway keeps the user database during migration
-            QString signinAPI = QString("https://%1/signin").arg(m_Settings->value(QStringLiteral("Network/legacyServer"), QString("onmydisk.net")).toString());
+            QString signinAPI = QString("https://%1/signin").arg(m_Settings->value(QStringLiteral("Network/legacyServer"), QString("disk.direct")).toString());
             #else
             #ifdef STAGING
-            QString signinAPI = QString("https://%1/signin").arg(m_Settings->value(QStringLiteral("Network/server"), QString("staging.onmydisk.net")).toString());
+            QString signinAPI = QString("https://%1/signin").arg(m_Settings->value(QStringLiteral("Network/server"), QString("disk.direct")).toString());
             #else
             #ifdef QT_DEBUG
             QString signinAPI = QString("http://localhost:8080/signin");
@@ -3968,7 +3968,7 @@ void HttpHandler::bridgeSignIn(QJsonObject request)
             #ifdef INNBOX
             QString signinAPI = QString("https://%1/signin").arg(m_Settings->value(QStringLiteral("Network/server"), QString("storage.innbox.app")).toString());
             #else
-            QString signinAPI = QString("https://%1/signin").arg(m_Settings->value(QStringLiteral("Network/server"), QString("onmydisk.net")).toString());
+            QString signinAPI = QString("https://%1/signin").arg(m_Settings->value(QStringLiteral("Network/server"), QString("disk.direct")).toString());
             #endif
             #endif
             #endif
@@ -4138,7 +4138,7 @@ void HttpHandler::bridgeUpdateProfileData(QJsonObject request)
         #ifdef INNBOX
         QString apiUrl = QString("https://%1/").arg(m_Settings->value(QStringLiteral("Network/server"), QString("storage.innbox.app")).toString();
         #else
-        QString apiUrl = QString("https://%1/").arg(m_Settings->value(QStringLiteral("Network/server"), QString("onmydisk.net")).toString());
+        QString apiUrl = QString("https://%1/").arg(m_Settings->value(QStringLiteral("Network/server"), QString("disk.direct")).toString());
         #endif
         #endif
         QNetworkRequest apiRequest(apiUrl);
@@ -5644,7 +5644,7 @@ void HttpHandler::handleGet(bool asHead)
              }
         }
 
-        // Smart Root `/` on Chat hosts (e.g. onmychat.com):
+        // Smart Root `/` on Chat hosts (e.g. aiassistant.direct):
         // - `?launch=1` records `omd_entered=1` cookie and serves the web app (`index.html`).
         // - First-time visitors and bots on bare `/` (no `omd_entered=1` cookie, no query params)
         //   receive `about.html` directly for instant landing/SEO without loading the SPA bundle.
@@ -5716,7 +5716,7 @@ void HttpHandler::handleGet(bool asHead)
                                          ? QString::fromUtf8(m_req->headers()["x-forwarded-proto"])
                                          : QStringLiteral("https");
                         QString host = QString::fromUtf8(m_req->headers()["host"]);
-                        if (host.isEmpty()) host = QStringLiteral("staging.onmydisk.net");
+                        if (host.isEmpty()) host = QStringLiteral("disk.direct");
                         QString serverUrl = scheme + "://" + host;
 
                         QString title;
@@ -5729,7 +5729,7 @@ void HttpHandler::handleGet(bool asHead)
                         {
                             QString gunHubUrl = TemplateParser::instance().staticVar("GUN_HUB_URL").toString();
                             if (gunHubUrl.isEmpty())
-                                gunHubUrl = QStringLiteral("https://staging.onmydisk.net:8765");
+                                gunHubUrl = QStringLiteral("https://disk.direct:8765");
 
                             QNetworkRequest metaReq(QUrl(gunHubUrl + "/api/share-meta?address=" + QUrl::toPercentEncoding(address)));
                             metaReq.setRawHeader("User-Agent", "OMD-Gateway/2.0");
@@ -5842,7 +5842,7 @@ void HttpHandler::handleGet(bool asHead)
         {
             QString gunHubUrl = m_Settings->value(QStringLiteral("GunHubUrl")).toString();
             if (gunHubUrl.isEmpty())
-                gunHubUrl = QStringLiteral("https://direct.onmydisk.net:8765");
+                gunHubUrl = QStringLiteral("https://disk.direct:8765");
 
             QNetworkRequest coverReq(QUrl(gunHubUrl + "/api/share-cover?address=" + QUrl::toPercentEncoding(address)));
             coverReq.setRawHeader("User-Agent", "OMD-Gateway/2.0");

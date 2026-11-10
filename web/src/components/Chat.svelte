@@ -4139,7 +4139,7 @@ function lastFreshTitle(messages) {
     }
     if (raw.startsWith("/chat/")) return raw;
 
-    // Если полный http(s) URL (напр. https://onmydisk.net/beelink/...), извлекаем pathname
+    // Если полный http(s) URL (напр. https://disk.direct/beelink/...), извлекаем pathname
     if (raw.startsWith("http://") || raw.startsWith("https://")) {
       try {
         const u = new URL(raw);

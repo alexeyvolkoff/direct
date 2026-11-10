@@ -17,10 +17,10 @@ The OpenWrt node (`DEFINES+=ROUTER`) is built from the exact same native C++ P2P
 
 | Architecture | Typical Router SoCs & Targets | Package Download |
 |--------------|-------------------------------|------------------|
-| **`mips`** *(big-endian)* | Qualcomm Atheros (`ath79`), Lantiq, Realtek, InnBox (`mips_24kc`) | [onmydisk-latest-mips.ipk](https://forge.onmydisk.net/repo/OpenWrt/onmydisk-latest-mips.ipk) |
-| **`mipsel`** *(little-endian)* | MediaTek `MT7621`, `MT7628` (`ramips` / `mipsel_24kc`) | [onmydisk-latest-mipsel.ipk](https://forge.onmydisk.net/repo/OpenWrt/onmydisk-latest-mipsel.ipk) |
-| **`armv7`** *(32-bit ARM)* | Cortex-A7 / Cortex-A9 (`ipq40xx`, `mvebu`, `bcm53xx`) | [onmydisk-latest-armv7.ipk](https://forge.onmydisk.net/repo/OpenWrt/onmydisk-latest-armv7.ipk) |
-| **`arm64`** *(`aarch64`)* | MediaTek Filogic (`mt7981`/`mt7986`), Qualcomm `ipq807x`, Rockchip, RPi | [onmydisk-latest-arm64.ipk](https://forge.onmydisk.net/repo/OpenWrt/onmydisk-latest-arm64.ipk) |
+| **`mips`** *(big-endian)* | Qualcomm Atheros (`ath79`), Lantiq, Realtek, InnBox (`mips_24kc`) | [onmydisk-latest-mips.ipk](https://forge.disk.direct/repo/OpenWrt/onmydisk-latest-mips.ipk) |
+| **`mipsel`** *(little-endian)* | MediaTek `MT7621`, `MT7628` (`ramips` / `mipsel_24kc`) | [onmydisk-latest-mipsel.ipk](https://forge.disk.direct/repo/OpenWrt/onmydisk-latest-mipsel.ipk) |
+| **`armv7`** *(32-bit ARM)* | Cortex-A7 / Cortex-A9 (`ipq40xx`, `mvebu`, `bcm53xx`) | [onmydisk-latest-armv7.ipk](https://forge.disk.direct/repo/OpenWrt/onmydisk-latest-armv7.ipk) |
+| **`arm64`** *(`aarch64`)* | MediaTek Filogic (`mt7981`/`mt7986`), Qualcomm `ipq807x`, Rockchip, RPi | [onmydisk-latest-arm64.ipk](https://forge.disk.direct/repo/OpenWrt/onmydisk-latest-arm64.ipk) |
 
 ### Flash & RAM Recommendations
 * **RAM**: `128 MB+` recommended (`256 MB–1 GB` on modern `MT7621` / Filogic / `ipq` routers gives plenty of headroom for concurrent WebRTC streams).
@@ -37,7 +37,7 @@ Connect to your router via SSH (`ssh root@192.168.1.1`) and check its target arc
 opkg print-architecture
 
 # 2. Download the matching .ipk (choose mips, mipsel, armv7, or arm64):
-wget -O /tmp/onmydisk.ipk https://forge.onmydisk.net/repo/OpenWrt/onmydisk-latest-arm64.ipk
+wget -O /tmp/onmydisk.ipk https://forge.disk.direct/repo/OpenWrt/onmydisk-latest-arm64.ipk
 
 # 3. Install and clean up temp archive:
 opkg update
@@ -65,7 +65,7 @@ Enable autostart on router boot and launch the daemon:
 Because OpenWrt's **LuCI** administration panel occupies port `80`, the router configuration (`/etc/onmydisk/onmydisk.conf`) binds the local **On My Disk Claim Page** on **port `8081`** and automatically excludes internal system partitions (`IgnoredDevices="/dev/mmcblk0,/dev/zram"`):
 
 1. Plug an external USB flash drive, SSD, or HDD into your router's USB port (formatted as `ext4`, `exFAT`, or `NTFS` mounted under `/mnt/...`).
-2. Sign in to [**direct.onmydisk.net**](https://direct.onmydisk.net) in your browser.
+2. Sign in to [**disk.direct**](https://disk.direct) in your browser.
 3. Open **`http://192.168.1.1:8081`** (replace `192.168.1.1` with your router's LAN IP if different).
 4. Click **Connect in On My Disk** to pair the router with your decentralized DID identity (`PairedDIDs`).
 
@@ -77,7 +77,7 @@ Your router immediately appears in the **On My Disk Direct** sidebar and workspa
 
 Once paired, your OpenWrt router also acts as a zero-configuration P2P gateway into your home or office network:
 
-* **In-Browser Router Terminal (`WebSSH`)**: Open the **Terminal** workspace in [**direct.onmydisk.net**](https://direct.onmydisk.net) to connect straight to OpenWrt's local `dropbear` / `openssh` server (`127.0.0.1:22`) over an encrypted WebRTC DataChannel.
+* **In-Browser Router Terminal (`WebSSH`)**: Open the **Terminal** workspace in [**disk.direct**](https://disk.direct) to connect straight to OpenWrt's local `dropbear` / `openssh` server (`127.0.0.1:22`) over an encrypted WebRTC DataChannel.
 * **Remote Access to LuCI Without Exposing Port 80**: Use **`omd-tunnel`** on your laptop to forward a local port to your router's LuCI interface (`:80`) from anywhere in the world:
   ```bash
   omd-tunnel --listen 18080 <router-node-linkID> 80

@@ -4,16 +4,16 @@
 # ==============================================================================
 # Usage:
 #   # Typical install (Node + OnMyChat in P2P Agentic AI mode — no local GPU needed):
-#   curl -fsSL https://forge.onmydisk.net/repo/Linux/install-onmydisk.sh | bash -s -- --agentic
+#   curl -fsSL https://forge.disk.direct/repo/Linux/install-onmydisk.sh | bash -s -- --agentic
 #
 #   # Workstation / server with NVIDIA GPU (Node + OnMyChat + local Ollama):
-#   curl -fsSL https://forge.onmydisk.net/repo/Linux/install-onmydisk.sh | bash -s -- --gpu
+#   curl -fsSL https://forge.disk.direct/repo/Linux/install-onmydisk.sh | bash -s -- --gpu
 #
 #   # Storage-only P2P node:
-#   curl -fsSL https://forge.onmydisk.net/repo/Linux/install-onmydisk.sh | bash
+#   curl -fsSL https://forge.disk.direct/repo/Linux/install-onmydisk.sh | bash
 #
 #   # Uninstall:
-#   curl -fsSL https://forge.onmydisk.net/repo/Linux/install-onmydisk.sh | bash -s -- --uninstall
+#   curl -fsSL https://forge.disk.direct/repo/Linux/install-onmydisk.sh | bash -s -- --uninstall
 # ==============================================================================
 set -euo pipefail
 
@@ -25,7 +25,7 @@ NO_OLLAMA=0
 RKLLAMA=0
 UNINSTALL=0
 INFERENCE_NODE="auto"
-REPO_BASE="https://forge.onmydisk.net/repo"
+REPO_BASE="https://forge.disk.direct/repo"
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -158,7 +158,7 @@ if [ -n "$TUNNEL_DEB_URL" ]; then
     fi
 fi
 
-# Configure [FileNode] user/group and ensure 3.0 direct.onmydisk.net:9010 defaults
+# Configure [FileNode] user/group and ensure 3.0 disk.direct:9010 defaults
 CONF="/etc/onmydisk/onmydisk.conf"
 if [ -f "$CONF" ]; then
     $SUDO python3 - "$CONF" "$RUN_USER" "$RUN_GROUP" <<'PY' || true
@@ -184,7 +184,7 @@ if in_fn:
     if not set_u: out.append(f"User={user}")
     if not set_g: out.append(f"Group={group}")
 res = "\n".join(out) + "\n"
-res = res.replace("host=onmydisk.net", "host=direct.onmydisk.net")
+res = res.replace("host=onmydisk.net", "host=disk.direct")
 res = res.replace("port=9000", "port=9010")
 res = res.replace("wsPort=9988", "wsPort=9989")
 with open(conf_path, "w", encoding="utf-8") as f:
@@ -223,7 +223,7 @@ cfg_path, agentic, gpu_mode, rkllama, infer_node = sys.argv[1], int(sys.argv[2])
 with open(cfg_path, "r", encoding="utf-8") as f:
     cfg = f.read()
 cfg = re.sub(r"(?m)^APP_ROOT_DIR\s*=.*$", "APP_ROOT_DIR = /opt/onmychat", cfg)
-cfg = re.sub(r"(?m)^#?GATEWAY_URL\s*=.*$", "GATEWAY_URL = https://direct.onmydisk.net", cfg)
+cfg = re.sub(r"(?m)^#?GATEWAY_URL\s*=.*$", "GATEWAY_URL = https://disk.direct", cfg)
 if agentic:
     cfg = re.sub(r"(?m)^#?AI_PROVIDER\s*=.*$", "AI_PROVIDER = agentic", cfg)
     cfg = re.sub(r"(?m)^#?INFERENCE_NODE\s*=.*$", f"INFERENCE_NODE = {infer_node}", cfg)
@@ -300,7 +300,7 @@ fi
 LAN_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 echo ""
 echo "==> [3/3] Installation complete!"
-echo "    1. Sign in at https://direct.onmydisk.net"
+echo "    1. Sign in at https://disk.direct"
 echo "    2. Open http://${LAN_IP:-localhost}/ (or connect from 'Detected Devices' in Settings)"
 if [ "$WITH_AI" -eq 1 ]; then
     if [ "$AGENTIC" -eq 1 ]; then

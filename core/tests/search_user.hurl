@@ -1,6 +1,6 @@
 #User mode search
 
-GET https://staging.onmydisk.net/search?q=Dune
+GET https://disk.direct/search?q=Dune
 authorization: token:{{token}}
 HTTP 200
 Content-Type: application/json

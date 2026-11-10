@@ -1,5 +1,5 @@
 #Test list
-POST https://staging.onmydisk.net/signin
+POST https://disk.direct/signin
 {
     "action": "signin",
     "username": "srdjanp",
@@ -9,7 +9,7 @@ HTTP 200
 [Captures]
 session-id: cookie "OMD_SESSION_ID"
 
-POST https://staging.onmydisk.net/
+POST https://disk.direct/
 Authorization: token:{{session-id}}
 Content-Type: application/json
 {

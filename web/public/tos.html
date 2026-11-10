@@ -754,7 +754,7 @@
           .trim()
           .toLowerCase()
           .replace(/\.+$/, "");
-        var isChat = host === "onmychat.com" || /\.onmychat\.com$/.test(host);
+        var isChat = host === "aiassistant.direct" || /\.onmychat\.com$/.test(host);
         var brand = isChat ? "On My Chat" : "On My Disk";
         if (document.title.indexOf("{") !== -1) {
           document.title = document.title.replace(/\{APPTITLE\}|\{TITLE\}/g, brand);

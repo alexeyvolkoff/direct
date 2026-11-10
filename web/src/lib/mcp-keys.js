@@ -20,7 +20,7 @@ const LS_PREFIX = "omd_mcp_keys";
 const GRAPH_ROOT = "keys";
 const GRAPH_NODE = "mcp_apps";
 const SHARED_GRAPH_PREFIX = "mcp_keys:";
-const HUB_URL = "https://direct.onmydisk.net:8765";
+const HUB_URL = "https://disk.direct:8765";
 const MCP_SALT = "omd-mcp-keys-salt-v1";
 
 const ALL_PRESET_MCP_APPS = [
