@@ -6682,9 +6682,9 @@ async function blobToBase64(blob) {
     return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
   }
 
-  $: chatIconColor = isDarkTheme ? "#EC4899" : "#DB2777";
   $: appIconColor = isDarkTheme ? "#C084FC" : "#7E22CE";
   $: brandColor = isDarkTheme ? "#A855F7" : "#7E22CE";
+  $: chatIconColor = appIconColor;
   $: brandHoverColor = isDarkTheme ? "#C084FC" : "#9333EA";
 
   $: getCustomIcon = (file, size) => {
@@ -6705,7 +6705,7 @@ async function blobToBase64(blob) {
     }
     if (file.isDevice || file.itemType === "device") {
       if (file.deviceType === "ai" || file.icon === "wxi-chat") {
-        return biIconDataUri(BI_CHAT_LEFT_TEXT_FILL, chatIconColor);
+        return biIconDataUri(BI_CHAT_LEFT_TEXT_FILL, brandColor);
       }
       if (file.deviceType === "desktop" || file.icon === "wxi-desktop") {
         return biIconDataUri(BI_LAPTOP, brandColor);
@@ -8657,14 +8657,6 @@ async function blobToBase64(blob) {
   :global(.wx-tree .wx-selected i) {
     color: var(--top-menu-color, #7E22CE) !important;
     opacity: 1 !important;
-  }
-  :global(.wx-folder i.wxi-chat),
-  :global(.wx-tree i.wxi-chat) {
-    color: #EC4899 !important;
-  }
-  :global(.wx-willow-theme .wx-folder i.wxi-chat),
-  :global(.wx-willow-theme .wx-tree i.wxi-chat) {
-    color: #DB2777 !important;
   }
   :global(.wx-folder .wx-name) {
     font-family: 'Inter', sans-serif !important;
