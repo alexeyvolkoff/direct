@@ -1780,8 +1780,8 @@
 
   /* Header Bar inside main content */
   .applet-header {
-    height: calc(52px + env(safe-area-inset-top, 0px));
-    padding: env(safe-area-inset-top, 0px) 16px 0 16px;
+    height: calc(56px + env(safe-area-inset-top, 0px));
+    padding: env(safe-area-inset-top, 0px) 14px 0 14px;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -1815,15 +1815,15 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    margin-top: 2px;
+    margin-top: 0;
   }
 
   .sidebar-brand {
-    height: calc(54px + env(safe-area-inset-top, 0px));
+    height: calc(56px + env(safe-area-inset-top, 0px));
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: env(safe-area-inset-top, 0px) 12px 0 12px;
+    padding: env(safe-area-inset-top, 0px) 14px 0 14px;
     border-bottom: none;
     flex-shrink: 0;
     box-sizing: border-box;
@@ -1832,17 +1832,17 @@
 
   .sidebar-logo-img {
     height: 29px;
-    max-width: calc(100% - 64px);
+    max-width: calc(100% - 76px);
     width: auto;
     object-fit: contain;
     user-select: none;
     display: block;
-    margin-top: 2px;
+    margin-top: 0;
   }
 
   .sidebar-brand-spacer {
-    width: 24px;
-    height: 24px;
+    width: 34px;
+    height: 34px;
     flex-shrink: 0;
   }
 
@@ -1851,11 +1851,14 @@
     border: none;
     color: var(--text-secondary);
     cursor: pointer;
-    padding: 6px;
+    width: 34px;
+    height: 34px;
+    padding: 0;
     border-radius: 8px;
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
     transition: all 0.15s;
   }
 
@@ -2589,6 +2592,11 @@
       padding: env(safe-area-inset-top, 0px) 12px 0 12px;
       background: var(--bg-card);
       border-bottom: none;
+    }
+
+    .sidebar-brand {
+      height: calc(48px + env(safe-area-inset-top, 0px));
+      padding: env(safe-area-inset-top, 0px) 12px 0 12px;
     }
 
     .sidebar-backdrop {

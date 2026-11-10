@@ -560,7 +560,7 @@
           title={$_("unfold", {}, "Expand sidebar")}
           on:click={() => dispatch("toggle-sidebar")}
         >
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
             <line x1="9" y1="3" x2="9" y2="21" />
           </svg>
@@ -1243,7 +1243,7 @@
     position: relative;
     display: flex;
     flex-direction: column;
-    padding: 0 16px;
+    padding: env(safe-area-inset-top, 0px) 14px 0 14px;
     background-color: var(--bg-secondary, rgba(26, 18, 29, 0.85));
     border-bottom: none;
     z-index: 10;
@@ -2384,7 +2384,12 @@
   /* Responsive */
   @media (max-width: 768px) {
     .memory-header {
-      padding: 0 10px;
+      padding: env(safe-area-inset-top, 0px) 12px 0 12px;
+    }
+
+    .header-main-row {
+      height: 48px;
+      min-height: 48px;
     }
 
     /* Заголовок убираем — экономим место под поиск */

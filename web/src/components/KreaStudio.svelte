@@ -5296,7 +5296,7 @@
           aria-label={$_("unfold", {}, "Развернуть сайдбар")}
           on:click={() => dispatch("toggle-sidebar")}
         >
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
             <line x1="9" y1="3" x2="9" y2="21" />
           </svg>
@@ -8438,12 +8438,14 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 10px 18px;
+    min-height: calc(56px + env(safe-area-inset-top, 0px));
+    padding: env(safe-area-inset-top, 0px) 14px 0 14px;
     background: rgba(15, 10, 16, 0.95);
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     backdrop-filter: blur(12px);
     z-index: 20;
     gap: 12px;
+    box-sizing: border-box;
   }
 
   .header-left {
@@ -8457,11 +8459,14 @@
     border: none;
     color: #998094;
     cursor: pointer;
-    padding: 6px;
-    border-radius: 6px;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border-radius: 8px;
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
   }
 
   .sidebar-toggle-btn:hover {
