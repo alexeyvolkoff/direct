@@ -164,11 +164,11 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    background: rgba(16, 28, 34, 0.94);
+    background: rgba(22, 19, 31, 0.95);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(14, 165, 233, 0.4);
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6), 0 0 20px rgba(14, 165, 233, 0.15);
+    border: 1px solid var(--accent-border, rgba(192, 132, 252, 0.42));
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6), 0 0 20px var(--accent-soft, rgba(168, 85, 247, 0.18));
     padding: 12px 16px;
     border-radius: 14px;
     color: #ffffff;
@@ -179,12 +179,12 @@
     width: 38px;
     height: 38px;
     border-radius: 10px;
-    background: rgba(14, 165, 233, 0.15);
-    border: 1px solid rgba(14, 165, 233, 0.3);
+    background: var(--accent-soft, rgba(168, 85, 247, 0.18));
+    border: 1px solid var(--accent-border, rgba(168, 85, 247, 0.32));
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #38bdf8;
+    color: var(--accent-hover, #C084FC);
     flex-shrink: 0;
   }
 
@@ -195,8 +195,8 @@
     width: 9px;
     height: 9px;
     border-radius: 50%;
-    background-color: #38bdf8;
-    box-shadow: 0 0 8px #38bdf8;
+    background-color: var(--accent-hover, #C084FC);
+    box-shadow: 0 0 8px var(--accent-hover, #C084FC);
     animation: otaPing 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
   }
 
@@ -215,7 +215,7 @@
     margin: 0;
     font-size: 13.5px;
     font-weight: 700;
-    color: #f8fafc;
+    color: #F8F7FC;
     line-height: 1.25;
     white-space: nowrap;
     overflow: hidden;
@@ -225,7 +225,7 @@
   .ota-banner-sub {
     margin: 3px 0 0 0;
     font-size: 12px;
-    color: #94a3b8;
+    color: #8B80A3;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -239,7 +239,7 @@
   }
 
   .ota-btn-primary {
-    background: linear-gradient(135deg, #0ea5e9, #2563eb);
+    background: var(--accent-gradient, linear-gradient(135deg, #9333EA, #C084FC));
     color: white;
     border: none;
     padding: 7px 12px;
@@ -251,7 +251,7 @@
     align-items: center;
     gap: 6px;
     transition: all 0.15s ease;
-    box-shadow: 0 2px 8px rgba(14, 165, 233, 0.35);
+    box-shadow: 0 2px 8px var(--accent-glow, rgba(168, 85, 247, 0.35));
   }
 
   .ota-btn-label {
@@ -279,7 +279,7 @@
   .ota-btn-ghost {
     background: transparent;
     border: none;
-    color: #64748b;
+    color: #8B80A3;
     padding: 6px;
     border-radius: 6px;
     cursor: pointer;
@@ -290,7 +290,7 @@
   }
 
   .ota-btn-ghost:hover {
-    color: #cbd5e1;
+    color: #C4B8DB;
     background: rgba(255, 255, 255, 0.06);
   }
 
@@ -301,7 +301,7 @@
     position: fixed;
     inset: 0;
     z-index: 999999;
-    background: rgba(9, 14, 18, 0.96);
+    background: rgba(13, 11, 18, 0.96);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     display: flex;
@@ -342,8 +342,8 @@
     inset: -22px;
     border-radius: 50%;
     border: 3.5px solid rgba(255, 255, 255, 0.08);
-    border-top-color: #0ea5e9;
-    border-right-color: #38bdf8;
+    border-top-color: var(--accent, #A855F7);
+    border-right-color: var(--accent-hover, #C084FC);
     animation: otaSpin 1s cubic-bezier(0.55, 0.15, 0.45, 0.85) infinite;
   }
 
@@ -356,9 +356,9 @@
     width: 100%;
     height: 100%;
     border-radius: 50%;
-    background: #101c22;
+    background: var(--bg-secondary, #16131F);
     border: 2px solid rgba(255, 255, 255, 0.15);
-    box-shadow: 0 0 25px rgba(14, 165, 233, 0.25);
+    box-shadow: 0 0 25px var(--accent-glow, rgba(168, 85, 247, 0.26));
     display: flex;
     align-items: center;
     justify-content: center;
@@ -390,7 +390,7 @@
 
   .ota-updating-sub {
     font-size: 13.5px;
-    color: #94a3b8;
+    color: #8B80A3;
     line-height: 1.5;
     margin: 0 0 20px 0;
   }
@@ -405,8 +405,8 @@
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background-color: #0ea5e9;
-    box-shadow: 0 0 8px rgba(14, 165, 233, 0.6);
+    background-color: var(--accent, #A855F7);
+    box-shadow: 0 0 8px var(--accent-glow, rgba(168, 85, 247, 0.60));
     animation: otaDotBounce 1.4s infinite ease-in-out both;
   }
 
@@ -444,16 +444,16 @@
 
   .ota-progress-fill {
     height: 100%;
-    background: linear-gradient(90deg, #0ea5e9, #38bdf8);
+    background: var(--accent-gradient, linear-gradient(90deg, #9333EA, #C084FC));
     border-radius: 999px;
     transition: width 0.25s ease-out;
-    box-shadow: 0 0 10px rgba(56, 189, 248, 0.6);
+    box-shadow: 0 0 10px var(--accent-glow, rgba(192, 132, 252, 0.60));
   }
 
   .ota-progress-text {
     font-size: 13px;
     font-weight: 600;
-    color: #38bdf8;
+    color: var(--accent-hover, #C084FC);
     letter-spacing: 0.02em;
   }
 
@@ -476,7 +476,7 @@
   }
 
   .ota-error-sub {
-    color: #cbd5e1;
+    color: #C4B8DB;
     max-height: 80px;
     overflow-y: auto;
     word-break: break-word;
@@ -491,7 +491,7 @@
 
   .ota-btn-secondary {
     background: rgba(255, 255, 255, 0.08);
-    color: #cbd5e1;
+    color: #C4B8DB;
     border: 1px solid rgba(255, 255, 255, 0.15);
     padding: 7px 16px;
     border-radius: 8px;
@@ -511,61 +511,61 @@
      ───────────────────────────────────────────────────────────── */
   :global(html:not(.omd-dark)) .ota-banner-card {
     background: rgba(255, 255, 255, 0.94);
-    border: 1px solid rgba(41, 150, 204, 0.35);
-    box-shadow: 0 12px 30px rgba(16, 28, 34, 0.12), 0 2px 10px rgba(41, 150, 204, 0.1);
-    color: #101c22;
+    border: 1px solid var(--accent-border, rgba(126, 34, 206, 0.35));
+    box-shadow: 0 12px 30px rgba(24, 19, 38, 0.12), 0 2px 10px var(--accent-soft, rgba(126, 34, 206, 0.10));
+    color: #181326;
   }
 
   :global(html:not(.omd-dark)) .ota-banner-icon-wrap {
-    background: rgba(41, 150, 204, 0.12);
-    border: 1px solid rgba(41, 150, 204, 0.3);
-    color: #184562;
+    background: var(--accent-soft, rgba(126, 34, 206, 0.12));
+    border: 1px solid var(--accent-border, rgba(126, 34, 206, 0.30));
+    color: var(--accent, #7E22CE);
   }
 
   :global(html:not(.omd-dark)) .ota-ping-dot {
-    background-color: #2996cc;
-    box-shadow: 0 0 8px #2996cc;
+    background-color: var(--accent, #7E22CE);
+    box-shadow: 0 0 8px var(--accent, #7E22CE);
   }
 
   :global(html:not(.omd-dark)) .ota-banner-title {
-    color: #101c22;
+    color: #181326;
   }
 
   :global(html:not(.omd-dark)) .ota-banner-sub {
-    color: #546b75;
+    color: #5B5270;
   }
 
   :global(html:not(.omd-dark)) .ota-btn-ghost {
-    color: #889fa8;
+    color: #8B80A3;
   }
 
   :global(html:not(.omd-dark)) .ota-btn-ghost:hover {
-    color: #101c22;
+    color: #181326;
     background: rgba(0, 0, 0, 0.06);
   }
 
   :global(html:not(.omd-dark)) .ota-overlay-backdrop {
-    background: rgba(246, 248, 249, 0.96);
+    background: rgba(248, 247, 252, 0.96);
   }
 
   :global(html:not(.omd-dark)) .ota-logo-inner {
     background: #ffffff;
-    border: 2px solid rgba(41, 150, 204, 0.25);
-    box-shadow: 0 0 25px rgba(41, 150, 204, 0.2);
+    border: 2px solid var(--accent-border, rgba(126, 34, 206, 0.26));
+    box-shadow: 0 0 25px var(--accent-glow, rgba(126, 34, 206, 0.20));
   }
 
   :global(html:not(.omd-dark)) .ota-spin-ring {
     border-color: rgba(0, 0, 0, 0.08);
-    border-top-color: #0ea5e9;
-    border-right-color: #38bdf8;
+    border-top-color: var(--accent, #A855F7);
+    border-right-color: var(--accent-hover, #C084FC);
   }
 
   :global(html:not(.omd-dark)) .ota-updating-title {
-    color: #101c22;
+    color: #181326;
   }
 
   :global(html:not(.omd-dark)) .ota-updating-sub {
-    color: #546b75;
+    color: #5B5270;
   }
 
   :global(html:not(.omd-dark)) .ota-progress-track {
@@ -574,12 +574,12 @@
 
   :global(html:not(.omd-dark)) .ota-btn-secondary {
     background: rgba(0, 0, 0, 0.06);
-    color: #334155;
+    color: #5B5270;
     border: 1px solid rgba(0, 0, 0, 0.15);
   }
 
   :global(html:not(.omd-dark)) .ota-btn-secondary:hover {
     background: rgba(0, 0, 0, 0.1);
-    color: #0f172a;
+    color: #181326;
   }
 </style>

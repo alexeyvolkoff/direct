@@ -38,6 +38,6 @@
 		border-radius: 0 0 6px 6px;
 	}
 	.wx-cameraroll-wrapper > :global(.wx-upload-area.wx-active) {
-		border: 1px solid var(--wx-color-primary, #3b82f6);
+		border: 1px solid var(--wx-color-primary, #9333EA);
 	}
 </style>

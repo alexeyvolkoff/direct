@@ -4915,7 +4915,7 @@ function lastFreshTitle(messages) {
 
 <svelte:window on:click={closeToolsMenu} on:keydown={(e) => e.key === "Escape" && (showToolsMenu = false, showPromptsPopup = false)} />
 
-<div class="chat-container {isDarkTheme ? 'dark-theme' : 'light-theme'}">
+<div class="chat-container skin-chat {isDarkTheme ? 'dark-theme' : 'light-theme'}">
   <!-- Conversation Scroll View -->
   <div class="messages-viewport" bind:this={messagesContainerEl} on:scroll={handleScroll}>
     {#if !chat || displayMessages.length === 0}
@@ -6280,13 +6280,13 @@ function lastFreshTitle(messages) {
   .hero-avatar.clickable:hover {
     transform: scale(1.06);
     border-radius: 50%;
-    box-shadow: 0 6px 30px rgba(41, 150, 204, 0.65);
+    box-shadow: 0 6px 30px rgba(236, 72, 153, 0.6);
   }
 
   .entry-avatar.clickable:hover {
     transform: scale(1.08);
     border-radius: 50%;
-    box-shadow: 0 0 16px rgba(103, 194, 232, 0.6);
+    box-shadow: 0 0 16px rgba(244, 114, 182, 0.6);
   }
   .chat-container {
     display: flex;
@@ -6297,40 +6297,6 @@ function lastFreshTitle(messages) {
     color: var(--text-primary);
     position: relative;
     overflow: hidden;
-  }
-
-  .dark-theme {
-    --bg-primary: #101c22;
-    --bg-secondary: #202a2f;
-    --bg-card: #202a2f;
-    --bg-card-hover: #2c383f;
-    --border-color: #3d4f57;
-    --border-subtle: #2a373e;
-    --text-primary: #ffffff;
-    --text-secondary: #b8c6cc;
-    --text-muted: #889fa8;
-    --accent-blue: #2996cc;
-    --accent-blue-hover: #37a9ef;
-    --user-bubble-bg: #202a2f;
-    --user-bubble-border: #3d4f57;
-    --pill-bg: #202a2f;
-  }
-
-  .light-theme {
-    --bg-primary: #f6f8f9;
-    --bg-secondary: #ffffff;
-    --bg-card: #ffffff;
-    --bg-card-hover: #ecf0f2;
-    --border-color: #d6dde1;
-    --border-subtle: #ecf0f2;
-    --text-primary: #101c22;
-    --text-secondary: #546b75;
-    --text-muted: #889fa8;
-    --accent-blue: #184562;
-    --accent-blue-hover: #2996cc;
-    --user-bubble-bg: #e2ecf2;
-    --user-bubble-border: #ccd8e0;
-    --pill-bg: #ffffff;
   }
 
   /* Viewport */
@@ -6382,19 +6348,19 @@ function lastFreshTitle(messages) {
     height: 68px;
     border-radius: 50%;
     object-fit: cover;
-    box-shadow: 0 4px 24px rgba(41, 150, 204, 0.45);
+    box-shadow: 0 4px 24px rgba(236, 72, 153, 0.45);
   }
 
   .avatar-hero-spark {
     width: 68px;
     height: 68px;
     border-radius: 50%;
-    background: linear-gradient(135deg, #2996cc, #8dcbec);
+    background: linear-gradient(135deg, #EC4899, #A855F7);
     display: flex;
     align-items: center;
     justify-content: center;
     color: #fff;
-    box-shadow: 0 4px 24px rgba(41, 150, 204, 0.45);
+    box-shadow: 0 4px 24px rgba(236, 72, 153, 0.45);
   }
 
   .hero-assistant-meta {
@@ -6429,7 +6395,7 @@ function lastFreshTitle(messages) {
   }
 
   .gradient-text {
-    background: linear-gradient(90deg, #50b1e0, #2996cc, #8dcbec);
+    background: linear-gradient(90deg, #F472B6, #EC4899, #C084FC);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
   }
@@ -6525,9 +6491,9 @@ function lastFreshTitle(messages) {
 
   @keyframes card-focus-flash {
     0%, 60% {
-      background: rgba(41, 150, 204, 0.16);
+      background: rgba(236, 72, 153, 0.16);
       border-radius: 14px;
-      outline: 2px solid rgba(41, 150, 204, 0.5);
+      outline: 2px solid rgba(236, 72, 153, 0.5);
       outline-offset: 2px;
     }
     100% {
@@ -6601,8 +6567,8 @@ function lastFreshTitle(messages) {
 
   .user-rework-btn:hover {
     color: var(--accent-blue);
-    background: rgba(41, 150, 204, 0.12);
-    border-color: rgba(41, 150, 204, 0.25);
+    background: rgba(236, 72, 153, 0.12);
+    border-color: rgba(236, 72, 153, 0.25);
   }
 
   .user-copy-btn:hover {
@@ -6635,8 +6601,8 @@ function lastFreshTitle(messages) {
     height: 36px;
     border-radius: 50%;
     object-fit: cover;
-    border: 2px solid #67c2e8;
-    box-shadow: 0 0 10px rgba(103, 194, 232, 0.4);
+    border: 2px solid #F472B6;
+    box-shadow: 0 0 10px rgba(236, 72, 153, 0.4);
     box-sizing: border-box;
   }
 
@@ -6644,9 +6610,9 @@ function lastFreshTitle(messages) {
     width: 36px;
     height: 36px;
     border-radius: 50%;
-    border: 2px solid #67c2e8;
-    box-shadow: 0 0 10px rgba(103, 194, 232, 0.4);
-    background: linear-gradient(135deg, #2996cc, #8dcbec);
+    border: 2px solid #F472B6;
+    box-shadow: 0 0 10px rgba(236, 72, 153, 0.4);
+    background: linear-gradient(135deg, #EC4899, #A855F7);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -6678,7 +6644,7 @@ function lastFreshTitle(messages) {
     font-size: 0.72rem;
     padding: 1px 6px;
     border-radius: 4px;
-    background: rgba(41, 150, 204, 0.15);
+    background: rgba(236, 72, 153, 0.15);
     color: var(--accent-blue);
     font-weight: 500;
   }
@@ -6768,15 +6734,15 @@ function lastFreshTitle(messages) {
   }
 
   .markdown-body :global(th) {
-    background: rgba(41, 150, 204, 0.08);
+    background: rgba(236, 72, 153, 0.08);
     font-weight: 600;
   }
 
   /* Gemini Reasoning/Thinking Accordion */
   .gemini-reasoning {
     margin: 6px 0 12px;
-    background: rgba(41, 150, 204, 0.05);
-    border: 1px solid rgba(41, 150, 204, 0.2);
+    background: rgba(236, 72, 153, 0.05);
+    border: 1px solid rgba(236, 72, 153, 0.2);
     border-radius: 12px;
     overflow: hidden;
   }
@@ -6820,7 +6786,7 @@ function lastFreshTitle(messages) {
     font-size: 0.85rem;
     color: var(--text-secondary);
     line-height: 1.5;
-    border-top: 1px solid rgba(41, 150, 204, 0.12);
+    border-top: 1px solid rgba(236, 72, 153, 0.12);
     max-height: 340px;
     overflow-y: auto;
   }
@@ -7167,7 +7133,7 @@ function lastFreshTitle(messages) {
   /* Sources toggle in message toolbar */
   .sources-toggle-btn.active {
     color: var(--accent-blue);
-    background: rgba(41, 150, 204, 0.12);
+    background: rgba(236, 72, 153, 0.12);
   }
 
   .sources-chevron {
@@ -7240,7 +7206,7 @@ function lastFreshTitle(messages) {
     width: 28px;
     height: 28px;
     border-radius: 6px;
-    background: rgba(41, 150, 204, 0.12);
+    background: rgba(236, 72, 153, 0.12);
     color: var(--accent-blue);
     flex-shrink: 0;
   }
@@ -7291,8 +7257,8 @@ function lastFreshTitle(messages) {
     margin: 0 2px;
     padding: 2px 8px 2px 3px;
     border-radius: 7px;
-    background: rgba(41, 150, 204, 0.10);
-    border: 1px solid rgba(41, 150, 204, 0.28);
+    background: rgba(236, 72, 153, 0.10);
+    border: 1px solid rgba(236, 72, 153, 0.28);
     color: var(--accent-blue);
     text-decoration: none;
     vertical-align: middle;
@@ -7303,7 +7269,7 @@ function lastFreshTitle(messages) {
   }
 
   .markdown-body :global(.inline-file-chip:hover) {
-    background: rgba(41, 150, 204, 0.18);
+    background: rgba(236, 72, 153, 0.18);
     border-color: var(--accent-blue);
   }
 
@@ -7325,8 +7291,8 @@ function lastFreshTitle(messages) {
     padding: 0 4px;
     flex-shrink: 0;
     border-radius: 6px;
-    background: rgba(41, 150, 204, 0.14);
-    border: 1px solid rgba(41, 150, 204, 0.28);
+    background: rgba(236, 72, 153, 0.14);
+    border: 1px solid rgba(236, 72, 153, 0.28);
     color: var(--accent-blue);
     font-size: 0.62rem;
     font-weight: 700;
@@ -7399,7 +7365,7 @@ function lastFreshTitle(messages) {
     margin: 12px 0;
     padding: 14px 16px;
     border-radius: 14px;
-    background: rgba(41, 150, 204, 0.08);
+    background: rgba(236, 72, 153, 0.08);
     border: 1px solid var(--accent-blue);
   }
 
@@ -7504,8 +7470,8 @@ function lastFreshTitle(messages) {
   }
 
   .tool-btn.tts-btn.active {
-    color: #38bdf8;
-    background: rgba(56, 189, 248, 0.15);
+    color: var(--accent);
+    background: var(--accent-soft);
   }
   .tool-btn.tts-btn.loading {
     color: #f59e0b;
@@ -7531,7 +7497,7 @@ function lastFreshTitle(messages) {
   }
   .tts-equalizer .bar {
     width: 2.5px;
-    background: #38bdf8;
+    background: var(--accent);
     border-radius: 1px;
     animation: tts-wave 0.8s ease-in-out infinite alternate;
   }
@@ -7564,9 +7530,9 @@ function lastFreshTitle(messages) {
     background: rgba(255, 255, 255, 0.08);
   }
   .composer-voice-toggle-btn.active {
-    color: #38bdf8;
-    background: rgba(56, 189, 248, 0.2);
-    box-shadow: 0 0 10px rgba(56, 189, 248, 0.25);
+    color: var(--accent);
+    background: var(--accent-soft);
+    box-shadow: 0 0 10px var(--accent-glow);
   }
 
   /* Floating Bottom Composer */
@@ -7663,7 +7629,7 @@ function lastFreshTitle(messages) {
 
   .composer-pill:focus-within {
     border-color: var(--accent-blue);
-    box-shadow: 0 4px 28px rgba(41, 150, 204, 0.2);
+    box-shadow: 0 4px 28px rgba(236, 72, 153, 0.2);
   }
 
   /* Plus Button and Tools Popup */
@@ -7697,7 +7663,7 @@ function lastFreshTitle(messages) {
 
   .composer-action-btn.active {
     color: var(--accent-blue);
-    background: rgba(41, 150, 204, 0.15);
+    background: rgba(236, 72, 153, 0.15);
   }
 
   .plus-icon {
@@ -7803,8 +7769,8 @@ function lastFreshTitle(messages) {
   }
 
   .tool-icon-circle.search {
-    background: rgba(41, 150, 204, 0.15);
-    color: #38bdf8;
+    background: rgba(192, 132, 252, 0.16);
+    color: #d8b4fe;
   }
 
   .tool-icon-circle.learn {
@@ -7852,7 +7818,7 @@ function lastFreshTitle(messages) {
     font-weight: 600;
     padding: 1px 6px;
     border-radius: 6px;
-    background: rgba(41, 150, 204, 0.12);
+    background: rgba(236, 72, 153, 0.12);
     color: var(--accent-blue);
     flex-shrink: 0;
   }
@@ -7923,7 +7889,7 @@ function lastFreshTitle(messages) {
   .composer-send-btn.active {
     background: var(--accent-blue);
     color: #ffffff;
-    box-shadow: 0 2px 10px rgba(41, 150, 204, 0.4);
+    box-shadow: 0 2px 10px rgba(236, 72, 153, 0.4);
   }
 
   .composer-send-btn:disabled {
@@ -7945,8 +7911,8 @@ function lastFreshTitle(messages) {
   }
 
   .import-result-card {
-    border: 1px solid rgba(41, 150, 204, 0.3);
-    background: rgba(41, 150, 204, 0.06);
+    border: 1px solid rgba(236, 72, 153, 0.3);
+    background: rgba(236, 72, 153, 0.06);
     border-radius: 14px;
     padding: 12px 16px;
     margin: 8px 0;
@@ -7970,8 +7936,8 @@ function lastFreshTitle(messages) {
   }
 
   .import-result-badge {
-    background: rgba(41, 150, 204, 0.2);
-    color: #7dd3fc;
+    background: var(--accent-soft);
+    color: var(--accent);
     border-radius: 10px;
     padding: 2px 8px;
     font-size: 0.7rem;
@@ -8005,7 +7971,7 @@ function lastFreshTitle(messages) {
     align-items: center;
     justify-content: center;
     gap: 8px;
-    color: var(--text-secondary, #94a3b8);
+    color: var(--text-secondary, #998094);
     font-size: 0.85rem;
     font-weight: 500;
     user-select: none;
@@ -8020,7 +7986,7 @@ function lastFreshTitle(messages) {
     display: block;
     margin-top: 4px;
     font-size: 0.8rem;
-    color: var(--text-secondary, #94a3b8);
+    color: var(--text-secondary, #998094);
     opacity: 0.85;
     font-weight: normal;
   }
@@ -8032,7 +7998,7 @@ function lastFreshTitle(messages) {
   }
 
   .import-result-image-wrap.clickable-image:hover {
-    border-color: var(--accent, #2996cc);
+    border-color: var(--accent, #EC4899);
   }
 
   .import-result-image-zoom {
@@ -8087,9 +8053,9 @@ function lastFreshTitle(messages) {
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    background: rgba(41, 150, 204, 0.15);
-    border: 1px solid rgba(41, 150, 204, 0.3);
-    color: #67c2e8;
+    background: var(--accent-soft);
+    border: 1px solid var(--accent-border);
+    color: var(--accent);
     border-radius: 12px;
     padding: 2px 8px;
     font-size: 0.72rem;
@@ -8099,7 +8065,7 @@ function lastFreshTitle(messages) {
   }
 
   .card-rework-btn:hover {
-    background: rgba(41, 150, 204, 0.25);
+    background: rgba(236, 72, 153, 0.25);
   }
 
   .import-request-text {
@@ -8137,9 +8103,9 @@ function lastFreshTitle(messages) {
   }
 
   .imported-tag-chip {
-    background: rgba(41, 150, 204, 0.15);
-    border: 1px solid rgba(41, 150, 204, 0.3);
-    color: #67c2e8;
+    background: var(--accent-soft);
+    border: 1px solid var(--accent-border);
+    color: var(--accent);
     border-radius: 12px;
     padding: 2px 8px;
     font-size: 0.72rem;
@@ -8157,8 +8123,8 @@ function lastFreshTitle(messages) {
   }
 
   .import-result-badge.recognizing {
-    background: rgba(41, 150, 204, 0.2);
-    color: #4fc3f7;
+    background: rgba(192, 132, 252, 0.2);
+    color: #c084fc;
   }
 
   .import-result-loading {
@@ -8262,16 +8228,16 @@ function lastFreshTitle(messages) {
     font-weight: 500;
     margin: 8px 0;
     width: fit-content;
-    background: rgba(41, 150, 204, 0.08);
-    border: 1px solid rgba(41, 150, 204, 0.2);
+    background: rgba(236, 72, 153, 0.08);
+    border: 1px solid rgba(236, 72, 153, 0.2);
     color: var(--accent-blue);
     animation: fadeIn 0.2s ease-out;
   }
 
   .active-stream-status.typing,
   .active-stream-status.processing {
-    background: rgba(41, 150, 204, 0.12);
-    border-color: rgba(41, 150, 204, 0.3);
+    background: rgba(236, 72, 153, 0.12);
+    border-color: rgba(236, 72, 153, 0.3);
     color: var(--accent-blue);
   }
 
@@ -8288,9 +8254,9 @@ function lastFreshTitle(messages) {
   }
 
   .active-stream-status.searching {
-    background: rgba(6, 182, 212, 0.08);
-    border-color: rgba(6, 182, 212, 0.25);
-    color: #06b6d4;
+    background: rgba(192, 132, 252, 0.10);
+    border-color: rgba(192, 132, 252, 0.28);
+    color: #c084fc;
   }
 
   .active-stream-status.performing {
@@ -8306,9 +8272,9 @@ function lastFreshTitle(messages) {
   }
 
   .active-stream-status.generating {
-    background: rgba(59, 130, 246, 0.1);
-    border-color: rgba(59, 130, 246, 0.3);
-    color: #60a5fa;
+    background: rgba(236, 72, 153, 0.12);
+    border-color: rgba(236, 72, 153, 0.32);
+    color: #f472b6;
   }
 
   .active-stream-status.generating .status-icon-bubble {
@@ -8316,7 +8282,7 @@ function lastFreshTitle(messages) {
     animation: rotate 1.2s linear infinite;
     transform-origin: center center;
     font-size: 1.15rem;
-    filter: drop-shadow(0 0 6px rgba(59, 130, 246, 0.6));
+    filter: drop-shadow(0 0 6px rgba(236, 72, 153, 0.6));
   }
 
   .status-icon-bubble {
@@ -8457,13 +8423,13 @@ function lastFreshTitle(messages) {
   }
 
   .chat-placeholder-svg.spinner-pulse {
-    filter: drop-shadow(0 6px 20px rgba(59, 130, 246, 0.45));
+    filter: drop-shadow(0 6px 20px rgba(236, 72, 153, 0.45));
   }
 
   .chat-placeholder-text {
     font-size: 13px;
     font-weight: 500;
-    color: var(--text-secondary, #94a3b8);
+    color: var(--text-secondary, #998094);
     text-align: center;
     padding: 0 16px;
   }
@@ -8707,7 +8673,7 @@ function lastFreshTitle(messages) {
     width: 36px;
     height: 36px;
     border-radius: 50%;
-    background: rgba(15, 23, 42, 0.7);
+    background: rgba(15, 10, 16, 0.75);
     border: 1px solid rgba(255, 255, 255, 0.2);
     color: #fff;
     display: flex;
@@ -8860,7 +8826,7 @@ function lastFreshTitle(messages) {
   .gen-style-pill.active:focus {
     background: var(--accent-blue);
     color: #ffffff !important;
-    box-shadow: 0 2px 8px rgba(41, 150, 204, 0.35);
+    box-shadow: 0 2px 8px rgba(236, 72, 153, 0.35);
   }
 
   .gen-panel-controls {
@@ -8887,8 +8853,8 @@ function lastFreshTitle(messages) {
   }
 
   .gen-toggle-btn.active {
-    background: rgba(41, 150, 204, 0.12);
-    border-color: rgba(41, 150, 204, 0.3);
+    background: rgba(236, 72, 153, 0.12);
+    border-color: rgba(236, 72, 153, 0.3);
   }
 
   .gen-checkbox-hidden {
@@ -8946,7 +8912,7 @@ function lastFreshTitle(messages) {
   }
 
   .gen-icon-btn.active {
-    background: rgba(41, 150, 204, 0.15);
+    background: rgba(236, 72, 153, 0.15);
     color: var(--accent-blue);
     border-color: var(--accent-blue);
   }
@@ -8998,7 +8964,7 @@ function lastFreshTitle(messages) {
   }
 
   .gen-lora-chip.active {
-    background: rgba(41, 150, 204, 0.18);
+    background: rgba(236, 72, 153, 0.18);
     border-color: var(--accent-blue);
     color: var(--accent-blue);
     font-weight: 600;
@@ -9134,7 +9100,7 @@ function lastFreshTitle(messages) {
   }
 
   .prompt-style-badge {
-    background: rgba(41, 150, 204, 0.12);
+    background: rgba(236, 72, 153, 0.12);
     color: var(--accent-blue);
     padding: 1px 6px;
     border-radius: 4px;
@@ -9223,8 +9189,8 @@ function lastFreshTitle(messages) {
   }
 
   .source-chooser {
-    background: var(--bg-secondary, #18242B);
-    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+    background: var(--bg-secondary, #1A121D);
+    border: 1px solid var(--border-color, #352339);
     border-radius: 14px;
     width: min(460px, 100%);
     max-height: 80vh;
@@ -9260,14 +9226,14 @@ function lastFreshTitle(messages) {
     width: 100%;
     padding: 10px 12px;
     border-radius: 10px;
-    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
-    background: var(--bg-primary, #111a20);
+    border: 1px solid var(--border-color, #352339);
+    background: var(--bg-primary, #0F0A10);
     color: inherit;
     cursor: pointer;
     text-align: left;
   }
 
-  .source-item:hover { border-color: var(--accent-color, #4a9eff); }
+  .source-item:hover { border-color: var(--accent, #EC4899); }
 
   .source-icon { display: inline-flex; opacity: 0.8; }
 

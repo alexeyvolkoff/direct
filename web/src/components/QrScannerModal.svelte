@@ -362,7 +362,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(15, 23, 42, 0.85);
+    background: rgba(8, 6, 12, 0.86);
     backdrop-filter: blur(8px);
     z-index: 100000;
     display: flex;
@@ -374,8 +374,8 @@
   }
 
   .qr-scanner-modal {
-    background: #1e293b;
-    border: 1px solid #334155;
+    background: #16131F;
+    border: 1px solid #2D2640;
     border-radius: 16px;
     width: 100%;
     max-width: 440px;
@@ -390,27 +390,27 @@
     align-items: center;
     justify-content: space-between;
     padding: 16px 20px;
-    border-bottom: 1px solid #334155;
-    background: #0f172a;
+    border-bottom: 1px solid #2D2640;
+    background: #0D0B12;
   }
 
   .qr-header-title {
     display: flex;
     align-items: center;
     gap: 10px;
-    color: #f8fafc;
+    color: #F8F7FC;
     font-size: 16px;
     font-weight: 600;
   }
 
   .qr-header-title svg {
-    color: #38bdf8;
+    color: var(--accent, #C084FC);
   }
 
   .qr-close-btn {
     background: none;
     border: none;
-    color: #94a3b8;
+    color: #8B80A3;
     cursor: pointer;
     padding: 6px;
     border-radius: 8px;
@@ -421,7 +421,7 @@
   }
 
   .qr-close-btn:hover {
-    color: #f8fafc;
+    color: #F8F7FC;
     background: rgba(255, 255, 255, 0.08);
   }
 
@@ -429,7 +429,7 @@
     position: relative;
     width: 100%;
     height: 320px;
-    background: #090d16;
+    background: #08060C;
     overflow: hidden;
     display: flex;
     align-items: center;
@@ -448,21 +448,21 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(15, 23, 42, 0.9);
+    background: rgba(13, 11, 18, 0.92);
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: 12px;
-    color: #94a3b8;
+    color: #8B80A3;
     font-size: 14px;
   }
 
   .qr-spinner {
     width: 32px;
     height: 32px;
-    border: 3px solid rgba(56, 189, 248, 0.2);
-    border-top-color: #38bdf8;
+    border: 3px solid var(--accent-soft, rgba(192, 132, 252, 0.22));
+    border-top-color: var(--accent, #C084FC);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }
@@ -490,7 +490,7 @@
     position: absolute;
     width: 28px;
     height: 28px;
-    border-color: #38bdf8;
+    border-color: var(--accent, #C084FC);
     border-style: solid;
     border-width: 0;
   }
@@ -533,8 +533,8 @@
     left: 4px;
     right: 4px;
     height: 2px;
-    background: linear-gradient(90deg, transparent, #38bdf8, transparent);
-    box-shadow: 0 0 8px #38bdf8;
+    background: linear-gradient(90deg, transparent, var(--accent, #C084FC), transparent);
+    box-shadow: 0 0 8px var(--accent, #C084FC);
     animation: scanBeam 2s ease-in-out infinite;
   }
 
@@ -550,15 +550,15 @@
     flex-direction: column;
     align-items: center;
     gap: 12px;
-    color: #cbd5e1;
+    color: #C4B8DB;
     font-size: 14px;
     line-height: 1.5;
   }
 
   .qr-retry-btn {
     margin-top: 6px;
-    background: #38bdf8;
-    color: #0f172a;
+    background: var(--accent, #C084FC);
+    color: #FFFFFF;
     border: none;
     border-radius: 8px;
     padding: 8px 16px;
@@ -569,8 +569,8 @@
 
   .qr-scanner-footer {
     padding: 16px 20px;
-    background: #0f172a;
-    border-top: 1px solid #334155;
+    background: #0D0B12;
+    border-top: 1px solid #2D2640;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -580,7 +580,7 @@
   .qr-scanner-hint {
     margin: 0;
     font-size: 13px;
-    color: #94a3b8;
+    color: #8B80A3;
     text-align: center;
     line-height: 1.4;
   }
@@ -594,9 +594,9 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    background: #1e293b;
-    border: 1px solid #334155;
-    color: #e2e8f0;
+    background: #16131F;
+    border: 1px solid #2D2640;
+    color: #EFEBF8;
     padding: 7px 12px;
     border-radius: 8px;
     font-size: 12px;
@@ -606,14 +606,14 @@
   }
 
   .qr-control-btn:hover {
-    background: #334155;
-    border-color: #475569;
+    background: #2D2640;
+    border-color: #554777;
   }
 
   .qr-control-btn.active {
-    background: rgba(56, 189, 248, 0.15);
-    border-color: #38bdf8;
-    color: #38bdf8;
+    background: var(--accent-soft, rgba(192, 132, 252, 0.18));
+    border-color: var(--accent, #C084FC);
+    color: var(--accent, #C084FC);
   }
 
   @keyframes spin {

@@ -113,7 +113,7 @@
     position: absolute;
     inset: 0;
     overflow: hidden;
-    background: #1e293b;
+    background: #16131F;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -134,15 +134,15 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    color: #e2e8f0;
+    color: #ECE7F6;
     gap: 16px;
   }
 
   .pdf-spinner {
     width: 44px;
     height: 44px;
-    border: 3.5px solid rgba(56, 189, 248, 0.2);
-    border-top-color: #38bdf8;
+    border: 3.5px solid rgba(168, 85, 247, 0.2);
+    border-top-color: #C084FC;
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }
@@ -154,7 +154,7 @@
   .pdf-loading-text {
     font-size: 15px;
     font-weight: 500;
-    color: #94a3b8;
+    color: #8B80A3;
   }
 
   .pdf-error-title {
@@ -165,7 +165,7 @@
 
   .pdf-error-msg {
     font-size: 13px;
-    color: #94a3b8;
+    color: #8B80A3;
   }
 
   .pdf-actions {
@@ -176,7 +176,7 @@
   .pdf-btn {
     padding: 8px 18px;
     border-radius: 6px;
-    background: #0284c7;
+    background: #7E22CE;
     color: white;
     border: none;
     cursor: pointer;
@@ -185,7 +185,7 @@
   }
 
   .pdf-btn:hover {
-    background: #0369a1;
+    background: #6B21A8;
   }
 
   .pdf-btn-close {

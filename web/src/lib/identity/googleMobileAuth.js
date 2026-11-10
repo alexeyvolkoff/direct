@@ -278,18 +278,28 @@ export function mountMobileGoogleBridgeIfRequested(targetEl) {
 
   const prefersDark =
     window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const hostLower = (window.location.hostname || "").toLowerCase();
+  const isChatHost = hostLower.includes("aiassistant") || hostLower.startsWith("chat.");
+  const bridgeIcon = isChatHost ? "/customtheme/aiassistant.svg" : "/customtheme/onmydisk.svg";
+  const bridgeAlt = isChatHost ? "AI Assistant" : "Disk Direct";
+  const bridgeAccent = isChatHost
+    ? (prefersDark ? "#EC4899" : "#DB2777")
+    : (prefersDark ? "#A855F7" : "#7E22CE");
+  const bridgeStatusColor = isChatHost
+    ? (prefersDark ? "#F472B6" : "#DB2777")
+    : (prefersDark ? "#C084FC" : "#7E22CE");
 
   targetEl.innerHTML = `
-    <div style="min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;font-family:'Inter',system-ui,-apple-system,sans-serif;background:${prefersDark ? "#101C22" : "#F6F8F9"};color:${prefersDark ? "#F1F5F9" : "#0F172A"};">
-      <div style="width:100%;max-width:380px;background:${prefersDark ? "#182630" : "#FFFFFF"};border:1px solid ${prefersDark ? "rgba(255,255,255,0.1)" : "rgba(15,23,42,0.1)"};border-radius:18px;padding:32px 24px;box-shadow:0 16px 40px rgba(0,0,0,0.22);text-align:center;">
-        <img src="/customtheme/onmydisk.svg" alt="Disk Direct" style="width:52px;height:52px;margin:0 auto 16px;display:block;" />
+    <div style="min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;font-family:'Inter',system-ui,-apple-system,sans-serif;background:${prefersDark ? (isChatHost ? "#0F0A10" : "#0D0B12") : (isChatHost ? "#FCF7FA" : "#F8F7FC")};color:${prefersDark ? "#F8F7FC" : "#181326"};">
+      <div style="width:100%;max-width:380px;background:${prefersDark ? (isChatHost ? "#1A121D" : "#16131F") : "#FFFFFF"};border:1px solid ${prefersDark ? "rgba(255,255,255,0.1)" : "rgba(24,19,38,0.1)"};border-radius:18px;padding:32px 24px;box-shadow:0 16px 40px rgba(0,0,0,0.22);text-align:center;">
+        <img src="${bridgeIcon}" alt="${bridgeAlt}" style="width:52px;height:52px;margin:0 auto 16px;display:block;border-radius:12px;" />
         <h1 id="omd-bridge-title" style="font-size:20px;font-weight:700;margin:0 0 8px;">${copy.title}</h1>
-        <p id="omd-bridge-desc" style="font-size:14px;line-height:1.5;margin:0 0 24px;color:${prefersDark ? "#94A3B8" : "#475569"};">${copy.desc}</p>
+        <p id="omd-bridge-desc" style="font-size:14px;line-height:1.5;margin:0 0 24px;color:${prefersDark ? "#C4B8DB" : "#5B5270"};">${copy.desc}</p>
         <div id="omd-bridge-btn" style="display:flex;justify-content:center;min-height:44px;"></div>
         <div id="omd-bridge-return" style="display:none;margin-top:16px;">
-          <a href="onmydisk://auth-complete" style="display:inline-flex;align-items:center;justify-content:center;width:100%;height:44px;border-radius:10px;background:#0284C7;color:#FFFFFF;font-weight:600;font-size:15px;text-decoration:none;">${copy.openAppBtn}</a>
+          <a href="onmydisk://auth-complete" style="display:inline-flex;align-items:center;justify-content:center;width:100%;height:44px;border-radius:10px;background:${bridgeAccent};color:#FFFFFF;font-weight:600;font-size:15px;text-decoration:none;">${copy.openAppBtn}</a>
         </div>
-        <p id="omd-bridge-status" style="font-size:13px;margin:16px 0 0;min-height:20px;color:${prefersDark ? "#38BDF8" : "#0284C7"};"></p>
+        <p id="omd-bridge-status" style="font-size:13px;margin:16px 0 0;min-height:20px;color:${bridgeStatusColor};"></p>
       </div>
     </div>
   `;
@@ -303,7 +313,7 @@ export function mountMobileGoogleBridgeIfRequested(targetEl) {
   async function completeHandoff(payload) {
     if (btnHost) btnHost.style.display = "none";
     if (statusEl) {
-      statusEl.style.color = prefersDark ? "#38BDF8" : "#0284C7";
+      statusEl.style.color = bridgeStatusColor;
       statusEl.textContent = copy.verifying;
     }
     try {
@@ -346,7 +356,7 @@ export function mountMobileGoogleBridgeIfRequested(targetEl) {
     if (btnHost) {
       const appleBtn = document.createElement("button");
       appleBtn.type = "button";
-      appleBtn.style.cssText = `display:inline-flex;align-items:center;justify-content:center;gap:10px;width:100%;max-width:300px;height:44px;border-radius:8px;border:1px solid ${prefersDark ? "rgba(255,255,255,0.22)" : "#0F172A"};background:${prefersDark ? "#FFFFFF" : "#0F172A"};color:${prefersDark ? "#0F172A" : "#FFFFFF"};font-size:15px;font-weight:600;cursor:pointer;`;
+      appleBtn.style.cssText = `display:inline-flex;align-items:center;justify-content:center;gap:10px;width:100%;max-width:300px;height:44px;border-radius:8px;border:1px solid ${prefersDark ? "rgba(255,255,255,0.22)" : "#181326"};background:${prefersDark ? "#FFFFFF" : "#181326"};color:${prefersDark ? "#181326" : "#FFFFFF"};font-size:15px;font-weight:600;cursor:pointer;`;
       appleBtn.innerHTML = `<svg viewBox="0 0 170 170" width="18" height="18" fill="currentColor"><path d="M150.37 130.25c-2.45 5.66-5.35 10.87-8.71 15.66-4.58 6.53-8.33 11.05-11.22 13.56-4.48 4.12-9.28 6.23-14.42 6.35-3.69 0-8.14-1.05-13.32-3.18-5.19-2.12-9.97-3.17-14.34-3.17-4.58 0-9.49 1.05-14.75 3.17-5.26 2.13-9.5 3.24-12.74 3.35-4.35.13-9.16-1.9-14.42-6.08-3.7-3.04-7.6-7.77-11.7-14.19-5.77-8.91-10.28-18.73-13.53-29.47-3.25-10.74-4.88-21.13-4.88-31.18 0-13.91 3.53-25.54 10.6-34.89 7.07-9.35 15.82-14.13 26.24-14.34 5.01 0 10.22 1.25 15.63 3.75 5.41 2.5 9.07 3.86 10.99 4.08 1.93-.22 5.64-1.58 11.13-4.08 5.49-2.5 10.43-3.65 14.83-3.46 9.68.43 17.78 4.12 24.31 11.07-8.59 5.22-12.8 12.38-12.63 21.48.16 7.6 2.98 13.96 8.44 19.08 5.46 5.12 12.08 8.01 19.86 8.68-2.18 6.32-4.88 12.83-8.1 19.53zM119.22 32.73c0-7.39 2.66-14.41 7.98-21.06 5.32-6.65 11.98-10.88 19.98-12.69.11 1.09.16 2.07.16 2.94 0 7.39-2.77 14.46-8.31 21.21-5.54 6.75-12.33 10.79-20.37 12.13-.11-.87-.16-1.71-.16-2.53z"/></svg><span>${copy.btnApple}</span>`;
       btnHost.appendChild(appleBtn);
 

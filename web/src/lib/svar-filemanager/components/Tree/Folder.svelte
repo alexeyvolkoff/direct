@@ -187,6 +187,6 @@
 		box-shadow: 0 0 6px rgba(34, 197, 94, 0.6);
 	}
 	.wx-status-dot.offline {
-		background-color: #64748b;
+		background-color: #73688A;
 	}
 </style>

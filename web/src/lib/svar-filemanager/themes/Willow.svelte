@@ -13,13 +13,13 @@
 	:global(.wx-willow-theme) {
 		--wx-theme-name: willow;
 
-		--wx-fm-background: var(--bg-primary, #f6f8f9);
-		--wx-fm-box-shadow: 0px 1px 2px rgba(44, 47, 60, 0.06),
-			0px 3px 10px rgba(44, 47, 60, 0.12);
-		--wx-fm-select-background: #eaedf5;
-		--wx-fm-grid-border: 1px solid #ededf1;
-		--wx-fm-grid-header-color: #fafafb;
-		--wx-fm-button-font-color: #9fa1ae;
+		--wx-fm-background: var(--bg-primary, #f8f7fc);
+		--wx-fm-box-shadow: 0px 1px 2px rgba(24, 19, 38, 0.06),
+			0px 3px 10px rgba(24, 19, 38, 0.10);
+		--wx-fm-select-background: var(--wx-color-primary-selected, #f3e8ff);
+		--wx-fm-grid-border: 1px solid var(--border-color, #ddd6eb);
+		--wx-fm-grid-header-color: #f8f7fc;
+		--wx-fm-button-font-color: #8b80a3;
 		--wx-fm-toolbar-height: 56px;
 	}
 </style>

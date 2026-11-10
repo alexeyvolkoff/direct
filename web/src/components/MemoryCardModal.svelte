@@ -811,7 +811,7 @@
   <!-- svelte-ignore a11y-click-events-have-key-events -->
   <!-- svelte-ignore a11y-no-static-element-interactions -->
   <div
-    class="memory-modal-backdrop"
+    class="memory-modal-backdrop skin-chat"
     class:dark-theme={isDarkTheme}
     class:light-theme={!isDarkTheme}
     on:click|self={close}
@@ -1284,37 +1284,6 @@
 {/if}
 
 <style>
-  /* Official theme palette (as in ChatApplet) — scoped so the modal is always themed */
-  .dark-theme {
-    --bg-primary: #101c22;
-    --bg-secondary: #202a2f;
-    --bg-card: #202a2f;
-    --bg-card-hover: #2c383f;
-    --border-color: #3d4f57;
-    --border-subtle: #2a373e;
-    --text-primary: #ffffff;
-    --text-secondary: #b8c6cc;
-    --text-muted: #889fa8;
-    --accent-blue: #2996cc;
-    --accent-blue-hover: #37a9ef;
-    --accent-blue-active: #175275;
-  }
-
-  .light-theme {
-    --bg-primary: #f6f8f9;
-    --bg-secondary: #ffffff;
-    --bg-card: #ffffff;
-    --bg-card-hover: #ecf0f2;
-    --border-color: #d6dde1;
-    --border-subtle: #ecf0f2;
-    --text-primary: #101c22;
-    --text-secondary: #546b75;
-    --text-muted: #889fa8;
-    --accent-blue: #184562;
-    --accent-blue-hover: #2996cc;
-    --accent-blue-active: #e2ecf2;
-  }
-
   .memory-modal-backdrop {
     position: fixed;
     inset: 0;
@@ -1478,14 +1447,14 @@
     font-size: 0.78rem;
     font-weight: 500;
     cursor: pointer;
-    background: rgba(41, 150, 204, 0.15);
-    color: var(--accent-blue, #2996cc);
-    border: 1px solid rgba(41, 150, 204, 0.35);
+    background: var(--accent-soft);
+    color: var(--accent, #EC4899);
+    border: 1px solid var(--accent-border);
     transition: all 0.18s ease;
   }
   .btn-mark-people:hover,
   .btn-mark-people.active {
-    background: var(--accent-blue, #2996cc);
+    background: var(--accent, #EC4899);
     color: #ffffff;
     border-color: transparent;
   }
@@ -1547,9 +1516,9 @@
     z-index: 10;
   }
   .face-box:hover {
-    border-color: #38bdf8;
-    background: rgba(56, 189, 248, 0.18);
-    box-shadow: 0 0 12px rgba(56, 189, 248, 0.4);
+    border-color: #F472B6;
+    background: rgba(244, 114, 182, 0.18);
+    box-shadow: 0 0 12px rgba(244, 114, 182, 0.4);
   }
   .face-box.dragging {
     cursor: grabbing;
@@ -1561,10 +1530,10 @@
     background: rgba(16, 185, 129, 0.18);
   }
   .face-box.selected {
-    border-color: #2996cc;
+    border-color: #EC4899;
     border-style: solid;
-    background: rgba(41, 150, 204, 0.25);
-    box-shadow: 0 0 16px rgba(41, 150, 204, 0.6);
+    background: rgba(236, 72, 153, 0.25);
+    box-shadow: 0 0 16px rgba(236, 72, 153, 0.6);
   }
 
   .face-handle {
@@ -1572,7 +1541,7 @@
     width: 9px;
     height: 9px;
     background: #ffffff;
-    border: 1.5px solid #2996cc;
+    border: 1.5px solid #EC4899;
     border-radius: 2px;
     z-index: 20;
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
@@ -1587,7 +1556,7 @@
     bottom: -22px;
     left: 50%;
     transform: translateX(-50%);
-    background: rgba(15, 23, 42, 0.9);
+    background: rgba(15, 10, 16, 0.9);
     backdrop-filter: blur(6px);
     color: #fff;
     font-size: 0.68rem;
@@ -1614,8 +1583,8 @@
   .face-edit-panel {
     margin-top: 8px;
     padding: 10px 12px;
-    background: rgba(41, 150, 204, 0.08);
-    border: 1px solid rgba(41, 150, 204, 0.25);
+    background: rgba(236, 72, 153, 0.08);
+    border: 1px solid rgba(236, 72, 153, 0.25);
     border-radius: 8px;
   }
   .face-edit-header {
@@ -1645,7 +1614,7 @@
   }
   .btn-save-face {
     padding: 6px 14px;
-    background: var(--accent-blue, #2996cc);
+    background: var(--accent, #EC4899);
     color: #fff;
     border: none;
     border-radius: 6px;
@@ -1679,11 +1648,11 @@
     transition: all 0.15s ease;
   }
   .kp-chip:hover {
-    border-color: var(--accent-blue, #2996cc);
-    background: rgba(41, 150, 204, 0.15);
+    border-color: var(--accent, #EC4899);
+    background: var(--accent-soft);
   }
   .kp-chip.selected {
-    background: var(--accent-blue, #2996cc);
+    background: var(--accent, #EC4899);
     color: #fff;
   }
 

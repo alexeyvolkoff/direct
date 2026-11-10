@@ -136,7 +136,7 @@
 	.wx-sidebar-toggle-btn {
 		background: transparent;
 		border: none;
-		color: var(--wx-color-font, #cbd5e1);
+		color: var(--wx-color-font, #C4B8DB);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -148,7 +148,7 @@
 
 	.wx-sidebar-toggle-btn:hover {
 		background: var(--wx-background-alt, rgba(255, 255, 255, 0.08));
-		color: var(--wx-color-primary, #38bdf8);
+		color: var(--wx-color-primary, #C084FC);
 	}
 
 	.wx-preview-icon {

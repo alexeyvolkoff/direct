@@ -3,17 +3,17 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <meta name="theme-color" content="#202A2F" />
+    <meta name="theme-color" content="#16131F" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="{APPTITLE}" />
-    <link rel="manifest" href="/manifest.json" />
-    <link rel="shortcut icon" href="/customtheme/onmydisk.svg" />
-    <link rel="apple-touch-icon" sizes="192x192" href="/customtheme/onmydisk.svg" />
-    <link rel="icon" type="image/svg+xml" href="/customtheme/onmydisk.svg" />
-    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
-    <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
+    <link rel="manifest" id="omd-manifest" href="/manifest.json" />
+    <link rel="shortcut icon" id="omd-shortcut-icon" href="/customtheme/onmydisk.svg" />
+    <link rel="apple-touch-icon" id="omd-apple-icon" sizes="192x192" href="/icon-192.png" />
+    <link rel="icon" id="omd-svg-icon" type="image/svg+xml" href="/customtheme/onmydisk.svg" />
+    <link rel="icon" id="omd-png192-icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="icon" id="omd-png512-icon" type="image/png" sizes="512x512" href="/icon-512.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -55,13 +55,32 @@
       }
       (function () {
         var h = String((window.location && window.location.hostname) || "").toLowerCase();
-        var fallbackBrand = (h === "aiassistant.direct" || h.endsWith(".aiassistant.direct") || h.indexOf("chat.") === 0 || h.indexOf("ai.") === 0 || h === "onmychat.com" || h.endsWith(".onmychat.com")) ? "AI Assistant Direct" : "Disk Direct";
+        var m = String(window.__omdAppMode || "").toLowerCase();
+        var isChat = (m === "chat" || h === "aiassistant.direct" || h.endsWith(".aiassistant.direct") || h.indexOf("chat.") === 0 || h.indexOf("ai.") === 0 || h === "onmychat.com" || h.endsWith(".onmychat.com"));
+        var fallbackBrand = isChat ? "AI Assistant Direct" : "Disk Direct";
+        document.documentElement.classList.add(isChat ? "skin-chat" : "skin-files");
         if (!document.title || document.title.indexOf("{") !== -1) {
           document.title = fallbackBrand;
         }
         var appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
         if (appleTitle && (!appleTitle.content || appleTitle.content.indexOf("{") !== -1)) {
           appleTitle.content = fallbackBrand;
+        }
+        if (isChat) {
+          var tc = document.querySelector('meta[name="theme-color"]');
+          if (tc) tc.setAttribute("content", "#1A121D");
+          var mf = document.getElementById("omd-manifest");
+          if (mf) mf.setAttribute("href", "/manifest-chat.json");
+          var si = document.getElementById("omd-shortcut-icon");
+          if (si) si.setAttribute("href", "/customtheme/aiassistant.svg");
+          var svgI = document.getElementById("omd-svg-icon");
+          if (svgI) svgI.setAttribute("href", "/customtheme/aiassistant.svg");
+          var apI = document.getElementById("omd-apple-icon");
+          if (apI) apI.setAttribute("href", "/customtheme/icon-chat-192.png");
+          var p192 = document.getElementById("omd-png192-icon");
+          if (p192) p192.setAttribute("href", "/customtheme/icon-chat-192.png");
+          var p512 = document.getElementById("omd-png512-icon");
+          if (p512) p512.setAttribute("href", "/customtheme/icon-chat-512.png");
         }
       })();
     </script>

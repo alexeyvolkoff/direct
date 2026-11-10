@@ -168,13 +168,13 @@
 	}
 
 	.wx-cr-item.wx-selected {
-		box-shadow: inset 0 0 0 3px var(--wx-color-primary, #3b82f6);
+		box-shadow: inset 0 0 0 3px var(--wx-color-primary, #9333EA);
 	}
 
 	.wx-cr-selected-overlay {
 		position: absolute;
 		inset: 0;
-		background-color: rgba(59, 130, 246, 0.28);
+		background-color: rgba(168, 85, 247, 0.28);
 		pointer-events: none;
 		z-index: 1;
 	}
@@ -217,7 +217,7 @@
 
 	.wx-cr-placeholder i {
 		font-size: 44px;
-		color: var(--wx-color-primary, #38bdf8);
+		color: var(--wx-color-primary, #C084FC);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -248,7 +248,7 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		color: var(--wx-color-primary, #38bdf8);
+		color: var(--wx-color-primary, #C084FC);
 		font-size: 44px;
 	}
 
@@ -284,7 +284,7 @@
 	}
 
 	.wx-cr-check.selected {
-		background: var(--wx-color-primary, #3b82f6);
+		background: var(--wx-color-primary, #9333EA);
 		box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
 	}
 

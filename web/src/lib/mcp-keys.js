@@ -38,7 +38,7 @@ const ALL_PRESET_MCP_APPS = [
     url: "https://civitai.com/user/account",
     placeholder: "civitai_api_token...",
     description: "CivitAI Publishing & Models Token",
-    badgeColor: "#2563EB",
+    badgeColor: "#EC4899",
   },
   {
     id: "plane",
@@ -46,7 +46,7 @@ const ALL_PRESET_MCP_APPS = [
     url: "https://app.plane.so",
     placeholder: "plane_api_...",
     description: "Plane Project Management",
-    badgeColor: "#3F76FF",
+    badgeColor: "#A855F7",
   },
 ];
 

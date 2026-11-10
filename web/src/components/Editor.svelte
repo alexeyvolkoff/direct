@@ -21,7 +21,11 @@
       inherit: true,
       rules: [],
       colors: {
-        'editor.background': '#202A2F'
+        'editor.background': '#16131F',
+        'editor.lineHighlightBackground': '#211C2E',
+        'editorLineNumber.foreground': '#5B5270',
+        'editorLineNumber.activeForeground': '#C4B8DB',
+        'editor.selectionBackground': '#581C8788'
       }
     });
 
@@ -82,16 +86,16 @@
     flex-direction: column;
     width: 100%;
     height: 100%;
-    background-color: var(--wx-background, #202A2F);
+    background-color: var(--wx-background, #16131F);
   }
 
   .editor-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background-color: var(--wx-background-alt, #18242B);
+    background-color: var(--wx-background-alt, #120F1A);
     padding: 8px 16px;
-    border-bottom: 1px solid var(--border-color, #3D4F57);
+    border-bottom: 1px solid var(--border-color, #2D2640);
   }
 
   .filename {
@@ -123,6 +127,6 @@
     flex: 1;
     min-height: 0; /* Important for flex child to not overflow */
     width: 100%;
-    background-color: var(--wx-background, #202A2F);
+    background-color: var(--wx-background, #16131F);
   }
 </style>

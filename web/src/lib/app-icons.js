@@ -73,7 +73,7 @@ export function resolveAppIconName(rawIcon) {
     return "window-stack";
 }
 
-export function resolveAppIconDataUri(rawIcon, color = "#2996CC") {
+export function resolveAppIconDataUri(rawIcon, color = "#A855F7") {
     const trimmed = rawIcon ? String(rawIcon).trim() : "";
     if (
         trimmed.startsWith("data:image/") ||

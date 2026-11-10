@@ -963,7 +963,7 @@
     }
   }}
 />
-<div class="applet-root {isDarkTheme ? 'dark-theme' : 'light-theme'}">
+<div class="applet-root skin-chat {isDarkTheme ? 'dark-theme' : 'light-theme'}">
   <div class="applet-body" class:overlay-sidebar={isOverlaySidebar}>
     <!-- Sidebar Backdrop (Mobile & Applet Overlay Mode) -->
     {#if sidebarOpen}
@@ -1610,8 +1610,8 @@
   }
 
   .source-chooser {
-    background: var(--bg-secondary, #18242B);
-    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+    background: var(--bg-secondary, #1A121D);
+    border: 1px solid var(--border-color, #352339);
     border-radius: 14px;
     width: min(460px, 100%);
     max-height: 80vh;
@@ -1647,14 +1647,14 @@
     width: 100%;
     padding: 10px 12px;
     border-radius: 10px;
-    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
-    background: var(--bg-primary, #111a20);
+    border: 1px solid var(--border-color, #352339);
+    background: var(--bg-primary, #0F0A10);
     color: inherit;
     cursor: pointer;
     text-align: left;
   }
 
-  .source-item:hover { border-color: var(--accent-color, #4a9eff); }
+  .source-item:hover { border-color: var(--accent, #EC4899); }
 
   .source-icon { display: inline-flex; opacity: 0.8; }
 
@@ -1688,20 +1688,20 @@
   .source-add, .source-cancel {
     padding: 8px 14px;
     border-radius: 8px;
-    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.15));
+    border: 1px solid var(--border-color, #352339);
     background: transparent;
     color: inherit;
     cursor: pointer;
     font-size: 13px;
   }
 
-  .source-add { border-color: var(--accent-color, #4a9eff); }
+  .source-add { border-color: var(--accent, #EC4899); }
 
   /* Indexed folder progress — same look as the "folder upload" dialog in App.svelte */
   .progress-overlay {
     position: fixed;
     top: 0; left: 0; right: 0; bottom: 0;
-    background: rgba(15, 17, 26, 0.8);
+    background: rgba(15, 10, 16, 0.8);
     display: flex;
     justify-content: center;
     align-items: center;
@@ -1710,24 +1710,24 @@
   }
 
   .progress-box {
-    background: var(--bg-secondary, #18242B);
+    background: var(--bg-secondary, #1A121D);
     padding: 24px;
     border-radius: 12px;
     box-shadow: 0 10px 25px rgba(0,0,0,0.5);
     width: 300px;
     text-align: center;
-    border: 1px solid var(--border-color, #3D4F57);
+    border: 1px solid var(--border-color, #352339);
   }
 
   .progress-box p {
     margin: 0 0 12px 0;
     font-weight: 500;
-    color: var(--text-primary, #e2e8f0);
+    color: var(--text-primary, #FDF8FC);
   }
 
   .progress-bar {
     height: 8px;
-    background: var(--bg-primary, #101C22);
+    background: var(--bg-primary, #0F0A10);
     border-radius: 4px;
     overflow: hidden;
     margin-bottom: 8px;
@@ -1735,7 +1735,7 @@
 
   .progress-fill {
     height: 100%;
-    background: var(--accent-blue, #2996CC);
+    background: var(--accent, #EC4899);
     transition: width 0.3s;
   }
 
@@ -1752,15 +1752,15 @@
 
   .progress-text {
     font-size: 11px;
-    color: var(--text-muted, #889fa8) !important;
+    color: var(--text-muted, #998094) !important;
     margin-bottom: 4px !important;
   }
 
   .cancel-btn {
     margin-top: 16px;
     background: transparent;
-    border: 1px solid var(--border-color, #3D4F57);
-    color: var(--text-primary, #e2e8f0);
+    border: 1px solid var(--border-color, #352339);
+    color: var(--text-primary, #FDF8FC);
     border-radius: 4px;
     padding: 6px 16px;
     cursor: pointer;
@@ -1776,40 +1776,6 @@
     background: var(--bg-primary);
     color: var(--text-primary);
     overflow: hidden;
-  }
-
-  .dark-theme {
-    --bg-primary: #101c22;
-    --bg-secondary: #202a2f;
-    --bg-card: #202a2f;
-    --bg-card-hover: #2c383f;
-    --border-color: #3d4f57;
-    --border-subtle: #2a373e;
-    --text-primary: #ffffff;
-    --text-secondary: #b8c6cc;
-    --text-muted: #889fa8;
-    --accent-blue: #2996cc;
-    --accent-blue-hover: #37a9ef;
-    --accent-blue-active: #175275;
-    --sidebar-bg: #202a2f;
-    --sidebar-shadow: 4px 0 16px rgba(0, 0, 0, 0.25);
-  }
-
-  .light-theme {
-    --bg-primary: #f6f8f9;
-    --bg-secondary: #ffffff;
-    --bg-card: #ffffff;
-    --bg-card-hover: #ecf0f2;
-    --border-color: #d6dde1;
-    --border-subtle: #ecf0f2;
-    --text-primary: #101c22;
-    --text-secondary: #546b75;
-    --text-muted: #889fa8;
-    --accent-blue: #184562;
-    --accent-blue-hover: #2996cc;
-    --accent-blue-active: #e2ecf2;
-    --sidebar-bg: #ffffff;
-    --sidebar-shadow: 3px 0 14px rgba(0, 0, 0, 0.05);
   }
 
   /* Header Bar inside main content */
@@ -1857,14 +1823,16 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: env(safe-area-inset-top, 0px) 16px 0 16px;
+    padding: env(safe-area-inset-top, 0px) 12px 0 12px;
     border-bottom: none;
     flex-shrink: 0;
     box-sizing: border-box;
+    gap: 6px;
   }
 
   .sidebar-logo-img {
-    height: 34px;
+    height: 29px;
+    max-width: calc(100% - 64px);
     width: auto;
     object-fit: contain;
     user-select: none;
@@ -1873,8 +1841,8 @@
   }
 
   .sidebar-brand-spacer {
-    width: 32px;
-    height: 32px;
+    width: 24px;
+    height: 24px;
     flex-shrink: 0;
   }
 
@@ -1897,8 +1865,8 @@
   }
 
   .icon-btn.active {
-    background: rgba(41, 150, 204, 0.2);
-    color: var(--accent-blue);
+    background: var(--accent-soft);
+    color: var(--accent);
   }
 
   /* Attached documents menu (paperclip dropdown) */
@@ -2087,7 +2055,7 @@
   }
 
   .session-row.active {
-    background: rgba(41, 150, 204, 0.22);
+    background: var(--accent-soft);
     font-weight: 500;
   }
 
@@ -2143,8 +2111,8 @@
   }
 
   .archive-count {
-    background: rgba(41, 150, 204, 0.15);
-    color: var(--accent-blue);
+    background: var(--accent-soft);
+    color: var(--accent);
     font-size: 0.72rem;
     padding: 1px 6px;
     border-radius: 10px;
@@ -2331,7 +2299,7 @@
     position: relative;
     width: 38px;
     height: 20px;
-    background: #3d4f57;
+    background: var(--border-color);
     border-radius: 10px;
     transition: background 0.2s;
     flex-shrink: 0;
@@ -2350,7 +2318,7 @@
   }
 
   .mode-switch-toggle input:checked + .switch-slider {
-    background: var(--accent-blue);
+    background: var(--accent);
   }
 
   .mode-switch-toggle input:checked + .switch-slider::after {
@@ -2389,14 +2357,14 @@
   }
 
   .nav-link-btn.active {
-    background: rgba(41, 150, 204, 0.15);
-    color: var(--accent-blue);
+    background: var(--accent-soft);
+    color: var(--accent);
   }
 
   .nav-count-badge {
     margin-left: auto;
-    background: rgba(41, 150, 204, 0.2);
-    color: var(--accent-blue);
+    background: var(--accent-soft);
+    color: var(--accent);
     font-size: 0.72rem;
     padding: 1px 6px;
     border-radius: 10px;
@@ -2582,7 +2550,7 @@
     display: block;
     position: fixed;
     inset: 0;
-    background: rgba(15, 23, 42, 0.38);
+    background: rgba(15, 10, 16, 0.45);
     backdrop-filter: blur(3px);
     z-index: 200;
     animation: sidebarFadeIn 0.16s ease;

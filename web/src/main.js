@@ -1,3 +1,4 @@
+import './styles/omd.css';
 import { getDomainBrandTitle } from './lib/app-mode.js';
 
 // Clean any unparsed server template macros from DOM (e.g. Capacitor/static client loads)

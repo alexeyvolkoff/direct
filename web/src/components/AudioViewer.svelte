@@ -291,9 +291,9 @@
     try {
       const options = {
         container: waveformContainer,
-        waveColor: "rgba(56, 189, 248, 0.35)",
-        progressColor: "#38bdf8",
-        cursorColor: "#f8fafc",
+        waveColor: "rgba(192, 132, 252, 0.35)",
+        progressColor: "#C084FC",
+        cursorColor: "#F8F7FC",
         cursorWidth: 2,
         barWidth: 3,
         barGap: 2,
@@ -608,7 +608,7 @@
           {:else}
             <div class="cover-placeholder">
               <div class="music-icon-wrapper">
-                <svg viewBox="0 0 24 24" width="56" height="56" fill="none" stroke="#38bdf8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <svg viewBox="0 0 24 24" width="56" height="56" fill="none" stroke="#C084FC" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M9 18V5l12-2v13"></path>
                   <circle cx="6" cy="18" r="3"></circle>
                   <circle cx="18" cy="16" r="3"></circle>
@@ -814,12 +814,12 @@
     width: 100%;
     height: 100%;
     min-height: 420px;
-    background: radial-gradient(circle at center, rgba(15, 23, 42, 0.96) 0%, rgba(2, 6, 23, 0.98) 100%);
+    background: radial-gradient(circle at center, rgba(13, 11, 18, 0.96) 0%, rgba(2, 6, 23, 0.98) 100%);
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
     display: flex;
     flex-direction: column;
-    color: #f8fafc;
+    color: #F8F7FC;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     user-select: none;
     position: relative;
@@ -832,7 +832,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 16px 24px;
-    background: rgba(15, 23, 42, 0.5);
+    background: rgba(13, 11, 18, 0.5);
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     flex-shrink: 0;
   }
@@ -852,7 +852,7 @@
     margin: 0;
     font-size: 15px;
     font-weight: 600;
-    color: #f8fafc;
+    color: #F8F7FC;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -862,7 +862,7 @@
   .track-artist {
     margin: 2px 0 0 0;
     font-size: 12px;
-    color: #94a3b8;
+    color: #8B80A3;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -871,7 +871,7 @@
   .icon-btn {
     background: transparent;
     border: none;
-    color: #94a3b8;
+    color: #8B80A3;
     cursor: pointer;
     padding: 8px;
     border-radius: 8px;
@@ -882,7 +882,7 @@
   }
 
   .icon-btn:hover {
-    color: #f8fafc;
+    color: #F8F7FC;
     background: rgba(255, 255, 255, 0.1);
   }
 
@@ -895,9 +895,9 @@
   }
 
   .playlist-toggle-btn.active {
-    color: #38bdf8;
-    background: rgba(56, 189, 248, 0.15);
-    border-color: rgba(56, 189, 248, 0.4);
+    color: #C084FC;
+    background: rgba(168, 85, 247, 0.15);
+    border-color: rgba(168, 85, 247, 0.4);
   }
 
   .playlist-count {
@@ -937,7 +937,7 @@
     width: clamp(130px, 20vh, 190px);
     height: clamp(130px, 20vh, 190px);
     border-radius: 18px;
-    background: linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.9) 100%);
+    background: linear-gradient(135deg, rgba(22, 19, 31, 0.8) 0%, rgba(13, 11, 18, 0.9) 100%);
     border: 1px solid rgba(255, 255, 255, 0.12);
     box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
     overflow: hidden;
@@ -949,8 +949,8 @@
   }
 
   .album-cover-card.is-playing {
-    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7), 0 0 30px rgba(56, 189, 248, 0.25);
-    border-color: rgba(56, 189, 248, 0.3);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7), 0 0 30px rgba(168, 85, 247, 0.25);
+    border-color: rgba(168, 85, 247, 0.3);
   }
 
   .cover-image {
@@ -966,7 +966,7 @@
     justify-content: center;
     width: 100%;
     height: 100%;
-    background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%);
+    background: radial-gradient(circle at center, #16131F 0%, #0D0B12 100%);
   }
 
   .music-icon-wrapper {
@@ -976,8 +976,8 @@
     width: 88px;
     height: 88px;
     border-radius: 50%;
-    background: rgba(56, 189, 248, 0.08);
-    border: 1px solid rgba(56, 189, 248, 0.2);
+    background: rgba(168, 85, 247, 0.08);
+    border: 1px solid rgba(168, 85, 247, 0.2);
   }
 
   /* Stage Track Info */
@@ -990,7 +990,7 @@
     margin: 0;
     font-size: 20px;
     font-weight: 700;
-    color: #f8fafc;
+    color: #F8F7FC;
     letter-spacing: -0.02em;
     white-space: nowrap;
     overflow: hidden;
@@ -1000,7 +1000,7 @@
   .stage-desc {
     margin: 4px 0 0 0;
     font-size: 13px;
-    color: #94a3b8;
+    color: #8B80A3;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1010,7 +1010,7 @@
   .waveform-section {
     width: 100%;
     max-width: 680px;
-    background: rgba(30, 41, 59, 0.4);
+    background: rgba(22, 19, 31, 0.4);
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 16px;
     padding: 18px 24px 12px 24px;
@@ -1029,7 +1029,7 @@
     justify-content: space-between;
     margin-top: 8px;
     font-size: 13px;
-    color: #94a3b8;
+    color: #8B80A3;
     font-variant-numeric: tabular-nums;
   }
 
@@ -1050,7 +1050,7 @@
   .control-btn {
     background: rgba(255, 255, 255, 0.06);
     border: 1px solid rgba(255, 255, 255, 0.1);
-    color: #e2e8f0;
+    color: #ECE7F6;
     width: 44px;
     height: 44px;
     border-radius: 50%;
@@ -1064,7 +1064,7 @@
 
   .control-btn:hover {
     background: rgba(255, 255, 255, 0.15);
-    color: #f8fafc;
+    color: #F8F7FC;
     transform: scale(1.05);
   }
 
@@ -1074,30 +1074,30 @@
   }
 
   .control-btn.active {
-    color: #38bdf8;
-    background: rgba(56, 189, 248, 0.15);
-    border-color: rgba(56, 189, 248, 0.4);
+    color: #C084FC;
+    background: rgba(168, 85, 247, 0.15);
+    border-color: rgba(168, 85, 247, 0.4);
   }
 
   .play-pause-btn {
     width: 58px;
     height: 58px;
     border-radius: 50%;
-    background: linear-gradient(135deg, #38bdf8 0%, #0284c7 100%);
+    background: linear-gradient(135deg, #C084FC 0%, #7E22CE 100%);
     color: #020617;
     border: none;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    box-shadow: 0 4px 20px rgba(56, 189, 248, 0.4);
+    box-shadow: 0 4px 20px rgba(168, 85, 247, 0.4);
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     flex-shrink: 0;
   }
 
   .play-pause-btn:hover:not(:disabled) {
     transform: scale(1.08);
-    box-shadow: 0 6px 25px rgba(56, 189, 248, 0.6);
+    box-shadow: 0 6px 25px rgba(168, 85, 247, 0.6);
   }
 
   .play-pause-btn.is-loading,
@@ -1136,7 +1136,7 @@
   .speed-btn {
     background: rgba(255, 255, 255, 0.06);
     border: 1px solid rgba(255, 255, 255, 0.1);
-    color: #94a3b8;
+    color: #8B80A3;
     padding: 4px 10px;
     border-radius: 6px;
     font-size: 13px;
@@ -1146,7 +1146,7 @@
   }
 
   .speed-btn:hover {
-    color: #f8fafc;
+    color: #F8F7FC;
     background: rgba(255, 255, 255, 0.12);
   }
 
@@ -1155,7 +1155,7 @@
     bottom: calc(100% + 8px);
     left: 50%;
     transform: translateX(-50%);
-    background: #1e293b;
+    background: #16131F;
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 8px;
     padding: 4px;
@@ -1169,7 +1169,7 @@
   .speed-opt {
     background: transparent;
     border: none;
-    color: #cbd5e1;
+    color: #C4B8DB;
     padding: 6px 12px;
     font-size: 12px;
     border-radius: 4px;
@@ -1178,8 +1178,8 @@
   }
 
   .speed-opt:hover, .speed-opt.active {
-    color: #38bdf8;
-    background: rgba(56, 189, 248, 0.15);
+    color: #C084FC;
+    background: rgba(168, 85, 247, 0.15);
   }
 
   /* Volume */
@@ -1191,14 +1191,14 @@
 
   .volume-slider {
     width: 80px;
-    accent-color: #38bdf8;
+    accent-color: #C084FC;
     cursor: pointer;
   }
 
   /* Sidebar Playlist */
   .playlist-sidebar {
     width: 320px;
-    background: rgba(15, 23, 42, 0.7);
+    background: rgba(13, 11, 18, 0.7);
     border-left: 1px solid rgba(255, 255, 255, 0.08);
     display: flex;
     flex-direction: column;
@@ -1221,7 +1221,7 @@
 
   .badge {
     background: rgba(255, 255, 255, 0.1);
-    color: #94a3b8;
+    color: #8B80A3;
     padding: 2px 8px;
     border-radius: 12px;
     font-size: 12px;
@@ -1250,20 +1250,20 @@
   }
 
   .playlist-item.active {
-    background: rgba(56, 189, 248, 0.15);
-    border: 1px solid rgba(56, 189, 248, 0.3);
+    background: rgba(168, 85, 247, 0.15);
+    border: 1px solid rgba(168, 85, 247, 0.3);
   }
 
   .item-index {
     font-size: 13px;
-    color: #64748b;
+    color: #73688A;
     width: 20px;
     text-align: center;
     flex-shrink: 0;
   }
 
   .playlist-item.active .item-index {
-    color: #38bdf8;
+    color: #C084FC;
   }
 
   .item-thumb {
@@ -1283,20 +1283,20 @@
   .item-name {
     font-size: 13px;
     font-weight: 500;
-    color: #e2e8f0;
+    color: #ECE7F6;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
   .playlist-item.active .item-name {
-    color: #38bdf8;
+    color: #C084FC;
     font-weight: 600;
   }
 
   .item-sub {
     font-size: 11px;
-    color: #94a3b8;
+    color: #8B80A3;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1313,7 +1313,7 @@
 
   .playing-bars span {
     width: 2px;
-    background: #38bdf8;
+    background: #C084FC;
     animation: eqBounce 0.8s ease infinite alternate;
   }
 

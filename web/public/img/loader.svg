@@ -8,11 +8,11 @@
       fill: none;
       stroke-width: 3.5px;
       stroke-linecap: round;
-      stroke: #3b82f6;
+      stroke: #a855f7;
       animation: dash 1.5s ease-in-out infinite, colors 5.6s ease-in-out infinite;
     }
     .camera-icon {
-      fill: #858796;
+      fill: #9b8fb2;
     }
     @keyframes rotate {
       100% { transform: rotate(360deg); }
@@ -32,11 +32,11 @@
       }
     }
     @keyframes colors {
-      0% { stroke: #60a5fa; }
-      25% { stroke: #3b82f6; }
-      50% { stroke: #2563eb; }
-      75% { stroke: #1d4ed8; }
-      100% { stroke: #60a5fa; }
+      0% { stroke: #c084fc; }
+      25% { stroke: #a855f7; }
+      50% { stroke: #ec4899; }
+      75% { stroke: #7e22ce; }
+      100% { stroke: #c084fc; }
     }
   </style>
   <g class="camera-icon" transform="translate(14, 14)">

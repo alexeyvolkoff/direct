@@ -317,7 +317,7 @@
 		width: 32px;
 		height: 32px;
 		border-radius: 50%;
-		background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+		background: linear-gradient(135deg, #9333EA, #8b5cf6);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -336,8 +336,8 @@
 	}
 
 	.wx-profile-avatar.ephemeral {
-		background: linear-gradient(135deg, #64748b, #475569);
-		color: #cbd5e1;
+		background: linear-gradient(135deg, #73688A, #5B5270);
+		color: #C4B8DB;
 	}
 
 	.wx-avatar-text {
@@ -374,7 +374,7 @@
 	.wx-profile-name {
 		font-size: 13px;
 		font-weight: 600;
-		color: var(--wx-color-font, #1e293b);
+		color: var(--wx-color-font, #16131F);
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -383,7 +383,7 @@
 
 	.wx-profile-sub {
 		font-size: 11px;
-		color: var(--wx-color-font-alt, #64748b);
+		color: var(--wx-color-font-alt, #73688A);
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -397,7 +397,7 @@
 		justify-content: center;
 		background: transparent;
 		border: none;
-		color: var(--wx-color-font-alt, #64748b);
+		color: var(--wx-color-font-alt, #73688A);
 		padding: 6px;
 		border-radius: 6px;
 		cursor: pointer;
@@ -426,7 +426,7 @@
 		border: none;
 		padding: 8px 10px;
 		border-radius: 8px;
-		color: var(--text-secondary, var(--wx-color-font-alt, #64748b));
+		color: var(--text-secondary, var(--wx-color-font-alt, #73688A));
 		font-size: 0.88rem;
 		font-weight: 500;
 		cursor: pointer;
@@ -437,7 +437,7 @@
 
 	.wx-sidebar-nav-btn:hover {
 		background: var(--bg-card-hover, rgba(125, 133, 150, 0.12));
-		color: var(--text-primary, var(--wx-color-font, #1e293b));
+		color: var(--text-primary, var(--wx-color-font, #16131F));
 	}
 
 	.wx-sidebar-nav-btn svg {
@@ -446,7 +446,7 @@
 
 	.wx-sidebar-update-badge {
 		margin-left: auto;
-		background: linear-gradient(135deg, #0ea5e9, #2563eb);
+		background: linear-gradient(135deg, #A855F7, #7E22CE);
 		color: #ffffff;
 		border: none;
 		border-radius: 9999px;
@@ -457,20 +457,20 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 3px;
-		box-shadow: 0 1px 4px rgba(14, 165, 233, 0.4);
+		box-shadow: 0 1px 4px rgba(168, 85, 247, 0.4);
 		transition: all 0.15s ease;
 		animation: pulseUpdate 2s infinite ease-in-out;
 	}
 
 	.wx-sidebar-update-badge:hover {
 		transform: scale(1.05);
-		box-shadow: 0 2px 8px rgba(14, 165, 233, 0.6);
+		box-shadow: 0 2px 8px rgba(168, 85, 247, 0.6);
 	}
 
 	.wx-sidebar-downloading-badge {
 		margin-left: auto;
 		font-size: 10px;
-		color: #38bdf8;
+		color: #C084FC;
 		font-style: italic;
 	}
 

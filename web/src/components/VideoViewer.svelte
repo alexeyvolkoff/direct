@@ -504,13 +504,13 @@
     <aside class="playlist-sidebar" class:open={showPlaylist}>
       <div class="sidebar-header">
         <div class="sidebar-title-group">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#2996cc" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#C084FC" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="8" y1="6" x2="21" y2="6"></line>
             <line x1="8" y1="12" x2="21" y2="12"></line>
             <line x1="8" y1="18" x2="21" y2="18"></line>
-            <circle cx="4" cy="6" r="1.5" fill="#2996cc"></circle>
-            <circle cx="4" cy="12" r="1.5" fill="#2996cc"></circle>
-            <circle cx="4" cy="18" r="1.5" fill="#2996cc"></circle>
+            <circle cx="4" cy="6" r="1.5" fill="#C084FC"></circle>
+            <circle cx="4" cy="12" r="1.5" fill="#C084FC"></circle>
+            <circle cx="4" cy="18" r="1.5" fill="#C084FC"></circle>
           </svg>
           <span class="sidebar-heading">{$_("playlist", {}, "Playlist")} ({playlist.length})</span>
         </div>
@@ -694,8 +694,8 @@
 
   .header-btn:hover,
   .header-btn.active {
-    background: rgba(41, 150, 204, 0.7);
-    border-color: #37a9ef;
+    background: rgba(168, 85, 247, 0.7);
+    border-color: #A855F7;
     transform: scale(1.05);
   }
 
@@ -743,7 +743,7 @@
   .video-info-title {
     font-size: 15px;
     font-weight: 700;
-    color: #f8fafc;
+    color: #F8F7FC;
     margin: 0;
     line-height: 1.4;
     word-break: break-word;
@@ -773,7 +773,7 @@
 
   .video-info-desc {
     font-size: 12.5px;
-    color: #94a3b8;
+    color: #8B80A3;
     margin: 0;
     line-height: 1.45;
     word-break: break-word;
@@ -784,7 +784,7 @@
     display: inline-block;
     background: rgba(255, 255, 255, 0.08);
     border: 1px solid rgba(255, 255, 255, 0.12);
-    color: #cbd5e1;
+    color: #C4B8DB;
     padding: 2px 7px;
     border-radius: 6px;
     font-size: 11.5px;
@@ -799,7 +799,7 @@
     width: 330px;
     max-width: 380px;
     height: 100%;
-    background: #080c14;
+    background: #08060C;
     border-left: 1px solid rgba(255, 255, 255, 0.08);
     display: flex;
     flex-direction: column;
@@ -837,13 +837,13 @@
   .sidebar-heading {
     font-size: 13.5px;
     font-weight: 600;
-    color: #f1f5f9;
+    color: #F4F1FA;
   }
 
   .sidebar-close-btn {
     background: transparent;
     border: none;
-    color: #94a3b8;
+    color: #8B80A3;
     cursor: pointer;
     padding: 5px;
     border-radius: 6px;
@@ -891,16 +891,16 @@
   }
 
   .playlist-card.active {
-    background: rgba(41, 150, 204, 0.22);
+    background: rgba(168, 85, 247, 0.22);
     border-color: rgba(55, 169, 239, 0.8);
-    box-shadow: 0 4px 14px rgba(41, 150, 204, 0.25);
+    box-shadow: 0 4px 14px rgba(168, 85, 247, 0.25);
   }
 
   .card-thumb {
     width: 100px;
     height: 60px;
     border-radius: 6px;
-    background: #1e293b;
+    background: #16131F;
     position: relative;
     overflow: hidden;
     flex-shrink: 0;
@@ -920,7 +920,7 @@
   }
 
   .thumb-fallback {
-    color: #64748b;
+    color: #73688A;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -943,7 +943,7 @@
 
   .eq-bar {
     width: 2.5px;
-    background: #38bdf8;
+    background: #C084FC;
     border-radius: 1px;
     animation: eqBounce 0.8s ease-in-out infinite alternate;
   }
@@ -967,7 +967,7 @@
   .card-title {
     font-size: 13px;
     font-weight: 600;
-    color: #f1f5f9;
+    color: #F4F1FA;
     line-height: 1.35;
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -976,12 +976,12 @@
   }
 
   .playlist-card.active .card-title {
-    color: #38bdf8;
+    color: #C084FC;
   }
 
   .card-desc {
     font-size: 11.5px;
-    color: #94a3b8;
+    color: #8B80A3;
     line-height: 1.3;
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -991,7 +991,7 @@
 
   .card-meta {
     font-size: 11px;
-    color: #64748b;
+    color: #73688A;
     margin-top: 2px;
   }
 
@@ -1016,7 +1016,7 @@
       transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
       box-shadow: -8px 0 32px rgba(0, 0, 0, 0.85);
       border-left: 1px solid rgba(255, 255, 255, 0.12);
-      background: #080c14;
+      background: #08060C;
       opacity: 1 !important;
     }
 
@@ -1106,7 +1106,7 @@
     right: 0 !important;
     width: 100% !important;
     height: 54px !important;
-    background: linear-gradient(to top, rgba(15, 23, 42, 0.95) 0%, rgba(15, 23, 42, 0.7) 70%, rgba(0, 0, 0, 0) 100%) !important;
+    background: linear-gradient(to top, rgba(13, 11, 18, 0.95) 0%, rgba(13, 11, 18, 0.7) 70%, rgba(0, 0, 0, 0) 100%) !important;
     display: flex !important;
     align-items: center !important;
     justify-content: flex-start !important;
@@ -1142,7 +1142,7 @@
 
   :global(.video-js .vjs-control-bar .vjs-button:hover) {
     background: rgba(255, 255, 255, 0.18) !important;
-    color: #37a9ef !important;
+    color: #A855F7 !important;
   }
 
   :global(.video-js .vjs-control-bar .vjs-button .vjs-icon-placeholder:before) {
@@ -1188,7 +1188,7 @@
 
   :global(.video-js .vjs-volume-level) {
     border-radius: 3px !important;
-    background-color: #2996cc !important;
+    background-color: #9333EA !important;
     height: 100% !important;
   }
 
@@ -1206,7 +1206,7 @@
     padding: 0 4px !important;
     display: inline-flex !important;
     align-items: center !important;
-    color: #cbd5e1 !important;
+    color: #C4B8DB !important;
     min-width: auto !important;
   }
 
@@ -1228,7 +1228,7 @@
 
   :global(.video-js .vjs-play-progress) {
     border-radius: 4px !important;
-    background-color: #2996cc !important;
+    background-color: #9333EA !important;
   }
 
   :global(.video-js .vjs-play-progress:before) {
@@ -1280,7 +1280,7 @@
 
   :global(.video-js .vjs-playback-rate:hover) {
     background: rgba(255, 255, 255, 0.18) !important;
-    color: #37a9ef !important;
+    color: #A855F7 !important;
   }
 
   :global(.video-js .vjs-playback-rate .vjs-playback-rate-value) {
@@ -1292,7 +1292,7 @@
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
-    color: #f1f5f9 !important;
+    color: #F4F1FA !important;
     text-align: center !important;
     pointer-events: none !important;
   }
@@ -1307,8 +1307,8 @@
   }
 
   :global(.video-js .vjs-playback-rate .vjs-menu-content) {
-    background: rgba(15, 23, 42, 0.95) !important;
-    border: 1px solid rgba(148, 163, 184, 0.2) !important;
+    background: rgba(13, 11, 18, 0.95) !important;
+    border: 1px solid rgba(139, 128, 163, 0.2) !important;
     border-radius: 8px !important;
     padding: 6px 0 !important;
     box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5) !important;
@@ -1320,7 +1320,7 @@
     font-weight: 600 !important;
     padding: 8px 12px !important;
     text-align: center !important;
-    color: #cbd5e1 !important;
+    color: #C4B8DB !important;
     border-radius: 4px !important;
     margin: 2px 4px !important;
     cursor: pointer !important;
@@ -1329,7 +1329,7 @@
 
   :global(.video-js .vjs-playback-rate .vjs-menu-item:hover),
   :global(.video-js .vjs-playback-rate .vjs-menu-item.vjs-selected) {
-    background: #2996cc !important;
+    background: #9333EA !important;
     color: #ffffff !important;
   }
 </style>

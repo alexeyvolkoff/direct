@@ -29,28 +29,28 @@
     base: 'vs-dark',
     inherit: true,
     rules: [
-      { token: 'diff.header', foreground: '61afef' },
-      { token: 'diff.index', foreground: '7f848e' },
+      { token: 'diff.header', foreground: 'C084FC' },
+      { token: 'diff.index', foreground: '8B80A3' },
       { token: 'diff.old', foreground: 'e06c75' },
       { token: 'diff.new', foreground: '98c379' },
-      { token: 'diff.hunk', foreground: '56b6c2', fontStyle: 'bold' },
+      { token: 'diff.hunk', foreground: 'D8B4FE', fontStyle: 'bold' },
       { token: 'diff.add', foreground: '98c379' },
       { token: 'diff.removed', foreground: 'e06c75' },
-      { token: 'diff.comment', foreground: '7f848e', fontStyle: 'italic' }
+      { token: 'diff.comment', foreground: '8B80A3', fontStyle: 'italic' }
     ],
     colors: {
-      'editor.background': '#202A2F',
-      'editor.foreground': '#d6dbe0',
-      'editor.lineHighlightBackground': '#232a2e',
-      'editorLineNumber.foreground': '#5c6670',
-      'editorLineNumber.activeForeground': '#9aa4ad',
-      'editorWidget.background': '#202A2F',
-      'editorWidget.border': '#394248',
+      'editor.background': '#16131F',
+      'editor.foreground': '#EFEBF8',
+      'editor.lineHighlightBackground': '#211C2E',
+      'editorLineNumber.foreground': '#5B5270',
+      'editorLineNumber.activeForeground': '#C4B8DB',
+      'editorWidget.background': '#16131F',
+      'editorWidget.border': '#2D2640',
       'diffEditor.insertedLineBackground': '#0f2a17',
       'diffEditor.removedLineBackground': '#2a1414',
       'diffEditor.insertedTextBackground': '#1f4a2c',
       'diffEditor.removedTextBackground': '#521c1c',
-      'diffEditor.diagonalFill': '#394248'
+      'diffEditor.diagonalFill': '#2D2640'
     }
   });
 </script>
@@ -135,6 +135,6 @@
     width: 100%;
     height: 100%;
     min-height: 0;
-    background-color: var(--wx-background, #202A2F);
+    background-color: var(--wx-background, #16131F);
   }
 </style>

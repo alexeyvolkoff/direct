@@ -294,7 +294,7 @@
 
 	.wx-card-placeholder i {
 		font-size: 80px;
-		color: var(--wx-color-primary, #38bdf8);
+		color: var(--wx-color-primary, #C084FC);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -303,7 +303,7 @@
 
 	.wx-preview i {
 		font-size: 80px;
-		color: var(--wx-color-primary, #38bdf8);
+		color: var(--wx-color-primary, #C084FC);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -374,7 +374,7 @@
 	.wx-name {
 		font-size: 13px;
 		font-weight: var(--wx-font-weight-md, 500);
-		color: var(--wx-color-font, #e2e8f0);
+		color: var(--wx-color-font, #ECE7F6);
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -416,7 +416,7 @@
 
 	.wx-more-desktop:hover {
 		background-color: var(--wx-button-background, rgba(255, 255, 255, 0.12));
-		color: var(--wx-color-primary, #38bdf8);
+		color: var(--wx-color-primary, #C084FC);
 		border-radius: 50%;
 	}
 
@@ -457,8 +457,8 @@
 		color: #4ade80;
 	}
 	.wx-device-badge.offline {
-		background-color: rgba(148, 163, 184, 0.15);
-		color: #94a3b8;
+		background-color: rgba(139, 128, 163, 0.15);
+		color: #8B80A3;
 	}
 	.wx-device-badge-dot {
 		width: 4px;
@@ -481,7 +481,7 @@
 		display: flex;
 		align-items: center;
 		width: fit-content;
-		color: var(--top-menu-color, var(--wx-color-primary, #38bdf8));
+		color: var(--top-menu-color, var(--wx-color-primary, #C084FC));
 		user-select: none;
 		font-weight: 500;
 		cursor: pointer;
@@ -517,7 +517,7 @@
 		}
 
 		.wx-selected {
-			background-color: rgba(59, 130, 246, 0.18) !important;
+			background-color: rgba(168, 85, 247, 0.18) !important;
 			outline: none !important;
 		}
 
@@ -614,9 +614,9 @@
 			width: 22px;
 			height: 22px;
 			border-radius: 50%;
-			background: rgba(15, 23, 42, 0.85);
+			background: rgba(13, 11, 18, 0.85);
 			border: 1px solid rgba(255, 255, 255, 0.15);
-			color: var(--wx-icon-color, #cbd5e1);
+			color: var(--wx-icon-color, #C4B8DB);
 			opacity: 0.9;
 			z-index: 2;
 			box-sizing: border-box;

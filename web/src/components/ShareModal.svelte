@@ -318,7 +318,7 @@
     display: flex;
     flex-direction: column;
     box-shadow: 0 20px 48px rgba(0, 0, 0, 0.25);
-    border: 1px solid rgba(148, 163, 184, 0.2);
+    border: 1px solid rgba(139, 128, 163, 0.2);
     animation: modalAppear 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
@@ -329,14 +329,14 @@
 
   .modal-card.light-theme {
     background: #ffffff;
-    color: #101c22;
-    border-color: #d6dde1;
+    color: #0D0B12;
+    border-color: #DDD6EB;
   }
 
   .modal-card.dark-theme {
-    background: #202a2f;
+    background: #16131F;
     color: #ffffff;
-    border-color: #3d4f57;
+    border-color: #2D2640;
   }
 
   .modal-header {
@@ -344,15 +344,15 @@
     justify-content: space-between;
     align-items: center;
     padding: 18px 20px;
-    border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+    border-bottom: 1px solid rgba(139, 128, 163, 0.15);
   }
 
   .light-theme .modal-header {
-    border-bottom-color: #d6dde1;
+    border-bottom-color: #DDD6EB;
   }
 
   .dark-theme .modal-header {
-    border-bottom-color: #3d4f57;
+    border-bottom-color: #2D2640;
   }
 
   .header-info {
@@ -365,8 +365,8 @@
     width: 40px;
     height: 40px;
     border-radius: 10px;
-    background: rgba(41, 150, 204, 0.15);
-    color: #2996cc;
+    background: rgba(168, 85, 247, 0.15);
+    color: #9333EA;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -380,7 +380,7 @@
 
   .modal-sub {
     font-size: 12px;
-    color: #94a3b8;
+    color: #8B80A3;
     margin: 2px 0 0 0;
   }
 
@@ -388,7 +388,7 @@
     background: transparent;
     border: none;
     cursor: pointer;
-    color: #94a3b8;
+    color: #8B80A3;
     padding: 6px;
     border-radius: 8px;
     display: flex;
@@ -397,7 +397,7 @@
   }
 
   .close-btn:hover {
-    background: rgba(148, 163, 184, 0.15);
+    background: rgba(139, 128, 163, 0.15);
     color: inherit;
   }
 
@@ -414,14 +414,14 @@
     align-items: center;
     padding: 30px;
     gap: 12px;
-    color: #94a3b8;
+    color: #8B80A3;
   }
 
   .spinner {
     width: 32px;
     height: 32px;
-    border: 3px solid rgba(148, 163, 184, 0.2);
-    border-top-color: #3b82f6;
+    border: 3px solid rgba(139, 128, 163, 0.2);
+    border-top-color: #9333EA;
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }
@@ -452,14 +452,14 @@
     border-radius: 8px;
     font-family: monospace;
     font-size: 13px;
-    border: 1px solid rgba(148, 163, 184, 0.3);
-    background: rgba(148, 163, 184, 0.08);
+    border: 1px solid rgba(139, 128, 163, 0.3);
+    background: rgba(139, 128, 163, 0.08);
     color: inherit;
   }
 
   .btn-copy {
     padding: 9px 16px;
-    background: #3b82f6;
+    background: #9333EA;
     color: #ffffff;
     border: none;
     border-radius: 8px;
@@ -471,12 +471,12 @@
   }
 
   .btn-copy:hover {
-    background: #2563eb;
+    background: #7E22CE;
   }
 
   .link-help {
     font-size: 12px;
-    color: #94a3b8;
+    color: #8B80A3;
     margin: 0;
   }
 
@@ -507,7 +507,7 @@
 
   .option-desc {
     font-size: 11px;
-    color: #94a3b8;
+    color: #8B80A3;
   }
 
   .password-input-wrap {
@@ -518,8 +518,8 @@
     width: 100%;
     padding: 8px 12px;
     border-radius: 8px;
-    border: 1px solid rgba(148, 163, 184, 0.3);
-    background: rgba(148, 163, 184, 0.08);
+    border: 1px solid rgba(139, 128, 163, 0.3);
+    background: rgba(139, 128, 163, 0.08);
     color: inherit;
     font-size: 13px;
     box-sizing: border-box;
@@ -531,26 +531,26 @@
     -moz-appearance: none;
     padding: 7px 32px 7px 10px;
     border-radius: 8px;
-    border: 1px solid rgba(148, 163, 184, 0.3);
-    background-color: rgba(148, 163, 184, 0.08);
+    border: 1px solid rgba(139, 128, 163, 0.3);
+    background-color: rgba(139, 128, 163, 0.08);
     background-repeat: no-repeat;
     background-position: right 10px center;
     background-size: 13px 13px;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='%238B80A3' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
     color: inherit;
     font-size: 13px;
     cursor: pointer;
   }
 
   .select-input option {
-    background-color: #202a2f;
+    background-color: #16131F;
     color: #ffffff;
   }
 
   :global(.light-theme) .select-input option,
   :global(html:not(.omd-dark)) .select-input option {
     background-color: #ffffff;
-    color: #101c22;
+    color: #0D0B12;
   }
 
   /* Switches */
@@ -575,7 +575,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: rgba(148, 163, 184, 0.3);
+    background-color: rgba(139, 128, 163, 0.3);
     transition: 0.2s;
     border-radius: 22px;
   }
@@ -593,7 +593,7 @@
   }
 
   input:checked + .slider {
-    background-color: #2996cc;
+    background-color: #9333EA;
   }
 
   input:checked + .slider:before {
@@ -623,16 +623,16 @@
     display: flex;
     align-items: center;
     padding: 14px 20px;
-    border-top: 1px solid rgba(148, 163, 184, 0.15);
+    border-top: 1px solid rgba(139, 128, 163, 0.15);
     gap: 10px;
   }
 
   .light-theme .modal-footer {
-    border-top-color: #d6dde1;
+    border-top-color: #DDD6EB;
   }
 
   .dark-theme .modal-footer {
-    border-top-color: #3d4f57;
+    border-top-color: #2D2640;
   }
 
   .footer-spacer {
@@ -641,7 +641,7 @@
 
   .btn-primary {
     padding: 9px 18px;
-    background: #2996cc;
+    background: #9333EA;
     color: #ffffff;
     border: none;
     border-radius: 8px;
@@ -652,13 +652,13 @@
   }
 
   .btn-primary:hover {
-    background: #37a9ef;
+    background: #A855F7;
   }
 
   .btn-cancel {
     padding: 9px 14px;
     background: transparent;
-    border: 1px solid rgba(148, 163, 184, 0.25);
+    border: 1px solid rgba(139, 128, 163, 0.25);
     color: inherit;
     border-radius: 8px;
     font-size: 13px;

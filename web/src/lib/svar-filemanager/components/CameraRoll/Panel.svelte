@@ -193,7 +193,7 @@
 		border-radius: 8px;
 		background: var(--wx-background, rgba(255, 255, 255, 0.06));
 		border: 1px solid var(--wx-border, rgba(255, 255, 255, 0.12));
-		color: var(--wx-color-font, #e2e8f0);
+		color: var(--wx-color-font, #ECE7F6);
 		font-size: 13px;
 		font-weight: 500;
 		cursor: pointer;
@@ -204,13 +204,13 @@
 
 	.wx-cr-folder-chip:hover {
 		background: var(--wx-background-hover, rgba(255, 255, 255, 0.12));
-		border-color: var(--wx-color-primary, #38bdf8);
+		border-color: var(--wx-color-primary, #C084FC);
 		transform: translateY(-1px);
 	}
 
 	.wx-cr-folder-chip i {
 		font-size: 16px;
-		color: var(--wx-color-primary, #2996CC) !important;
+		color: var(--wx-color-primary, #9333EA) !important;
 	}
 
 	.wx-cameraroll-grid {
