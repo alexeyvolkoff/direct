@@ -77,12 +77,12 @@ void OnMyDiskSettings::readSettings(QSettings* settings)
 #endif
 
     #ifdef P2P_ENABLED
-    if (m_server == "localhost" || m_server.isEmpty() || m_server == "disk.direct")
+    if (m_server == "localhost" || m_server.isEmpty() || m_server.endsWith("onmydisk.net"))
         m_server = QString("disk.direct");
     if (m_server == "disk.direct" && (m_port == 0 || m_port == 9000))
         m_port = DEFAULT_PORT;
     #elif defined(STAGING)
-    if (m_server == "localhost" || m_server.isEmpty())
+    if (m_server == "localhost" || m_server.isEmpty() || m_server.endsWith("onmydisk.net"))
         m_server = QString("disk.direct");
     #endif
     #ifdef INNBOX
