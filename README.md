@@ -6,6 +6,7 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Disk Direct](https://img.shields.io/badge/P2P%20Cloud-disk.direct-brightgreen.svg)](https://disk.direct)
 [![AI Assistant Direct](https://img.shields.io/badge/AI%20Assistant-aiassistant.direct-7c3aed.svg)](https://aiassistant.direct)
+[![Documentation](https://img.shields.io/badge/Docs-docs.disk.direct-0ea5e9.svg)](https://docs.disk.direct)
 [![Qt](https://img.shields.io/badge/C%2B%2B%2FQt-5.15-green.svg)](core/)
 [![Svelte](https://img.shields.io/badge/Web%20PWA-Svelte%205-orange.svg)](web/)
 [![Python](https://img.shields.io/badge/AI%20Node-FastAPI%20%2B%20Ollama-3776AB.svg)](ai/)
@@ -14,7 +15,8 @@
 
 > **⚡ Live Entry Points:**
 > - 📂 **Disk Direct:** [**disk.direct**](https://disk.direct) — P2P file manager, WordCraft / GridCraft / DeckCraft office editors, media streaming, and remote WebRTC SSH terminal.
-> - 💬 **AI Assistant Direct:** [**aiassistant.direct**](https://aiassistant.direct) (or [**chat.disk.direct**](https://chat.disk.direct)) — private RAG over your folders, autonomous MCP agents, ComfyUI Creative Studio, and AI Horde worker/client.
+> - 💬 **AI Assistant Direct:** [**aiassistant.direct**](https://aiassistant.direct) — private RAG over your folders, autonomous MCP agents, ComfyUI Creative Studio, and AI Horde worker/client.
+> - 📚 **Documentation:** [**docs.disk.direct**](https://docs.disk.direct) — installation guides, decentralized identity (DID), personal AI & search node setup, and P2P app proxy.
 
 ---
 
