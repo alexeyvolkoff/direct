@@ -1,12 +1,12 @@
 # Инструкции по настройке Rockchip NPU (RKLLAMA)
 
-Если вы настраиваете AI-узел OnMyChat на одноплатном компьютере (SBC) под управлением процессора Rockchip с NPU (например, RK3588 или RK3576, такого как Firefly, Orange Pi 5 и т. д.), стандартная утилита Ollama не поддерживается. Используйте **RKLLAMA** вместо неё для аппаратного ускорения на NPU.
+Если вы настраиваете AI-узел AI Assistant Direct на одноплатном компьютере (SBC) под управлением процессора Rockchip с NPU (например, RK3588 или RK3576, такого как Firefly, Orange Pi 5 и т. д.), стандартная утилита Ollama не поддерживается. Используйте **RKLLAMA** вместо неё для аппаратного ускорения на NPU.
 
 ---
 
 > [!TIP]
 > **Рекомендуемая автоматическая установка**
-> Вы можете настроить OnMyChat и RKLLAMA (включая службы systemd) автоматически с помощью нового скрипта **[install.sh](file:///home/alexey/projects/omd/onmychat/install.sh)**:
+> Вы можете настроить AI Assistant Direct и RKLLAMA (включая службы systemd) автоматически с помощью нового скрипта **[install.sh](../install.sh)**:
 > ```bash
 > sudo ./install.sh
 > ```
@@ -66,8 +66,8 @@
    curl -s http://localhost:8080/api/tags
    ```
 
-7. **Настройка OnMyChat:**
-   В файле `config.ini` для OnMyChat укажите:
+7. **Настройка AI Assistant Direct:**
+   В файле `config.ini` для AI Assistant Direct укажите:
    ```ini
    OLLAMA_URL = http://localhost:8080
    DEFAULT_MODEL = <имя_вашей_модели_из_тегов_rkllama>
@@ -75,27 +75,27 @@
 
 ---
 
-## 2. Особенности установки OnMyChat на SBC (избегаем загрузки CUDA)
+## 2. Особенности установки AI Assistant Direct на SBC (избегаем загрузки CUDA)
 
-Чтобы не скачивать гигабайты ненужных библиотек NVIDIA CUDA/cuDNN на SBC, устанавливайте зависимости OnMyChat с явным указанием CPU-версии PyTorch:
+Чтобы не скачивать гигабайты ненужных библиотек NVIDIA CUDA/cuDNN на SBC, устанавливайте зависимости AI Assistant Direct с явным указанием CPU-версии PyTorch:
 ```bash
 pip install torch --extra-index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
 ```
 
-If you encounter an `AttributeError: np.float_ was removed in the NumPy 2.0 release` when starting OnMyChat, downgrade NumPy:
+If you encounter an `AttributeError: np.float_ was removed in the NumPy 2.0 release` when starting AI Assistant Direct, downgrade NumPy:
 ```bash
 pip install "numpy<2.0.0"
 ```
 
 ---
 
-## 3. Запуск OnMyChat как системного сервиса Systemd
+## 3. Запуск AI Assistant Direct как системного сервиса Systemd
 
 Создайте файл `/etc/systemd/system/onmychat.service`:
 ```ini
 [Unit]
-Description=OnMyChat AI Service
+Description=AI Assistant Direct Service
 After=network.target rkllama.service
 
 [Service]

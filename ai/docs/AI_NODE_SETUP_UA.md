@@ -2,7 +2,7 @@
 
 > Запусти власну AI-інфраструктуру: приватно, автономно, без лімітів.
 
-Цей посібник допоможе розгорнути персональний AI-вузол OnMyChat на власному обладнанні та підключити його до акаунту OnMyDisk через **OnMyDisk Connector**. Після налаштування ви отримаєте:
+Цей посібник допоможе розгорнути персональний AI-вузол AI Assistant Direct на власному обладнанні та підключити його до акаунту Disk Direct через **Disk Direct Connector**. Після налаштування ви отримаєте:
 
 - **Приватний RAG** — ваші файли індексуються локально, дані не залишають вашу мережу
 - **Семантичний пошук** — пошук документів за змістом, а не лише за іменем
@@ -16,13 +16,13 @@
 
 ```
 ┌─────────────────┐     ┌──────────────────┐     ┌──────────────────┐
-│  Браузер        │────>│  OnMyDisk Gateway│────>│  Ваш пристрій    │
-│  (onmydisk.net) │     │  (хмарний проксі)│     │  (Connector)     │
+│  Браузер        │────>│  Direct Gateway  │────>│  Ваш пристрій    │
+│   (disk.direct) │     │  (хмарний проксі)│     │  (Connector)     │
 └─────────────────┘     └──────────────────┘     └──────────────────┘
                                                          │
                                                          v
                                                   ┌──────────────────┐
-                                                  │  OnMyChat AI     │
+                                                  │  Direct AI Node  │
                                                   │  Файли (локально)│
                                                   ├──────────────────┤
                                                   │  Ollama (LLM)    │
@@ -45,13 +45,13 @@
 | Диск | 20 ГБ вільно | 100+ ГБ (SSD) |
 | GPU (опціонально) | — | NVIDIA GTX 1060 6GB+ |
 | ОС | Ubuntu 22.04 / 24.04 | Ubuntu 24.04 LTS |
-| Мережа | Доступ до інтернету | Встановлений OnMyDisk Connector |
+| Мережа | Доступ до інтернету | Встановлений Disk Direct Connector |
 
 ---
 
-## Крок 1: Встановлення OnMyDisk Connector
+## Крок 1: Встановлення Disk Direct Connector
 
-Connector — це **просунутий клієнт** On My Disk, призначений для встановлення на різні пристрої зберігання даних. Він працює як системний сервіс, відкриває доступ до ваших локальних тек та хостить локального AI-асистента.
+Connector — це **просунутий клієнт** Disk Direct, призначений для встановлення на різні пристрої зберігання даних. Він працює як системний сервіс, відкриває доступ до ваших локальних тек та хостить локального AI-асистента.
 
 ### Завантаження пакета
 
@@ -110,24 +110,24 @@ Connector слухає **порт 80** за замовчуванням. Відк
 
 ---
 
-## Крок 2: Реєстрація та підключення до On My Disk
+## Крок 2: Реєстрація та підключення до Disk Direct
 
-Спочатку ваш пристрій працюватиме в анонімному режимі, без прив'язки до облікового запису On My Disk, виключно в локальній мережі. Щоб отримати доступ до вашого пристрою через інтернет, з мобільного додатку, а також поділитися доступом до файлів та AI-асистента з іншими користувачами, виконайте наступні дії:
+Спочатку ваш пристрій працюватиме в анонімному режимі, без прив'язки до облікового запису Disk Direct, виключно в локальній мережі. Щоб отримати доступ до вашого пристрою через інтернет, з мобільного додатку, а також поділитися доступом до файлів та AI-асистента з іншими користувачами, виконайте наступні дії:
 
-1. Створіть обліковий запис On My Disk або увійдіть за допомогою Google в інтерфейс шлюзу: [onmydisk.net](https://disk.direct).
+1. Створіть обліковий запис Disk Direct або увійдіть за допомогою Google в інтерфейс шлюзу: [disk.direct](https://disk.direct).
 2. Відкрийте веб-інтерфейс Connector: `http://<ip-або-ім'я-пристрою>` і перейдіть до налаштувань профілю **Settings → Profile**.
 3. Клікніть "Прив'язати пристрій до акаунту". У вікні, що з'явилося, виконайте вхід під своїм обліковим записом.
-4. Перевірте у веб-інтерфейсі шлюзу [onmydisk.net](https://disk.direct) - у розділі **My Devices** має з'явитися ваш пристрій. Тепер ви можете користуватися вашим пристроєм віддалено та надати доступ до файлів і AI-асистента іншим користувачам вашої групи.
+4. Перевірте у веб-інтерфейсі шлюзу [disk.direct](https://disk.direct) - у розділі **My Devices** має з'явитися ваш пристрій. Тепер ви можете користуватися вашим пристроєм віддалено та надати доступ до файлів і AI-асистента іншим користувачам вашої групи.
 
 ---
 
-## Крок 3: Встановлення та налаштування OnMyChat (AI-вузол)
+## Крок 3: Встановлення та налаштування AI Assistant Direct (AI-вузол)
 
-OnMyChat — це додатковий сервіс, який керує LLM, RAG та пошуком.
+AI Assistant Direct — це додатковий сервіс, який керує LLM, RAG та пошуком.
 
 ```bash
 # Клонуйте репозиторій
-git clone <repository-url> /opt/onmychat
+git clone https://github.com/alexeyvolkoff/direct.git && sudo cp -r direct/ai /opt/onmychat
 cd /opt/onmychat
 
 # Створіть віртуальне оточення
@@ -159,7 +159,7 @@ DEFAULT_MODEL = gemma4:latest
 APP_ROOT_DIR = /opt/onmychat
 ```
 
-Жодні токени в `config.ini` не потрібні — локальний **OnMyDisk Connector** автоматично спрямовує P2P-запити на `http://localhost:8000` і розпізнає власника вузла за прив'язаним криптографічним DID.
+Жодні токени в `config.ini` не потрібні — локальний **Disk Direct Connector** автоматично спрямовує P2P-запити на `http://localhost:8000` і розпізнає власника вузла за прив'язаним криптографічним DID.
 
 ### Запуск
 
@@ -237,28 +237,28 @@ curl http://localhost:11434/api/tags
      sudo systemctl daemon-reload && sudo systemctl enable rkllama && sudo systemctl start rkllama
      ```
    - Перевірте доступні моделі: `curl -s http://localhost:8080/api/tags`
-   - У файлі `config.ini` для OnMyChat вкажіть:
+   - У файлі `config.ini` для AI Assistant Direct вкажіть:
      ```ini
      OLLAMA_URL = http://localhost:8080
      DEFAULT_MODEL = <назва_вашої_моделі_з_тегів_rkllama>
      ```
 
-2. **Особливості встановлення OnMyChat на SBC (уникаємо завантаження CUDA):**
-   Щоб не завантажувати гігабайти непотрібних бібліотек NVIDIA CUDA/cuDNN, встановлюйте залежності OnMyChat з явним зазначенням CPU-версії PyTorch:
+2. **Особливості встановлення AI Assistant Direct на SBC (уникаємо завантаження CUDA):**
+   Щоб не завантажувати гігабайти непотрібних бібліотек NVIDIA CUDA/cuDNN, встановлюйте залежності AI Assistant Direct з явним зазначенням CPU-версії PyTorch:
    ```bash
    pip install torch --extra-index-url https://download.pytorch.org/whl/cpu
    pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
    ```
-   Якщо при запуску OnMyChat виникає помилка `AttributeError: np.float_ was removed in the NumPy 2.0 release`, примусово знизьте версію NumPy:
+   Якщо при запуску AI Assistant Direct виникає помилка `AttributeError: np.float_ was removed in the NumPy 2.0 release`, примусово знизьте версію NumPy:
    ```bash
    pip install "numpy<2.0.0"
    ```
 
-3. **Запуск OnMyChat як системного сервісу:**
+3. **Запуск AI Assistant Direct як системного сервісу:**
    Створіть файл `/etc/systemd/system/onmychat.service`:
    ```ini
    [Unit]
-   Description=OnMyChat AI Service
+   Description=AI Assistant Direct AI Service
    After=network.target rkllama.service
 
    [Service]
@@ -305,7 +305,7 @@ ls /opt/onmychat/memory_index/unified_index/
 
 ## Режими роботи AI-вузла
 
-AI-вузол, підключений до шлюзу OnMyDisk, може працювати у двох режимах, що визначаються автентифікацією користувача на шлюзі:
+AI-вузол, підключений до шлюзу Disk Direct, може працювати у двох режимах, що визначаються автентифікацією користувача на шлюзі:
 
 - **Публічний режим** — користувач є гостем. Вузол перевіряє баланс токенів і застосовує ліміти на імпорт та генерацію.
 - **Приватний режим** — користувач є власником пристрою або перебуває у списку доступу до пристрою. Перевірка балансу та ліміти не застосовуються.
@@ -325,7 +325,7 @@ AI-вузол, підключений до шлюзу OnMyDisk, може пра�
    ```bash
    python3 main.py --listen 0.0.0.0 --port 8188
    ```
-3. Відредагуйте `config.ini` у OnMyChat:
+3. Відредагуйте `config.ini` у AI Assistant Direct:
    ```ini
    COMFY_API_URL = http://localhost:8188
    WORKFLOW_PATH = flow.json
@@ -337,13 +337,13 @@ AI-вузол, підключений до шлюзу OnMyDisk, може пра�
 
 ## Просунуте: Systemd-сервіси
 
-### OnMyChat Service
+### AI Assistant Direct Service
 
 Створіть `/etc/systemd/system/onmychat.service`:
 
 ```ini
 [Unit]
-Description=OnMyChat AI Node
+Description=AI Assistant Direct AI Node
 After=network.target ollama.service
 
 [Service]
@@ -417,7 +417,7 @@ sudo systemctl restart ollama
 | Проблема | Ймовірна причина | Рішення |
 |----------|------------------|---------| 
 | Connector показує "offline" | NAT / файрвол | Перевірте доступність `http://<ip>:8081`. Увімкніть UPnP або прокиньте порти 9000, 8899. |
-| AI-вузол не відповідає | OnMyChat не запущений | `systemctl status onmychat`, перевірте логи. |
+| AI-вузол не відповідає | AI Assistant Direct не запущений | `systemctl status onmychat`, перевірте логи. |
 | RAG не знаходить документи | ChromaDB не заповнена | Виконайте `/learn <шлях>` у чаті. Перевірте наявність `memory_index/`. |
 | Повільний інференс | Немає GPU / мало RAM | Використовуйте модель менших розмірів (наприклад, `gemma4:4b`) або увімкніть CUDA. |
 | Помилка генерації зображень | ComfyUI не запущений | Перевірте `COMFY_API_URL` у `config.ini`. Запустіть ComfyUI вручну. |
@@ -436,4 +436,4 @@ sudo systemctl restart ollama
 
 ---
 
-**On My Disk** — ваші дані, ваш AI, ваші правила.
+**Disk Direct** — ваші дані, ваш AI, ваші правила.

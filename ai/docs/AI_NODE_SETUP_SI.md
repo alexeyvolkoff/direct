@@ -2,7 +2,7 @@
 
 > Zaženi svojo lastno AI infrastrukturo: zasebno, lastno gostovano, brez omejitev.
 
-Ta vodnik opisuje namestitev osebnega OnMyChat AI vozlišča na vaši lastni opremi in njegovo povezavo z vašim OnMyDisk računom prek **OnMyDisk Connector**. Po nastavitvi boste imeli:
+Ta vodnik opisuje namestitev osebnega AI Assistant Direct AI vozlišča na vaši lastni opremi in njegovo povezavo z vašim Disk Direct računom prek **Disk Direct Connector**. Po nastavitvi boste imeli:
 
 - **Zasebni RAG** — vaše datoteke so indeksirane lokalno, podatki ne zapuščajo vašega omrežja
 - **Semantično iskanje** — iščite dokumente po pomenu, ne le po imenu
@@ -16,13 +16,13 @@ Ta vodnik opisuje namestitev osebnega OnMyChat AI vozlišča na vaši lastni opr
 
 ```
 ┌─────────────────┐     ┌──────────────────┐     ┌──────────────────┐
-│  Spletni        │────>│  OnMyDisk Gateway│────>│  Vaša naprava    │
+│  Spletni        │────>│  Direct Gateway  │────>│  Vaša naprava    │
 │  brskalnik      │     │  (oblačni proxy) │     │  (Connector)     │
-│  (onmydisk.net) │     └──────────────────┘     └──────────────────┘
+│   (disk.direct) │     └──────────────────┘     └──────────────────┘
 └─────────────────┘                                        │
                                                            v
                                                     ┌──────────────────┐
-                                                    │  OnMyChat AI     │
+                                                    │  Direct AI Node  │
                                                     │  Datoteke (lok.) │
                                                     ├──────────────────┤
                                                     │  Ollama (LLM)    │
@@ -45,13 +45,13 @@ Ta vodnik opisuje namestitev osebnega OnMyChat AI vozlišča na vaši lastni opr
 | Disk | 20 GB prosto | 100+ GB (SSD) |
 | GPU (izbirno) | — | NVIDIA GTX 1060 6GB+ |
 | OS | Ubuntu 22.04 / 24.04 | Ubuntu 24.04 LTS |
-| Omrežje | Dostop do interneta | Nameščen OnMyDisk Connector |
+| Omrežje | Dostop do interneta | Nameščen Disk Direct Connector |
 
 ---
 
-## 1. korak: Namestitev OnMyDisk Connector
+## 1. korak: Namestitev Disk Direct Connector
 
-Connector je **napredni odjemalec** On My Disk, namenjen namestitvi na različne naprave za shranjevanje podatkov. Deluje kot sistemska storitev, omogoča dostop do lokalnih map in gosti lokalnega AI asistenta.
+Connector je **napredni odjemalec** Disk Direct, namenjen namestitvi na različne naprave za shranjevanje podatkov. Deluje kot sistemska storitev, omogoča dostop do lokalnih map in gosti lokalnega AI asistenta.
 
 ### Prenos paketa
 
@@ -110,24 +110,24 @@ Connector privzeto posluša na **vratih 80**. Odprite `http://<ip-ali-ime-vaše-
 
 ---
 
-## 2. korak: Registracija in povezava z On My Disk
+## 2. korak: Registracija in povezava z Disk Direct
 
-Na začetku bo vaša naprava delovala v anonimnem načinu, brez povezave z računom On My Disk, dostopna le v lokalnem omrežju. Za dostop do naprave prek interneta, iz mobilne aplikacije in za deljenje datotek ter AI asistenta z drugimi uporabniki sledite tem korakom:
+Na začetku bo vaša naprava delovala v anonimnem načinu, brez povezave z računom Disk Direct, dostopna le v lokalnem omrežju. Za dostop do naprave prek interneta, iz mobilne aplikacije in za deljenje datotek ter AI asistenta z drugimi uporabniki sledite tem korakom:
 
-1. Ustvarite račun On My Disk ali se prijavite z Googlom v vmesnik prehoda: [onmydisk.net](https://disk.direct).
+1. Ustvarite račun Disk Direct ali se prijavite z Googlom v vmesnik prehoda: [disk.direct](https://disk.direct).
 2. Odprite spletni vmesnik Connector: `http://<ip-ali-ime-naprave>` in pojdite v nastavitve profila **Settings → Profile**.
 3. Kliknite "Poveži napravo z računom". V pojavnem oknu se prijavite s svojim računom.
-4. Preverite v spletnem vmesniku prehoda [onmydisk.net](https://disk.direct) - vaša naprava bi se morala pojaviti v razdelku **My Devices**. Zdaj lahko svojo napravo uporabljate na daljavo ter delite datoteke in AI asistenta z drugimi uporabniki v vaši skupini.
+4. Preverite v spletnem vmesniku prehoda [disk.direct](https://disk.direct) - vaša naprava bi se morala pojaviti v razdelku **My Devices**. Zdaj lahko svojo napravo uporabljate na daljavo ter delite datoteke in AI asistenta z drugimi uporabniki v vaši skupini.
 
 ---
 
-## 3. korak: Namestitev in nastavitev OnMyChat (AI vozlišče)
+## 3. korak: Namestitev in nastavitev AI Assistant Direct (AI vozlišče)
 
-OnMyChat je dodatna storitev, ki upravlja LLM, RAG in iskanje.
+AI Assistant Direct je dodatna storitev, ki upravlja LLM, RAG in iskanje.
 
 ```bash
 # Klonirajte repozitorij
-git clone <repository-url> /opt/onmychat
+git clone https://github.com/alexeyvolkoff/direct.git && sudo cp -r direct/ai /opt/onmychat
 cd /opt/onmychat
 
 # Ustvarite virtualno okolje
@@ -159,7 +159,7 @@ DEFAULT_MODEL = gemma4:latest
 APP_ROOT_DIR = /opt/onmychat
 ```
 
-V `config.ini` niso potrebni nobeni žetoni — lokalni **OnMyDisk Connector** samodejno usmerja P2P zahteve na `http://localhost:8000` in prepozna lastnika vozlišča prek seznanjenega kriptografskega DID.
+V `config.ini` niso potrebni nobeni žetoni — lokalni **Disk Direct Connector** samodejno usmerja P2P zahteve na `http://localhost:8000` in prepozna lastnika vozlišča prek seznanjenega kriptografskega DID.
 
 ### Zagon
 
@@ -237,28 +237,28 @@ curl http://localhost:11434/api/tags
      sudo systemctl daemon-reload && sudo systemctl enable rkllama && sudo systemctl start rkllama
      ```
    - Preverite razpoložljive modele: `curl -s http://localhost:8080/api/tags`
-   - V datoteki `config.ini` za OnMyChat navedite:
+   - V datoteki `config.ini` za AI Assistant Direct navedite:
      ```ini
      OLLAMA_URL = http://localhost:8080
      DEFAULT_MODEL = <ime_vašega_modela_iz_rkllama_oznak>
      ```
 
-2. **Namestitev OnMyChat na SBC (izogibanje prenosu CUDA):**
-   Da se izognete prenosu gigabajtov nepotrebnih knjižnic NVIDIA CUDA/cuDNN, namestite odvisnosti OnMyChat z eksplicitno navedbo CPU različice PyTorch:
+2. **Namestitev AI Assistant Direct na SBC (izogibanje prenosu CUDA):**
+   Da se izognete prenosu gigabajtov nepotrebnih knjižnic NVIDIA CUDA/cuDNN, namestite odvisnosti AI Assistant Direct z eksplicitno navedbo CPU različice PyTorch:
    ```bash
    pip install torch --extra-index-url https://download.pytorch.org/whl/cpu
    pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
    ```
-   Če se ob zagonu OnMyChat pojavi napaka `AttributeError: np.float_ was removed in the NumPy 2.0 release`, prisilno znižajte različico NumPy:
+   Če se ob zagonu AI Assistant Direct pojavi napaka `AttributeError: np.float_ was removed in the NumPy 2.0 release`, prisilno znižajte različico NumPy:
    ```bash
    pip install "numpy<2.0.0"
    ```
 
-3. **Zagon OnMyChat kot sistemska storitev:**
+3. **Zagon AI Assistant Direct kot sistemska storitev:**
    Ustvarite datoteko `/etc/systemd/system/onmychat.service`:
    ```ini
    [Unit]
-   Description=OnMyChat AI Service
+   Description=AI Assistant Direct AI Service
    After=network.target rkllama.service
 
    [Service]
@@ -305,7 +305,7 @@ ls /opt/onmychat/memory_index/unified_index/
 
 ## Načini delovanja AI vozlišča
 
-AI vozlišče, povezano s prehodom OnMyDisk, lahko deluje v dveh načinih, ki ju določa avtentikacija uporabnika na prehodu:
+AI vozlišče, povezano s prehodom Disk Direct, lahko deluje v dveh načinih, ki ju določa avtentikacija uporabnika na prehodu:
 
 - **Javni način** — uporabnik je gost. Vozlišče preverja stanje žetonov in uveljavlja omejitve za uvoz in generiranje.
 - **Zasebni način** — uporabnik je lastnik naprave ali je na seznamu za dostop do naprave. Preverjanje stanja in omejitve se ne uveljavljajo.
@@ -325,7 +325,7 @@ Prizadevamo si, da bi lastniki vozlišč, ki so na voljo javnosti, lahko zasluž
    ```bash
    python3 main.py --listen 0.0.0.0 --port 8188
    ```
-3. Uredite `config.ini` v OnMyChat:
+3. Uredite `config.ini` v AI Assistant Direct:
    ```ini
    COMFY_API_URL = http://localhost:8188
    WORKFLOW_PATH = flow.json
@@ -337,13 +337,13 @@ Prizadevamo si, da bi lastniki vozlišč, ki so na voljo javnosti, lahko zasluž
 
 ## Napredno: Systemd storitve
 
-### OnMyChat storitev
+### AI Assistant Direct storitev
 
 Ustvarite `/etc/systemd/system/onmychat.service`:
 
 ```ini
 [Unit]
-Description=OnMyChat AI Node
+Description=AI Assistant Direct AI Node
 After=network.target ollama.service
 
 [Service]
@@ -417,7 +417,7 @@ sudo systemctl restart ollama
 | Težava | Verjeten vzrok | Rešitev |
 |--------|----------------|---------|
 | Connector kaže "offline" | NAT / požarni zid | Preverite dostopnost `http://<ip>:8081`. Omogočite UPnP ali posredujte vrata 9000, 8899. |
-| AI vozlišče ne odgovarja | OnMyChat ne teče | `systemctl status onmychat`, preverite dnevnike. |
+| AI vozlišče ne odgovarja | AI Assistant Direct ne teče | `systemctl status onmychat`, preverite dnevnike. |
 | RAG ne najde dokumentov | ChromaDB ni napolnjena | Zaženite `/learn <pot>` v klepetu. Preverite `memory_index/`. |
 | Počasno sklepanje | Ni GPU / premalo RAM | Uporabite manjši model (npr. `gemma4:4b`) ali omogočite CUDA. |
 | Napaka pri generiranju slik | ComfyUI ne teče | Preverite `COMFY_API_URL` v `config.ini`. Zaženite ComfyUI ročno. |
@@ -436,4 +436,4 @@ sudo systemctl restart ollama
 
 ---
 
-**On My Disk** — vaši podatki, vaš AI, vaša pravila.
+**Disk Direct** — vaši podatki, vaš AI, vaša pravila.
