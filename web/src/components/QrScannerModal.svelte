@@ -374,8 +374,8 @@
   }
 
   .qr-scanner-modal {
-    background: #16131F;
-    border: 1px solid #2D2640;
+    background: #252330;
+    border: 1px solid #3E3A4D;
     border-radius: 16px;
     width: 100%;
     max-width: 440px;
@@ -390,8 +390,8 @@
     align-items: center;
     justify-content: space-between;
     padding: 16px 20px;
-    border-bottom: 1px solid #2D2640;
-    background: #0D0B12;
+    border-bottom: 1px solid #3E3A4D;
+    background: #181720;
   }
 
   .qr-header-title {
@@ -404,7 +404,7 @@
   }
 
   .qr-header-title svg {
-    color: var(--accent, #C084FC);
+    color: var(--accent, #A28AD0);
   }
 
   .qr-close-btn {
@@ -461,8 +461,8 @@
   .qr-spinner {
     width: 32px;
     height: 32px;
-    border: 3px solid var(--accent-soft, rgba(192, 132, 252, 0.22));
-    border-top-color: var(--accent, #C084FC);
+    border: 3px solid var(--accent-soft, rgba(162, 138, 208, 0.22));
+    border-top-color: var(--accent, #A28AD0);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }
@@ -490,7 +490,7 @@
     position: absolute;
     width: 28px;
     height: 28px;
-    border-color: var(--accent, #C084FC);
+    border-color: var(--accent, #A28AD0);
     border-style: solid;
     border-width: 0;
   }
@@ -533,8 +533,8 @@
     left: 4px;
     right: 4px;
     height: 2px;
-    background: linear-gradient(90deg, transparent, var(--accent, #C084FC), transparent);
-    box-shadow: 0 0 8px var(--accent, #C084FC);
+    background: linear-gradient(90deg, transparent, var(--accent, #A28AD0), transparent);
+    box-shadow: 0 0 8px var(--accent, #A28AD0);
     animation: scanBeam 2s ease-in-out infinite;
   }
 
@@ -557,7 +557,7 @@
 
   .qr-retry-btn {
     margin-top: 6px;
-    background: var(--accent, #C084FC);
+    background: var(--accent, #A28AD0);
     color: #FFFFFF;
     border: none;
     border-radius: 8px;
@@ -569,8 +569,8 @@
 
   .qr-scanner-footer {
     padding: 16px 20px;
-    background: #0D0B12;
-    border-top: 1px solid #2D2640;
+    background: #181720;
+    border-top: 1px solid #3E3A4D;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -594,8 +594,8 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    background: #16131F;
-    border: 1px solid #2D2640;
+    background: #252330;
+    border: 1px solid #3E3A4D;
     color: #EFEBF8;
     padding: 7px 12px;
     border-radius: 8px;
@@ -606,14 +606,14 @@
   }
 
   .qr-control-btn:hover {
-    background: #2D2640;
+    background: #3E3A4D;
     border-color: #554777;
   }
 
   .qr-control-btn.active {
-    background: var(--accent-soft, rgba(192, 132, 252, 0.18));
-    border-color: var(--accent, #C084FC);
-    color: var(--accent, #C084FC);
+    background: var(--accent-soft, rgba(162, 138, 208, 0.18));
+    border-color: var(--accent, #A28AD0);
+    color: var(--accent, #A28AD0);
   }
 
   @keyframes spin {

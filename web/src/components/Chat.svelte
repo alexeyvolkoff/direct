@@ -6280,13 +6280,13 @@ function lastFreshTitle(messages) {
   .hero-avatar.clickable:hover {
     transform: scale(1.06);
     border-radius: 50%;
-    box-shadow: 0 6px 30px rgba(236, 72, 153, 0.6);
+    box-shadow: 0 6px 30px rgba(166, 85, 129, 0.6);
   }
 
   .entry-avatar.clickable:hover {
     transform: scale(1.08);
     border-radius: 50%;
-    box-shadow: 0 0 16px rgba(244, 114, 182, 0.6);
+    box-shadow: 0 0 16px rgba(202, 125, 165, 0.6);
   }
   .chat-container {
     display: flex;
@@ -6348,19 +6348,19 @@ function lastFreshTitle(messages) {
     height: 68px;
     border-radius: 50%;
     object-fit: cover;
-    box-shadow: 0 4px 24px rgba(236, 72, 153, 0.45);
+    box-shadow: 0 4px 24px rgba(166, 85, 129, 0.45);
   }
 
   .avatar-hero-spark {
     width: 68px;
     height: 68px;
     border-radius: 50%;
-    background: linear-gradient(135deg, #EC4899, #A855F7);
+    background: linear-gradient(135deg, #A65581, #8E74BD);
     display: flex;
     align-items: center;
     justify-content: center;
     color: #fff;
-    box-shadow: 0 4px 24px rgba(236, 72, 153, 0.45);
+    box-shadow: 0 4px 24px rgba(166, 85, 129, 0.45);
   }
 
   .hero-assistant-meta {
@@ -6395,7 +6395,7 @@ function lastFreshTitle(messages) {
   }
 
   .gradient-text {
-    background: linear-gradient(90deg, #F472B6, #EC4899, #C084FC);
+    background: linear-gradient(90deg, #CA7DA5, #A65581, #A28AD0);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
   }
@@ -6491,9 +6491,9 @@ function lastFreshTitle(messages) {
 
   @keyframes card-focus-flash {
     0%, 60% {
-      background: rgba(236, 72, 153, 0.16);
+      background: rgba(166, 85, 129, 0.16);
       border-radius: 14px;
-      outline: 2px solid rgba(236, 72, 153, 0.5);
+      outline: 2px solid rgba(166, 85, 129, 0.5);
       outline-offset: 2px;
     }
     100% {
@@ -6571,8 +6571,8 @@ function lastFreshTitle(messages) {
 
   .user-rework-btn:hover {
     color: var(--accent-blue);
-    background: rgba(236, 72, 153, 0.12);
-    border-color: rgba(236, 72, 153, 0.25);
+    background: rgba(166, 85, 129, 0.12);
+    border-color: rgba(166, 85, 129, 0.25);
   }
 
   .user-copy-btn:hover {
@@ -6605,8 +6605,8 @@ function lastFreshTitle(messages) {
     height: 36px;
     border-radius: 50%;
     object-fit: cover;
-    border: 2px solid #F472B6;
-    box-shadow: 0 0 10px rgba(236, 72, 153, 0.4);
+    border: 2px solid #CA7DA5;
+    box-shadow: 0 0 10px rgba(166, 85, 129, 0.4);
     box-sizing: border-box;
   }
 
@@ -6614,9 +6614,9 @@ function lastFreshTitle(messages) {
     width: 36px;
     height: 36px;
     border-radius: 50%;
-    border: 2px solid #F472B6;
-    box-shadow: 0 0 10px rgba(236, 72, 153, 0.4);
-    background: linear-gradient(135deg, #EC4899, #A855F7);
+    border: 2px solid #CA7DA5;
+    box-shadow: 0 0 10px rgba(166, 85, 129, 0.4);
+    background: linear-gradient(135deg, #A65581, #8E74BD);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -6648,14 +6648,14 @@ function lastFreshTitle(messages) {
     font-size: 0.72rem;
     padding: 1px 6px;
     border-radius: 4px;
-    background: rgba(236, 72, 153, 0.14);
+    background: rgba(166, 85, 129, 0.14);
     color: var(--accent-blue);
     font-weight: 500;
   }
 
   .chat-container.light-theme .assistant-tag {
-    background: rgba(219, 39, 119, 0.08);
-    color: #BE185D;
+    background: rgba(115, 53, 87, 0.08);
+    color: #5C2945;
   }
 
   /* Markdown Styling */
@@ -6748,15 +6748,15 @@ function lastFreshTitle(messages) {
   }
 
   .markdown-body :global(th) {
-    background: rgba(236, 72, 153, 0.08);
+    background: rgba(166, 85, 129, 0.08);
     font-weight: 600;
   }
 
   /* Gemini Reasoning/Thinking Accordion */
   .gemini-reasoning {
     margin: 6px 0 12px;
-    background: rgba(236, 72, 153, 0.05);
-    border: 1px solid rgba(236, 72, 153, 0.2);
+    background: rgba(166, 85, 129, 0.05);
+    border: 1px solid rgba(166, 85, 129, 0.2);
     border-radius: 12px;
     overflow: hidden;
   }
@@ -6800,7 +6800,7 @@ function lastFreshTitle(messages) {
     font-size: 0.85rem;
     color: var(--text-secondary);
     line-height: 1.5;
-    border-top: 1px solid rgba(236, 72, 153, 0.12);
+    border-top: 1px solid rgba(166, 85, 129, 0.12);
     max-height: 340px;
     overflow-y: auto;
   }
@@ -7066,8 +7066,8 @@ function lastFreshTitle(messages) {
   }
 
   .rag-facts-accordion.new-fact {
-    background: rgba(168, 85, 247, 0.05);
-    border-color: rgba(168, 85, 247, 0.25);
+    background: rgba(142, 116, 189, 0.05);
+    border-color: rgba(142, 116, 189, 0.25);
   }
 
   .rag-facts-accordion summary {
@@ -7085,7 +7085,7 @@ function lastFreshTitle(messages) {
   }
 
   .rag-facts-accordion.new-fact summary {
-    color: #c084fc;
+    color: #A28AD0;
   }
 
   .rag-facts-accordion summary::-webkit-details-marker {
@@ -7117,7 +7117,7 @@ function lastFreshTitle(messages) {
   }
 
   .rag-facts-accordion.new-fact .facts-inner {
-    border-top-color: rgba(168, 85, 247, 0.15);
+    border-top-color: rgba(142, 116, 189, 0.15);
   }
 
   /* Status indicator */
@@ -7147,7 +7147,7 @@ function lastFreshTitle(messages) {
   /* Sources toggle in message toolbar */
   .sources-toggle-btn.active {
     color: var(--accent-blue);
-    background: rgba(236, 72, 153, 0.12);
+    background: rgba(166, 85, 129, 0.12);
   }
 
   .sources-chevron {
@@ -7284,7 +7284,7 @@ function lastFreshTitle(messages) {
     margin: 0 2px;
     padding: 2px 9px 2px 3px;
     border-radius: 7px;
-    background: var(--bg-card-hover, #231D2B);
+    background: var(--bg-card-hover, #352D38);
     border: 1px solid var(--border-color, #332B3D);
     color: var(--text-primary, #FAF8FC);
     text-decoration: none;
@@ -7298,19 +7298,19 @@ function lastFreshTitle(messages) {
 
   .markdown-body :global(.inline-file-chip:hover) {
     background: #2B2336;
-    border-color: rgba(236, 72, 153, 0.45);
+    border-color: rgba(166, 85, 129, 0.45);
     color: #FFFFFF;
   }
 
   .chat-container.light-theme .markdown-body :global(.inline-file-chip) {
     background: #F4F3F7;
     border-color: #E4E0EC;
-    color: #231D2B;
+    color: #352D38;
   }
 
   .chat-container.light-theme .markdown-body :global(.inline-file-chip:hover) {
     background: #EDEAF3;
-    border-color: rgba(219, 39, 119, 0.38);
+    border-color: rgba(115, 53, 87, 0.38);
     color: #1D1823;
   }
 
@@ -7350,13 +7350,13 @@ function lastFreshTitle(messages) {
   }
 
   .markdown-body :global(.inline-file-chip:hover .inline-file-icon) {
-    color: #F472B6;
-    border-color: rgba(236, 72, 153, 0.35);
+    color: #CA7DA5;
+    border-color: rgba(166, 85, 129, 0.35);
   }
 
   .chat-container.light-theme .markdown-body :global(.inline-file-chip:hover .inline-file-icon) {
-    color: #DB2777;
-    border-color: rgba(219, 39, 119, 0.30);
+    color: #733557;
+    border-color: rgba(115, 53, 87, 0.30);
   }
 
   .markdown-body :global(.inline-file-name) {
@@ -7423,7 +7423,7 @@ function lastFreshTitle(messages) {
     margin: 12px 0;
     padding: 14px 16px;
     border-radius: 14px;
-    background: rgba(236, 72, 153, 0.08);
+    background: rgba(166, 85, 129, 0.08);
     border: 1px solid var(--accent-blue);
   }
 
@@ -7687,7 +7687,7 @@ function lastFreshTitle(messages) {
 
   .composer-pill:focus-within {
     border-color: var(--accent-blue);
-    box-shadow: 0 4px 28px rgba(236, 72, 153, 0.2);
+    box-shadow: 0 4px 28px rgba(166, 85, 129, 0.2);
   }
 
   /* Plus Button and Tools Popup */
@@ -7721,7 +7721,7 @@ function lastFreshTitle(messages) {
 
   .composer-action-btn.active {
     color: var(--accent-blue);
-    background: rgba(236, 72, 153, 0.15);
+    background: rgba(166, 85, 129, 0.15);
   }
 
   .plus-icon {
@@ -7827,8 +7827,8 @@ function lastFreshTitle(messages) {
   }
 
   .tool-icon-circle.search {
-    background: rgba(192, 132, 252, 0.16);
-    color: #d8b4fe;
+    background: rgba(162, 138, 208, 0.16);
+    color: #C4B6E0;
   }
 
   .tool-icon-circle.learn {
@@ -7837,13 +7837,13 @@ function lastFreshTitle(messages) {
   }
 
   .tool-icon-circle.recognize {
-    background: rgba(168, 85, 247, 0.15);
-    color: #c084fc;
+    background: rgba(142, 116, 189, 0.15);
+    color: #A28AD0;
   }
 
   .tool-icon-circle.generate {
-    background: rgba(236, 72, 153, 0.15);
-    color: #f472b6;
+    background: rgba(166, 85, 129, 0.15);
+    color: #CA7DA5;
   }
 
   .tool-meta {
@@ -7876,7 +7876,7 @@ function lastFreshTitle(messages) {
     font-weight: 600;
     padding: 1px 6px;
     border-radius: 6px;
-    background: rgba(236, 72, 153, 0.12);
+    background: rgba(166, 85, 129, 0.12);
     color: var(--accent-blue);
     flex-shrink: 0;
   }
@@ -7947,7 +7947,7 @@ function lastFreshTitle(messages) {
   .composer-send-btn.active {
     background: var(--accent-blue);
     color: #ffffff;
-    box-shadow: 0 2px 10px rgba(236, 72, 153, 0.4);
+    box-shadow: 0 2px 10px rgba(166, 85, 129, 0.4);
   }
 
   .composer-send-btn:disabled {
@@ -8056,7 +8056,7 @@ function lastFreshTitle(messages) {
   }
 
   .import-result-image-wrap.clickable-image:hover {
-    border-color: var(--accent, #EC4899);
+    border-color: var(--accent, #A65581);
   }
 
   .import-result-image-zoom {
@@ -8123,7 +8123,7 @@ function lastFreshTitle(messages) {
   }
 
   .card-rework-btn:hover {
-    background: rgba(236, 72, 153, 0.25);
+    background: rgba(166, 85, 129, 0.25);
   }
 
   .import-request-text {
@@ -8181,8 +8181,8 @@ function lastFreshTitle(messages) {
   }
 
   .import-result-badge.recognizing {
-    background: rgba(192, 132, 252, 0.2);
-    color: #c084fc;
+    background: rgba(162, 138, 208, 0.2);
+    color: #A28AD0;
   }
 
   .import-result-loading {
@@ -8286,16 +8286,16 @@ function lastFreshTitle(messages) {
     font-weight: 500;
     margin: 8px 0;
     width: fit-content;
-    background: rgba(236, 72, 153, 0.08);
-    border: 1px solid rgba(236, 72, 153, 0.2);
+    background: rgba(166, 85, 129, 0.08);
+    border: 1px solid rgba(166, 85, 129, 0.2);
     color: var(--accent-blue);
     animation: fadeIn 0.2s ease-out;
   }
 
   .active-stream-status.typing,
   .active-stream-status.processing {
-    background: rgba(236, 72, 153, 0.12);
-    border-color: rgba(236, 72, 153, 0.3);
+    background: rgba(166, 85, 129, 0.12);
+    border-color: rgba(166, 85, 129, 0.3);
     color: var(--accent-blue);
   }
 
@@ -8312,15 +8312,15 @@ function lastFreshTitle(messages) {
   }
 
   .active-stream-status.searching {
-    background: rgba(192, 132, 252, 0.10);
-    border-color: rgba(192, 132, 252, 0.28);
-    color: #c084fc;
+    background: rgba(162, 138, 208, 0.10);
+    border-color: rgba(162, 138, 208, 0.28);
+    color: #A28AD0;
   }
 
   .active-stream-status.performing {
-    background: rgba(168, 85, 247, 0.08);
-    border-color: rgba(168, 85, 247, 0.25);
-    color: #a855f7;
+    background: rgba(142, 116, 189, 0.08);
+    border-color: rgba(142, 116, 189, 0.25);
+    color: #8E74BD;
   }
 
   .active-stream-status.executing {
@@ -8330,9 +8330,9 @@ function lastFreshTitle(messages) {
   }
 
   .active-stream-status.generating {
-    background: rgba(236, 72, 153, 0.12);
-    border-color: rgba(236, 72, 153, 0.32);
-    color: #f472b6;
+    background: rgba(166, 85, 129, 0.12);
+    border-color: rgba(166, 85, 129, 0.32);
+    color: #CA7DA5;
   }
 
   .active-stream-status.generating .status-icon-bubble {
@@ -8340,7 +8340,7 @@ function lastFreshTitle(messages) {
     animation: rotate 1.2s linear infinite;
     transform-origin: center center;
     font-size: 1.15rem;
-    filter: drop-shadow(0 0 6px rgba(236, 72, 153, 0.6));
+    filter: drop-shadow(0 0 6px rgba(166, 85, 129, 0.6));
   }
 
   .status-icon-bubble {
@@ -8489,7 +8489,7 @@ function lastFreshTitle(messages) {
   }
 
   .chat-placeholder-svg.spinner-pulse {
-    filter: drop-shadow(0 6px 20px rgba(236, 72, 153, 0.45));
+    filter: drop-shadow(0 6px 20px rgba(166, 85, 129, 0.45));
   }
 
   .chat-placeholder-text {
@@ -8892,7 +8892,7 @@ function lastFreshTitle(messages) {
   .gen-style-pill.active:focus {
     background: var(--accent-blue);
     color: #ffffff !important;
-    box-shadow: 0 2px 8px rgba(236, 72, 153, 0.35);
+    box-shadow: 0 2px 8px rgba(166, 85, 129, 0.35);
   }
 
   .gen-panel-controls {
@@ -8919,8 +8919,8 @@ function lastFreshTitle(messages) {
   }
 
   .gen-toggle-btn.active {
-    background: rgba(236, 72, 153, 0.12);
-    border-color: rgba(236, 72, 153, 0.3);
+    background: rgba(166, 85, 129, 0.12);
+    border-color: rgba(166, 85, 129, 0.3);
   }
 
   .gen-checkbox-hidden {
@@ -8978,7 +8978,7 @@ function lastFreshTitle(messages) {
   }
 
   .gen-icon-btn.active {
-    background: rgba(236, 72, 153, 0.15);
+    background: rgba(166, 85, 129, 0.15);
     color: var(--accent-blue);
     border-color: var(--accent-blue);
   }
@@ -9030,7 +9030,7 @@ function lastFreshTitle(messages) {
   }
 
   .gen-lora-chip.active {
-    background: rgba(236, 72, 153, 0.18);
+    background: rgba(166, 85, 129, 0.18);
     border-color: var(--accent-blue);
     color: var(--accent-blue);
     font-weight: 600;
@@ -9166,7 +9166,7 @@ function lastFreshTitle(messages) {
   }
 
   .prompt-style-badge {
-    background: rgba(236, 72, 153, 0.12);
+    background: rgba(166, 85, 129, 0.12);
     color: var(--accent-blue);
     padding: 1px 6px;
     border-radius: 4px;
@@ -9255,8 +9255,8 @@ function lastFreshTitle(messages) {
   }
 
   .source-chooser {
-    background: var(--bg-secondary, #1A121D);
-    border: 1px solid var(--border-color, #352339);
+    background: var(--bg-secondary, #28222A);
+    border: 1px solid var(--border-color, #453B48);
     border-radius: 14px;
     width: min(460px, 100%);
     max-height: 80vh;
@@ -9292,14 +9292,14 @@ function lastFreshTitle(messages) {
     width: 100%;
     padding: 10px 12px;
     border-radius: 10px;
-    border: 1px solid var(--border-color, #352339);
-    background: var(--bg-primary, #0F0A10);
+    border: 1px solid var(--border-color, #453B48);
+    background: var(--bg-primary, #1B171C);
     color: inherit;
     cursor: pointer;
     text-align: left;
   }
 
-  .source-item:hover { border-color: var(--accent, #EC4899); }
+  .source-item:hover { border-color: var(--accent, #A65581); }
 
   .source-icon { display: inline-flex; opacity: 0.8; }
 

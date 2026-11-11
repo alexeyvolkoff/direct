@@ -1,61 +1,62 @@
 /* ============================================================================
    DIRECT DESIGN SYSTEM — omd.css
-   Dual-Skin Theme Engine for Disk Direct (Amethyst) & AI Assistant (Magenta)
-   - Skin "files" (default / .skin-files): Amethyst & Obsidian-Violet (Duplex Stream)
-   - Skin "chat"  (.skin-chat):            Magenta & Velvet-Plum (Neural Orbit)
+   Dual-Skin Theme Engine for Disk Direct (Muted Slate-Amethyst) & AI Assistant (Dusty Rose-Mauve)
+   Perceptually calibrated (OKLCH L & C) to match the calm contrast balance of Legacy OMD:
+   - Skin "files" (default / .skin-files): Slate-Amethyst & Soft Obsidian-Charcoal
+   - Skin "chat"  (.skin-chat):            Dusty Rose-Mauve & Warm Charcoal-Plum
    - Both skins support Light (.light-theme) and Dark (.dark-theme) modes.
    ============================================================================ */
 
 /* 1. GLOBAL PRIMITIVES */
 :root {
   --HitBox: #FFFFFF00;
-  --IMG1: #0D0B12E5;
+  --IMG1: #181720E5;
   --Gray-White: #FFFFFF;
 
-  /* Disk Direct Neutral-Violet Scale (Warm Obsidian / Alabaster) */
-  --Gray-100: #F8F7FC;
-  --Gray-200: #EFEBF8;
-  --Gray-300: #DDD6EB;
-  --Gray-400: #C4B8DB;
-  --Gray-500: #8B80A3;
-  --Gray-600: #5B5270;
-  --Gray-700: #2D2640;
-  --Gray-800: #16131F;
-  --Gray-900: #0D0B12;
-  --Gray-Black: #08060C;
+  /* Disk Direct Neutral-Slate Scale (Lifted Obsidian-Slate / Clean Alabaster) */
+  --Gray-100: #F7F7FA;
+  --Gray-200: #EFEFF5;
+  --Gray-300: #DCDAE4;
+  --Gray-400: #C0BECD;
+  --Gray-500: #9490A4;
+  --Gray-600: #625E70;
+  --Gray-700: #3E3A4D;
+  --Gray-800: #252330;
+  --Gray-900: #181720;
+  --Gray-Black: #111017;
 
-  /* AI Assistant Neutral-Plum Pearl Scale */
-  --ChatGray-100: #FAF9FB;
-  --ChatGray-200: #F3F1F6;
-  --ChatGray-300: #E6E2ED;
-  --ChatGray-400: #CEC8D8;
-  --ChatGray-500: #8E8498;
-  --ChatGray-600: #5E5468;
-  --ChatGray-700: #2F2738;
-  --ChatGray-800: #18141D;
-  --ChatGray-900: #0F0C12;
+  /* AI Assistant Neutral-Mauve Pearl Scale */
+  --ChatGray-100: #F9F7F9;
+  --ChatGray-200: #F2EEF2;
+  --ChatGray-300: #E1DBE1;
+  --ChatGray-400: #C6BEC8;
+  --ChatGray-500: #9B909E;
+  --ChatGray-600: #685D66;
+  --ChatGray-700: #453B48;
+  --ChatGray-800: #28222A;
+  --ChatGray-900: #1B171C;
 
-  /* Amethyst Brand Scale (Disk Direct — Duplex Stream) */
-  --Amethyst-100: #F3E8FF;
-  --Amethyst-200: #E9D5FF;
-  --Amethyst-300: #D8B4FE;
-  --Amethyst-400: #C084FC;
-  --Amethyst-500: #A855F7;
-  --Amethyst-600: #9333EA;
-  --Amethyst-700: #7E22CE;
-  --Amethyst-800: #581C87;
-  --Amethyst-900: #1E0B36;
+  /* Muted Slate-Amethyst Brand Scale (Disk Direct — low-fatigue OKLCH C ≈ 0.11) */
+  --Amethyst-100: #EFEBF7;
+  --Amethyst-200: #DFD8EF;
+  --Amethyst-300: #C4B6E0;
+  --Amethyst-400: #A28AD0;
+  --Amethyst-500: #8E74BD;
+  --Amethyst-600: #7D60AC;
+  --Amethyst-700: #563F7A;
+  --Amethyst-800: #3F2E5C;
+  --Amethyst-900: #221933;
 
-  /* Magenta / Orchid Brand Scale (AI Assistant — Neural Orbit) */
-  --Magenta-100: #FCE7F3;
-  --Magenta-200: #FBCFE8;
-  --Magenta-300: #F9A8D4;
-  --Magenta-400: #F472B6;
-  --Magenta-500: #EC4899;
-  --Magenta-600: #DB2777;
-  --Magenta-700: #BE185D;
-  --Magenta-800: #831843;
-  --Magenta-900: #2A0926;
+  /* Muted Dusty Rose / Berry-Mauve Brand Scale (AI Assistant — low-fatigue OKLCH C ≈ 0.11) */
+  --Magenta-100: #F5EBF0;
+  --Magenta-200: #E8D4DF;
+  --Magenta-300: #D6B2C5;
+  --Magenta-400: #CA7DA5;
+  --Magenta-500: #B76992;
+  --Magenta-600: #A65581;
+  --Magenta-700: #733557;
+  --Magenta-800: #54253F;
+  --Magenta-900: #2A1320;
 
   /* Legacy primitive remapping (eliminates old sky-blue across SDS consumers) */
   --Blue-100: var(--Amethyst-100);
@@ -68,25 +69,25 @@
   --Blue-800: var(--Amethyst-800);
   --Blue-900: var(--Amethyst-900);
 
-  --Purple-100: #F3E8FF;
-  --Purple-200: #E9D5FF;
-  --Purple-300: #D8B4FE;
-  --Purple-400: #C084FC;
-  --Purple-500: #A855F7;
-  --Purple-600: #9333EA;
-  --Purple-700: #7E22CE;
-  --Purple-800: #581C87;
-  --Purple-900: #1E0B36;
+  --Purple-100: var(--Amethyst-100);
+  --Purple-200: var(--Amethyst-200);
+  --Purple-300: var(--Amethyst-300);
+  --Purple-400: var(--Amethyst-400);
+  --Purple-500: var(--Amethyst-500);
+  --Purple-600: var(--Amethyst-600);
+  --Purple-700: var(--Amethyst-700);
+  --Purple-800: var(--Amethyst-800);
+  --Purple-900: var(--Amethyst-900);
 
-  --Pink-100: #FCE7F3;
-  --Pink-200: #FBCFE8;
-  --Pink-300: #F9A8D4;
-  --Pink-400: #F472B6;
-  --Pink-500: #EC4899;
-  --Pink-600: #DB2777;
-  --Pink-700: #BE185D;
-  --Pink-800: #831843;
-  --Pink-900: #2A0926;
+  --Pink-100: var(--Magenta-100);
+  --Pink-200: var(--Magenta-200);
+  --Pink-300: var(--Magenta-300);
+  --Pink-400: var(--Magenta-400);
+  --Pink-500: var(--Magenta-500);
+  --Pink-600: var(--Magenta-600);
+  --Pink-700: var(--Magenta-700);
+  --Pink-800: var(--Magenta-800);
+  --Pink-900: var(--Magenta-900);
 
   /* Semantic Status Primitives */
   --Green-100: #DDFBE4;
@@ -129,7 +130,7 @@
   --Red-800: #84181C;
   --Red-900: #480709;
 
-  --Placeholder-Image: #F8F7FC;
+  --Placeholder-Image: #F7F7FA;
   --Placeholder-Avatar: #FFFFFF;
 
   /* Typography & Spacing Primitives */
@@ -160,7 +161,7 @@
 }
 
 /* ============================================================================
-   2. SKIN A: DISK DIRECT ("files" — Amethyst / Duplex Stream) — LIGHT
+   2. SKIN A: DISK DIRECT ("files" — Muted Slate-Amethyst) — LIGHT
    ============================================================================ */
 :root,
 html.light-theme:not(.skin-chat),
@@ -169,30 +170,31 @@ html.skin-files.light-theme,
 .light-theme:not(.skin-chat) {
   --skin-name: "files-light";
 
-  --bg-primary: #F8F7FC;
+  --bg-primary: #F7F7FA;
   --bg-secondary: #FFFFFF;
   --bg-card: #FFFFFF;
-  --bg-card-hover: #EFEBF8;
+  --bg-card-hover: #ECEAF4;
   --bg-elevated: #FFFFFF;
-  --bg-soft: rgba(126, 34, 206, 0.06);
-  --bg-hover: rgba(126, 34, 206, 0.08);
+  --bg-soft: rgba(86, 63, 122, 0.06);
+  --bg-hover: rgba(86, 63, 122, 0.08);
   --sidebar-bg: #FFFFFF;
-  --sidebar-shadow: 3px 0 16px rgba(24, 19, 38, 0.05);
+  --sidebar-shadow: 3px 0 14px rgba(24, 22, 34, 0.05);
 
-  --border-color: #DDD6EB;
-  --border-subtle: #ECE7F6;
+  --border-color: #DCDAE4;
+  --border-subtle: #EAE8F0;
 
-  --text-primary: #181326;
-  --text-secondary: #5B5270;
-  --text-muted: #8B80A3;
+  --text-primary: #1A1822;
+  --text-secondary: #625E70;
+  --text-muted: #928EA1;
+  --selected-text: #563F7A;
 
-  --accent: #7E22CE;
-  --accent-hover: #9333EA;
-  --accent-active: #6B21A8;
-  --accent-soft: #F3E8FF;
-  --accent-border: rgba(126, 34, 206, 0.35);
-  --accent-glow: rgba(147, 51, 234, 0.28);
-  --accent-gradient: linear-gradient(135deg, #7E22CE 0%, #A855F7 100%);
+  --accent: #563F7A;
+  --accent-hover: #7D60AC;
+  --accent-active: #473366;
+  --accent-soft: #EFEBF7;
+  --accent-border: rgba(86, 63, 122, 0.28);
+  --accent-glow: rgba(86, 63, 122, 0.20);
+  --accent-gradient: linear-gradient(135deg, #563F7A 0%, #7D60AC 100%);
   --accent-on-brand: #FFFFFF;
 
   /* Compatibility aliases */
@@ -204,10 +206,10 @@ html.skin-files.light-theme,
   --Success: var(--Green-500);
   --Danger: var(--Red-500);
   --Warning: var(--Yellow-400);
-  --Info: var(--Amethyst-400);
+  --Info: var(--Amethyst-500);
 
-  --user-bubble-bg: #F3E8FF;
-  --user-bubble-border: #DFC9FA;
+  --user-bubble-bg: #EFEBF7;
+  --user-bubble-border: #DFD8EF;
   --pill-bg: #FFFFFF;
 
   --success-bg: rgba(41, 204, 84, 0.12);
@@ -217,33 +219,33 @@ html.skin-files.light-theme,
   --danger-bg: rgba(248, 59, 66, 0.12);
   --danger-text: #C1141A;
 
-  /* SVAR Filemanager Tokens */
-  --top-menu-color: #7E22CE;
-  --top-menu-hover-color: #9333EA;
-  --wx-color-primary: #7E22CE;
-  --wx-color-primary-hover: #9333EA;
-  --wx-color-primary-selected: #F3E8FF;
+  /* SVAR Filemanager Tokens (Light — matches Legacy #184562 / #2996CC balance) */
+  --top-menu-color: #563F7A;
+  --top-menu-hover-color: #7D60AC;
+  --wx-color-primary: #563F7A;
+  --wx-color-primary-hover: #7D60AC;
+  --wx-color-primary-selected: #EFEBF7;
   --wx-color-primary-font: #FFFFFF;
   --wx-background: #FFFFFF;
-  --wx-background-alt: #F4F1FA;
-  --wx-background-hover: #EFEBF8;
-  --wx-fm-background: #F8F7FC;
-  --wx-fm-select-background: #F3E8FF;
-  --wx-fm-grid-border: 1px solid #DDD6EB;
-  --wx-fm-grid-header-color: #F8F7FC;
-  --wx-fm-button-font-color: #5B5270;
-  --wx-table-border: 1px solid #DDD6EB;
-  --wx-table-header-border: 1px solid #DDD6EB;
-  --wx-table-header-background: #F8F7FC;
-  --wx-table-select-background: #F3E8FF;
-  --wx-table-select-focus-background: #E9D5FF;
-  --wx-color-font: #181326;
-  --wx-color-font-alt: #5B5270;
-  --wx-color-secondary-border: #DDD6EB;
-  --wx-border: 1px solid #DDD6EB;
+  --wx-background-alt: #F3F2F8;
+  --wx-background-hover: #ECEAF4;
+  --wx-fm-background: #F7F7FA;
+  --wx-fm-select-background: #EFEBF7;
+  --wx-fm-grid-border: 1px solid #DCDAE4;
+  --wx-fm-grid-header-color: #F7F7FA;
+  --wx-fm-button-font-color: #625E70;
+  --wx-table-border: 1px solid #DCDAE4;
+  --wx-table-header-border: 1px solid #DCDAE4;
+  --wx-table-header-background: #F7F7FA;
+  --wx-table-select-background: #EFEBF7;
+  --wx-table-select-focus-background: #E4DFEF;
+  --wx-color-font: #1A1822;
+  --wx-color-font-alt: #625E70;
+  --wx-color-secondary-border: #DCDAE4;
+  --wx-border: 1px solid #DCDAE4;
 
-  --scrollbar-thumb: #C9BFE0;
-  --scrollbar-thumb-hover: #B0A2CE;
+  --scrollbar-thumb: #C5C2D2;
+  --scrollbar-thumb-hover: #ABA6BC;
   --scrollbar-track: transparent;
 
   --logo-url: url('/img/logo-dark.svg');
@@ -268,7 +270,7 @@ html.skin-files.light-theme,
 }
 
 /* ============================================================================
-   3. SKIN A: DISK DIRECT ("files" — Amethyst / Duplex Stream) — DARK
+   3. SKIN A: DISK DIRECT ("files" — Muted Slate-Amethyst) — DARK
    ============================================================================ */
 html.dark-theme:not(.skin-chat),
 html.omd-dark:not(.skin-chat),
@@ -277,30 +279,33 @@ html.skin-files.dark-theme,
 .dark-theme:not(.skin-chat) {
   --skin-name: "files-dark";
 
-  --bg-primary: #0D0B12;
-  --bg-secondary: #16131F;
-  --bg-card: #16131F;
-  --bg-card-hover: #211C2E;
-  --bg-elevated: #1D1829;
-  --bg-soft: rgba(168, 85, 247, 0.10);
-  --bg-hover: rgba(192, 132, 252, 0.08);
-  --sidebar-bg: #16131F;
-  --sidebar-shadow: 4px 0 20px rgba(0, 0, 0, 0.35);
+  /* Lifted Slate-Charcoal surfaces matching Legacy #101C22 / #18242B / #202A2F */
+  --bg-primary: #181720;
+  --bg-secondary: #252330;
+  --bg-card: #252330;
+  --bg-card-hover: #312E3E;
+  --bg-elevated: #2A2736;
+  --bg-soft: rgba(142, 116, 189, 0.11);
+  --bg-hover: rgba(162, 138, 208, 0.08);
+  --sidebar-bg: #252330;
+  --sidebar-shadow: 4px 0 16px rgba(0, 0, 0, 0.25);
 
-  --border-color: #2D2640;
-  --border-subtle: #211C30;
+  --border-color: #3E3A4D;
+  --border-subtle: #2F2C3C;
 
-  --text-primary: #F8F7FC;
-  --text-secondary: #C4B8DB;
-  --text-muted: #8B80A3;
+  --text-primary: #F3F2F7;
+  --text-secondary: #C0BECD;
+  --text-muted: #9490A4;
+  --selected-text: #DFD8EF;
 
-  --accent: #A855F7;
-  --accent-hover: #C084FC;
-  --accent-active: #9333EA;
-  --accent-soft: rgba(168, 85, 247, 0.20);
-  --accent-border: rgba(192, 132, 252, 0.40);
-  --accent-glow: rgba(168, 85, 247, 0.35);
-  --accent-gradient: linear-gradient(135deg, #9333EA 0%, #C084FC 100%);
+  /* Muted Amethyst accents matching Legacy #2996CC OKLCH chroma (~0.11) */
+  --accent: #8E74BD;
+  --accent-hover: #A28AD0;
+  --accent-active: #7D60AC;
+  --accent-soft: rgba(142, 116, 189, 0.20);
+  --accent-border: rgba(162, 138, 208, 0.34);
+  --accent-glow: rgba(125, 96, 172, 0.28);
+  --accent-gradient: linear-gradient(135deg, #7D60AC 0%, #987EC7 100%);
   --accent-on-brand: #FFFFFF;
 
   --accent-blue: var(--accent);
@@ -308,9 +313,9 @@ html.skin-files.dark-theme,
   --accent-blue-active: var(--accent-soft);
   --Primary: var(--accent);
 
-  --user-bubble-bg: #211932;
-  --user-bubble-border: #3B2D56;
-  --pill-bg: #16131F;
+  --user-bubble-bg: #2D283B;
+  --user-bubble-border: #443C59;
+  --pill-bg: #252330;
 
   --success-bg: rgba(41, 204, 84, 0.15);
   --success-text: #4EDA72;
@@ -319,33 +324,33 @@ html.skin-files.dark-theme,
   --danger-bg: rgba(248, 59, 66, 0.15);
   --danger-text: #FF6A6F;
 
-  /* SVAR Filemanager Tokens (Dark) */
-  --top-menu-color: #A855F7;
-  --top-menu-hover-color: #C084FC;
-  --wx-color-primary: #9333EA;
-  --wx-color-primary-hover: #A855F7;
-  --wx-color-primary-selected: rgba(168, 85, 247, 0.22);
+  /* SVAR Filemanager Tokens (Dark — matches Legacy #202A2F / #2996CC balance) */
+  --top-menu-color: #8E74BD;
+  --top-menu-hover-color: #A28AD0;
+  --wx-color-primary: #7D60AC;
+  --wx-color-primary-hover: #8E74BD;
+  --wx-color-primary-selected: rgba(142, 116, 189, 0.20);
   --wx-color-primary-font: #FFFFFF;
-  --wx-background: #16131F;
-  --wx-background-alt: #120F1A;
-  --wx-background-hover: #211C2E;
-  --wx-fm-background: #0D0B12;
-  --wx-fm-select-background: rgba(168, 85, 247, 0.22);
-  --wx-fm-grid-border: 1px solid #2D2640;
-  --wx-fm-grid-header-color: #120F1A;
-  --wx-fm-button-font-color: rgba(248, 247, 252, 0.85);
-  --wx-table-border: 1px solid #2D2640;
-  --wx-table-header-border: 1px solid #2D2640;
-  --wx-table-header-background: #120F1A;
-  --wx-table-select-background: rgba(168, 85, 247, 0.22);
-  --wx-table-select-focus-background: rgba(168, 85, 247, 0.30);
-  --wx-color-font: #F8F7FC;
-  --wx-color-font-alt: #C4B8DB;
-  --wx-color-secondary-border: #2D2640;
-  --wx-border: 1px solid #2D2640;
+  --wx-background: #252330;
+  --wx-background-alt: #1F1D28;
+  --wx-background-hover: #312E3E;
+  --wx-fm-background: #181720;
+  --wx-fm-select-background: rgba(142, 116, 189, 0.20);
+  --wx-fm-grid-border: 1px solid #3E3A4D;
+  --wx-fm-grid-header-color: #1F1D28;
+  --wx-fm-button-font-color: rgba(243, 242, 247, 0.85);
+  --wx-table-border: 1px solid #3E3A4D;
+  --wx-table-header-border: 1px solid #3E3A4D;
+  --wx-table-header-background: #1F1D28;
+  --wx-table-select-background: rgba(142, 116, 189, 0.20);
+  --wx-table-select-focus-background: rgba(142, 116, 189, 0.28);
+  --wx-color-font: #F3F2F7;
+  --wx-color-font-alt: #C0BECD;
+  --wx-color-secondary-border: #3E3A4D;
+  --wx-border: 1px solid #3E3A4D;
 
-  --scrollbar-thumb: #3D3356;
-  --scrollbar-thumb-hover: #554777;
+  --scrollbar-thumb: #524D66;
+  --scrollbar-thumb-hover: #6A6482;
   --scrollbar-track: transparent;
 
   --logo-url: url('/img/logo.svg');
@@ -368,7 +373,7 @@ html.skin-files.dark-theme,
 }
 
 /* ============================================================================
-   4. SKIN B: AI ASSISTANT ("chat" — Magenta & Orchid / Neural Orbit) — LIGHT
+   4. SKIN B: AI ASSISTANT ("chat" — Dusty Rose / Berry-Mauve) — LIGHT
    ============================================================================ */
 html.skin-chat.light-theme,
 html.skin-chat:not(.dark-theme):not(.omd-dark),
@@ -378,30 +383,31 @@ html.skin-chat .light-theme,
 .skin-chat .light-theme {
   --skin-name: "chat-light";
 
-  --bg-primary: #FAF9FB;
+  --bg-primary: #F9F7F9;
   --bg-secondary: #FFFFFF;
   --bg-card: #FFFFFF;
-  --bg-card-hover: #F3F1F6;
+  --bg-card-hover: #EFEAEF;
   --bg-elevated: #FFFFFF;
-  --bg-soft: #F4F2F7;
-  --bg-hover: #F3F1F6;
+  --bg-soft: #F4F0F4;
+  --bg-hover: #EFEAEF;
   --sidebar-bg: #FFFFFF;
-  --sidebar-shadow: 3px 0 16px rgba(24, 18, 32, 0.05);
+  --sidebar-shadow: 3px 0 14px rgba(26, 20, 26, 0.05);
 
-  --border-color: #E6E2ED;
-  --border-subtle: #F0EDF5;
+  --border-color: #E1DBE1;
+  --border-subtle: #EDE8ED;
 
-  --text-primary: #1D1823;
-  --text-secondary: #5E5468;
-  --text-muted: #8E8498;
+  --text-primary: #1E181D;
+  --text-secondary: #685D66;
+  --text-muted: #988C96;
+  --selected-text: #733557;
 
-  --accent: #DB2777;
-  --accent-hover: #EC4899;
-  --accent-active: #BE185D;
-  --accent-soft: rgba(219, 39, 119, 0.08);
-  --accent-border: rgba(219, 39, 119, 0.30);
-  --accent-glow: rgba(236, 72, 153, 0.24);
-  --accent-gradient: linear-gradient(135deg, #DB2777 0%, #9333EA 100%);
+  --accent: #733557;
+  --accent-hover: #A65581;
+  --accent-active: #5C2945;
+  --accent-soft: rgba(115, 53, 87, 0.08);
+  --accent-border: rgba(115, 53, 87, 0.28);
+  --accent-glow: rgba(166, 85, 129, 0.20);
+  --accent-gradient: linear-gradient(135deg, #733557 0%, #7D60AC 100%);
   --accent-on-brand: #FFFFFF;
 
   --accent-blue: var(--accent);
@@ -409,19 +415,24 @@ html.skin-chat .light-theme,
   --accent-blue-active: var(--accent-soft);
   --Primary: var(--accent);
 
-  --user-bubble-bg: #F2F0F5;
-  --user-bubble-border: #E3DFEC;
+  --user-bubble-bg: #F2EDF2;
+  --user-bubble-border: #E2DAE2;
   --pill-bg: #FFFFFF;
 
-  --scrollbar-thumb: #D4CEDE;
-  --scrollbar-thumb-hover: #BCB3CA;
+  --scrollbar-thumb: #CFC7CF;
+  --scrollbar-thumb-hover: #B6ACB6;
   --scrollbar-track: transparent;
 
-  --top-menu-color: #DB2777;
-  --top-menu-hover-color: #EC4899;
-  --wx-color-primary: #DB2777;
-  --wx-color-primary-hover: #EC4899;
-  --wx-color-primary-selected: rgba(219, 39, 119, 0.10);
+  --top-menu-color: #733557;
+  --top-menu-hover-color: #A65581;
+  --wx-color-primary: #733557;
+  --wx-color-primary-hover: #A65581;
+  --wx-color-primary-selected: #F5EBF0;
+  --wx-fm-select-background: #F5EBF0;
+  --wx-background: #FFFFFF;
+  --wx-background-alt: #F5F2F5;
+  --wx-background-hover: #EFEAEF;
+  --wx-fm-background: #F9F7F9;
   --logo-url: url('/customtheme/logo-chat-dark.svg');
 
   --var---sds-color-background-brand-default-: var(--accent);
@@ -434,7 +445,7 @@ html.skin-chat .light-theme,
 }
 
 /* ============================================================================
-   5. SKIN B: AI ASSISTANT ("chat" — Magenta & Orchid / Neural Orbit) — DARK
+   5. SKIN B: AI ASSISTANT ("chat" — Dusty Rose / Berry-Mauve) — DARK
    ============================================================================ */
 html.skin-chat.dark-theme,
 html.skin-chat.omd-dark,
@@ -444,30 +455,31 @@ html.skin-chat .dark-theme,
 .skin-chat .dark-theme {
   --skin-name: "chat-dark";
 
-  --bg-primary: #0F0C12;
-  --bg-secondary: #18141D;
-  --bg-card: #18141D;
-  --bg-card-hover: #231D2B;
-  --bg-elevated: #201A27;
+  --bg-primary: #1B171C;
+  --bg-secondary: #28222A;
+  --bg-card: #28222A;
+  --bg-card-hover: #352D38;
+  --bg-elevated: #2E2731;
   --bg-soft: rgba(255, 255, 255, 0.05);
   --bg-hover: rgba(255, 255, 255, 0.04);
-  --sidebar-bg: #18141D;
-  --sidebar-shadow: 4px 0 20px rgba(0, 0, 0, 0.38);
+  --sidebar-bg: #28222A;
+  --sidebar-shadow: 4px 0 16px rgba(0, 0, 0, 0.26);
 
-  --border-color: #2F2738;
-  --border-subtle: #231D2A;
+  --border-color: #453B48;
+  --border-subtle: #332B36;
 
-  --text-primary: #FAF8FC;
-  --text-secondary: #CEC6D6;
-  --text-muted: #93889E;
+  --text-primary: #F5F2F6;
+  --text-secondary: #C6BEC8;
+  --text-muted: #9B909E;
+  --selected-text: #E8D4DF;
 
-  --accent: #EC4899;
-  --accent-hover: #F472B6;
-  --accent-active: #DB2777;
-  --accent-soft: rgba(236, 72, 153, 0.14);
-  --accent-border: rgba(244, 114, 182, 0.38);
-  --accent-glow: rgba(236, 72, 153, 0.34);
-  --accent-gradient: linear-gradient(135deg, #EC4899 0%, #A855F7 100%);
+  --accent: #B76992;
+  --accent-hover: #CA7DA5;
+  --accent-active: #A65581;
+  --accent-soft: rgba(183, 105, 146, 0.18);
+  --accent-border: rgba(202, 125, 165, 0.34);
+  --accent-glow: rgba(166, 85, 129, 0.28);
+  --accent-gradient: linear-gradient(135deg, #A65581 0%, #8E74BD 100%);
   --accent-on-brand: #FFFFFF;
 
   --accent-blue: var(--accent);
@@ -475,19 +487,24 @@ html.skin-chat .dark-theme,
   --accent-blue-active: var(--accent-soft);
   --Primary: var(--accent);
 
-  --user-bubble-bg: #221C29;
-  --user-bubble-border: #352C40;
-  --pill-bg: #18141D;
+  --user-bubble-bg: #312934;
+  --user-bubble-border: #483C4C;
+  --pill-bg: #28222A;
 
-  --scrollbar-thumb: #433750;
-  --scrollbar-thumb-hover: #5B4B6C;
+  --scrollbar-thumb: #594B5D;
+  --scrollbar-thumb-hover: #726177;
   --scrollbar-track: transparent;
 
-  --top-menu-color: #EC4899;
-  --top-menu-hover-color: #F472B6;
-  --wx-color-primary: #EC4899;
-  --wx-color-primary-hover: #F472B6;
-  --wx-color-primary-selected: rgba(236, 72, 153, 0.16);
+  --top-menu-color: #B76992;
+  --top-menu-hover-color: #CA7DA5;
+  --wx-color-primary: #A65581;
+  --wx-color-primary-hover: #B76992;
+  --wx-color-primary-selected: rgba(183, 105, 146, 0.20);
+  --wx-fm-select-background: rgba(183, 105, 146, 0.20);
+  --wx-background: #28222A;
+  --wx-background-alt: #221D24;
+  --wx-background-hover: #352D38;
+  --wx-fm-background: #1B171C;
   --logo-url: url('/customtheme/logo-chat.svg');
 
   --var---sds-color-background-brand-default-: var(--Magenta-200);

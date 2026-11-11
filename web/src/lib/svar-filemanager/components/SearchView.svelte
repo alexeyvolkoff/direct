@@ -961,7 +961,7 @@
 
 	.wx-action-icon-btn:hover {
 		background-color: var(--wx-background-alt, rgba(255, 255, 255, 0.08));
-		color: var(--wx-color-primary-hover, #A855F7);
+		color: var(--wx-color-primary-hover, #8E74BD);
 	}
 
 	.wx-action-icon-btn.close-btn:hover {
@@ -982,7 +982,7 @@
 	.wx-stat-query {
 		font-size: 14px;
 		font-weight: 600;
-		color: var(--wx-color-primary, #C084FC);
+		color: var(--wx-color-primary, #A28AD0);
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -1080,7 +1080,7 @@
 		padding: 1px 6px;
 		border-radius: 10px;
 		background-color: var(--wx-background-alt, rgba(255, 255, 255, 0.08));
-		color: var(--wx-color-primary, #C084FC);
+		color: var(--wx-color-primary, #A28AD0);
 	}
 
 	.wx-section-path {
@@ -1111,7 +1111,7 @@
 	.wx-result-card {
 		display: flex;
 		flex-direction: column;
-		background-color: var(--wx-background, #16131F);
+		background-color: var(--wx-background, #252330);
 		border: 1px solid var(--border-color, var(--wx-border, rgba(255, 255, 255, 0.08)));
 		border-radius: 12px;
 		padding: 12px 14px;
@@ -1127,12 +1127,12 @@
 
 	.wx-result-card:hover {
 		transform: translateY(-2px);
-		border-color: var(--wx-color-primary-hover, #A855F7);
+		border-color: var(--wx-color-primary-hover, #8E74BD);
 		box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
 	}
 
 	.wx-result-card.local-folder-card {
-		border-left: 3px solid var(--wx-color-primary, #9333EA);
+		border-left: 3px solid var(--wx-color-primary, #7D60AC);
 	}
 
 	/* Card Header */
@@ -1190,7 +1190,7 @@
 	}
 
 	.wx-file-title:hover {
-		color: var(--wx-color-primary, #C084FC);
+		color: var(--wx-color-primary, #A28AD0);
 	}
 
 	.wx-file-path-row {
@@ -1224,7 +1224,7 @@
 	}
 
 	.wx-path-link:hover {
-		color: var(--wx-color-primary, #C084FC);
+		color: var(--wx-color-primary, #A28AD0);
 		background-color: var(--wx-background-alt, rgba(255, 255, 255, 0.08));
 	}
 
@@ -1275,9 +1275,9 @@
 	}
 
 	.wx-relevance-pill.score-medium {
-		background-color: rgba(168, 85, 247, 0.15);
-		color: #A855F7;
-		border-color: rgba(168, 85, 247, 0.3);
+		background-color: rgba(142, 116, 189, 0.15);
+		color: #8E74BD;
+		border-color: rgba(142, 116, 189, 0.3);
 	}
 
 	.wx-relevance-pill.score-low {
@@ -1292,7 +1292,7 @@
 		padding: 8px 12px;
 		border-radius: 6px;
 		background-color: var(--wx-background-alt, rgba(0, 0, 0, 0.2));
-		border-left: 3px solid var(--wx-color-primary, #9333EA);
+		border-left: 3px solid var(--wx-color-primary, #7D60AC);
 		font-size: 13px;
 		line-height: 1.5;
 		box-sizing: border-box;
@@ -1377,13 +1377,13 @@
 	}
 
 	.wx-action-btn.primary {
-		background-color: var(--wx-color-primary, #9333EA);
+		background-color: var(--wx-color-primary, #7D60AC);
 		color: #ffffff;
 	}
 
 	.wx-action-btn.primary:hover {
-		background-color: var(--wx-color-primary-hover, #A855F7);
-		box-shadow: 0 2px 8px rgba(168, 85, 247, 0.35);
+		background-color: var(--wx-color-primary-hover, #8E74BD);
+		box-shadow: 0 2px 8px rgba(142, 116, 189, 0.35);
 	}
 
 	.wx-action-btn.secondary {
@@ -1432,7 +1432,7 @@
 		gap: 12px;
 		padding: 12px 16px;
 		border-radius: 8px;
-		background-color: var(--wx-background, #16131F);
+		background-color: var(--wx-background, #252330);
 		border: 1px solid var(--wx-border, rgba(255, 255, 255, 0.08));
 	}
 
@@ -1440,7 +1440,7 @@
 		width: 20px;
 		height: 20px;
 		border: 2px solid var(--wx-border, rgba(255, 255, 255, 0.15));
-		border-top-color: var(--wx-color-primary, #9333EA);
+		border-top-color: var(--wx-color-primary, #7D60AC);
 		border-radius: 50%;
 		animation: spin 0.8s linear infinite;
 	}
@@ -1467,7 +1467,7 @@
 	}
 
 	.wx-skeleton-card {
-		background-color: var(--wx-background, #16131F);
+		background-color: var(--wx-background, #252330);
 		border: 1px solid var(--wx-border, rgba(255, 255, 255, 0.05));
 		border-radius: 10px;
 		padding: 14px 16px;
@@ -1554,7 +1554,7 @@
 		width: 96px;
 		height: 96px;
 		border-radius: 50%;
-		background: radial-gradient(circle, rgba(168, 85, 247, 0.15) 0%, transparent 70%);
+		background: radial-gradient(circle, rgba(142, 116, 189, 0.15) 0%, transparent 70%);
 		color: var(--wx-color-font-alt, #73688A);
 		margin-bottom: 16px;
 	}
@@ -1574,7 +1574,7 @@
 	}
 
 	.wx-empty-hints {
-		background-color: var(--wx-background, #16131F);
+		background-color: var(--wx-background, #252330);
 		border: 1px solid var(--wx-border, rgba(255, 255, 255, 0.08));
 		border-radius: 8px;
 		padding: 14px 18px;
@@ -1606,7 +1606,7 @@
 		text-align: center;
 		max-width: 460px;
 		margin: 40px auto;
-		background-color: var(--wx-background, #16131F);
+		background-color: var(--wx-background, #252330);
 		border: 1px solid var(--wx-border, rgba(255, 255, 255, 0.08));
 		border-radius: 12px;
 	}
@@ -1621,7 +1621,7 @@
 		height: 32px;
 		padding: 0 16px;
 		border-radius: 6px;
-		background-color: var(--wx-color-primary, #9333EA);
+		background-color: var(--wx-color-primary, #7D60AC);
 		color: #ffffff;
 		border: none;
 		font-size: 13px;

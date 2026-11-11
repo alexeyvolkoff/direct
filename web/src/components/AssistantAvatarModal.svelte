@@ -504,9 +504,9 @@
   }
 
   .avatar-modal-card {
-    --card-bg: #1A121D;
-    --card-border: #352339;
-    --card-shadow: 0 24px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(236, 72, 153, 0.18);
+    --card-bg: #28222A;
+    --card-border: #453B48;
+    --card-shadow: 0 24px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(166, 85, 129, 0.18);
     --card-color: #FDF8FC;
     --header-title: #FDF8FC;
     --header-sub: #D4BECF;
@@ -514,7 +514,7 @@
     --close-btn: #998094;
     --close-btn-hover-bg: rgba(255, 255, 255, 0.08);
     --close-btn-hover: #FDF8FC;
-    --circle-bg: #0F0A10;
+    --circle-bg: #1B171C;
     --circle-loader-bg: rgba(15, 10, 16, 0.78);
     --carousel-btn-bg: rgba(255, 255, 255, 0.08);
     --carousel-btn-border: rgba(255, 255, 255, 0.1);
@@ -523,9 +523,9 @@
     --carousel-badge-bg: rgba(255, 255, 255, 0.06);
     --label-color: #D4BECF;
     --input-bg: rgba(255, 255, 255, 0.05);
-    --input-border: #352339;
+    --input-border: #453B48;
     --input-color: #FDF8FC;
-    --input-option-bg: #1A121D;
+    --input-option-bg: #28222A;
     --hint-color: #998094;
     --footer-bg: rgba(0, 0, 0, 0.2);
     --footer-border: rgba(255, 255, 255, 0.08);
@@ -555,7 +555,7 @@
   :global(:root.light-theme) .avatar-modal-card {
     --card-bg: #ffffff;
     --card-border: #E6D3DF;
-    --card-shadow: 0 20px 50px rgba(33, 18, 29, 0.15), 0 0 0 1px rgba(219, 39, 119, 0.18);
+    --card-shadow: 0 20px 50px rgba(33, 18, 29, 0.15), 0 0 0 1px rgba(115, 53, 87, 0.18);
     --card-color: #21121D;
     --header-title: #21121D;
     --header-sub: #664D5F;
@@ -595,7 +595,7 @@
     :global(:not(.dark-theme)) .avatar-modal-card {
       --card-bg: #ffffff;
       --card-border: #E6D3DF;
-      --card-shadow: 0 20px 50px rgba(33, 18, 29, 0.15), 0 0 0 1px rgba(219, 39, 119, 0.18);
+      --card-shadow: 0 20px 50px rgba(33, 18, 29, 0.15), 0 0 0 1px rgba(115, 53, 87, 0.18);
       --card-color: #21121D;
       --header-title: #21121D;
       --header-sub: #664D5F;
@@ -693,8 +693,8 @@
     width: 140px;
     height: 140px;
     border-radius: 50%;
-    border: 3px solid #EC4899;
-    box-shadow: 0 0 24px rgba(236, 72, 153, 0.45);
+    border: 3px solid #A65581;
+    box-shadow: 0 0 24px rgba(166, 85, 129, 0.45);
     overflow: hidden;
     background: var(--circle-bg);
     display: flex;
@@ -725,8 +725,8 @@
   .spinner {
     width: 32px;
     height: 32px;
-    border: 3px solid rgba(236, 72, 153, 0.3);
-    border-top-color: #EC4899;
+    border: 3px solid rgba(166, 85, 129, 0.3);
+    border-top-color: #A65581;
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }
@@ -769,7 +769,7 @@
   }
 
   .carousel-btn:hover:not(:disabled) {
-    background: rgba(236, 72, 153, 0.2);
+    background: rgba(166, 85, 129, 0.2);
   }
 
   .carousel-btn:disabled {
@@ -789,7 +789,7 @@
   .btn-text-subtle {
     background: transparent;
     border: none;
-    color: #EC4899;
+    color: #A65581;
     font-size: 0.82rem;
     font-weight: 500;
     display: inline-flex;
@@ -802,7 +802,7 @@
   }
 
   .btn-text-subtle:hover {
-    background: rgba(236, 72, 153, 0.12);
+    background: rgba(166, 85, 129, 0.12);
   }
 
   .avatar-fields {
@@ -863,8 +863,8 @@
   }
 
   .select-styled:focus {
-    border-color: #EC4899;
-    box-shadow: 0 0 0 2px rgba(236, 72, 153, 0.2);
+    border-color: #A65581;
+    box-shadow: 0 0 0 2px rgba(166, 85, 129, 0.2);
   }
 
   .select-styled option {
@@ -889,8 +889,8 @@
   }
 
   .textarea-styled:focus {
-    border-color: #EC4899;
-    box-shadow: 0 0 0 2px rgba(236, 72, 153, 0.2);
+    border-color: #A65581;
+    box-shadow: 0 0 0 2px rgba(166, 85, 129, 0.2);
   }
 
   .textarea-styled::-webkit-scrollbar {
@@ -978,7 +978,7 @@
   }
 
   .btn-primary {
-    background: linear-gradient(135deg, #EC4899 0%, #A855F7 100%);
+    background: linear-gradient(135deg, #A65581 0%, #8E74BD 100%);
     border: none;
     color: #ffffff;
     padding: 8px 20px;
@@ -986,12 +986,12 @@
     font-weight: 600;
     cursor: pointer;
     transition: filter 0.15s, box-shadow 0.15s;
-    box-shadow: 0 2px 10px rgba(236, 72, 153, 0.4);
+    box-shadow: 0 2px 10px rgba(166, 85, 129, 0.4);
   }
 
   .btn-primary:hover:not(:disabled) {
     filter: brightness(1.08);
-    box-shadow: 0 4px 14px rgba(236, 72, 153, 0.5);
+    box-shadow: 0 4px 14px rgba(166, 85, 129, 0.5);
   }
 
   .btn-secondary:disabled,

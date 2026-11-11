@@ -291,8 +291,8 @@
     try {
       const options = {
         container: waveformContainer,
-        waveColor: "rgba(192, 132, 252, 0.35)",
-        progressColor: "#C084FC",
+        waveColor: "rgba(162, 138, 208, 0.35)",
+        progressColor: "#A28AD0",
         cursorColor: "#F8F7FC",
         cursorWidth: 2,
         barWidth: 3,
@@ -608,7 +608,7 @@
           {:else}
             <div class="cover-placeholder">
               <div class="music-icon-wrapper">
-                <svg viewBox="0 0 24 24" width="56" height="56" fill="none" stroke="#C084FC" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <svg viewBox="0 0 24 24" width="56" height="56" fill="none" stroke="#A28AD0" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M9 18V5l12-2v13"></path>
                   <circle cx="6" cy="18" r="3"></circle>
                   <circle cx="18" cy="16" r="3"></circle>
@@ -895,9 +895,9 @@
   }
 
   .playlist-toggle-btn.active {
-    color: #C084FC;
-    background: rgba(168, 85, 247, 0.15);
-    border-color: rgba(168, 85, 247, 0.4);
+    color: #A28AD0;
+    background: rgba(142, 116, 189, 0.15);
+    border-color: rgba(142, 116, 189, 0.4);
   }
 
   .playlist-count {
@@ -949,8 +949,8 @@
   }
 
   .album-cover-card.is-playing {
-    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7), 0 0 30px rgba(168, 85, 247, 0.25);
-    border-color: rgba(168, 85, 247, 0.3);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7), 0 0 30px rgba(142, 116, 189, 0.25);
+    border-color: rgba(142, 116, 189, 0.3);
   }
 
   .cover-image {
@@ -966,7 +966,7 @@
     justify-content: center;
     width: 100%;
     height: 100%;
-    background: radial-gradient(circle at center, #16131F 0%, #0D0B12 100%);
+    background: radial-gradient(circle at center, #252330 0%, #181720 100%);
   }
 
   .music-icon-wrapper {
@@ -976,8 +976,8 @@
     width: 88px;
     height: 88px;
     border-radius: 50%;
-    background: rgba(168, 85, 247, 0.08);
-    border: 1px solid rgba(168, 85, 247, 0.2);
+    background: rgba(142, 116, 189, 0.08);
+    border: 1px solid rgba(142, 116, 189, 0.2);
   }
 
   /* Stage Track Info */
@@ -1074,30 +1074,30 @@
   }
 
   .control-btn.active {
-    color: #C084FC;
-    background: rgba(168, 85, 247, 0.15);
-    border-color: rgba(168, 85, 247, 0.4);
+    color: #A28AD0;
+    background: rgba(142, 116, 189, 0.15);
+    border-color: rgba(142, 116, 189, 0.4);
   }
 
   .play-pause-btn {
     width: 58px;
     height: 58px;
     border-radius: 50%;
-    background: linear-gradient(135deg, #C084FC 0%, #7E22CE 100%);
+    background: linear-gradient(135deg, #A28AD0 0%, #563F7A 100%);
     color: #020617;
     border: none;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    box-shadow: 0 4px 20px rgba(168, 85, 247, 0.4);
+    box-shadow: 0 4px 20px rgba(142, 116, 189, 0.4);
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     flex-shrink: 0;
   }
 
   .play-pause-btn:hover:not(:disabled) {
     transform: scale(1.08);
-    box-shadow: 0 6px 25px rgba(168, 85, 247, 0.6);
+    box-shadow: 0 6px 25px rgba(142, 116, 189, 0.6);
   }
 
   .play-pause-btn.is-loading,
@@ -1155,7 +1155,7 @@
     bottom: calc(100% + 8px);
     left: 50%;
     transform: translateX(-50%);
-    background: #16131F;
+    background: #252330;
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 8px;
     padding: 4px;
@@ -1178,8 +1178,8 @@
   }
 
   .speed-opt:hover, .speed-opt.active {
-    color: #C084FC;
-    background: rgba(168, 85, 247, 0.15);
+    color: #A28AD0;
+    background: rgba(142, 116, 189, 0.15);
   }
 
   /* Volume */
@@ -1191,7 +1191,7 @@
 
   .volume-slider {
     width: 80px;
-    accent-color: #C084FC;
+    accent-color: #A28AD0;
     cursor: pointer;
   }
 
@@ -1250,8 +1250,8 @@
   }
 
   .playlist-item.active {
-    background: rgba(168, 85, 247, 0.15);
-    border: 1px solid rgba(168, 85, 247, 0.3);
+    background: rgba(142, 116, 189, 0.15);
+    border: 1px solid rgba(142, 116, 189, 0.3);
   }
 
   .item-index {
@@ -1263,7 +1263,7 @@
   }
 
   .playlist-item.active .item-index {
-    color: #C084FC;
+    color: #A28AD0;
   }
 
   .item-thumb {
@@ -1290,7 +1290,7 @@
   }
 
   .playlist-item.active .item-name {
-    color: #C084FC;
+    color: #A28AD0;
     font-weight: 600;
   }
 
@@ -1313,7 +1313,7 @@
 
   .playing-bars span {
     width: 2px;
-    background: #C084FC;
+    background: #A28AD0;
     animation: eqBounce 0.8s ease infinite alternate;
   }
 

@@ -329,14 +329,14 @@
 
   .modal-card.light-theme {
     background: #ffffff;
-    color: #0D0B12;
-    border-color: #DDD6EB;
+    color: #181720;
+    border-color: #DCDAE4;
   }
 
   .modal-card.dark-theme {
-    background: #16131F;
+    background: #252330;
     color: #ffffff;
-    border-color: #2D2640;
+    border-color: #3E3A4D;
   }
 
   .modal-header {
@@ -348,11 +348,11 @@
   }
 
   .light-theme .modal-header {
-    border-bottom-color: #DDD6EB;
+    border-bottom-color: #DCDAE4;
   }
 
   .dark-theme .modal-header {
-    border-bottom-color: #2D2640;
+    border-bottom-color: #3E3A4D;
   }
 
   .header-info {
@@ -365,8 +365,8 @@
     width: 40px;
     height: 40px;
     border-radius: 10px;
-    background: rgba(168, 85, 247, 0.15);
-    color: #9333EA;
+    background: rgba(142, 116, 189, 0.15);
+    color: #7D60AC;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -421,7 +421,7 @@
     width: 32px;
     height: 32px;
     border: 3px solid rgba(139, 128, 163, 0.2);
-    border-top-color: #9333EA;
+    border-top-color: #7D60AC;
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }
@@ -459,7 +459,7 @@
 
   .btn-copy {
     padding: 9px 16px;
-    background: #9333EA;
+    background: #7D60AC;
     color: #ffffff;
     border: none;
     border-radius: 8px;
@@ -471,7 +471,7 @@
   }
 
   .btn-copy:hover {
-    background: #7E22CE;
+    background: #563F7A;
   }
 
   .link-help {
@@ -543,14 +543,14 @@
   }
 
   .select-input option {
-    background-color: #16131F;
+    background-color: #252330;
     color: #ffffff;
   }
 
   :global(.light-theme) .select-input option,
   :global(html:not(.omd-dark)) .select-input option {
     background-color: #ffffff;
-    color: #0D0B12;
+    color: #181720;
   }
 
   /* Switches */
@@ -593,7 +593,7 @@
   }
 
   input:checked + .slider {
-    background-color: #9333EA;
+    background-color: #7D60AC;
   }
 
   input:checked + .slider:before {
@@ -628,11 +628,11 @@
   }
 
   .light-theme .modal-footer {
-    border-top-color: #DDD6EB;
+    border-top-color: #DCDAE4;
   }
 
   .dark-theme .modal-footer {
-    border-top-color: #2D2640;
+    border-top-color: #3E3A4D;
   }
 
   .footer-spacer {
@@ -641,7 +641,7 @@
 
   .btn-primary {
     padding: 9px 18px;
-    background: #9333EA;
+    background: #7D60AC;
     color: #ffffff;
     border: none;
     border-radius: 8px;
@@ -652,7 +652,7 @@
   }
 
   .btn-primary:hover {
-    background: #A855F7;
+    background: #8E74BD;
   }
 
   .btn-cancel {

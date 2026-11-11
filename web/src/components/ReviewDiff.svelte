@@ -39,18 +39,18 @@
       { token: 'diff.comment', foreground: '8B80A3', fontStyle: 'italic' }
     ],
     colors: {
-      'editor.background': '#16131F',
+      'editor.background': '#252330',
       'editor.foreground': '#EFEBF8',
-      'editor.lineHighlightBackground': '#211C2E',
+      'editor.lineHighlightBackground': '#312E3E',
       'editorLineNumber.foreground': '#5B5270',
       'editorLineNumber.activeForeground': '#C4B8DB',
-      'editorWidget.background': '#16131F',
-      'editorWidget.border': '#2D2640',
+      'editorWidget.background': '#252330',
+      'editorWidget.border': '#3E3A4D',
       'diffEditor.insertedLineBackground': '#0f2a17',
       'diffEditor.removedLineBackground': '#2a1414',
       'diffEditor.insertedTextBackground': '#1f4a2c',
       'diffEditor.removedTextBackground': '#521c1c',
-      'diffEditor.diagonalFill': '#2D2640'
+      'diffEditor.diagonalFill': '#3E3A4D'
     }
   });
 </script>
@@ -135,6 +135,6 @@
     width: 100%;
     height: 100%;
     min-height: 0;
-    background-color: var(--wx-background, #16131F);
+    background-color: var(--wx-background, #252330);
   }
 </style>

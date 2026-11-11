@@ -30,7 +30,7 @@ const ALL_PRESET_MCP_APPS = [
     url: "https://whop.com/ai-studio-direct/creative-studio-direct",
     placeholder: "pass_... / muse_...",
     description: "Creative Studio Club Pass or Muse Pass",
-    badgeColor: "#8B5CF6",
+    badgeColor: "#7D60AC",
   },
   {
     id: "civitai",
@@ -38,7 +38,7 @@ const ALL_PRESET_MCP_APPS = [
     url: "https://civitai.com/user/account",
     placeholder: "civitai_api_token...",
     description: "CivitAI Publishing & Models Token",
-    badgeColor: "#EC4899",
+    badgeColor: "#A65581",
   },
   {
     id: "plane",
@@ -46,7 +46,7 @@ const ALL_PRESET_MCP_APPS = [
     url: "https://app.plane.so",
     placeholder: "plane_api_...",
     description: "Plane Project Management",
-    badgeColor: "#A855F7",
+    badgeColor: "#8E74BD",
   },
 ];
 

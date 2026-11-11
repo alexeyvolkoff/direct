@@ -204,13 +204,13 @@
 
 	.wx-cr-folder-chip:hover {
 		background: var(--wx-background-hover, rgba(255, 255, 255, 0.12));
-		border-color: var(--wx-color-primary, #C084FC);
+		border-color: var(--wx-color-primary, #A28AD0);
 		transform: translateY(-1px);
 	}
 
 	.wx-cr-folder-chip i {
 		font-size: 16px;
-		color: var(--wx-color-primary, #9333EA) !important;
+		color: var(--wx-color-primary, #7D60AC) !important;
 	}
 
 	.wx-cameraroll-grid {

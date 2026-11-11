@@ -21,8 +21,8 @@
       inherit: true,
       rules: [],
       colors: {
-        'editor.background': '#16131F',
-        'editor.lineHighlightBackground': '#211C2E',
+        'editor.background': '#252330',
+        'editor.lineHighlightBackground': '#312E3E',
         'editorLineNumber.foreground': '#5B5270',
         'editorLineNumber.activeForeground': '#C4B8DB',
         'editor.selectionBackground': '#581C8788'
@@ -86,16 +86,16 @@
     flex-direction: column;
     width: 100%;
     height: 100%;
-    background-color: var(--wx-background, #16131F);
+    background-color: var(--wx-background, #252330);
   }
 
   .editor-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background-color: var(--wx-background-alt, #120F1A);
+    background-color: var(--wx-background-alt, #1F1D28);
     padding: 8px 16px;
-    border-bottom: 1px solid var(--border-color, #2D2640);
+    border-bottom: 1px solid var(--border-color, #3E3A4D);
   }
 
   .filename {
@@ -127,6 +127,6 @@
     flex: 1;
     min-height: 0; /* Important for flex child to not overflow */
     width: 100%;
-    background-color: var(--wx-background, #16131F);
+    background-color: var(--wx-background, #252330);
   }
 </style>
