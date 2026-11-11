@@ -356,7 +356,7 @@
 		width: 32px;
 		height: 32px;
 		border: 3px solid var(--wx-border-color, rgba(127, 127, 127, 0.2));
-		border-top-color: var(--wx-color-primary, #563F7A);
+		border-top-color: var(--wx-color-primary, #7E22CE);
 		border-radius: 50%;
 		animation: wx-spin 0.8s linear infinite;
 	}

@@ -1448,13 +1448,13 @@
     font-weight: 500;
     cursor: pointer;
     background: var(--accent-soft);
-    color: var(--accent, #A65581);
+    color: var(--accent, #EC4899);
     border: 1px solid var(--accent-border);
     transition: all 0.18s ease;
   }
   .btn-mark-people:hover,
   .btn-mark-people.active {
-    background: var(--accent, #A65581);
+    background: var(--accent, #EC4899);
     color: #ffffff;
     border-color: transparent;
   }
@@ -1520,9 +1520,9 @@
     z-index: 10;
   }
   .face-box:hover {
-    border-color: #CA7DA5;
-    background: rgba(202, 125, 165, 0.18);
-    box-shadow: 0 0 12px rgba(202, 125, 165, 0.4);
+    border-color: #F472B6;
+    background: rgba(244, 114, 182, 0.18);
+    box-shadow: 0 0 12px rgba(244, 114, 182, 0.4);
   }
   .face-box.dragging {
     cursor: grabbing;
@@ -1534,10 +1534,10 @@
     background: rgba(16, 185, 129, 0.18);
   }
   .face-box.selected {
-    border-color: #A65581;
+    border-color: #EC4899;
     border-style: solid;
-    background: rgba(166, 85, 129, 0.25);
-    box-shadow: 0 0 16px rgba(166, 85, 129, 0.6);
+    background: rgba(236, 72, 153, 0.25);
+    box-shadow: 0 0 16px rgba(236, 72, 153, 0.6);
   }
 
   .face-handle {
@@ -1545,7 +1545,7 @@
     width: 9px;
     height: 9px;
     background: #ffffff;
-    border: 1.5px solid #A65581;
+    border: 1.5px solid #EC4899;
     border-radius: 2px;
     z-index: 20;
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
@@ -1587,8 +1587,8 @@
   .face-edit-panel {
     margin-top: 8px;
     padding: 10px 12px;
-    background: rgba(166, 85, 129, 0.08);
-    border: 1px solid rgba(166, 85, 129, 0.25);
+    background: rgba(236, 72, 153, 0.08);
+    border: 1px solid rgba(236, 72, 153, 0.25);
     border-radius: 8px;
   }
   .face-edit-header {
@@ -1618,7 +1618,7 @@
   }
   .btn-save-face {
     padding: 6px 14px;
-    background: var(--accent, #A65581);
+    background: var(--accent, #EC4899);
     color: #fff;
     border: none;
     border-radius: 6px;
@@ -1652,11 +1652,11 @@
     transition: all 0.15s ease;
   }
   .kp-chip:hover {
-    border-color: var(--accent, #A65581);
+    border-color: var(--accent, #EC4899);
     background: var(--accent-soft);
   }
   .kp-chip.selected {
-    background: var(--accent, #A65581);
+    background: var(--accent, #EC4899);
     color: #fff;
   }
 

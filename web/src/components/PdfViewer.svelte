@@ -113,7 +113,7 @@
     position: absolute;
     inset: 0;
     overflow: hidden;
-    background: #252330;
+    background: #16131F;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -141,8 +141,8 @@
   .pdf-spinner {
     width: 44px;
     height: 44px;
-    border: 3.5px solid rgba(142, 116, 189, 0.2);
-    border-top-color: #A28AD0;
+    border: 3.5px solid rgba(168, 85, 247, 0.2);
+    border-top-color: #C084FC;
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }
@@ -176,7 +176,7 @@
   .pdf-btn {
     padding: 8px 18px;
     border-radius: 6px;
-    background: #563F7A;
+    background: #7E22CE;
     color: white;
     border: none;
     cursor: pointer;
@@ -185,7 +185,7 @@
   }
 
   .pdf-btn:hover {
-    background: #473366;
+    background: #6B21A8;
   }
 
   .pdf-btn-close {

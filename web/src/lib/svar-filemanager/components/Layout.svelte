@@ -354,7 +354,7 @@
 		display: flex;
 		flex-direction: column;
 		flex: 1;
-		background-color: var(--bg-primary, #181720);
+		background-color: var(--bg-primary, #0D0B12);
 		border-top-left-radius: 12px;
 		border-top-right-radius: 12px;
 		overflow: hidden;
@@ -382,7 +382,7 @@
 		left: -320px;
 		transition-duration: 0.3s;
 		box-shadow: 4px 0 24px rgba(0, 0, 0, 0.45);
-		background-color: var(--wx-background, #252330);
+		background-color: var(--wx-background, #16131F);
 	}
 	.wx-sidebar-visible {
 		left: 0 !important;

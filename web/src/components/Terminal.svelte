@@ -230,10 +230,10 @@
       letterSpacing: 0,
       customGlyphs: true,
       theme: {
-        background: '#252330',
+        background: '#16131F',
         foreground: '#F8F7FC',
-        cursor: '#A28AD0',
-        selectionBackground: 'rgba(142, 116, 189, 0.3)'
+        cursor: '#C084FC',
+        selectionBackground: 'rgba(168, 85, 247, 0.3)'
       }
     });
 
@@ -734,7 +734,7 @@
     flex-direction: column;
     width: 100%;
     height: 100%;
-    background-color: var(--wx-background, #252330);
+    background-color: var(--wx-background, #16131F);
   }
 
   .terminal-wrapper {
@@ -742,14 +742,14 @@
     flex-direction: column;
     height: 100%;
     width: 100%;
-    background-color: var(--wx-background, #252330);
+    background-color: var(--wx-background, #16131F);
   }
 
   :global(.xterm),
   :global(.xterm .xterm-viewport),
   :global(.xterm .xterm-screen),
   :global(.xterm .xterm-rows) {
-    background-color: var(--wx-background, #252330) !important;
+    background-color: var(--wx-background, #16131F) !important;
   }
 
   .terminal-toolbar {
@@ -757,9 +757,9 @@
     justify-content: space-between;
     align-items: center;
     padding: 8px 16px;
-    background-color: #2A2736;
+    background-color: #1D1829;
     color: #fff;
-    border-bottom: 1px solid #3E3A4D;
+    border-bottom: 1px solid #2D2640;
   }
 
   .terminal-toolbar .title {
@@ -807,10 +807,10 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    background: #2A2736;
+    background: #1D1829;
     padding: 16px 24px;
     border-radius: 8px;
-    border: 1px solid #3E3A4D;
+    border: 1px solid #2D2640;
     color: #fff;
     font-size: 14px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
@@ -820,7 +820,7 @@
     width: 18px;
     height: 18px;
     border: 2px solid rgba(255, 255, 255, 0.3);
-    border-top-color: #A28AD0;
+    border-top-color: #C084FC;
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }
@@ -866,7 +866,7 @@
     width: 4px;
     height: 4px;
     border-radius: 50%;
-    background: #A28AD0;
+    background: #C084FC;
     animation: dot-blink 1.4s infinite;
     font-style: normal;
   }
@@ -914,8 +914,8 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
-    background: var(--wx-background-alt, #1F1D28);
-    border: 1px solid var(--border-color, #3E3A4D);
+    background: var(--wx-background-alt, #120F1A);
+    border: 1px solid var(--border-color, #2D2640);
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
     border-radius: 12px;
     padding: 24px;
@@ -937,8 +937,8 @@
   }
 
   .prompt-input {
-    background: var(--wx-background, #252330);
-    border: 1px solid var(--border-color, #3E3A4D);
+    background: var(--wx-background, #16131F);
+    border: 1px solid var(--border-color, #2D2640);
     border-radius: 6px;
     color: var(--wx-color-font, #fff);
     padding: 9px 12px;
@@ -948,7 +948,7 @@
   }
 
   .prompt-input:focus {
-    border-color: var(--wx-color-primary, #7D60AC);
+    border-color: var(--wx-color-primary, #9333EA);
   }
 
   .prompt-hint {
@@ -969,7 +969,7 @@
   }
 
   .prompt-check input {
-    accent-color: var(--wx-color-primary, #7D60AC);
+    accent-color: var(--wx-color-primary, #9333EA);
   }
 
   .prompt-error {
@@ -984,7 +984,7 @@
 
   .prompt-btn {
     margin-top: 12px;
-    background: var(--wx-color-primary, #7D60AC);
+    background: var(--wx-color-primary, #9333EA);
     border: none;
     border-radius: 6px;
     color: #fff;
@@ -996,6 +996,6 @@
   }
 
   .prompt-btn:hover {
-    background: var(--wx-color-primary-hover, #8E74BD);
+    background: var(--wx-color-primary-hover, #A855F7);
   }
 </style>

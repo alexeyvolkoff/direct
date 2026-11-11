@@ -283,18 +283,18 @@ export function mountMobileGoogleBridgeIfRequested(targetEl) {
   const bridgeIcon = isChatHost ? "/customtheme/aiassistant.svg" : "/customtheme/onmydisk.svg";
   const bridgeAlt = isChatHost ? "AI Assistant" : "Disk Direct";
   const bridgeAccent = isChatHost
-    ? (prefersDark ? "#A65581" : "#733557")
-    : (prefersDark ? "#7D60AC" : "#563F7A");
+    ? (prefersDark ? "#EC4899" : "#DB2777")
+    : (prefersDark ? "#A855F7" : "#7E22CE");
   const bridgeStatusColor = isChatHost
-    ? (prefersDark ? "#CA7DA5" : "#733557")
-    : (prefersDark ? "#A28AD0" : "#563F7A");
+    ? (prefersDark ? "#F472B6" : "#DB2777")
+    : (prefersDark ? "#C084FC" : "#7E22CE");
 
   targetEl.innerHTML = `
-    <div style="min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;font-family:'Inter',system-ui,-apple-system,sans-serif;background:${prefersDark ? (isChatHost ? "#1B171C" : "#181720") : (isChatHost ? "#F9F7F9" : "#F7F7FA")};color:${prefersDark ? "#F3F2F7" : "#1A1822"};">
-      <div style="width:100%;max-width:380px;background:${prefersDark ? (isChatHost ? "#28222A" : "#252330") : "#FFFFFF"};border:1px solid ${prefersDark ? "rgba(255,255,255,0.1)" : "rgba(26,24,34,0.1)"};border-radius:18px;padding:32px 24px;box-shadow:0 16px 40px rgba(0,0,0,0.22);text-align:center;">
+    <div style="min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;font-family:'Inter',system-ui,-apple-system,sans-serif;background:${prefersDark ? (isChatHost ? "#0F0C12" : "#0D0B12") : (isChatHost ? "#FAF9FB" : "#F8F7FC")};color:${prefersDark ? "#F8F7FC" : "#181326"};">
+      <div style="width:100%;max-width:380px;background:${prefersDark ? (isChatHost ? "#1A121D" : "#16131F") : "#FFFFFF"};border:1px solid ${prefersDark ? "rgba(255,255,255,0.1)" : "rgba(24,19,38,0.1)"};border-radius:18px;padding:32px 24px;box-shadow:0 16px 40px rgba(0,0,0,0.22);text-align:center;">
         <img src="${bridgeIcon}" alt="${bridgeAlt}" style="width:52px;height:52px;margin:0 auto 16px;display:block;border-radius:12px;" />
         <h1 id="omd-bridge-title" style="font-size:20px;font-weight:700;margin:0 0 8px;">${copy.title}</h1>
-        <p id="omd-bridge-desc" style="font-size:14px;line-height:1.5;margin:0 0 24px;color:${prefersDark ? "#C0BECD" : "#625E70"};">${copy.desc}</p>
+        <p id="omd-bridge-desc" style="font-size:14px;line-height:1.5;margin:0 0 24px;color:${prefersDark ? "#C4B8DB" : "#5B5270"};">${copy.desc}</p>
         <div id="omd-bridge-btn" style="display:flex;justify-content:center;min-height:44px;"></div>
         <div id="omd-bridge-return" style="display:none;margin-top:16px;">
           <a href="onmydisk://auth-complete" style="display:inline-flex;align-items:center;justify-content:center;width:100%;height:44px;border-radius:10px;background:${bridgeAccent};color:#FFFFFF;font-weight:600;font-size:15px;text-decoration:none;">${copy.openAppBtn}</a>

@@ -289,13 +289,13 @@
 	.wx-home-icon:hover,
 	.wx-back-icon:hover,
 	.wx-refresh-icon:hover {
-		color: var(--wx-color-primary, #A28AD0);
+		color: var(--wx-color-primary, #C084FC);
 		background-color: var(--wx-background-alt, rgba(255, 255, 255, 0.08));
 	}
 	.wx-refresh-icon:hover i,
 	.wx-refresh-icon:hover :global(i),
 	.wx-refresh-icon:hover :global(.wx-icon) {
-		color: var(--wx-color-primary, #A28AD0) !important;
+		color: var(--wx-color-primary, #C084FC) !important;
 	}
 
 	.wx-crumbs-list {
@@ -349,8 +349,8 @@
 		width: 32px;
 		height: 32px;
 		border-radius: 6px;
-		background-color: var(--wx-color-primary, #7D60AC);
-		border: 1px solid var(--wx-color-primary, #7D60AC);
+		background-color: var(--wx-color-primary, #9333EA);
+		border: 1px solid var(--wx-color-primary, #9333EA);
 		color: #ffffff;
 		display: flex;
 		align-items: center;
@@ -362,8 +362,8 @@
 	}
 
 	.wx-breadcrumb-add-btn:hover {
-		background-color: var(--wx-color-primary-hover, #8E74BD);
-		border-color: var(--wx-color-primary-hover, #8E74BD);
+		background-color: var(--wx-color-primary-hover, #A855F7);
+		border-color: var(--wx-color-primary-hover, #A855F7);
 		transform: scale(1.05);
 	}
 
@@ -386,13 +386,13 @@
 		transition: all 0.15s;
 	}
 	.wx-panel-copy {
-		background: rgba(142, 116, 189,0.12);
-		border-color: rgba(142, 116, 189,0.35);
-		color: #7D60AC;
+		background: rgba(168, 85, 247,0.12);
+		border-color: rgba(168, 85, 247,0.35);
+		color: #9333EA;
 	}
 	.wx-panel-copy:hover {
-		background: rgba(142, 116, 189,0.22);
-		border-color: rgba(142, 116, 189,0.55);
+		background: rgba(168, 85, 247,0.22);
+		border-color: rgba(168, 85, 247,0.55);
 	}
 	.wx-panel-move {
 		background: rgba(245,158,11,0.12);
@@ -403,7 +403,7 @@
 		background: rgba(245,158,11,0.22);
 		border-color: rgba(245,158,11,0.55);
 	}
-	:global(.wx-willow-dark-theme) .wx-panel-copy { color: #A28AD0; }
+	:global(.wx-willow-dark-theme) .wx-panel-copy { color: #C084FC; }
 	:global(.wx-willow-dark-theme) .wx-panel-move { color: #fbbf24; }
 
 	@media (max-width: 600px) {

@@ -676,16 +676,16 @@
 
 <style>
   .workspace-container {
-    --wx-color-primary: #7D60AC;
-    --wx-color-primary-hover: #8E74BD;
-    --wx-background: #252330;
-    --wx-background-alt: #1F1D28;
-    --wx-background-hover: #312E3E;
+    --wx-color-primary: #9333EA;
+    --wx-color-primary-hover: #A855F7;
+    --wx-background: #16131F;
+    --wx-background-alt: #120F1A;
+    --wx-background-hover: #211C2E;
     --wx-color-font: #E9ECED;
     --wx-color-font-alt: #8B80A3;
-    --border-color: #3E3A4D;
+    --border-color: #2D2640;
     --wx-icon-color: #8B80A3;
-    --top-menu-color: #A28AD0;
+    --top-menu-color: #C084FC;
     --top-menu-hover-color: #7dd3fc;
     color-scheme: dark;
 
@@ -693,7 +693,7 @@
     flex-direction: column;
     width: 100%;
     height: 100%;
-    background: var(--wx-background, #252330);
+    background: var(--wx-background, #16131F);
     color: var(--wx-color-font, #f1f2f4);
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     overflow: hidden;
@@ -711,8 +711,8 @@
     align-self: stretch;
     padding: 4px 6px 6px 6px;
     position: relative;
-    background: var(--wx-background-alt, #1F1D28);
-    border-right: 1px solid var(--border-color, #3E3A4D);
+    background: var(--wx-background-alt, #120F1A);
+    border-right: 1px solid var(--border-color, #2D2640);
     flex-direction: column;
     justify-content: flex-start;
     align-items: flex-start;
@@ -775,7 +775,7 @@
     flex: 1;
     overflow-y: auto;
     scrollbar-width: thin;
-    scrollbar-color: var(--border-color, #3E3A4D) transparent;
+    scrollbar-color: var(--border-color, #2D2640) transparent;
   }
 
   .file-list::-webkit-scrollbar {
@@ -788,7 +788,7 @@
   }
 
   .file-list::-webkit-scrollbar-thumb {
-    background: var(--border-color, #3E3A4D);
+    background: var(--border-color, #2D2640);
     border-radius: 3px;
   }
 
@@ -844,11 +844,11 @@
 
   .tab-bar {
     display: flex;
-    background: var(--wx-background-alt, #1F1D28);
+    background: var(--wx-background-alt, #120F1A);
     height: calc(32px + env(safe-area-inset-top, 0px));
     padding-top: env(safe-area-inset-top, 0px);
     align-items: flex-end;
-    border-bottom: 1px solid var(--border-color, #3E3A4D);
+    border-bottom: 1px solid var(--border-color, #2D2640);
     box-sizing: border-box;
   }
 
@@ -859,7 +859,7 @@
     height: 32px;
     width: 36px;
     border: none;
-    border-right: 1px solid var(--border-color, #3E3A4D);
+    border-right: 1px solid var(--border-color, #2D2640);
     background: transparent;
     color: var(--wx-color-font-alt, #A5B5C1);
     cursor: pointer;
@@ -881,8 +881,8 @@
   }
 
   .tab-btn.save-btn.saving {
-    color: #A28AD0;
-    background: rgba(162, 138, 208, 0.14);
+    color: #C084FC;
+    background: rgba(192, 132, 252, 0.14);
   }
 
   .tab-btn:disabled {
@@ -910,7 +910,7 @@
     align-items: center;
     height: 32px;
     padding: 0 16px;
-    border-right: 1px solid var(--border-color, #3E3A4D);
+    border-right: 1px solid var(--border-color, #2D2640);
     font-size: 12px;
     color: var(--wx-color-font-alt, #A5B5C1);
     cursor: pointer;
@@ -919,9 +919,9 @@
   }
 
   .tab.active {
-    background: var(--wx-background, #252330);
+    background: var(--wx-background, #16131F);
     color: var(--wx-color-font, #ffffff);
-    border-bottom: 1px solid var(--wx-background, #252330);
+    border-bottom: 1px solid var(--wx-background, #16131F);
     margin-bottom: -1px;
     padding-bottom: 1px;
   }
@@ -967,7 +967,7 @@
 
   .content-area {
     flex: 1;
-    background: var(--wx-background, #252330);
+    background: var(--wx-background, #16131F);
     position: relative;
     overflow: hidden;
     padding: 0;
@@ -1016,7 +1016,7 @@
     width: 4px;
     height: 4px;
     border-radius: 50%;
-    background: #A28AD0;
+    background: #C084FC;
     animation: saving-dot-blink 1.4s infinite;
     font-style: normal;
   }
@@ -1058,8 +1058,8 @@
     height: auto;
     display: flex;
     flex-direction: column;
-    background: var(--wx-background-alt, #1F1D28);
-    border-left: 1px solid var(--border-color, #3E3A4D);
+    background: var(--wx-background-alt, #120F1A);
+    border-left: 1px solid var(--border-color, #2D2640);
     border-radius: 6px;
     overflow: hidden;
     flex-shrink: 0;
@@ -1077,7 +1077,7 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--wx-color-font-alt, #aab3bb);
-    border-bottom: 1px solid var(--border-color, #3E3A4D);
+    border-bottom: 1px solid var(--border-color, #2D2640);
     flex-shrink: 0;
   }
 
@@ -1157,8 +1157,8 @@
 
   .status-bar {
     height: 24px;
-    background: var(--wx-background-alt, #1F1D28);
-    border-top: 1px solid var(--border-color, #3E3A4D);
+    background: var(--wx-background-alt, #120F1A);
+    border-top: 1px solid var(--border-color, #2D2640);
     display: flex;
     align-items: center;
     justify-content: space-between;

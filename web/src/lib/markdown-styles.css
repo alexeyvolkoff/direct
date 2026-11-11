@@ -1,27 +1,27 @@
 .md-view.light-theme {
   color: var(--text-primary, #181326);
-  --md-border: var(--border-color, #DCDAE4);
+  --md-border: var(--border-color, #DDD6EB);
   --md-border-strong: #C4B8DB;
   --md-text-secondary: var(--text-secondary, #5B5270);
   --md-code-bg: var(--bg-primary, #F8F7FC);
   --md-inline-code-bg: rgba(139, 128, 163, 0.16);
   --md-table-head-bg: var(--bg-primary, #F8F7FC);
   --md-table-row-bg: var(--bg-primary, #F8F7FC);
-  --md-link: var(--accent, #563F7A);
+  --md-link: var(--accent, #7E22CE);
   --md-stage-bg: var(--bg-primary, #F8F7FC);
 }
 
 .md-view.dark-theme {
   color: var(--text-primary, #F8F7FC);
-  --md-border: var(--border-color, #3E3A4D);
+  --md-border: var(--border-color, #2D2640);
   --md-border-strong: #3D3356;
   --md-text-secondary: var(--text-secondary, #C4B8DB);
-  --md-code-bg: var(--bg-primary, #181720);
+  --md-code-bg: var(--bg-primary, #0D0B12);
   --md-inline-code-bg: rgba(196, 184, 219, 0.14);
-  --md-table-head-bg: var(--bg-primary, #181720);
-  --md-table-row-bg: var(--bg-secondary, #252330);
-  --md-link: var(--accent-hover, #A28AD0);
-  --md-stage-bg: var(--bg-secondary, #252330);
+  --md-table-head-bg: var(--bg-primary, #0D0B12);
+  --md-table-row-bg: var(--bg-secondary, #16131F);
+  --md-link: var(--accent-hover, #C084FC);
+  --md-stage-bg: var(--bg-secondary, #16131F);
 }
 
 .md-view .markdown-body {

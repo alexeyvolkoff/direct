@@ -294,7 +294,7 @@
 
 	.wx-card-placeholder i {
 		font-size: 80px;
-		color: var(--wx-color-primary, #A28AD0);
+		color: var(--wx-color-primary, #C084FC);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -303,7 +303,7 @@
 
 	.wx-preview i {
 		font-size: 80px;
-		color: var(--wx-color-primary, #A28AD0);
+		color: var(--wx-color-primary, #C084FC);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -416,7 +416,7 @@
 
 	.wx-more-desktop:hover {
 		background-color: var(--wx-button-background, rgba(255, 255, 255, 0.12));
-		color: var(--wx-color-primary, #A28AD0);
+		color: var(--wx-color-primary, #C084FC);
 		border-radius: 50%;
 	}
 
@@ -481,7 +481,7 @@
 		display: flex;
 		align-items: center;
 		width: fit-content;
-		color: var(--top-menu-color, var(--wx-color-primary, #A28AD0));
+		color: var(--top-menu-color, var(--wx-color-primary, #C084FC));
 		user-select: none;
 		font-weight: 500;
 		cursor: pointer;
@@ -517,7 +517,7 @@
 		}
 
 		.wx-selected {
-			background-color: rgba(142, 116, 189, 0.18) !important;
+			background-color: rgba(168, 85, 247, 0.18) !important;
 			outline: none !important;
 		}
 

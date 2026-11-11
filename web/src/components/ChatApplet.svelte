@@ -1610,8 +1610,8 @@
   }
 
   .source-chooser {
-    background: var(--bg-secondary, #28222A);
-    border: 1px solid var(--border-color, #453B48);
+    background: var(--bg-secondary, #1A121D);
+    border: 1px solid var(--border-color, #352339);
     border-radius: 14px;
     width: min(460px, 100%);
     max-height: 80vh;
@@ -1647,14 +1647,14 @@
     width: 100%;
     padding: 10px 12px;
     border-radius: 10px;
-    border: 1px solid var(--border-color, #453B48);
-    background: var(--bg-primary, #1B171C);
+    border: 1px solid var(--border-color, #352339);
+    background: var(--bg-primary, #0F0A10);
     color: inherit;
     cursor: pointer;
     text-align: left;
   }
 
-  .source-item:hover { border-color: var(--accent, #A65581); }
+  .source-item:hover { border-color: var(--accent, #EC4899); }
 
   .source-icon { display: inline-flex; opacity: 0.8; }
 
@@ -1688,14 +1688,14 @@
   .source-add, .source-cancel {
     padding: 8px 14px;
     border-radius: 8px;
-    border: 1px solid var(--border-color, #453B48);
+    border: 1px solid var(--border-color, #352339);
     background: transparent;
     color: inherit;
     cursor: pointer;
     font-size: 13px;
   }
 
-  .source-add { border-color: var(--accent, #A65581); }
+  .source-add { border-color: var(--accent, #EC4899); }
 
   /* Indexed folder progress — same look as the "folder upload" dialog in App.svelte */
   .progress-overlay {
@@ -1710,13 +1710,13 @@
   }
 
   .progress-box {
-    background: var(--bg-secondary, #28222A);
+    background: var(--bg-secondary, #1A121D);
     padding: 24px;
     border-radius: 12px;
     box-shadow: 0 10px 25px rgba(0,0,0,0.5);
     width: 300px;
     text-align: center;
-    border: 1px solid var(--border-color, #453B48);
+    border: 1px solid var(--border-color, #352339);
   }
 
   .progress-box p {
@@ -1727,7 +1727,7 @@
 
   .progress-bar {
     height: 8px;
-    background: var(--bg-primary, #1B171C);
+    background: var(--bg-primary, #0F0A10);
     border-radius: 4px;
     overflow: hidden;
     margin-bottom: 8px;
@@ -1735,7 +1735,7 @@
 
   .progress-fill {
     height: 100%;
-    background: var(--accent, #A65581);
+    background: var(--accent, #EC4899);
     transition: width 0.3s;
   }
 
@@ -1759,7 +1759,7 @@
   .cancel-btn {
     margin-top: 16px;
     background: transparent;
-    border: 1px solid var(--border-color, #453B48);
+    border: 1px solid var(--border-color, #352339);
     color: var(--text-primary, #FDF8FC);
     border-radius: 4px;
     padding: 6px 16px;
