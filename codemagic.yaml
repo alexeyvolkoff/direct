@@ -45,12 +45,14 @@ workflows:
           npx cap sync ios
       - name: Configure iOS version & build number
         script: |
-          RAW_NUM="${BUILD_NUMBER:-${PROJECT_BUILD_NUMBER:-0}}"
+          RAW_NUM="${BUILD_NUMBER:-${PROJECT_BUILD_NUMBER:-1}}"
           if [ "$RAW_NUM" -lt 6000 ] 2>/dev/null; then BUILD_NUM=$((6000 + RAW_NUM)); else BUILD_NUM="$RAW_NUM"; fi
           echo "Setting iOS Marketing Version to 3.1.0 and Build Number to $BUILD_NUM"
+          sed -i '' "s/MARKETING_VERSION = [^;]*;/MARKETING_VERSION = 3.1.0;/g" mobile/ios/App/App.xcodeproj/project.pbxproj
+          sed -i '' "s/CURRENT_PROJECT_VERSION = [^;]*;/CURRENT_PROJECT_VERSION = ${BUILD_NUM};/g" mobile/ios/App/App.xcodeproj/project.pbxproj
           cd mobile/ios/App
-          agvtool new-marketing-version "3.1.0"
-          agvtool new-version -all "$BUILD_NUM"
+          agvtool new-marketing-version "3.1.0" || true
+          agvtool new-version -all "$BUILD_NUM" || true
       - name: Install CocoaPods
         script: |
           cd mobile/ios/App
@@ -58,38 +60,53 @@ workflows:
       - name: Fetch or create fresh App Store provisioning profile
         script: |
           set -e
-          rm -rf ~/Library/MobileDevice/Provisioning\ Profiles/*.mobileprovision
+          PROF_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
+          XCODE_PROF_DIR="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
+          mkdir -p "$PROF_DIR" "$XCODE_PROF_DIR"
+          rm -f "$PROF_DIR"/*.mobileprovision "$XCODE_PROF_DIR"/*.mobileprovision
           BUNDLE_RES_ID=$(app-store-connect bundle-ids list \
             --bundle-id-identifier "net.onmydisk.app" \
             --strict-match-identifier \
             --json | jq -r '.[0].id')
           echo "Resolved Bundle ID resource: $BUNDLE_RES_ID"
           test -n "$BUNDLE_RES_ID" && [ "$BUNDLE_RES_ID" != "null" ]
+          app-store-connect bundle-ids enable-capabilities "$BUNDLE_RES_ID" \
+            --capability "Sign In with Apple" "Push Notifications" || true
           CERT_RES_ID=$(app-store-connect certificates list \
             --type DISTRIBUTION \
             --json | jq -r '(.[] | select(.attributes.serialNumber == "5FF54BFD8635F49D785057CE4ED49BE4") | .id), .[0].id' | head -n 1)
           echo "Resolved Distribution Certificate resource: $CERT_RES_ID"
           test -n "$CERT_RES_ID" && [ "$CERT_RES_ID" != "null" ]
-          app-store-connect profiles list --type IOS_APP_STORE --state ACTIVE --save --json >/dev/null
-          MATCHED=0
-          for p in ~/Library/MobileDevice/Provisioning\ Profiles/*.mobileprovision; do
+          app-store-connect profiles list \
+            --type IOS_APP_STORE \
+            --state ACTIVE \
+            --profiles-dir "$PROF_DIR" \
+            --save \
+            --json >/dev/null
+          MATCHED_PROFILE=""
+          for p in "$PROF_DIR"/*.mobileprovision; do
             [ -f "$p" ] || continue
             PLIST=$(security cms -D -i "$p" 2>/dev/null || true)
-            if echo "$PLIST" | grep -q "<string>UMAS9T29TH.net.onmydisk.app</string>" && echo "$PLIST" | grep -q "<key>aps-environment</key>"; then
-              MATCHED=1
-              echo "Found valid ACTIVE profile with aps-environment: $p"
+            if echo "$PLIST" | grep -q "<string>UMAS9T29TH.net.onmydisk.app</string>" \
+               && echo "$PLIST" | grep -q "<key>aps-environment</key>" \
+               && echo "$PLIST" | grep -q "<key>com.apple.developer.applesignin</key>"; then
+              MATCHED_PROFILE="$p"
+              echo "Found valid ACTIVE profile with aps-environment & applesignin: $p"
             else
               rm -f "$p"
             fi
           done
-          if [ "$MATCHED" -eq 0 ]; then
+          if [ -z "$MATCHED_PROFILE" ]; then
             echo "Creating new ACTIVE IOS_APP_STORE profile on Apple Developer Portal..."
             app-store-connect profiles create "$BUNDLE_RES_ID" \
               --certificate-ids "$CERT_RES_ID" \
               --type IOS_APP_STORE \
+              --profiles-dir "$PROF_DIR" \
               --save
+            MATCHED_PROFILE=$(ls "$PROF_DIR"/*.mobileprovision | head -n 1)
           fi
-          ls -la ~/Library/MobileDevice/Provisioning\ Profiles/
+          cp "$MATCHED_PROFILE" "$XCODE_PROF_DIR/"
+          ls -la "$PROF_DIR" "$XCODE_PROF_DIR"
       - name: Set up code signing settings on Xcode project
         script: |
           xcode-project use-profiles
@@ -120,7 +137,7 @@ workflows:
         submit_to_testflight: true
 
   macos-node-workflow:
-    name: OnMyDisk macOS Node & Tunnel
+    name: Disk Direct macOS Node & Tunnel
     max_build_duration: 45
     instance_type: mac_mini_m2
     triggering:
