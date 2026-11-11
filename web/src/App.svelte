@@ -2520,10 +2520,6 @@
       section.online = chatsEntryOnline;
       updateRootFilesData();
     }
-    if (typeof window !== "undefined" && window.__omdChatsOnline !== chatsEntryOnline) {
-      window.__omdChatsOnline = chatsEntryOnline;
-      window.dispatchEvent(new CustomEvent("omd-chats-online", { detail: chatsEntryOnline }));
-    }
   }
 
   let refreshDevicesTimer = null;
@@ -8712,11 +8708,11 @@ async function blobToBase64(blob) {
   }
 
   /* View Mode Segmented Controls */
-  :global(.wx-modes) {
+  :global(.wx-filemanager .wx-modes) {
     display: flex !important;
     align-items: center !important;
   }
-  :global(.wx-modes .wx-segmented) {
+  :global(.wx-filemanager .wx-modes .wx-segmented) {
     display: inline-flex !important;
     background-color: var(--wx-background-alt) !important;
     border: 1px solid var(--border-color, var(--wx-border)) !important;
@@ -8726,7 +8722,7 @@ async function blobToBase64(blob) {
     height: 36px !important;
     box-sizing: border-box !important;
   }
-  :global(.wx-modes .wx-segmented button) {
+  :global(.wx-filemanager .wx-modes .wx-segmented button) {
     width: 32px !important;
     height: 30px !important;
     min-width: 32px !important;
@@ -8744,45 +8740,45 @@ async function blobToBase64(blob) {
     transition: all 0.15s ease !important;
     box-sizing: border-box !important;
   }
-  :global(.wx-modes .wx-segmented button:focus),
-  :global(.wx-modes .wx-segmented button:focus-visible),
-  :global(.wx-modes .wx-segmented button:active) {
+  :global(.wx-filemanager .wx-modes .wx-segmented button:focus),
+  :global(.wx-filemanager .wx-modes .wx-segmented button:focus-visible),
+  :global(.wx-filemanager .wx-modes .wx-segmented button:active) {
     outline: none !important;
     box-shadow: none !important;
     border: none !important;
   }
-  :global(.wx-modes .wx-segmented button .wx-icon),
-  :global(.wx-modes .wx-segmented button .wx-icon:before) {
+  :global(.wx-filemanager .wx-modes .wx-segmented button .wx-icon),
+  :global(.wx-filemanager .wx-modes .wx-segmented button .wx-icon:before) {
     color: var(--wx-color-font-alt) !important;
     transition: color 0.15s ease !important;
   }
-  :global(.wx-modes .wx-segmented button:hover) {
+  :global(.wx-filemanager .wx-modes .wx-segmented button:hover) {
     background-color: var(--wx-background-hover) !important;
   }
-  :global(.wx-modes .wx-segmented button:hover .wx-icon),
-  :global(.wx-modes .wx-segmented button:hover .wx-icon:before) {
+  :global(.wx-filemanager .wx-modes .wx-segmented button:hover .wx-icon),
+  :global(.wx-filemanager .wx-modes .wx-segmented button:hover .wx-icon:before) {
     color: var(--wx-color-primary, #7E22CE) !important;
   }
-  :global(.wx-modes .wx-segmented button.wx-selected) {
+  :global(.wx-filemanager .wx-modes .wx-segmented button.wx-selected) {
     background-color: var(--wx-color-primary, #7E22CE) !important;
     color: #ffffff !important;
     box-shadow: none !important;
     border: none !important;
     outline: none !important;
   }
-  :global(.wx-modes .wx-segmented button.wx-selected .wx-icon),
-  :global(.wx-modes .wx-segmented button.wx-selected .wx-icon:before) {
+  :global(.wx-filemanager .wx-modes .wx-segmented button.wx-selected .wx-icon),
+  :global(.wx-filemanager .wx-modes .wx-segmented button.wx-selected .wx-icon:before) {
     color: #ffffff !important;
   }
-  :global(.wx-modes .wx-segmented button.wx-selected:hover) {
+  :global(.wx-filemanager .wx-modes .wx-segmented button.wx-selected:hover) {
     background-color: var(--wx-color-primary-hover, #9333EA) !important;
     color: #ffffff !important;
   }
-  :global(.wx-modes .wx-segmented button.wx-selected:hover .wx-icon),
-  :global(.wx-modes .wx-segmented button.wx-selected:hover .wx-icon:before) {
+  :global(.wx-filemanager .wx-modes .wx-segmented button.wx-selected:hover .wx-icon),
+  :global(.wx-filemanager .wx-modes .wx-segmented button.wx-selected:hover .wx-icon:before) {
     color: #ffffff !important;
   }
-  :global(.wx-modes .wx-segmented button .wx-icon) {
+  :global(.wx-filemanager .wx-modes .wx-segmented button .wx-icon) {
     font-size: 16px !important;
     line-height: 1 !important;
     height: 16px !important;

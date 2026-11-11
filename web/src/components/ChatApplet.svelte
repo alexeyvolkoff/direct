@@ -1244,20 +1244,6 @@
 
           <button
             class="nav-link-btn"
-            class:active={activeView === "chat"}
-            on:click={() => {
-              activeView = "chat";
-              if (typeof window !== "undefined" && window.innerWidth < 768) sidebarOpen = false;
-            }}
-          >
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-            </svg>
-            <span>{$_("chats", {}, "Chats")}</span>
-          </button>
-
-          <button
-            class="nav-link-btn"
             class:active={activeView === "creations"}
             on:click={() => {
               activeView = "creations";

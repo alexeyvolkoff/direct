@@ -2512,9 +2512,9 @@
 
   .wx-modes .wx-segmented {
     display: inline-flex;
-    background-color: var(--wx-background-alt, rgba(255, 255, 255, 0.05));
-    border: 1px solid var(--border-color, var(--wx-border, rgba(255, 255, 255, 0.1)));
-    border-radius: 6px;
+    background-color: var(--bg-primary, #0F0A10);
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+    border-radius: 8px;
     padding: 2px;
     gap: 2px;
     height: 36px;
@@ -2527,11 +2527,11 @@
     min-width: 32px;
     padding: 0;
     margin: 0;
-    border-radius: 4px;
+    border-radius: 6px;
     border: none;
     outline: none;
     background: transparent;
-    color: var(--wx-color-font-alt, #998094);
+    color: var(--text-muted, #998094);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2541,14 +2541,19 @@
   }
 
   .wx-modes .wx-segmented button:hover {
-    background-color: var(--wx-background-hover, rgba(255, 255, 255, 0.08));
-    color: var(--wx-color-primary, #F472B6);
+    background-color: rgba(255, 255, 255, 0.08);
+    color: var(--accent-blue, #F472B6);
   }
 
   .wx-modes .wx-segmented button.wx-selected {
-    background-color: var(--wx-color-primary, #F472B6);
+    background-color: var(--accent-blue, #EC4899);
     color: #ffffff;
     box-shadow: none;
+  }
+
+  .wx-modes .wx-segmented button.wx-selected .wx-icon,
+  .wx-modes .wx-segmented button.wx-selected .wx-icon:before {
+    color: #ffffff;
   }
 
   .wx-modes .wx-segmented button .wx-icon {
