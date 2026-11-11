@@ -1819,5 +1819,7 @@
   "krea_ref_off_badge": "Off",
   "krea_ref_restore_hint": "Lower (0.15–0.30) preserves authentic facial traits · Higher smooths blurry photos",
   "krea_ref_inpaint_denoise_label": "Redraw Strength",
-  "krea_ref_inpaint_denoise_hint": "0.55 — subtle fabric & lighting tweak · 0.94 — full outfit or background replacement"
+  "krea_ref_inpaint_denoise_hint": "0.55 — subtle fabric & lighting tweak · 0.94 — full outfit or background replacement",
+  "knowledge_install_node_banner": "Install your own node to build a knowledge base from your photos and documents automatically.",
+  "knowledge_install_node_cta": "Install a node"
 }

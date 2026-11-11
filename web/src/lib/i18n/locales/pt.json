@@ -1818,5 +1818,7 @@
   "krea_ref_off_badge": "Desl.",
   "krea_ref_restore_hint": "Menor (0.15–0.30) preserva traços reais · Maior suaviza fotos desfocadas",
   "krea_ref_inpaint_denoise_label": "Intensidade de redesenho",
-  "krea_ref_inpaint_denoise_hint": "0.55 — ajuste sutil de tecido e luz · 0.94 — troca completa de roupa ou fundo"
+  "krea_ref_inpaint_denoise_hint": "0.55 — ajuste sutil de tecido e luz · 0.94 — troca completa de roupa ou fundo",
+  "knowledge_install_node_banner": "Instale o seu próprio nó para criar automaticamente uma base de conhecimento a partir das suas fotos e documentos.",
+  "knowledge_install_node_cta": "Instalar nó"
 }

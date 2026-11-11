@@ -1818,5 +1818,7 @@
   "krea_ref_off_badge": "כבוי",
   "krea_ref_restore_hint": "נמוך (0.15–0.30) שומר על תווי פנים טבעיים · גבוה מחליק תמונות מטושטשות",
   "krea_ref_inpaint_denoise_label": "עוצמת ציור מחדש",
-  "krea_ref_inpaint_denoise_hint": "0.55 — התאמה עדינה של בד ותאורה · 0.94 — החלפה מלאה של לבוש או רקע"
+  "krea_ref_inpaint_denoise_hint": "0.55 — התאמה עדינה של בד ותאורה · 0.94 — החלפה מלאה של לבוש או רקע",
+  "knowledge_install_node_banner": "התקן צומת משלך כדי לבנות אוטומטית מאגר ידע מהתמונות והמסמכים שלך.",
+  "knowledge_install_node_cta": "התקנת צומת"
 }

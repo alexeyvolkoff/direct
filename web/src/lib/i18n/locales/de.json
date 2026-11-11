@@ -1818,5 +1818,7 @@
   "krea_ref_off_badge": "Aus",
   "krea_ref_restore_hint": "Niedriger (0.15–0.30) bewahrt echte Gesichtszüge · Höher glättet unscharfe Fotos",
   "krea_ref_inpaint_denoise_label": "Übermalstärke",
-  "krea_ref_inpaint_denoise_hint": "0.55 — dezente Stoff- & Lichtanpassung · 0.94 — kompletter Outfit- oder Hintergrundwechsel"
+  "krea_ref_inpaint_denoise_hint": "0.55 — dezente Stoff- & Lichtanpassung · 0.94 — kompletter Outfit- oder Hintergrundwechsel",
+  "knowledge_install_node_banner": "Installieren Sie Ihren eigenen Knoten, um automatisch eine Wissensdatenbank aus Ihren Fotos und Dokumenten aufzubauen.",
+  "knowledge_install_node_cta": "Knoten installieren"
 }

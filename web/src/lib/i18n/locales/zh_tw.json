@@ -1818,5 +1818,7 @@
   "krea_ref_off_badge": "關閉",
   "krea_ref_restore_hint": "較低 (0.15–0.30) 保留真實五官細節 · 較高可平滑模糊原圖",
   "krea_ref_inpaint_denoise_label": "重繪幅度",
-  "krea_ref_inpaint_denoise_hint": "0.55 — 微調布料與光影 · 0.94 — 完全替換服裝或背景"
+  "krea_ref_inpaint_denoise_hint": "0.55 — 微調布料與光影 · 0.94 — 完全替換服裝或背景",
+  "knowledge_install_node_banner": "安裝您自己的節點，即可根據您的照片和文件自動建立知識庫。",
+  "knowledge_install_node_cta": "安裝節點"
 }

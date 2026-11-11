@@ -36,6 +36,7 @@ export const DEFAULT_GATEWAY = Object.freeze({
   hubUrl: "https://disk.direct:8765",
   turnHost: "disk.direct",
   oauthBridgeOrigin: "https://disk.direct",
+  docsUrl: "https://docs.disk.direct",
   tosUrl: "https://disk.direct/tos",
   privacyUrl: "https://disk.direct/tos#gdpr",
   tosVersion: "2026-11",
@@ -184,6 +185,7 @@ export function buildManifestForOrigin(origin, rawManifest = null) {
     hubUrl: sanitizeUrl(rawManifest?.hubUrl, cleanOrigin, `${httpProto}//${host}:8765`),
     turnHost: String(rawManifest?.turnHost || host).replace(/[^a-zA-Z0-9.-]/g, "") || host,
     oauthBridgeOrigin: sanitizeUrl(rawManifest?.oauthBridgeOrigin, cleanOrigin, DEFAULT_GATEWAY_ORIGIN),
+    docsUrl: sanitizeUrl(rawManifest?.docsUrl, cleanOrigin, DEFAULT_GATEWAY.docsUrl),
     tosUrl: sanitizeUrl(rawManifest?.tosUrl, cleanOrigin, `${cleanOrigin}/tos`),
     privacyUrl: sanitizeUrl(rawManifest?.privacyUrl, cleanOrigin, `${cleanOrigin}/tos#gdpr`),
     tosVersion: String(rawManifest?.tosVersion || "1.0").slice(0, 32),
@@ -268,6 +270,27 @@ export function getGatewayTurnHost() {
 
 export function getGatewayOauthBridgeOrigin() {
   return getActiveGateway().oauthBridgeOrigin || DEFAULT_GATEWAY_ORIGIN;
+}
+
+export function getGatewayDocsUrl(subpath = "") {
+  const gw = getActiveGateway();
+  let base = gw?.docsUrl || "";
+  if (!base) {
+    const h = String(gw?.host || "disk.direct").toLowerCase();
+    if (h === "disk.direct" || h.endsWith(".disk.direct") || h.includes("aiassistant")) {
+      base = "https://docs.disk.direct";
+    } else if (!isCommunityOmdHost(h) && h && !h.startsWith("localhost") && !/^\d+\.\d+\.\d+\.\d+$/.test(h)) {
+      const parts = h.split(".");
+      const rootDomain = parts.length > 2 ? parts.slice(-2).join(".") : h;
+      base = `https://docs.${rootDomain}`;
+    } else {
+      base = DEFAULT_GATEWAY.docsUrl;
+    }
+  }
+  base = base.replace(/\/+$/, "");
+  if (!subpath) return base;
+  const cleanSub = subpath.startsWith("/") ? subpath : `/${subpath}`;
+  return `${base}${cleanSub}`;
 }
 
 export function getGatewayTosUrl() {

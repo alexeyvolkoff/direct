@@ -1818,5 +1818,7 @@
   "krea_ref_off_badge": "خاموش",
   "krea_ref_restore_hint": "کمتر (0.15–0.30) حفظ جزئیات طبیعی چهره · بیشتر برای عکس‌های تار",
   "krea_ref_inpaint_denoise_label": "شدت بازطراحی",
-  "krea_ref_inpaint_denoise_hint": "0.55 — تغییر ظریف پارچه و نور · 0.94 — تعویض کامل لباس یا پس‌زمینه"
+  "krea_ref_inpaint_denoise_hint": "0.55 — تغییر ظریف پارچه و نور · 0.94 — تعویض کامل لباس یا پس‌زمینه",
+  "knowledge_install_node_banner": "برای ساخت خودکار پایگاه دانش از عکس‌ها و اسناد خود، نود شخصی‌تان را نصب کنید.",
+  "knowledge_install_node_cta": "نصب نود"
 }

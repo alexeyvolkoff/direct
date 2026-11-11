@@ -28,6 +28,7 @@
   // ЛЮБОГО своего устройства: флаг isOwner выставляется лишь при admin-паре,
   // поэтому по нему одному список получался неполным.
   export let ownLinkIds = [];
+  export let hasOwnHardwareNode = false;
   export let activeView = "chat"; // 'chat' | 'creations' | 'memory'
   // When the chat is the root app (aiassistant.direct), it has no close button and
   // exposes a "Files" entry in the sidebar instead.
@@ -334,6 +335,13 @@
       thumbCache.set(cacheKey, "");
       return "";
     }
+  }
+
+  let lastMemoryDrive = null;
+  $: if (drive !== lastMemoryDrive) {
+    lastMemoryDrive = drive;
+    deviceMemoryLoaded = false;
+    _abortDeviceMemoryFetch();
   }
 
   // Грузим знания девайса когда пользователь открыл раздел Memory Cards:
@@ -1457,6 +1465,7 @@
           {isOverlayHeader}
           {sidebarOpen}
           isOwner={computedPrivateMode}
+          {hasOwnHardwareNode}
           loading={deviceMemoryLoading}
           thumbFetcher={fetchDeviceThumb}
           httpDrive={drive}

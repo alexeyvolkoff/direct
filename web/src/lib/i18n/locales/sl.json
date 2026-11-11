@@ -1818,5 +1818,7 @@
   "krea_ref_off_badge": "Izklopljeno",
   "krea_ref_restore_hint": "Nižje (0.15–0.30) ohrani pristne poteze · Višje zgladi zamegljene fotografije",
   "krea_ref_inpaint_denoise_label": "Moč prerisovanja",
-  "krea_ref_inpaint_denoise_hint": "0.55 — rahla prilagoditev blaga in svetlobe · 0.94 — popolna menjava oblačil ali ozadja"
+  "krea_ref_inpaint_denoise_hint": "0.55 — rahla prilagoditev blaga in svetlobe · 0.94 — popolna menjava oblačil ali ozadja",
+  "knowledge_install_node_banner": "Namestite lastno vozlišče za samodejno ustvarjanje baze znanja iz vaših fotografij in dokumentov.",
+  "knowledge_install_node_cta": "Namesti vozlišče"
 }

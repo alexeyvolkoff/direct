@@ -22,7 +22,7 @@
   import { getChatStore } from "../lib/chat-store.js";
   import { HttpDrive } from "../lib/http-drive.js";
   import { profileStore } from "../lib/profile-store.js";
-  import { gatewayConfig, getGatewayTosUrl } from "../lib/gateway-config.js";
+  import { gatewayConfig, getGatewayTosUrl, getGatewayDocsUrl } from "../lib/gateway-config.js";
 
   export let isOpen = false;
   export let identity = null;
@@ -1074,7 +1074,7 @@
                   </div>
                 </div>
                 <a
-                  href="https://docs.disk.direct/advanced/"
+                  href={$gatewayConfig && getGatewayDocsUrl("/advanced/")}
                   target="_blank"
                   rel="noopener noreferrer"
                   class="promo-action-btn"
@@ -1286,7 +1286,7 @@
                 </div>
               </div>
               <a
-                href="https://docs.disk.direct/ainode/"
+                href={$gatewayConfig && getGatewayDocsUrl("/ainode/")}
                 target="_blank"
                 rel="noopener noreferrer"
                 class="promo-action-btn"

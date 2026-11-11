@@ -1818,5 +1818,7 @@
   "krea_ref_off_badge": "Isklj.",
   "krea_ref_restore_hint": "Niže (0.15–0.30) čuva prirodne crte · Više zaglađuje mutne fotografije",
   "krea_ref_inpaint_denoise_label": "Jačina preoblikovanja",
-  "krea_ref_inpaint_denoise_hint": "0.55 — suptilna prilagodba tkanine i svjetla · 0.94 — potpuna zamjena odjeće ili pozadine"
+  "krea_ref_inpaint_denoise_hint": "0.55 — suptilna prilagodba tkanine i svjetla · 0.94 — potpuna zamjena odjeće ili pozadine",
+  "knowledge_install_node_banner": "Instalirajte vlastiti čvor kako biste automatski izradili bazu znanja iz svojih fotografija i dokumenata.",
+  "knowledge_install_node_cta": "Instaliraj čvor"
 }

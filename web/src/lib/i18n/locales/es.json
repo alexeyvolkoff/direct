@@ -1818,5 +1818,7 @@
   "krea_ref_off_badge": "Desact.",
   "krea_ref_restore_hint": "Menor (0.15–0.30) conserva los rasgos reales · Mayor suaviza fotos borrosas",
   "krea_ref_inpaint_denoise_label": "Fuerza de redibujado",
-  "krea_ref_inpaint_denoise_hint": "0.55 — ajuste sutil de tela y luz · 0.94 — cambio completo de ropa o fondo"
+  "krea_ref_inpaint_denoise_hint": "0.55 — ajuste sutil de tela y luz · 0.94 — cambio completo de ropa o fondo",
+  "knowledge_install_node_banner": "Instala tu propio nodo para crear automáticamente una base de conocimientos a partir de tus fotos y documentos.",
+  "knowledge_install_node_cta": "Instalar nodo"
 }

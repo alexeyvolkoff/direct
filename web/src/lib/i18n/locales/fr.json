@@ -1818,5 +1818,7 @@
   "krea_ref_off_badge": "Désact.",
   "krea_ref_restore_hint": "Bas (0.15–0.30) préserve les traits naturels · Élevé lisse les photos floues",
   "krea_ref_inpaint_denoise_label": "Intensité de redessin",
-  "krea_ref_inpaint_denoise_hint": "0.55 — ajustement subtil tissu & lumière · 0.94 — remplacement complet tenue ou décor"
+  "krea_ref_inpaint_denoise_hint": "0.55 — ajustement subtil tissu & lumière · 0.94 — remplacement complet tenue ou décor",
+  "knowledge_install_node_banner": "Installez votre propre nœud pour créer automatiquement une base de connaissances à partir de vos photos et documents.",
+  "knowledge_install_node_cta": "Installer un nœud"
 }

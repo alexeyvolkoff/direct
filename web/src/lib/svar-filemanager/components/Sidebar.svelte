@@ -10,7 +10,7 @@
 	import { appVersion, otaState, applyOtaUpdateNow } from "../../ota-updater.js";
 	import { translate } from "../../i18n/index.js";
 
-	let { readonly, menuOptions } = $props();
+	let { readonly, menuOptions, onnavigate = null } = $props();
 
 	const _ = getContext("wx-i18n").getGroup("filemanager");
 	const { showPrompt } = getContext("filemanager-modals");
@@ -123,12 +123,26 @@
 	}
 
 	function openSettings(section = "profile") {
+		if (onnavigate) onnavigate();
 		if (typeof window !== "undefined") {
 			if (window.__omdOpenSettings) {
 				window.__omdOpenSettings(section);
 			} else {
 				window.location.hash = "#/settings/" + section;
 				window.dispatchEvent(new CustomEvent("omd-open-settings", { detail: { section } }));
+			}
+		}
+	}
+
+	function openApplet(view = "chat") {
+		if (onnavigate) onnavigate();
+		if (typeof window !== "undefined") {
+			if (window.__omdOpenApplet) {
+				window.__omdOpenApplet(view);
+			} else {
+				const hash = view === "creations" ? "#/creations" : view === "memory" ? "#/knowledge" : "#/chat";
+				window.location.hash = hash;
+				window.dispatchEvent(new CustomEvent("omd-open-applet", { detail: { view } }));
 			}
 		}
 	}
@@ -156,6 +170,33 @@
 	</div>
 	<Drive />
 	<div class="wx-sidebar-nav-wrap">
+		{#if !readonly}
+			<button
+				type="button"
+				class="wx-sidebar-nav-btn"
+				title={translate("generated", {}, "Creations")}
+				onclick={() => openApplet("creations")}
+			>
+				<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+					<circle cx="8.5" cy="8.5" r="1.5" />
+					<polyline points="21 15 16 10 5 21" />
+				</svg>
+				<span>{translate("generated", {}, "Creations")}</span>
+			</button>
+			<button
+				type="button"
+				class="wx-sidebar-nav-btn"
+				title={translate("knowledge", {}, "Knowledge")}
+				onclick={() => openApplet("memory")}
+			>
+				<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+					<path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+				</svg>
+				<span>{translate("knowledge", {}, "Knowledge")}</span>
+			</button>
+		{/if}
 		<button
 			type="button"
 			class="wx-sidebar-nav-btn"

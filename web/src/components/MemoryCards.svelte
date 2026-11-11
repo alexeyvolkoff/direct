@@ -3,6 +3,7 @@
   import { fade, fly } from "svelte/transition";
   import { _ } from "../lib/i18n/index.js";
   import { deviceRegistry } from "../lib/device-registry.js";
+  import { gatewayConfig, getGatewayDocsUrl } from "../lib/gateway-config.js";
 
   let innerWidth = typeof window !== "undefined" ? window.innerWidth : 1024;
   $: isMobile = innerWidth < 768;
@@ -12,11 +13,16 @@
   export let isOverlayHeader = false;
   export let sidebarOpen = true;
   export let isOwner = false;
+  export let hasOwnHardwareNode = false;
   export let loading = false; // on-device knowledge still loading
   export let thumbFetcher = null; // async (document_id, size) => objectURL|"" for onDevice previews
   export let httpDrive = null;
   export let targetDevice = null;
   export let targetLinkId = "";
+
+  $: docsNodeInstallUrl = ($gatewayConfig, getGatewayDocsUrl("/advanced/"));
+  let nodeBannerDismissed = false;
+  $: showOwnNodeBanner = !hasOwnHardwareNode && !isOwner && !nodeBannerDismissed;
 
   const dispatch = createEventDispatcher();
 
@@ -542,7 +548,7 @@
 
 <svelte:window bind:innerWidth={innerWidth} on:click={handleWindowClick} on:keydown={handleWindowKeydown} />
 
-<div class="memory-app skin-chat {isDarkTheme ? 'dark-theme' : 'light-theme'}" class:overlay-header={isOverlayHeader}>
+<div class="memory-app skin-chat {isDarkTheme ? 'dark-theme' : 'light-theme'}" class:overlay-header={isOverlayHeader} class:has-node-banner={showOwnNodeBanner}>
   {#if loading}
     <div class="knowledge-loading-toast" in:fade={{ duration: 150 }} out:fade={{ duration: 150 }}>
       <div class="kl-spinner"></div>
@@ -1213,6 +1219,44 @@
       </button>
     {/if}
   </div>
+
+  {#if showOwnNodeBanner}
+    <div class="own-node-banner" role="region" aria-label={$_("knowledge_install_node_cta", {}, "Install a node")}>
+      <div class="own-node-banner-inner">
+        <div class="own-node-banner-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="3" width="20" height="7" rx="2" />
+            <rect x="2" y="14" width="20" height="7" rx="2" />
+            <circle cx="6" cy="6.5" r="1" fill="currentColor" />
+            <circle cx="6" cy="17.5" r="1" fill="currentColor" />
+          </svg>
+        </div>
+        <p class="own-node-banner-text">
+          {$_("knowledge_install_node_banner", {}, "Install your own node to build a knowledge base from your photos and documents automatically.")}
+        </p>
+        <div class="own-node-banner-actions">
+          <a
+            href={docsNodeInstallUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="own-node-banner-cta"
+          >
+            <span>{$_("knowledge_install_node_cta", {}, "Install a node")}</span>
+            <span class="own-node-banner-arrow" aria-hidden="true">↗</span>
+          </a>
+          <button
+            type="button"
+            class="own-node-banner-close"
+            title={$_("close", {}, "Close")}
+            aria-label={$_("close", {}, "Close")}
+            on:click={() => (nodeBannerDismissed = true)}
+          >
+            ×
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -2376,6 +2420,14 @@
     bottom: 20px;
   }
 
+  .memory-app.has-node-banner .scroll-fab.top {
+    bottom: 132px;
+  }
+
+  .memory-app.has-node-banner .scroll-fab.bottom {
+    bottom: 80px;
+  }
+
   .scroll-fab:hover {
     color: #F472B6;
     border-color: #F472B6;
@@ -2672,5 +2724,142 @@
     background: rgba(239, 68, 68, 0.15);
     border-color: rgba(239, 68, 68, 0.4);
     color: #ef4444;
+  }
+
+  /* Bottom Own-Node Install Banner */
+  .own-node-banner {
+    flex-shrink: 0;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px)) 16px;
+    background: var(--bg-secondary, #1A121D);
+    border-top: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+    z-index: 25;
+  }
+
+  .own-node-banner-inner {
+    max-width: 960px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .own-node-banner-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
+    background: rgba(236, 72, 153, 0.14);
+    border: 1px solid rgba(236, 72, 153, 0.28);
+    color: #F472B6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .memory-app.light-theme .own-node-banner-icon {
+    background: rgba(219, 39, 119, 0.08);
+    border-color: rgba(219, 39, 119, 0.22);
+    color: #DB2777;
+  }
+
+  .own-node-banner-text {
+    margin: 0;
+    flex: 1;
+    min-width: 0;
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--text-primary, #FAF8FC);
+  }
+
+  .own-node-banner-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .own-node-banner-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    border-radius: 8px;
+    background: var(--accent-blue, #EC4899);
+    color: #ffffff;
+    font-size: 12.5px;
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: filter 0.15s ease, transform 0.15s ease;
+  }
+
+  .own-node-banner-cta:hover {
+    filter: brightness(1.08);
+    transform: translateY(-1px);
+  }
+
+  .own-node-banner-arrow {
+    font-size: 12px;
+    line-height: 1;
+  }
+
+  .own-node-banner-close {
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--text-muted, #998094);
+    font-size: 18px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+
+  .own-node-banner-close:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-primary, #ffffff);
+  }
+
+  .memory-app.light-theme .own-node-banner-close:hover {
+    background: rgba(29, 24, 35, 0.06);
+    color: var(--text-primary, #1D1823);
+  }
+
+  @media (max-width: 640px) {
+    .own-node-banner {
+      padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)) 12px;
+    }
+
+    .own-node-banner-inner {
+      flex-wrap: wrap;
+      gap: 8px 10px;
+    }
+
+    .own-node-banner-icon {
+      width: 30px;
+      height: 30px;
+    }
+
+    .own-node-banner-text {
+      font-size: 12px;
+      flex: 1 1 calc(100% - 80px);
+    }
+
+    .own-node-banner-actions {
+      width: 100%;
+      justify-content: space-between;
+    }
+
+    .own-node-banner-cta {
+      flex: 1;
+      justify-content: center;
+    }
   }
 </style>

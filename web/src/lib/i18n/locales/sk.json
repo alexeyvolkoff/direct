@@ -1818,5 +1818,7 @@
   "krea_ref_off_badge": "Vyp.",
   "krea_ref_restore_hint": "Nižšie (0.15–0.30) zachová prirodzené črty · Vyššie vyhladí rozmazané fotky",
   "krea_ref_inpaint_denoise_label": "Sila prekreslenia",
-  "krea_ref_inpaint_denoise_hint": "0.55 — jemná úprava látky a svetla · 0.94 — úplná výmena oblečenia alebo pozadia"
+  "krea_ref_inpaint_denoise_hint": "0.55 — jemná úprava látky a svetla · 0.94 — úplná výmena oblečenia alebo pozadia",
+  "knowledge_install_node_banner": "Nainštalujte si vlastný uzol na automatické vytvorenie bázy znalostí z vašich fotografií a dokumentov.",
+  "knowledge_install_node_cta": "Nainštalovať uzol"
 }

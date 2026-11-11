@@ -1818,5 +1818,7 @@
   "krea_ref_off_badge": "Off",
   "krea_ref_restore_hint": "Più basso (0.15–0.30) preserva i tratti autentici · Più alto leviga foto sfocate",
   "krea_ref_inpaint_denoise_label": "Intensità ridisegno",
-  "krea_ref_inpaint_denoise_hint": "0.55 — ritocco leggero di tessuto e luce · 0.94 — cambio completo di abito o sfondo"
+  "krea_ref_inpaint_denoise_hint": "0.55 — ritocco leggero di tessuto e luce · 0.94 — cambio completo di abito o sfondo",
+  "knowledge_install_node_banner": "Installa il tuo nodo per creare automaticamente una base di conoscenza dalle tue foto e dai tuoi documenti.",
+  "knowledge_install_node_cta": "Installa nodo"
 }

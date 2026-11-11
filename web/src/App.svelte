@@ -1198,6 +1198,9 @@
       currentApp = 'settings';
       updateUrlHash('#/settings/' + sec);
     };
+    window.__omdOpenApplet = (view = 'chat') => {
+      openChatsApp(view);
+    };
     window.__omdLogout = () => { logoutIdentity(); };
 
     window.addEventListener("omd-open-settings", (e) => {
@@ -1206,6 +1209,11 @@
       settingsSection = sec;
       currentApp = "settings";
       updateUrlHash("#/settings/" + sec);
+    });
+
+    window.addEventListener("omd-open-applet", (e) => {
+      const view = (e && e.detail && e.detail.view) || "chat";
+      openChatsApp(view);
     });
 
     window.addEventListener("omd-open-file", (e) => {
@@ -2083,6 +2091,8 @@
   let guestAiDevice = null;
   let showAiPublicAgreement = false;
   let aiPublicOpenAfterAck = false;
+  let aiPublicOpenViewAfterAck = "chat";
+  let pairModalOpenViewAfter = "chat";
   let chatTargetRetries = 0;
 
   function setupPublicAiStatusHandler(device) {
@@ -2127,8 +2137,10 @@
     showAiPublicAgreement = false;
     if (aiPublicOpenAfterAck) {
       aiPublicOpenAfterAck = false;
+      const pendingView = aiPublicOpenViewAfterAck || "chat";
+      aiPublicOpenViewAfterAck = "chat";
       // the reactive syncPublicAiDevice registers the guest device, then start
-      setTimeout(openChatsApp, 100);
+      setTimeout(() => openChatsApp(pendingView), 100);
     } else {
       updateRootFilesData();
     }
@@ -2137,6 +2149,7 @@
   function onAiPublicAgreementDecline() {
     showAiPublicAgreement = false;
     aiPublicOpenAfterAck = false;
+    aiPublicOpenViewAfterAck = "chat";
   }
 
   // Public AI node is active when explicitly selected (choice = "public"),
@@ -2227,7 +2240,49 @@
   $: isTargetPublicAi = !isTargetOwn && !!(chatTargetDevice?.isAiNode || chatTargetDevice === publicAiDevice || chatTargetDevice === guestAiDevice);
   $: chatPrivateMode = !isSharedRoute && isTargetOwn;
 
-  function openChatsApp() {
+  // Detect whether the user owns at least one real OS/hardware node (as opposed
+  // to browser OPFS / mobile client peers that publish with originDevicePub set).
+  $: hasOwnHardwareNode = (() => {
+    void deviceNodes;
+    void currentProfileData;
+    if (isSharedRoute) return false;
+    if (isTargetOwn && chatTargetDevice && !chatTargetDevice.local && !chatTargetDevice.isAiNode) {
+      return true;
+    }
+    try {
+      if (identity && identity.devices) {
+        const entries = typeof identity.devices.values === "function"
+          ? Array.from(identity.devices.values())
+          : Object.values(identity.devices);
+        for (const dev of entries) {
+          if (!dev || !dev.linkId) continue;
+          if (dev.originDevicePub) continue; // browser/mobile local client peer
+          const caps = Array.isArray(dev.capabilities) ? dev.capabilities : [];
+          const t = String(dev.type || "").toLowerCase();
+          if (caps.includes("chat") || caps.includes("terminal") || t === "node" || t === "desktop" || t === "embedded") {
+            return true;
+          }
+        }
+      }
+    } catch (_) {}
+    for (const d of deviceRegistry.list()) {
+      if (!d || d.local || d.isAiNode || d === publicAiDevice || d === guestAiDevice) continue;
+      if (d.isOwner !== true && d.drive?.authLevel !== "admin") continue;
+      const idEntry = identity?.devices?.get ? identity.devices.get(d.linkId) : null;
+      if (idEntry && idEntry.originDevicePub) continue;
+      const caps = Array.isArray(d.capabilities) ? d.capabilities : [];
+      const dt = String(d.deviceType || d.type || "").toLowerCase();
+      if (caps.includes("chat") || caps.includes("terminal") || (dt !== "web" && dt !== "phone" && dt !== "tablet")) {
+        return true;
+      }
+    }
+    return false;
+  })();
+
+  function openChatsApp(initialView = "chat") {
+    const targetView = (initialView === "creations" || initialView === "memory" || initialView === "chat")
+      ? initialView
+      : "chat";
     if (isRealFileManagerFolder(currentFolderId)) {
       lastFileManagerFolderId = currentFolderId;
     }
@@ -2240,6 +2295,7 @@
     const needsPublic = publicAiWanted(st) || (st.choice === AI_NODE_MODE_PUBLIC && !!st.info) || (!ownChatDev && !!st.info && !st.ack);
     if (needsPublic && !st.ack) {
       aiPublicOpenAfterAck = true;
+      aiPublicOpenViewAfterAck = targetView;
       showAiPublicAgreement = true;
       return;
     }
@@ -2259,7 +2315,7 @@
     if (!device || !device.linkId) {
       if (chatTargetRetries < 10) {
         chatTargetRetries++;
-        setTimeout(openChatsApp, 400);
+        setTimeout(() => openChatsApp(targetView), 400);
         return;
       }
       chatTargetRetries = 0;
@@ -2272,12 +2328,13 @@
         if (!device.drive.isConnected) {
           if (chatTargetRetries < 10) {
             chatTargetRetries++;
-            setTimeout(openChatsApp, 400);
+            setTimeout(() => openChatsApp(targetView), 400);
             return;
           }
         }
         console.log("[App] Chat target requires authentication on explicit selection, opening PairModal:", device.linkId);
         pairModalOpenChatAfter = true;
+        pairModalOpenViewAfter = targetView;
         openPairModal(device.linkId, (device.drive && device.drive.rootName) || device.name || device.linkId);
         return;
       } else {
@@ -2285,8 +2342,14 @@
       }
     }
     if (device && device.linkId) activeDeviceId = device.linkId;
+    chatActiveView = targetView;
     currentApp = "chat";
-    updateUrlHash("#/chat");
+    const viewHash = targetView === "creations"
+      ? "#/chat/creations"
+      : targetView === "memory"
+        ? "#/chat/memory"
+        : "#/chat";
+    updateUrlHash(viewHash);
   }
 
   function currentFilesFolder() {
@@ -7119,6 +7182,7 @@ async function blobToBase64(blob) {
             targetDevice={chatTargetDevice}
             isPrivateMode={chatPrivateMode}
             ownLinkIds={ownDeviceLinkIds}
+            {hasOwnHardwareNode}
             port={4000}
             isDarkTheme={isDarkTheme}
             isMainApp={appMode === APP_MODE_CHAT}
@@ -7992,7 +8056,9 @@ async function blobToBase64(blob) {
       connectDevice(e.detail.linkId, e.detail.drive, e.detail.name);
       if (pairModalOpenChatAfter) {
         pairModalOpenChatAfter = false;
-        setTimeout(() => openChatsApp(), 300);
+        const pendingView = pairModalOpenViewAfter || "chat";
+        pairModalOpenViewAfter = "chat";
+        setTimeout(() => openChatsApp(pendingView), 300);
       } else if (pairModalTargetFolder) {
         const target = pairModalTargetFolder;
         pairModalTargetFolder = "";

@@ -267,7 +267,7 @@
 								class:wx-sidebar-visible={showSidebar}
 								bind:clientWidth={sidebarWidth}
 							>
-								<Sidebar {readonly} {menuOptions} />
+								<Sidebar {readonly} {menuOptions} onnavigate={() => { if (narrowMode) showSidebar = false; }} />
 							</div>
 							<div
 								class="wx-content"

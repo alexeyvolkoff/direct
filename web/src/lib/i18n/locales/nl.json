@@ -1818,5 +1818,7 @@
   "krea_ref_off_badge": "Uit",
   "krea_ref_restore_hint": "Lager (0.15–0.30) behoudt echte gelaatstrekken · Hoger verzacht wazige foto's",
   "krea_ref_inpaint_denoise_label": "Hertekensterkte",
-  "krea_ref_inpaint_denoise_hint": "0.55 — subtiele stof- & lichtaanpassing · 0.94 — volledige kleding- of achtergrondwissel"
+  "krea_ref_inpaint_denoise_hint": "0.55 — subtiele stof- & lichtaanpassing · 0.94 — volledige kleding- of achtergrondwissel",
+  "knowledge_install_node_banner": "Installeer je eigen node om automatisch een kennisbank op te bouwen uit je foto's en documenten.",
+  "knowledge_install_node_cta": "Node installeren"
 }

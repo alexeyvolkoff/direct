@@ -1818,5 +1818,7 @@
   "krea_ref_off_badge": "Kapalı",
   "krea_ref_restore_hint": "Düşük (0.15–0.30) doğal yüz hatlarını korur · Yüksek bulanık fotoğrafları yumuşatır",
   "krea_ref_inpaint_denoise_label": "Yeniden Çizim Gücü",
-  "krea_ref_inpaint_denoise_hint": "0.55 — hafif kumaş ve ışık ayarı · 0.94 — tam kıyafet veya arka plan değişimi"
+  "krea_ref_inpaint_denoise_hint": "0.55 — hafif kumaş ve ışık ayarı · 0.94 — tam kıyafet veya arka plan değişimi",
+  "knowledge_install_node_banner": "Fotoğraflarınızdan ve belgelerinizden otomatik olarak bir bilgi tabanı oluşturmak için kendi düğümünüzü kurun.",
+  "knowledge_install_node_cta": "Düğüm kur"
 }

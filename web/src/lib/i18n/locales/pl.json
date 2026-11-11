@@ -1818,5 +1818,7 @@
   "krea_ref_off_badge": "Wył.",
   "krea_ref_restore_hint": "Niżej (0.15–0.30) zachowuje naturalne rysy · Wyżej wygładza rozmyte zdjęcia",
   "krea_ref_inpaint_denoise_label": "Siła przerysowania",
-  "krea_ref_inpaint_denoise_hint": "0.55 — subtelna korekta tkaniny i światła · 0.94 — pełna zmiana stroju lub tła"
+  "krea_ref_inpaint_denoise_hint": "0.55 — subtelna korekta tkaniny i światła · 0.94 — pełna zmiana stroju lub tła",
+  "knowledge_install_node_banner": "Zainstaluj własny węzeł, aby automatycznie tworzyć bazę wiedzy ze swoich zdjęć i dokumentów.",
+  "knowledge_install_node_cta": "Zainstaluj węzeł"
 }
