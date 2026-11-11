@@ -8025,7 +8025,7 @@ async function blobToBase64(blob) {
       <div class="p2p-reconnect-spinner"></div>
       <span>{$_("p2p_loading_gallery", {}, "Loading gallery...")}</span>
     </div>
-  {:else if isChatLoading && currentApp === 'chat'}
+  {:else if isChatLoading && currentApp === 'chat' && chatActiveView === 'chat'}
     <div class="p2p-reconnect-toast">
       <div class="p2p-reconnect-spinner"></div>
       <span>{$_("loading_chat", {}, "Loading chat...")}</span>

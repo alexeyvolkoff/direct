@@ -50,6 +50,9 @@
   let sidebarOpen = activeView === "chat";
   let prevActiveView = activeView;
   $: isOverlaySidebar = activeView !== "chat";
+  $: if (activeView !== "chat" && isChatLoading) {
+    isChatLoading = false;
+  }
 
   $: if (activeView !== prevActiveView) {
     prevActiveView = activeView;
@@ -450,11 +453,11 @@
   }
 
   function selectChat(id, { switchView = true } = {}) {
-    if (id && id !== activeChatId) {
-      isChatLoading = true;
-    }
     if (switchView) {
       activeView = "chat";
+    }
+    if (activeView === "chat" && id && id !== activeChatId) {
+      isChatLoading = true;
     }
     activeChatId = id;
     if (typeof localStorage !== "undefined" && id) {
@@ -469,10 +472,12 @@
   }
 
   function startNewChat({ switchView = true } = {}) {
-    isChatLoading = true;
     if (switchView) {
       activeView = "chat";
       userSelectedChatManually = true;
+    }
+    if (activeView === "chat") {
+      isChatLoading = true;
     }
     const id = newChatId();
     activeChatId = id;
