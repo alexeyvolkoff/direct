@@ -7,18 +7,18 @@ nav_order: 8.5
 # ⚡ AI Horde Client & Built-in ComfyUI Dreamer Worker
 <hr>
 
-**On My Chat** integrates natively with [**AI Horde**](https://aihorde.net) — a crowdsourced, distributed cluster of community GPU workers for text and image generation — both as a **Hybrid Client** and as a built-in, idle-aware **ComfyUI Image Worker ("Dreamer")**.
+**AI Assistant Direct** integrates natively with [**AI Horde**](https://aihorde.net) — a crowdsourced, distributed cluster of community GPU workers for text and image generation — both as a **Hybrid Client** and as a built-in, idle-aware **ComfyUI Image Worker ("Dreamer")**.
 
 * **As a Client (`hybrid` / `horde` modes)**: Keep your private documents, spreadsheets, and code strictly local on **Ollama** in **Work Mode**, while seamlessly tapping into massive **70B–123B community models** on **AI Horde** for creative storytelling and roleplay in **Fun Mode** — complete with **1-click SillyTavern Character Card (`.png` / `.json`) import**.
-* **As a Worker (`/horde`)**: Whenever your local **ComfyUI** queue is idle, **On My Chat** can automatically pick up image generation jobs from AI Horde (`hordelib`-compatible SDXL text-to-image pipeline and optional daily-capped `Krea 2`), render them in the background, and earn **Kudos** for your account.
+* **As a Worker (`/horde`)**: Whenever your local **ComfyUI** queue is idle, your node can automatically pick up image generation jobs from AI Horde (`hordelib`-compatible SDXL text-to-image pipeline and optional daily-capped `Krea 2`), render them in the background, and earn **Kudos** for your account.
 
-![AI Horde Dreamer Worker Console](/images/horde_worker.jpg)
+![AI Horde Dreamer Worker Console](/images/horde_worker.png)
 
 ---
 
 ## 1. Hybrid Mode: Local Work RAG + AI Horde Roleplay
 
-In **Settings → AI Assistant → AI Node** (or in `/opt/onmychat/config.ini`), you can select how **On My Chat** routes your requests:
+In **Settings → AI Assistant → AI Node** (or in `/opt/direct/ai/config.ini`), you can select how **AI Assistant** routes your requests:
 
 | Runtime Mode | Work Mode (RAG, Docs, Code, MCP) | Fun Mode (Creative Writing & Roleplay) |
 | :--- | :--- | :--- |
@@ -27,16 +27,16 @@ In **Settings → AI Assistant → AI Node** (or in `/opt/onmychat/config.ini`),
 | **`AI Horde only`** | **AI Horde** | **AI Horde** |
 | **`Agentic P2P`** | Remote GPU node over WebRTC P2P | Remote GPU node over WebRTC P2P |
 
-![AI Horde Hybrid Mode & SillyTavern Character Import](/images/horde_assistant.jpg)
+![AI Horde Hybrid Mode & SillyTavern Character Import](/images/horde_assistant.png)
 
 ### SillyTavern Character Card Import
-Under **Settings → AI Assistant → Assistant Profile**, click **Import Character** to load any standard **SillyTavern V2 Character Card** (`.png` with embedded metadata or `.json`). **On My Chat** automatically populates the assistant's name, persona lore, greeting, avatar, and roleplay prompt while preserving your serious **Work Mode** prompt for day-to-day productivity.
+Under **Settings → AI Assistant → Assistant Profile**, click **Import Character** to load any standard **SillyTavern V2 Character Card** (`.png` with embedded metadata or `.json`). The app automatically populates the assistant's name, persona lore, greeting, avatar, and roleplay prompt while preserving your serious **Work Mode** prompt for day-to-day productivity.
 
 ---
 
 ## 2. Built-in ComfyUI Dreamer Worker (`/horde`)
 
-Instead of installing and maintaining a separate Docker container or standalone bridge, **On My Chat** includes a native **AI Horde Image Worker ("Dreamer")** (`horde_dreamer.py`) that talks directly to your existing local **ComfyUI** instance (`http://localhost:8188`).
+Instead of installing and maintaining a separate Docker container or standalone bridge, the **AI Assistant** node includes a native **AI Horde Image Worker ("Dreamer")** (`horde_dreamer.py`) that talks directly to your existing local **ComfyUI** instance (`http://localhost:8188`).
 
 ### Key Capabilities
 1. **Strict Idle Detection (Zero Interruption)**:
@@ -52,7 +52,7 @@ Instead of installing and maintaining a separate Docker container or standalone 
    * Fail-closed safety: the worker refuses to pop jobs if `horde-safety` is unavailable, replaces CSAM or SFW-censored outputs with official AI Horde censor images (`nsfw_censor_*.png`), and reports `state: "csam"` / `"censored"` and `gen_metadata`.
    * If the worker is placed into **Maintenance Mode** on AI Horde, it automatically pauses polling (`enabled = false`) and never auto-clears the maintenance flag.
 5. **Built-in Web Console & P2P Node App**:
-   * Accessible locally at **`http://localhost:4000/horde`** or remotely from anywhere as the **AI Horde** app inside **On My Disk Direct** via the **[P2P App Proxy](/apps/)**.
+   * Accessible locally at **`http://localhost:4000/horde`** or remotely from anywhere as the **AI Horde** app inside **Disk Direct** via the **[P2P App Proxy](/apps/)**.
    * Displays live status (`RENDERING` / `IDLE_POLLING`), Kudos balance, session Megapixelsteps (MPS), model toggles, daily quota controls, and a real-time log of fulfilled jobs.
 
 ---
@@ -60,7 +60,7 @@ Instead of installing and maintaining a separate Docker container or standalone 
 ## 3. Configuration (`config.ini`)
 
 1. Register an account and generate an API key at **[aihorde.net/register](https://aihorde.net/register)**.
-2. Add or uncomment the AI Horde settings in `/opt/onmychat/config.ini` (or configure them directly in the **`/horde`** web UI):
+2. Add or uncomment the AI Horde settings in `/opt/direct/ai/config.ini` (or configure them directly in the **`/horde`** web UI):
 
 ```ini
 [settings]
@@ -70,7 +70,7 @@ HORDE_API_KEY = your_aihorde_api_key
 # Built-in ComfyUI Dreamer Worker
 HORDE_WORKER_ENABLED = true
 HORDE_WORKER_API_KEY = your_aihorde_api_key
-HORDE_WORKER_NAME = OnMyChat-Dreamer
+HORDE_WORKER_NAME = Direct-Dreamer
 HORDE_WORKER_NSFW = true
 HORDE_WORKER_MAX_PIXELS = 1048576
 HORDE_WORKER_MODELS = CyberRealistic Pony
@@ -82,4 +82,3 @@ horde = AI Horde | 4000 | /horde | gpu-card | AI Horde Dreamer Worker Console
 
 > **Residential ISP & CGNAT (`UnsafeIP` Notice)**: AI Horde uses automated IP reputation filters to block abusive VPN workers. If your residential fiber or CGNAT connection triggers a false-positive `UnsafeIP` message in the `/horde` console, join the **[Official AI Horde Discord](https://discord.gg/3DxrhksKzn)**, link your API key via `/userinfo`, and ask a moderator in `#worker-vpn-access-request` to enable the VPN exception flag on your account.
 {: .note }
-

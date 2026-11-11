@@ -4,21 +4,21 @@ title: Personal AI Node
 permalink: /ainode/
 nav_order: 4
 ---
-# 💬 Personal AI Node (**On My Chat**)
+# 💬 Personal AI Node (**AI Assistant Direct**)
 <hr>
 
-Run your own private AI infrastructure: uncensored, unlimited, and completely under your control. **On My Chat** runs alongside your **On My Disk** storage node on **`127.0.0.1:4000`**, handling SSE streaming chats, semantic search, multimodal **RAG** (documents, photos & people), image generation, and **Model Context Protocol (MCP)** tool calling — all reached directly over encrypted WebRTC DataChannels (`HttpDrive`, port `4000`) without cloud proxying.
+Run your own private AI infrastructure: uncensored, unlimited, and completely under your control. The **AI Assistant** service runs alongside your **Disk Direct** storage node on **`127.0.0.1:4000`**, handling SSE streaming chats, semantic search, multimodal **RAG** (documents, photos & people), image generation, and **Model Context Protocol (MCP)** tool calling — all reached directly over encrypted WebRTC DataChannels (`HttpDrive`, port `4000`) without cloud proxying.
 
-![On My Chat Interface](/images/onmychat_ui.png)
+![AI Assistant Interface](/images/ai_assistant_ui.png)
 
-> **Windows Quick Install**: On Windows 10/11, `install-onmydisk.ps1 -WithAi` (or `-WithAi -Agentic` for GPU-less laptops) installs Python, **On My Chat** (`:4000`), pre-cached embeddings, and autostart automatically — see **[Node Deployment & Modes → Windows](/advanced/#3-windows-10--11-installation-x64-per-user-no-admin)**. The manual steps below apply primarily to Linux servers and SBCs.
+> **One-Command Quick Install**: On Linux, Windows 10/11, and macOS (Apple Silicon), `install-direct` with `--agentic` / `-Agentic` (or `--gpu` / `-Gpu`) installs Python, the AI service (`:4000`), pre-cached embeddings, and autostart automatically — see **[Node Deployment & Modes](/advanced/)**. The manual steps below apply when setting up from source on custom Linux servers or SBCs.
 {: .tip }
 
 ---
 
 ## 1. Choose Your Inference Mode (`AI_PROVIDER`)
 
-**On My Chat** supports four runtime inference modes in `config.ini` (and live switching in **Settings → AI Assistant → AI Node**):
+The AI node supports four runtime inference modes in `config.ini` (and live switching in **Settings → AI Assistant → AI Node**):
 
 | `AI_PROVIDER` | Where RAG & Embeddings Run | Where LLM & ComfyUI Run | Best For |
 |---------------|----------------------------|-------------------------|----------|
@@ -30,20 +30,20 @@ Run your own private AI infrastructure: uncensored, unlimited, and completely un
 > **Earn Priority Kudos Automatically**: If your node has a local GPU with **ComfyUI**, enable the built-in **[AI Horde & Dreamer Worker](/horde/)** (`HORDE_WORKER_ENABLED = true`) to volunteer idle GPU cycles and earn Kudos for priority LLM & image generations.
 {: .tip }
 
-> **Zero-Install Option**: If you do not run **On My Chat** locally at all, select **On My Chat Public Node** in **Settings → AI Assistant → AI Node** in the Web App to chat immediately in `ScopedGuest` mode.
+> **Zero-Install Option**: If you do not run an AI node locally yet, open **Chats**, **Creations**, or **Knowledge** from the sidebar to connect automatically to the built-in **Public Demo AI Node** in `ScopedGuest` mode.
 {: .note }
 
 ---
 
-## 2. Install & Configure **On My Chat** on Linux
+## 2. Install & Configure the AI Service from Source on Linux
 
 ### Step 1: Clone & Create Virtual Environment
 
 ```bash
-sudo mkdir -p /opt/onmychat
-sudo chown "$USER:$USER" /opt/onmychat
-git clone <onmychat-repository-url> /opt/onmychat
-cd /opt/onmychat
+sudo mkdir -p /opt/direct
+sudo chown "$USER:$USER" /opt/direct
+git clone https://github.com/alexeyvolkoff/direct.git /opt/direct
+cd /opt/direct/ai
 
 python3 -m venv venv
 source venv/bin/activate
@@ -57,7 +57,7 @@ pip install -r requirements.txt
 
 ### Step 2: Pre-Cache Multilingual Embeddings
 
-**On My Chat** computes semantic embeddings locally via the **SentenceTransformers** (`sentence-transformers`) framework using the 384-dimensional multilingual model `paraphrase-multilingual-MiniLM-L12-v2`. At startup, `api.py` enables strict offline mode (`HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`) so the node never makes outbound calls to Hugging Face Hub at runtime — pre-populate the local cache before launching the service:
+Semantic embeddings are computed locally via **SentenceTransformers** (`sentence-transformers`) using the 384-dimensional multilingual model `paraphrase-multilingual-MiniLM-L12-v2`. At startup, `api.py` enables strict offline mode (`HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`) so the node never makes outbound calls to Hugging Face Hub at runtime — pre-populate the local cache before launching the service:
 
 ```bash
 mkdir -p ~/.cache/huggingface/hub
@@ -82,8 +82,8 @@ WORK_MODEL = gemma4:latest
 FUN_MODEL = igorls/gemma-4-E4B-it-heretic-GGUF:latest
 VISION_MODEL = gemma4:latest
 
-PUBLIC_KNOWLEDGE_TAGS = omd
-APP_ROOT_DIR = /opt/onmychat
+PUBLIC_KNOWLEDGE_TAGS = direct
+APP_ROOT_DIR = /opt/direct/ai
 ```
 
 #### Example B — Agentic P2P Mode (`AI_PROVIDER = agentic`, No Local GPU Needed)
@@ -92,7 +92,7 @@ APP_ROOT_DIR = /opt/onmychat
 GATEWAY_URL = https://disk.direct
 AI_PROVIDER = agentic
 
-# "auto" discovers the On My Chat Public Node via /api/ai-node,
+# "auto" discovers the Public AI Node via /api/ai-node,
 # or set the 32-char LinkID of your own remote GPU node:
 INFERENCE_NODE = auto
 INFERENCE_OLLAMA_PORT = 11434
@@ -104,10 +104,10 @@ DEFAULT_MODEL = gemma4:latest
 WORK_MODEL = gemma4:latest
 FUN_MODEL = igorls/gemma-4-E4B-it-heretic-GGUF:latest
 VISION_MODEL = gemma4:latest
-APP_ROOT_DIR = /opt/onmychat
+APP_ROOT_DIR = /opt/direct/ai
 ```
 
-> **Zero-Config Local P2P Bridge**: As long as **On My Chat** listens on **`127.0.0.1:4000`** (`AiServer=http://localhost:4000` in `/etc/onmydisk/onmydisk.conf` and `localAI=true`), the **On My Disk** node automatically bridges authenticated P2P chat, search, and RAG requests directly to it.
+> **Zero-Config Local P2P Bridge**: As long as the AI service listens on **`127.0.0.1:4000`** (`aiBase=http://localhost:4000` and `localAI=true`), your **Disk Direct** storage node automatically bridges authenticated P2P chat, search, and RAG requests directly to it.
 {: .important }
 
 ---
@@ -156,7 +156,7 @@ On single-board computers with a Rockchip NPU (Firefly, Orange Pi 5, Radxa Rock 
    [Install]
    WantedBy=multi-user.target
    ```
-4. Point `/opt/onmychat/config.ini` to RKLLAMA:
+4. Point `/opt/direct/ai/config.ini` to RKLLAMA:
    ```ini
    OLLAMA_URL = http://localhost:8080
    DEFAULT_MODEL = gemma-2-2b-it-rk3588-w8a8-opt-1-hybrid-ratio-0.5
@@ -164,22 +164,22 @@ On single-board computers with a Rockchip NPU (Firefly, Orange Pi 5, Radxa Rock 
 
 ---
 
-## 4. Run **On My Chat** as a Systemd Service (Port `4000`)
+## 4. Run the AI Node as a Systemd Service (Port `4000`)
 
-Create `/etc/systemd/system/onmychat.service`:
+Create `/etc/systemd/system/direct-ai.service`:
 
 ```ini
 [Unit]
-Description=OnMyChat AI Node
+Description=Disk Direct AI Assistant Node
 After=network.target ollama.service
 
 [Service]
 Type=simple
 User=your_username
-WorkingDirectory=/opt/onmychat
-Environment="PATH=/opt/onmychat/venv/bin:/usr/local/bin:/usr/bin:/bin"
+WorkingDirectory=/opt/direct/ai
+Environment="PATH=/opt/direct/ai/venv/bin:/usr/local/bin:/usr/bin:/bin"
 Environment="TOKENIZERS_PARALLELISM=false"
-ExecStart=/opt/onmychat/venv/bin/uvicorn api:app --host 127.0.0.1 --port 4000
+ExecStart=/opt/direct/ai/venv/bin/uvicorn api:app --host 127.0.0.1 --port 4000
 Restart=always
 RestartSec=5
 
@@ -191,7 +191,7 @@ Enable and verify:
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable --now onmychat
+sudo systemctl enable --now direct-ai
 curl http://127.0.0.1:4000/api/agentic/status
 ```
 
@@ -199,9 +199,9 @@ curl http://127.0.0.1:4000/api/agentic/status
 
 ## 5. Assistant Persona & Runtime Switching
 
-In the **On My Disk** Web App, navigate to **Settings → AI Assistant**:
-* **AI Node & Runtime Mode**: Choose **Auto (own AI node)**, a specific paired node, or **On My Chat Public Node**. Node owners can also toggle **Runtime mode** (`Local`, `Hybrid`, `Agentic`) and select the remote **Inference node** on the fly.
-* **Assistant Profile & Character Import**: Customize the assistant's **Name** (default `June`), **Title**, **Appearance & Avatar**, how it **Calls you**, or click **Import Character** to load an existing character card.
+In **Disk Direct**, navigate to **Settings → AI Assistant**:
+* **AI Node & Runtime Mode**: Choose **Auto (own AI node)**, a specific paired node, or the **Public Demo AI Node**. Node owners can also toggle **Runtime mode** (`Local`, `Hybrid`, `Agentic`) and select the remote **Inference node** on the fly.
+* **Assistant Profile & Character Import**: Customize the assistant's **Name** (default `June`), **Title**, **Appearance & Avatar**, how it **Calls you**, or click **Import Character** to load an existing SillyTavern character card.
 * **Work & Fun Personalities**: Define dedicated system prompts for **Work** mode (problem-solving, document analysis, and tasks) and **Fun** mode (creative chats and roleplay), plus your default output folder.
 
 ![AI Assistant Settings](/images/persona.png)
@@ -210,8 +210,8 @@ In the **On My Disk** Web App, navigate to **Settings → AI Assistant**:
 
 ## 6. Built-in Agentic Loop & MCP Server
 
-**On My Chat** includes both an autonomous multi-step tool-calling loop right inside **Chats** (`/mcp`, `/tools`, `/doc`) and a standard **Model Context Protocol (MCP)** server for external AI agents (`Claude Desktop`, `OpenCode`, `Claude Code`, `Cursor`, `Antigravity`, `Hermes`):
-* **Storage & Semantic Memory**: browse, search, read, and write files across your **On My Disk** shares and query private **Memory Cards** (`search_memory`).
+**AI Assistant Direct** includes both an autonomous multi-step tool-calling loop right inside **Chats** (`/mcp`, `/tools`, `/doc`) and a standard **Model Context Protocol (MCP)** server for external AI agents (`Claude Desktop`, `OpenCode`, `Claude Code`, `Cursor`, `Antigravity`, `Hermes`):
+* **Storage & Semantic Memory**: browse, search, read, and write files across your **Disk Direct** shares and query private **Memory Cards** (`search_memory`).
 * **Rich Office Suite (`WordCraft`, `GridCraft`, `DeckCraft`)**: create, clone from corporate templates, convert, and surgically edit real `.docx`, `.odt`, `.xlsx`, and `.pptx` documents while preserving 100% of styles, tables, and layouts.
 * **Project Management**: native **Plane.so** workspace and issue automation via your encrypted DID profile keys.
 

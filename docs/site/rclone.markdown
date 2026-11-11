@@ -7,7 +7,7 @@ nav_order: 11
 # ☁️ External Cloud Storage (**rclone**)
 <hr>
 
-Connect external cloud accounts — including **ProtonDrive**, **WebDAV** (Nextcloud, ownCloud, Hetzner Storage Box), and other **rclone**-compatible remotes — directly to your **On My Disk** Linux node so they appear alongside your local shares over P2P.
+Connect external cloud accounts — including **ProtonDrive**, **WebDAV** (Nextcloud, ownCloud, Hetzner Storage Box), and other **rclone**-compatible remotes — directly to your **Disk Direct** Linux node so they appear alongside your local shares over P2P.
 
 ![External Cloud Storage](/images/rclone.png)
 
@@ -21,13 +21,13 @@ Install the official `rclone` binary on your Linux host:
 sudo -v ; curl https://rclone.org/install.sh | sudo bash
 ```
 
-Everything else — remote configuration, password obfuscation, and process supervision — is managed automatically by your **On My Disk** node.
+Everything else — remote configuration, password obfuscation, and process supervision — is managed automatically by your **Disk Direct** node.
 
 ---
 
 ## Step 2: Add an External Disk in Device Settings
 
-1. Open the [**On My Disk Web App**](https://disk.direct), select your Linux node in the sidebar or workspace, and open **Device Settings → External Storage / Backup**.
+1. Open [**disk.direct**](https://disk.direct), select your Linux node in the sidebar or workspace, and open **Device Settings → External Storage / Backup**.
 2. Click **+ Add external disk** and fill in the fields:
 
 | Field | Description |

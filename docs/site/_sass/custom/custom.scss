@@ -1,0 +1,19 @@
+// Disk Direct documentation custom polish for light-theme screenshots & brand accents
+.site-logo {
+  background-position: left center;
+  max-height: 34px;
+}
+
+.main-content p > img,
+.main-content img {
+  border-radius: 10px;
+  border: 1px solid rgba(24, 19, 38, 0.10);
+  box-shadow: 0 8px 24px rgba(24, 19, 38, 0.07);
+  margin: 0.75rem 0 1.25rem;
+}
+
+.nav-list .nav-list-item .nav-list-link.active {
+  font-weight: 600;
+  color: #6d28d9;
+}
+
