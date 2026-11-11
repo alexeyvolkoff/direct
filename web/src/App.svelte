@@ -1348,7 +1348,7 @@
     }
   });
 
-  let currentProfileData = { name: "", user: "", email: "", image: "" };
+  let currentProfileData = { name: "", user: "", email: "", image: "", studio: false };
   let unsubProfile = null;
 
   function syncIdentityProfile() {
@@ -1387,6 +1387,7 @@
       online: true,
       deviceCount: filesData.filter(f => f.isDevice).length,
       omd_key: getStoredOmdKey() || "",
+      studio: Boolean(currentProfileData.studio || identity?.profile?.studio),
     });
   }
 

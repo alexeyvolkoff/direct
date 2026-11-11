@@ -5,6 +5,7 @@ import logging
 from config import SETTINGS
 
 CURRENT_REQUEST_PLATFORM: ContextVar[str] = ContextVar("omd_request_platform", default="")
+CURRENT_REQUEST_ORIGIN: ContextVar[str] = ContextVar("omd_request_origin", default="")
 
 # Дефольные настройки
 DEFAULT_KB_ID = SETTINGS.get("DEFAULT_KB_ID", "omd")
@@ -64,6 +65,9 @@ def load_user_settings(**kwargs):
     req_plat = CURRENT_REQUEST_PLATFORM.get("")
     if req_plat:
         base["platform"] = req_plat
+    req_orig = CURRENT_REQUEST_ORIGIN.get("")
+    if req_orig:
+        base["request_origin"] = req_orig
     return base
 
 def save_user_settings(ctx: UserContext):

@@ -75,7 +75,7 @@ Your `did:gun:<pub>` acts as the cryptographic root of trust across all your har
 1. **One-Time Node Pairing**: The first time you connect to an **On My Disk Node** (`PairModal`), you verify ownership once using the host's system credentials (`Login { user, pass, didPub }`).
 2. **Local Node Allowlist**: Your node records your public key in `[P2P] PairedDIDs` inside its local configuration — no cloud database owns this relationship.
 3. **Automatic P2P Elevation**: On every subsequent connection from any browser or phone signed into your DID, the client proves possession of your DID over the encrypted WebRTC DataChannel (`PairAuth`), immediately elevating to `Admin` access without prompting for node passwords again.
-4. **Encrypted Secrets Vault**: Optional **SSH credentials** (for the in-browser WebSSH terminal) and **MCP API keys** (CivitAI, Club/Muse Pass, Plane, etc.) are encrypted with your DID keys so only your authenticated sessions can decrypt them.
+4. **Encrypted Secrets Vault**: Optional **SSH credentials** (for the in-browser WebSSH terminal) and **MCP API keys** (CivitAI, Plane, etc.) are encrypted with your DID keys so only your authenticated sessions can decrypt them.
 
 ---
 

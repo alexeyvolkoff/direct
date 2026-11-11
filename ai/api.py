@@ -161,15 +161,20 @@ app.add_middleware(
 @app.middleware("http")
 async def capture_client_platform_middleware(request: Request, call_next):
     plat = (request.headers.get("X-OMD-Platform") or "").strip().lower()
+    origin = (request.headers.get("Origin") or request.headers.get("Referer") or "").strip().lower()
+    ua = (request.headers.get("User-Agent") or "").lower()
     if not plat:
-        origin = (request.headers.get("Origin") or "").strip().lower()
         if origin.startswith("capacitor://"):
             plat = "ios"
-    token = user_context.CURRENT_REQUEST_PLATFORM.set(plat)
+        elif origin in ("https://localhost", "http://localhost") and "; wv)" in ua:
+            plat = "android"
+    token_plat = user_context.CURRENT_REQUEST_PLATFORM.set(plat)
+    token_orig = user_context.CURRENT_REQUEST_ORIGIN.set(origin)
     try:
         return await call_next(request)
     finally:
-        user_context.CURRENT_REQUEST_PLATFORM.reset(token)
+        user_context.CURRENT_REQUEST_PLATFORM.reset(token_plat)
+        user_context.CURRENT_REQUEST_ORIGIN.reset(token_orig)
 
 
 AI_TOKEN = SETTINGS.get("AI_TOKEN", "")

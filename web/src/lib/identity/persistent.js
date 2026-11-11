@@ -9,8 +9,27 @@ import {
   clearSessionEverywhere,
 } from "./sessionBackup.js";
 import { getGatewayRelayWsUrl, getGatewayHubUrl } from "../gateway-config.js";
+import { profileStore } from "../profile-store.js";
 
 const STORAGE_PREFIX = "omd_did_";
+
+let activePersistentIdentity = null;
+
+/**
+ * Updates the `studio` capability flag in the user's DID profile (local + GunDB graph)
+ * and immediately reflects it in `profileStore`.
+ */
+export function setDidStudioEnabled(enabled) {
+  const next = Boolean(enabled);
+  profileStore.update((p) => (p && Boolean(p.studio) === next ? p : { ...p, studio: next }));
+  if (activePersistentIdentity && activePersistentIdentity.mainPub) {
+    if (Boolean(activePersistentIdentity.profile?.studio) !== next) {
+      activePersistentIdentity.updateProfile({ studio: next }).catch((e) => {
+        console.warn("[identity] setDidStudioEnabled sync warning:", e);
+      });
+    }
+  }
+}
 
 function accountDeletedError() {
   return new Error(translate("account_deleted_login", {}, "This account has been deleted."));
@@ -84,8 +103,8 @@ export class PersistentIdentity {
     this.certificate = null;
     /** @type {string|null} hub-issued token authorising account deletion (provider logins) */
     this.deleteToken = null;
-    /** @type {{name: string, user: string, email: string, image: string, omd_key: string}} user profile */
-    this.profile = { name: "", user: "", email: "", image: "", omd_key: "", defaultStorage: "", locale: "" };
+    /** @type {{name: string, user: string, email: string, image: string, omd_key: string, defaultStorage?: string, locale?: string, studio?: boolean}} user profile */
+    this.profile = { name: "", user: "", email: "", image: "", omd_key: "", defaultStorage: "", locale: "", studio: false };
     /** @type {Map<string,object>} devicePub → device info */
     this.devices = new Map();
     /** @type {Set<Function>} listeners for device list changes */
@@ -243,6 +262,7 @@ export class PersistentIdentity {
 
     // Notify caller immediately once local/backup credentials are hydrated so
     // mobile resume from background never flashes or blocks on the login card.
+    activePersistentIdentity = this;
     if (opts && typeof opts.onHydrated === "function") {
       try {
         opts.onHydrated(this);
@@ -313,6 +333,7 @@ export class PersistentIdentity {
 
     await this._listenDevices();
     this._listenProfile();
+    activePersistentIdentity = this;
     console.log("[identity] persistent session restored, did:", this.did, "profile:", this.profile);
     return this;
   }
@@ -373,6 +394,7 @@ export class PersistentIdentity {
 
     this._listenDevices();
     this._listenProfile();
+    activePersistentIdentity = this;
     console.log("[identity] google login complete, did:", did, "profile:", this.profile);
     return this;
   }
@@ -442,6 +464,7 @@ export class PersistentIdentity {
 
     this._listenDevices();
     this._listenProfile();
+    activePersistentIdentity = this;
     console.log("[identity] apple login complete, did:", did, "profile:", this.profile);
     return this;
   }
@@ -494,6 +517,7 @@ export class PersistentIdentity {
 
     this._listenDevices();
     this._listenProfile();
+    activePersistentIdentity = this;
     console.log("[identity] legacy login complete, did:", did, "profile:", this.profile);
     return this;
   }
@@ -624,6 +648,7 @@ export class PersistentIdentity {
 
     this._listenDevices();
     this._listenProfile();
+    activePersistentIdentity = this;
 
     // Generate recovery key (public key as hex groups)
     const recoveryKey = pair.pub.match(/.{1,4}/g).join(' ');
@@ -966,6 +991,7 @@ export class PersistentIdentity {
 
     await this._listenDevices();
     this._listenProfile();
+    activePersistentIdentity = this;
     console.log("[identity] login complete, permanent did:", this.did, "profile:", this.profile);
     return this;
   }
@@ -1045,6 +1071,7 @@ export class PersistentIdentity {
 
     this._listenDevices();
     this._listenProfile();
+    activePersistentIdentity = this;
     console.log("[identity] restored from recovery key, did:", did);
     return this;
   }
@@ -1162,6 +1189,7 @@ export class PersistentIdentity {
             if (remoteProf.omd_key) this.profile.omd_key = remoteProf.omd_key;
             if (remoteProf.defaultStorage) this.profile.defaultStorage = remoteProf.defaultStorage;
             if (remoteProf.locale) this.profile.locale = remoteProf.locale;
+            if (typeof remoteProf.studio === "boolean") this.profile.studio = remoteProf.studio;
           }
           done();
         });
@@ -1184,6 +1212,7 @@ export class PersistentIdentity {
 
     await this._listenDevices();
     this._listenProfile();
+    activePersistentIdentity = this;
     console.log("[identity] signed in with JSON keyfile, did:", this.did);
     return this;
   }
@@ -1232,6 +1261,7 @@ export class PersistentIdentity {
         omd_key: this.profile.omd_key,
         defaultStorage: this.profile.defaultStorage || "",
         locale: this.profile.locale || "",
+        studio: Boolean(this.profile.studio),
         updatedAt: this.profile.updatedAt || Date.now(),
       };
 
@@ -1538,8 +1568,9 @@ export class PersistentIdentity {
     this.devicePair = null;
     this.certificate = null;
     this.deleteToken = null;
-    this.profile = { name: "", user: "", email: "", image: "", omd_key: "", defaultStorage: "", locale: "" };
+    this.profile = { name: "", user: "", email: "", image: "", omd_key: "", defaultStorage: "", locale: "", studio: false };
     this.devices.clear();
+    if (activePersistentIdentity === this) activePersistentIdentity = null;
     this._notify();
     this._notifyProfile();
     return true;
@@ -1564,13 +1595,15 @@ export class PersistentIdentity {
     this.devicePair = null;
     this.certificate = null;
     this.deleteToken = null;
-    this.profile = { name: "", user: "", email: "", image: "" };
+    this.profile = { name: "", user: "", email: "", image: "", studio: false };
     this.devices.clear();
+    if (activePersistentIdentity === this) activePersistentIdentity = null;
     this._notify();
     this._notifyProfile();
   }
 
   destroy() {
+    if (activePersistentIdentity === this) activePersistentIdentity = null;
     for (const unsub of this._unsubscribes) {
       if (typeof unsub === "function") {
         try { unsub(); } catch (_) {}
@@ -1748,6 +1781,10 @@ export class PersistentIdentity {
         if (data.image && data.image !== this.profile.image) { this.profile.image = data.image; changed = true; }
         if (data.omd_key && data.omd_key !== this.profile.omd_key) { this.profile.omd_key = data.omd_key; changed = true; }
         if (data.locale && data.locale !== this.profile.locale) { this.profile.locale = data.locale; changed = true; }
+        if (typeof data.studio === "boolean" && data.studio !== Boolean(this.profile.studio)) {
+          this.profile.studio = data.studio;
+          changed = true;
+        }
         if (data.defaultStorage && data.defaultStorage !== this.profile.defaultStorage) {
           const localStored = typeof localStorage !== "undefined" ? localStorage.getItem("omd_default_storage") : "";
           const hasNewerLocal = localStored && (!data.updatedAt || (this.profile.updatedAt && this.profile.updatedAt > data.updatedAt));

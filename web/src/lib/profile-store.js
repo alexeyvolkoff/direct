@@ -13,6 +13,7 @@ export const profileStore = writable({
   defaultStorage: "",
   online: true,
   deviceCount: 0,
+  studio: false,
 });
 
 export function setProfile(data) {

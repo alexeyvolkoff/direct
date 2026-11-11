@@ -16,7 +16,8 @@
   import { issueConsent, getClientDeviceServer } from "../lib/client-device-server.js";
   import { getOrCreateLocalLinkId } from "../lib/local-client.js";
   import { mcpKeysStore, getMcpPayload, saveMcpAppKey } from "../lib/mcp-keys.js";
-  import { getClientPlatform, isIosNative, sanitizeExternalCheckoutText } from "../lib/platform.js";
+  import { setDidStudioEnabled } from "../lib/identity/persistent.js";
+  import { getClientPlatform, isNativeMobile, isPrimaryWebGateway, sanitizeExternalCheckoutText } from "../lib/platform.js";
   import defaultKreaPresets from "../lib/krea_presets.json";
 
   let civitaiAccounts = [];
@@ -55,22 +56,37 @@
   export let sdxlSupported = true;
   export let kreaSupported = true;
 
-  const isIosClientApp = isIosNative();
+  const isMobileClientApp = isNativeMobile();
 
-  // Studio entitlement & quota state (resolved from /krea/status)
-  let studioTier = "owner"; // "owner" | "muse" | "member" | "guest"
-  let kreaAllowed = true;
-  let videoAllowed = true;
+  // Studio capability state (gated silently by DID flag + /krea/status)
+  let studioTier = "standard";
+  let kreaAllowed = false;
+  let videoAllowed = false;
+  let directorAllowed = false;
   let kreaDailyRemaining = null;
   let kreaDailyLimit = null;
   let memberCredits = null;
   let kreaLockNotice = "";
   let generationError = "";
   let statusLoadedOnce = false;
+  let pendingSavedDirectorOpen = false;
   let activeVideoModalItem = null;
 
+  $: hasDidStudio = Boolean($profileStore && $profileStore.studio) || Boolean(isPrivateMode);
+  $: canShowStudioTab = Boolean(hasDidStudio && kreaSupported && kreaAllowed);
+  $: canShowVideoTab = Boolean(hasDidStudio && kreaSupported && kreaAllowed && videoAllowed);
+  $: canShowDirector = Boolean(hasDidStudio && directorAllowed);
+
+  $: if (!canShowDirector && showDirectorPanel) {
+    showDirectorPanel = false;
+  }
+  $: if (canShowDirector && pendingSavedDirectorOpen) {
+    pendingSavedDirectorOpen = false;
+    showDirectorPanel = true;
+  }
+
   function extractUrlFromText(txt) {
-    if (!txt || isIosClientApp) return "";
+    if (!txt || isMobileClientApp || !isPrimaryWebGateway()) return "";
     const m = String(txt).match(/https?:\/\/[^\s)>]+/);
     return m ? m[0].replace(/[.,;!?]+$/, "") : "";
   }
@@ -78,11 +94,6 @@
   function stripUrlFromText(txt) {
     if (!txt) return "";
     return String(txt).replace(/https?:\/\/[^\s)>]+/g, "").replace(/[:—–\-]\s*$/, "").trim();
-  }
-
-  function openPassSettings() {
-    generationError = "";
-    dispatch("open-settings", { section: "security" });
   }
 
   const dispatch = createEventDispatcher();
@@ -418,7 +429,10 @@
   const initPrimaryArchetype = initArchetypes.length > 0 ? initArchetypes[0] : null;
 
   const rawSavedBaseModel = (initialSavedSliders && initialSavedSliders.base_model) || "";
-  const initBaseModel = !kreaSupported
+  const initialHasStudioFlag = Boolean(
+    isPrivateMode || (typeof window !== "undefined" && window.__omdProfile && window.__omdProfile.studio)
+  );
+  const initBaseModel = (!kreaSupported || !initialHasStudioFlag)
     ? normalizeSdxlModel(legacyCkptFromStyles || rawSavedBaseModel)
     : (isSdxlModel(rawSavedBaseModel)
         ? normalizeSdxlModel(legacyCkptFromStyles || rawSavedBaseModel)
@@ -521,11 +535,9 @@
   function setBaseModel(rawModel, force = false) {
     const model = rawModel === "sdxl" ? (lastSdxlModel || "sdxl_realistic") : rawModel;
     const requiresCloud = !isSdxlModel(model);
-    const cloudPermitted = isVideoModel(model) ? (kreaAllowed && videoAllowed) : kreaAllowed;
+    const cloudPermitted = isVideoModel(model) ? canShowVideoTab : canShowStudioTab;
     if (requiresCloud && !force && (!kreaSupported || (statusLoadedOnce && !cloudPermitted))) {
-      generationError = sanitizeExternalCheckoutText(
-        kreaLockNotice || $_("krea_cloud_locked", {}, "Движки Krea 2 / Muse / Anima / MiniMax-H3 доступны по Club Pass или Muse Pass.")
-      );
+      generationError = "";
       if (!isSdxlModel(sliders.base_model)) {
         sliders.base_model = lastSdxlModel || "sdxl_realistic";
         sliders.cfg = 1.0;
@@ -1392,10 +1404,7 @@
 
   async function extendGalleryVideo(item) {
     if (!item || !item.isVideo) return;
-    if (!kreaSupported || (statusLoadedOnce && !(kreaAllowed && videoAllowed))) {
-      generationError = sanitizeExternalCheckoutText(
-        kreaLockNotice || $_("krea_video_locked", {}, "Генерация видео со звуком MiniMax-H3 доступна по Club Pass или Muse Pass.")
-      );
+    if (!canShowVideoTab) {
       return;
     }
     if (extendingVideoItem && (extendingVideoItem.path === item.path || extendingVideoItem.name === item.name)) {
@@ -1430,10 +1439,7 @@
 
   async function animateGalleryItem(item) {
     if (!item || item.isVideo) return;
-    if (!kreaSupported || (statusLoadedOnce && !(kreaAllowed && videoAllowed))) {
-      generationError = sanitizeExternalCheckoutText(
-        kreaLockNotice || $_("krea_video_locked", {}, "Генерация видео со звуком MiniMax-H3 доступна по Club Pass или Muse Pass.")
-      );
+    if (!canShowVideoTab) {
       return;
     }
 
@@ -3048,16 +3054,16 @@
     if (isGenerating) return null;
 
     generationError = "";
-    const cloudPermitted = isVideoGen ? (kreaAllowed && videoAllowed) : kreaAllowed;
+    const cloudPermitted = isVideoGen ? canShowVideoTab : canShowStudioTab;
     if (!isSdxlModel(sliders.base_model) && (!kreaSupported || (statusLoadedOnce && !cloudPermitted))) {
-      generationError = sanitizeExternalCheckoutText(
-        kreaLockNotice || $_("krea_cloud_locked", {}, "Движки Krea 2 / Muse / Anima / MiniMax-H3 доступны по Club Pass или Muse Pass.")
-      );
+      if (sdxlSupported !== false) {
+        setBaseModel(lastSdxlModel || "sdxl_realistic", true);
+      }
       return null;
     }
 
     // Auto-extract if user pasted a CivitAI image/post URL directly into the main composer
-    if (!isOverride && CIVITAI_URL_REGEX.test(cleanPrompt)) {
+    if (!isOverride && canShowDirector && CIVITAI_URL_REGEX.test(cleanPrompt)) {
       isDirectorThinking = true;
       try {
         const fetchFnPre = getKreaFetch();
@@ -4420,6 +4426,10 @@
   }
 
   function toggleDirectorPanel() {
+    if (!canShowDirector) {
+      showDirectorPanel = false;
+      return;
+    }
     showDirectorPanel = !showDirectorPanel;
     try {
       localStorage.setItem("krea_director_open_v1", showDirectorPanel ? "1" : "0");
@@ -5133,7 +5143,11 @@
         recentPrompts = local;
       }
       if (localStorage.getItem("krea_director_open_v1") === "1" && (typeof window === "undefined" || window.innerWidth > 960)) {
-        showDirectorPanel = true;
+        if (canShowDirector) {
+          showDirectorPanel = true;
+        } else {
+          pendingSavedDirectorOpen = true;
+        }
       }
       const savedMsgs = JSON.parse(sessionStorage.getItem("krea_director_msgs_v1") || "[]");
       if (Array.isArray(savedMsgs)) directorMessages = savedMsgs;
@@ -5212,16 +5226,27 @@
         const data = await res.json();
         statusLoadedOnce = true;
         if (data && data.tier) studioTier = data.tier;
-        if (data && typeof data.krea_allowed === "boolean") kreaAllowed = data.krea_allowed;
-        if (data && typeof data.video_allowed === "boolean") videoAllowed = data.video_allowed;
-        else videoAllowed = kreaAllowed;
+        kreaAllowed = Boolean(data && data.krea_allowed === true);
+        videoAllowed = (data && typeof data.video_allowed === "boolean") ? data.video_allowed : kreaAllowed;
+        const serverStudioEnabled = Boolean(
+          data && (
+            data.studio_enabled === true ||
+            (kreaAllowed && data.tier && data.tier !== "guest" && data.tier !== "standard")
+          )
+        );
+        directorAllowed = (data && typeof data.director_allowed === "boolean")
+          ? data.director_allowed
+          : Boolean(serverStudioEnabled || isPrivateMode);
+        if (!isPrivateMode) {
+          setDidStudioEnabled(serverStudioEnabled);
+        }
         if (data && typeof data.credits === "number") memberCredits = data.credits;
         else memberCredits = null;
         if (data && typeof data.krea_daily_remaining === "number") kreaDailyRemaining = data.krea_daily_remaining;
         else kreaDailyRemaining = null;
         if (data && typeof data.krea_daily_limit === "number") kreaDailyLimit = data.krea_daily_limit;
         else kreaDailyLimit = null;
-        kreaLockNotice = (data && data.krea_notice) || "";
+        kreaLockNotice = sanitizeExternalCheckoutText((data && data.krea_notice) || "");
 
         if (data && Array.isArray(data.civitai_accounts)) {
           civitaiAccounts = data.civitai_accounts;
@@ -5235,12 +5260,21 @@
           isGpuWarm = false;
         }
 
-        if (!kreaSupported || data.tier === "guest" || data.krea_allowed === false) {
+        const effectiveStudio = Boolean((serverStudioEnabled || isPrivateMode) && kreaSupported && kreaAllowed);
+        const effectiveVideo = Boolean(effectiveStudio && videoAllowed);
+        if (!effectiveStudio) {
           if (!isSdxlModel(sliders.base_model) && sdxlSupported !== false) {
             setBaseModel(lastSdxlModel || "sdxl_realistic", true);
           }
-        } else if (data.krea_allowed) {
+        } else {
           generationError = "";
+          if (!effectiveVideo && isVideoModel(sliders.base_model)) {
+            setBaseModel(lastDitModel || "realism", true);
+          } else if (rawSavedBaseModel && !isSdxlModel(rawSavedBaseModel) && sliders.base_model !== rawSavedBaseModel) {
+            if (!isVideoModel(rawSavedBaseModel) || effectiveVideo) {
+              setBaseModel(rawSavedBaseModel, true);
+            }
+          }
         }
       }
     } catch (_) {}
@@ -5248,8 +5282,9 @@
 
   function syncPassKeySignature(byAppObj) {
     const byApp = byAppObj || {};
-    const sig = ["club_pass", "muse_pass", "whop", "whop_key", "studio_pass"]
-      .map((k) => (byApp[k] && byApp[k].key) || "")
+    const sig = Object.keys(byApp)
+      .sort()
+      .map((k) => `${k}:${(byApp[k] && byApp[k].key) || ""}`)
       .join("|");
     if (_studioRuntime.lastPassKeySignature === null) {
       _studioRuntime.lastPassKeySignature = sig;
@@ -5304,7 +5339,7 @@
       {/if}
 
       <div class="header-mode-toggle-group">
-        {#if sdxlSupported !== false && kreaSupported}
+        {#if sdxlSupported !== false && (canShowStudioTab || canShowVideoTab)}
           <div class="header-mode-toggle" role="tablist" aria-label={$_("studio_mode_aria", {}, "Generation mode")}>
             <button
               type="button"
@@ -5318,32 +5353,34 @@
               <span class="mode-icon">⚡</span>
               <span>{$_("studio_mode_express", {}, "Express")}</span>
             </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={studioEngineMode === "dit"}
-              class="mode-toggle-btn"
-              class:active={studioEngineMode === "dit"}
-              class:locked={statusLoadedOnce && !kreaAllowed}
-              title={$_("studio_mode_studio_hint", {}, "Studio (DiT: Krea 2 / Muse / Anima) — next-gen cinematic rendering")}
-              on:click={() => switchEngineMode("dit")}
-            >
-              <span class="mode-icon">{statusLoadedOnce && !kreaAllowed ? "🔒" : "✨"}</span>
-              <span>{$_("studio_mode_studio", {}, "Studio")}</span>
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={studioEngineMode === "video"}
-              class="mode-toggle-btn"
-              class:active={studioEngineMode === "video"}
-              class:locked={statusLoadedOnce && !(kreaAllowed && videoAllowed)}
-              title={$_("studio_mode_video_hint", {}, "Video + Stereo Audio (MiniMax-H3) — 24fps omni-modal video & sound generation")}
-              on:click={() => switchEngineMode("video")}
-            >
-              <span class="mode-icon">{statusLoadedOnce && !(kreaAllowed && videoAllowed) ? "🔒" : "🎬"}</span>
-              <span>{$_("studio_mode_video", {}, "Video")}</span>
-            </button>
+            {#if canShowStudioTab}
+              <button
+                type="button"
+                role="tab"
+                aria-selected={studioEngineMode === "dit"}
+                class="mode-toggle-btn"
+                class:active={studioEngineMode === "dit"}
+                title={$_("studio_mode_studio_hint", {}, "Studio (DiT: Krea 2 / Muse / Anima) — next-gen cinematic rendering")}
+                on:click={() => switchEngineMode("dit")}
+              >
+                <span class="mode-icon">✨</span>
+                <span>{$_("studio_mode_studio", {}, "Studio")}</span>
+              </button>
+            {/if}
+            {#if canShowVideoTab}
+              <button
+                type="button"
+                role="tab"
+                aria-selected={studioEngineMode === "video"}
+                class="mode-toggle-btn"
+                class:active={studioEngineMode === "video"}
+                title={$_("studio_mode_video_hint", {}, "Video + Stereo Audio (MiniMax-H3) — 24fps omni-modal video & sound generation")}
+                on:click={() => switchEngineMode("video")}
+              >
+                <span class="mode-icon">🎬</span>
+                <span>{$_("studio_mode_video", {}, "Video")}</span>
+              </button>
+            {/if}
           </div>
         {:else}
           <div class="studio-brand-pill" title={$_("krea_studio", {}, "Creative Studio")}>
@@ -5357,29 +5394,20 @@
             {items.length}
           </span>
         {/if}
-        {#if studioTier === "muse" && kreaDailyRemaining !== null && kreaDailyLimit !== null}
+        {#if canShowStudioTab && kreaDailyRemaining !== null && kreaDailyLimit !== null}
           <span
             class="studio-tier-badge muse"
-            title={$_("studio_muse_pass_hint", { rem: kreaDailyRemaining, limit: kreaDailyLimit }, `Muse Pass — SDXL ∞ + ${kreaDailyRemaining}/${kreaDailyLimit} Krea/Anima frames today`)}
+            title={`${kreaDailyRemaining}/${kreaDailyLimit}`}
           >
-            ✨ Muse · Krea {kreaDailyRemaining}/{kreaDailyLimit}
+            ✨ {kreaDailyRemaining}/{kreaDailyLimit}
           </span>
-        {:else if studioTier === "member" && memberCredits !== null}
+        {:else if canShowStudioTab && memberCredits !== null}
           <span
             class="studio-tier-badge member"
-            title={$_("studio_club_pass_hint", { credits: memberCredits }, `Club Pass — SDXL ∞ + ${memberCredits} Cloud GPU credits`)}
+            title={`${memberCredits}`}
           >
             💎 {memberCredits}
           </span>
-        {:else if studioTier === "guest" && !isIosClientApp && kreaSupported}
-          <button
-            type="button"
-            class="studio-tier-badge guest-pass-btn"
-            title={$_("enter_club_pass", {}, "Enter Club Pass or Muse Pass")}
-            on:click={openPassSettings}
-          >
-            🔑 Pass
-          </button>
         {/if}
       </div>
     </div>
@@ -5422,22 +5450,24 @@
 
     <div class="header-right">
       <!-- AI Director's Chair Toggle -->
-      <button
-        type="button"
-        class="icon-btn director-icon-btn"
-        class:is-active={showDirectorPanel}
-        title={$_("krea_director_tooltip", {}, "Режиссёрское кресло — AI-помощник по промптам и сценариям")}
-        aria-label={$_("krea_director_tooltip", {}, "Режиссёрское кресло")}
-        on:click={toggleDirectorPanel}
-      >
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
-          <path d="M2 11h20" />
-          <path d="M7 7l3 4" />
-          <path d="M14 7l3 4" />
-          <path d="M4 3l16 4" />
-        </svg>
-      </button>
+      {#if canShowDirector}
+        <button
+          type="button"
+          class="icon-btn director-icon-btn"
+          class:is-active={showDirectorPanel}
+          title={$_("krea_director_tooltip", {}, "Режиссёрское кресло — AI-помощник по промптам и сценариям")}
+          aria-label={$_("krea_director_tooltip", {}, "Режиссёрское кресло")}
+          on:click={toggleDirectorPanel}
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
+            <path d="M2 11h20" />
+            <path d="M7 7l3 4" />
+            <path d="M14 7l3 4" />
+            <path d="M4 3l16 4" />
+          </svg>
+        </button>
+      {/if}
 
       <!-- Sort Order Toggle -->
       <button
@@ -5618,7 +5648,7 @@
                 🎞️ {sf}
               </button>
             {/each}
-            {#if activeStorySubfolder}
+            {#if activeStorySubfolder && canShowDirector}
               <button
                 type="button"
                 class="story-open-director-chip"
@@ -5886,24 +5916,26 @@
                     {/if}
 
                     {#if !item.isVideo}
-                      <button
-                        type="button"
-                        class="toolbar-btn card-animate-btn"
-                        class:active={studioEngineMode === "video" && itemRefIdx >= 0 && videoRefMode === "keyframe"}
-                        title={studioEngineMode === "video" && itemRefIdx >= 0 && videoRefMode === "keyframe"
-                          ? $_("krea_remove_video_keyframe", { idx: itemRefIdx + 1 }, `Убрать опорный кадр #${itemRefIdx + 1}`)
-                          : (studioEngineMode === "video" && attachedReferences.length === 1 && videoRefMode === "keyframe"
-                              ? $_("krea_add_second_keyframe", {}, "Добавить как #2 финальный кадр перехода (<Picture 2>)")
-                              : (studioEngineMode === "video" && attachedReferences.length >= 2 && videoRefMode === "keyframe"
-                                  ? $_("krea_replace_second_keyframe", {}, "Заменить #2 финальный кадр перехода (<Picture 2>)")
-                                  : $_("krea_animate_with_sound", {}, "Оживить кадр со звуком — задать #1 старт (MiniMax-H3 FL2VA)")))}
-                        on:click|stopPropagation={() => animateGalleryItem(item)}
-                      >
-                        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <rect x="2" y="4" width="20" height="16" rx="2" ry="2" />
-                          <polygon points="10 9 15 12 10 15 10 9" fill="currentColor" stroke="none" />
-                        </svg>
-                      </button>
+                      {#if canShowVideoTab}
+                        <button
+                          type="button"
+                          class="toolbar-btn card-animate-btn"
+                          class:active={studioEngineMode === "video" && itemRefIdx >= 0 && videoRefMode === "keyframe"}
+                          title={studioEngineMode === "video" && itemRefIdx >= 0 && videoRefMode === "keyframe"
+                            ? $_("krea_remove_video_keyframe", { idx: itemRefIdx + 1 }, `Убрать опорный кадр #${itemRefIdx + 1}`)
+                            : (studioEngineMode === "video" && attachedReferences.length === 1 && videoRefMode === "keyframe"
+                                ? $_("krea_add_second_keyframe", {}, "Добавить как #2 финальный кадр перехода (<Picture 2>)")
+                                : (studioEngineMode === "video" && attachedReferences.length >= 2 && videoRefMode === "keyframe"
+                                    ? $_("krea_replace_second_keyframe", {}, "Заменить #2 финальный кадр перехода (<Picture 2>)")
+                                    : $_("krea_animate_with_sound", {}, "Оживить кадр со звуком — задать #1 старт (MiniMax-H3 FL2VA)")))}
+                          on:click|stopPropagation={() => animateGalleryItem(item)}
+                        >
+                          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="2" y="4" width="20" height="16" rx="2" ry="2" />
+                            <polygon points="10 9 15 12 10 15 10 9" fill="currentColor" stroke="none" />
+                          </svg>
+                        </button>
+                      {/if}
 
                       <button
                         type="button"
@@ -5925,7 +5957,7 @@
                           <circle cx="12" cy="13" r="4" />
                         </svg>
                       </button>
-                    {:else}
+                    {:else if canShowVideoTab}
                       <button
                         type="button"
                         class="toolbar-btn card-extend-btn"
@@ -5976,20 +6008,16 @@
       </div>
     {/if}
     {#if generationError}
-      {@const errLink = extractUrlFromText(generationError)}
-      {@const errCleanText = stripUrlFromText(generationError)}
+      {@const sanitizedErr = sanitizeExternalCheckoutText(generationError)}
+      {@const errLink = extractUrlFromText(sanitizedErr)}
+      {@const errCleanText = stripUrlFromText(sanitizedErr)}
       <div class="studio-notice-banner" transition:fade={{ duration: 120 }}>
-        <div class="studio-notice-text">{errCleanText || generationError}</div>
+        <div class="studio-notice-text">{errCleanText || sanitizedErr}</div>
         <div class="studio-notice-actions">
-          {#if errLink && !isIosClientApp}
+          {#if errLink && !isMobileClientApp}
             <a href={errLink} target="_blank" rel="noopener noreferrer" class="studio-notice-cta">
               ⚡ Creative Studio →
             </a>
-          {/if}
-          {#if studioTier === "guest" && !isIosClientApp}
-            <button type="button" class="studio-notice-pass-btn" on:click={openPassSettings}>
-              🔑 {$_("enter_pass_btn", {}, "Ввести Pass")}
-            </button>
           {/if}
           <button type="button" class="studio-notice-close" on:click={() => (generationError = "")} aria-label="Close">
             ✕
@@ -6068,18 +6096,20 @@
 
       <div class="composer-controls-right">
         <!-- Quick AI Director Toggle Pill -->
-        <button
-          type="button"
-          class="toggle-director-pill"
-          class:open={showDirectorPanel}
-          class:active={showDirectorPanel}
-          title={$_("krea_director_open_hint", {}, "Open AI Director's Chair (prompt co-pilot & storyboards)")}
-          on:click={toggleDirectorPanel}
-        >
-          <span class="pill-label-desktop">{$_("krea_director_btn", {}, "Режиссёр")}</span>
-          <span class="pill-label-mobile">🎬</span>
-          <span class="pill-chevron">{showDirectorPanel ? "▶" : "◀"}</span>
-        </button>
+        {#if canShowDirector}
+          <button
+            type="button"
+            class="toggle-director-pill"
+            class:open={showDirectorPanel}
+            class:active={showDirectorPanel}
+            title={$_("krea_director_open_hint", {}, "Open AI Director's Chair (prompt co-pilot & storyboards)")}
+            on:click={toggleDirectorPanel}
+          >
+            <span class="pill-label-desktop">{$_("krea_director_btn", {}, "Режиссёр")}</span>
+            <span class="pill-label-mobile">🎬</span>
+            <span class="pill-chevron">{showDirectorPanel ? "▶" : "◀"}</span>
+          </button>
+        {/if}
 
         <!-- Prompt History Toggle Pill -->
         <button
@@ -7403,7 +7433,7 @@
   </div>
 
   <!-- 🎬 AI DIRECTOR'S CHAIR RIGHT PANEL -->
-  {#if showDirectorPanel}
+  {#if showDirectorPanel && canShowDirector}
     <aside
       class="director-panel"
       class:resizing={isResizingDirector}

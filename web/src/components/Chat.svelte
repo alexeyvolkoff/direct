@@ -23,13 +23,16 @@
   import { issueConsent, getClientDeviceServer } from "../lib/client-device-server.js";
   import { DEFAULT_STORAGE_PATH, parseStoragePath, cleanStoragePath, getLocalDevice, formatStoragePath, persistStoragePath, getDefaultStoragePath } from "../lib/storage-path.js";
   import { getStoredOmdKey } from "../lib/omd-key.js";
+  import { sanitizeExternalCheckoutText } from "../lib/platform.js";
   import { DEFAULT_JUNE_SYSTEM_PROMPT, DEFAULT_JUNE_FUN_PROMPT, blobToDataUrl } from "../lib/assistant-defaults.js";
 
   marked.use(markedKatex({ throwOnError: false, nonStandard: true }));
   marked.setOptions({ breaks: true, gfm: true });
 
   const mdCache = new Map();
-  function renderMd(text) {
+  function renderMd(rawText) {
+    if (!rawText) return "";
+    const text = sanitizeExternalCheckoutText(rawText);
     if (!text) return "";
     if (mdCache.has(text)) return mdCache.get(text);
     let html = "";

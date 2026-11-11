@@ -12,7 +12,7 @@
   import { parseStoragePath, formatStoragePath, persistStoragePath, DEFAULT_STORAGE_PATH, getLocalDevice, getDefaultStoragePath } from "../lib/storage-path.js";
   import { issueConsent, getClientDeviceServer } from "../lib/client-device-server.js";
   import { getOrCreateLocalLinkId } from "../lib/local-client.js";
-  import { isIosNative, getClientPlatform, isExternalCheckoutUrl, sanitizeExternalCheckoutText } from "../lib/platform.js";
+  import { isNativeMobile, isPrimaryWebGateway, getClientPlatform, isExternalCheckoutUrl, sanitizeExternalCheckoutText } from "../lib/platform.js";
 
   let innerWidth = typeof window !== "undefined" ? window.innerWidth : 1024;
   $: isMobile = innerWidth < 768;
@@ -122,10 +122,9 @@
   let items = [];
   let generationNotice = "";
   $: rawNoticeUrl = generationNotice ? ((generationNotice.match(/https?:\/\/[^\s)\]]+/i) || [])[0] || "").replace(/[.,;!?]+$/, "") : "";
-  $: mappedNoticeUrl = rawNoticeUrl.replace("https://whop.com/checkout/prod_wuSw81wT1wivN", "https://whop.com/ai-studio-direct/creative-studio-direct");
-  $: noticeUrl = (isIosNative() && isExternalCheckoutUrl(mappedNoticeUrl)) ? "" : mappedNoticeUrl;
+  $: noticeUrl = ((isNativeMobile() || !isPrimaryWebGateway()) && isExternalCheckoutUrl(rawNoticeUrl)) ? "" : rawNoticeUrl;
   $: noticeText = generationNotice
-    ? (isIosNative()
+    ? ((isNativeMobile() || !isPrimaryWebGateway())
         ? sanitizeExternalCheckoutText(generationNotice)
         : generationNotice.replace(/https?:\/\/[^\s]+/i, "").trim())
     : "";
@@ -1613,7 +1612,7 @@
         </button>
       {/if}
 
-      {#if kreaSupported}
+      {#if kreaSupported && Boolean(($profileStore && $profileStore.studio) || isPrivateMode)}
         <div class="header-mode-toggle-group">
           <div class="header-mode-toggle" role="tablist">
             <button

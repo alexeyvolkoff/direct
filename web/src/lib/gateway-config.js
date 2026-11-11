@@ -40,6 +40,7 @@ export const DEFAULT_GATEWAY = Object.freeze({
   privacyUrl: "https://disk.direct/tos#gdpr",
   tosVersion: "2026-11",
   isCustom: false,
+  mcpPresets: Object.freeze([]),
   skin: Object.freeze({
     preset: "cool-iris",
     logoDark: "/img/logo.svg",
@@ -82,6 +83,29 @@ function sanitizeUrl(val, baseOrigin = DEFAULT_GATEWAY_ORIGIN, fallback = "") {
   return fallback;
 }
 
+function sanitizeMcpPresets(rawList, baseOrigin = DEFAULT_GATEWAY_ORIGIN) {
+  if (typeof window !== "undefined" && Capacitor.isNativePlatform()) {
+    return [];
+  }
+  if (!Array.isArray(rawList)) return [];
+  const out = [];
+  for (const item of rawList) {
+    if (!item || typeof item !== "object") continue;
+    const id = String(item.id || "").trim().toLowerCase().replace(/[^a-z0-9_-]/g, "_").slice(0, 40);
+    const name = String(item.name || "").trim().slice(0, 48);
+    if (!id || !name) continue;
+    out.push({
+      id,
+      name,
+      url: sanitizeUrl(item.url || "", baseOrigin, ""),
+      placeholder: String(item.placeholder || "api_key_...").trim().slice(0, 64),
+      description: String(item.description || "").trim().slice(0, 120),
+      badgeColor: sanitizeColor(item.badgeColor, "#8B5CF6"),
+    });
+  }
+  return out;
+}
+
 export function normalizeGatewayInputUrl(rawInput) {
   if (typeof rawInput !== "string") return "";
   let raw = rawInput.trim();
@@ -116,6 +140,7 @@ export function buildManifestForOrigin(origin, rawManifest = null) {
   if (cleanOrigin === DEFAULT_GATEWAY_ORIGIN && (!rawManifest || rawManifest.id === "disk.direct")) {
     return {
       ...DEFAULT_GATEWAY,
+      mcpPresets: sanitizeMcpPresets(rawManifest?.mcpPresets, cleanOrigin),
       skin: {
         ...DEFAULT_GATEWAY.skin,
         logoDark: isLocalBrowserHost() ? `${DEFAULT_GATEWAY_ORIGIN}/img/logo.svg` : "/img/logo.svg",
@@ -163,6 +188,7 @@ export function buildManifestForOrigin(origin, rawManifest = null) {
     privacyUrl: sanitizeUrl(rawManifest?.privacyUrl, cleanOrigin, `${cleanOrigin}/tos#gdpr`),
     tosVersion: String(rawManifest?.tosVersion || "1.0").slice(0, 32),
     isCustom: cleanOrigin !== DEFAULT_GATEWAY_ORIGIN,
+    mcpPresets: sanitizeMcpPresets(rawManifest?.mcpPresets, cleanOrigin),
     skin: {
       preset,
       logoDark: sanitizeUrl(rawManifest?.skin?.logoDark, cleanOrigin, defaultLogoDark),
@@ -528,3 +554,23 @@ export function resetGatewayToDefault() {
 if (typeof document !== "undefined") {
   applyGatewaySkinToDom(_currentGateway);
 }
+
+// In a regular web browser (never on native mobile or localhost), hydrate optional
+// gateway-provided MCP presets from same-origin /.well-known/direct-gateway.json.
+if (typeof window !== "undefined" && !isLocalBrowserHost() && !Capacitor.isNativePlatform()) {
+  const activeOrigin = _currentGateway?.isCustom ? _currentGateway.origin : window.location.origin;
+  if (activeOrigin === window.location.origin) {
+    fetch("/.well-known/direct-gateway.json", { method: "GET", cache: "no-cache", headers: { Accept: "application/json" } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((manifest) => {
+        if (!manifest || typeof manifest !== "object" || !Array.isArray(manifest.mcpPresets)) return;
+        const presets = sanitizeMcpPresets(manifest.mcpPresets, window.location.origin);
+        if (presets.length > 0) {
+          _currentGateway = { ..._currentGateway, mcpPresets: presets };
+          gatewayConfig.set(_currentGateway);
+        }
+      })
+      .catch(() => {});
+  }
+}
+

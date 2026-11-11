@@ -7,12 +7,12 @@
   import { getDidTag } from "../lib/identity/persistent.js";
   import { isNativeMobilePlatform, signInWithGoogleMobile, isGoogleSignInCanceledError } from "../lib/identity/googleMobileAuth.js";
   import { sshCredsStore, saveSshCredential, clearSshCredential } from "../lib/identity/ssh-credentials.js";
-  import { mcpKeysStore, saveMcpAppKey, removeMcpAppKey, PRESET_MCP_APPS, setMcpKeysIdentity } from "../lib/mcp-keys.js";
+  import { mcpKeysStore, saveMcpAppKey, removeMcpAppKey, getActiveMcpPresets, setMcpKeysIdentity } from "../lib/mcp-keys.js";
   import { fetchNearbyDevices } from "../lib/local-discovery.js";
   import { cameraSyncManager, syncState, updateSettings } from "../lib/camera-sync.js";
   import { isNativeStorageAvailable } from "../lib/native-drive.js";
   import { appVersion, otaState, performOtaUpdate, checkForOtaUpdate } from "../lib/ota-updater.js";
-  import { isIosNative, isExternalCheckoutUrl } from "../lib/platform.js";
+  import { isNativeMobile, isExternalCheckoutUrl } from "../lib/platform.js";
   import FolderPicker from "./FolderPicker.svelte";
   import AssistantAvatarModal from "./AssistantAvatarModal.svelte";
   import GatewayTosModal from "./GatewayTosModal.svelte";
@@ -178,12 +178,13 @@
     if (sshEditId === linkId) cancelSshEdit();
   }
 
-  // MCP API Keys vault (Club Pass, CivitAI, Plane, custom integrations)
+  // MCP API Keys vault (CivitAI, Plane, custom integrations)
   $: if (identity) {
     setMcpKeysIdentity(identity);
   }
-  const isIosApp = isIosNative();
-  let mcpSelectedPreset = isIosApp ? "civitai" : "club_pass"; // "club_pass" | "civitai" | "plane" | "custom"
+  const isMobileApp = isNativeMobile();
+  $: activeMcpPresets = getActiveMcpPresets($gatewayConfig);
+  let mcpSelectedPreset = "civitai";
   let mcpCustomName = "";
   let mcpCustomUrl = "";
   let mcpKeyInput = "";
@@ -196,8 +197,26 @@
 
   $: mcpAppsMap = ($mcpKeysStore && $mcpKeysStore.byApp) || {};
   $: mcpAppsList = Object.values(mcpAppsMap).filter(
-    (app) => !(isIosApp && (app.appId === "club_pass" || app.appId === "whop" || isExternalCheckoutUrl(app.url)))
+    (app) => !(isMobileApp && isExternalCheckoutUrl(app.url))
   );
+
+  function getMcpBadgeText(app) {
+    const id = String(app?.appId || "").toLowerCase();
+    if (id === "plane") return "PL";
+    if (id === "civitai" || id.startsWith("civitai_")) return "CV";
+    const words = String(app?.name || app?.appId || "APP").trim().split(/\s+/).filter(Boolean);
+    if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
+    return (words[0] || "APP").slice(0, 2).toUpperCase();
+  }
+
+  function getMcpBadgeColor(app) {
+    const id = String(app?.appId || "").toLowerCase();
+    const matched = (activeMcpPresets || []).find((p) => p.id === id);
+    if (matched?.badgeColor) return matched.badgeColor;
+    if (id === "civitai" || id.startsWith("civitai_")) return "#EC4899";
+    if (id === "plane") return "#A855F7";
+    return "#8b5cf6";
+  }
 
   function toggleMcpKeyVisibility(appId) {
     showMcpKeyToggles = { ...showMcpKeyToggles, [appId]: !showMcpKeyToggles[appId] };
@@ -253,7 +272,7 @@
 
   function openAddMcpModal(presetId = "plane") {
     mcpSelectedPreset = presetId;
-    const preset = PRESET_MCP_APPS.find(p => p.id === presetId);
+    const preset = (activeMcpPresets || []).find(p => p.id === presetId);
     if (preset) {
       if (presetId === "civitai" && mcpAppsMap["civitai"]) {
         mcpCustomName = "";
@@ -283,7 +302,7 @@
     const key = mcpKeyInput.trim();
 
     if (mcpSelectedPreset !== "custom") {
-      const preset = PRESET_MCP_APPS.find(p => p.id === mcpSelectedPreset);
+      const preset = (activeMcpPresets || []).find(p => p.id === mcpSelectedPreset);
       if (preset) {
         url = preset.url;
         if (mcpSelectedPreset === "civitai" && mcpAppsMap["civitai"]) {
@@ -3691,28 +3710,18 @@
                 <div class="mcp-header-text">
                   <h4 class="card-title">{$_("mcp_api_keys", {}, "MCP API Keys")}</h4>
                   <p class="omd-key-hint">
-                    {isIosApp
-                      ? $_("mcp_api_keys_desc", {}, "API keys for integrating external services and applications (CivitAI, Plane, etc.) via Model Context Protocol. Stored encrypted in your DID graph.").replace(/Club Pass[,،、]\s*/gi, "")
-                      : $_("mcp_api_keys_desc", {}, "API keys for integrating external services and applications (Club Pass, CivitAI, Plane, etc.) via Model Context Protocol. Stored encrypted in your DID graph.")}
+                    {$_("mcp_api_keys_desc", {}, "API keys for integrating external services and applications (CivitAI, Plane, etc.) via Model Context Protocol. Stored encrypted in your DID graph.")}
                   </p>
                 </div>
                 <div class="mcp-header-actions">
-                  {#if !isIosApp && !mcpAppsMap['club_pass'] && !mcpAppsMap['whop']}
-                    <button class="btn-preset-chip" type="button" on:click={() => openAddMcpModal('club_pass')}>
-                      <span class="preset-dot club-pass-dot"></span>
-                      <span>+ Club Pass</span>
-                    </button>
-                  {/if}
-                  <button class="btn-preset-chip" type="button" on:click={() => openAddMcpModal('civitai')}>
-                    <span class="preset-dot civitai-dot"></span>
-                    <span>+ CivitAI</span>
-                  </button>
-                  {#if !mcpAppsMap['plane']}
-                    <button class="btn-preset-chip" type="button" on:click={() => openAddMcpModal('plane')}>
-                      <span class="preset-dot plane-dot"></span>
-                      <span>+ Plane</span>
-                    </button>
-                  {/if}
+                  {#each activeMcpPresets as preset (preset.id)}
+                    {#if preset.id === "civitai" || !mcpAppsMap[preset.id]}
+                      <button class="btn-preset-chip" type="button" on:click={() => openAddMcpModal(preset.id)}>
+                        <span class="preset-dot" style="background: {preset.badgeColor || '#8B5CF6'};"></span>
+                        <span>+ {preset.name}</span>
+                      </button>
+                    {/if}
+                  {/each}
                   <button class="btn-primary-sm" type="button" on:click={() => openAddMcpModal('custom')}>
                     + {$_("add_app_key", {}, "Add application key")}
                   </button>
@@ -3738,12 +3747,12 @@
                         class="text-input-styled"
                         bind:value={mcpSelectedPreset}
                         on:change={() => {
-                          const p = PRESET_MCP_APPS.find(x => x.id === mcpSelectedPreset);
+                          const p = (activeMcpPresets || []).find(x => x.id === mcpSelectedPreset);
                           if (p) { mcpCustomName = p.name; mcpCustomUrl = p.url; }
                         }}
                       >
-                        {#each PRESET_MCP_APPS as preset}
-                          <option value={preset.id}>{preset.name} ({preset.url})</option>
+                        {#each activeMcpPresets as preset}
+                          <option value={preset.id}>{preset.name}{preset.url ? ` (${preset.url})` : ""}</option>
                         {/each}
                         <option value="custom">{$_("custom_app", {}, "Custom application...")}</option>
                       </select>
@@ -3794,7 +3803,7 @@
                         id="mcpKeyValInput"
                         class="omd-key-input"
                         type="password"
-                        placeholder={mcpSelectedPreset === "club_pass" ? "pass_... / muse_..." : mcpSelectedPreset === "civitai" ? "civitai_api_token..." : mcpSelectedPreset === "plane" ? "plane_api_..." : "api_key_..."}
+                        placeholder={(activeMcpPresets.find(x => x.id === mcpSelectedPreset)?.placeholder) || "api_key_..."}
                         bind:value={mcpKeyInput}
                         autocomplete="off"
                         spellcheck="false"
@@ -3822,9 +3831,7 @@
                 {#if mcpAppsList.length === 0 && !showMcpAddModal}
                   <div class="mcp-empty-state">
                     <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.5; margin-bottom: 8px;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                    <p>{isIosApp
-                      ? $_("no_mcp_keys_yet", {}, "No application keys saved yet. Add CivitAI, Plane or a custom service.").replace(/Club Pass[,،、]\s*/gi, "")
-                      : $_("no_mcp_keys_yet", {}, "No application keys saved yet. Add Club Pass, CivitAI, Plane or a custom service.")}</p>
+                    <p>{$_("no_mcp_keys_yet", {}, "No application keys saved yet. Add CivitAI, Plane or a custom service.")}</p>
                   </div>
                 {:else}
                   {#each mcpAppsList as app (app.appId)}
@@ -3834,12 +3841,12 @@
                     <div class="mcp-app-item">
                       <div class="mcp-app-header">
                         <div class="mcp-app-identity">
-                          <span class="mcp-app-badge {app.appId === 'plane' ? 'plane' : (app.appId === 'club_pass' || app.appId === 'whop') ? 'club_pass' : (app.appId === 'civitai' || app.appId.startsWith('civitai_')) ? 'civitai' : 'custom'}">
-                            {app.appId === 'plane' ? 'PL' : (app.appId === 'club_pass' || app.appId === 'whop') ? 'CP' : (app.appId === 'civitai' || app.appId.startsWith('civitai_')) ? 'CV' : (app.name || 'APP').slice(0, 2).toUpperCase()}
+                          <span class="mcp-app-badge" style="background: {getMcpBadgeColor(app)};">
+                            {getMcpBadgeText(app)}
                           </span>
                           <div class="mcp-app-title-box">
                             <span class="mcp-app-title">{app.name || app.appId}</span>
-                            {#if app.url}
+                            {#if app.url && !isMobileApp}
                               <a class="mcp-app-url" href={app.url} target="_blank" rel="noopener noreferrer">
                                 {app.url.replace(/^https?:\/\//, '')}
                                 <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-left: 2px;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
@@ -6210,7 +6217,6 @@
     border-radius: 50%;
   }
 
-  .preset-dot.club-pass-dot { background: linear-gradient(135deg, #a855f7, #ec4899); }
   .preset-dot.civitai-dot { background: #EC4899; }
   .preset-dot.plane-dot { background: #A855F7; }
 
@@ -6327,7 +6333,6 @@
     color: #fff;
   }
 
-  .mcp-app-badge.club_pass { background: linear-gradient(135deg, #9333ea, #db2777); }
   .mcp-app-badge.civitai { background: #EC4899; }
   .mcp-app-badge.plane { background: #A855F7; }
   .mcp-app-badge.custom { background: #8b5cf6; }

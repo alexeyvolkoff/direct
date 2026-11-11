@@ -3042,16 +3042,20 @@ async def is_krea_available(ctx=None) -> bool:
 
 
 async def check_krea_status(ctx=None) -> dict:
-    """Checks if Unified Creative Studio (Krea 2 / Anima or local SDXL) can be activated on this node."""
+    """Checks if Creative Studio engines or local SDXL can be activated on this node."""
     krea_ok = await is_krea_available(ctx)
     sdxl_ok = await is_comfy_available()
+    is_priv = bool(getattr(ctx, "private_mode", False) or getattr(ctx, "trusted_owner", False)) if ctx else True
     if krea_ok or sdxl_ok:
         return {
             "allowed": True,
-            "tier": "owner",
+            "tier": "owner" if is_priv else "standard",
+            "studio_enabled": bool(krea_ok or is_priv),
+            "director_allowed": bool(krea_ok or is_priv),
             "sdxl_allowed": sdxl_ok,
             "krea_allowed": krea_ok,
-            "uncensored": True,
+            "video_allowed": krea_ok,
+            "uncensored": bool(is_priv),
             "krea_notice": "",
         }
     return {"allowed": False, "error": "Creative Studio requires ComfyUI on this node."}
@@ -4059,7 +4063,7 @@ async def generate_sdxl_studio_image(
                 comfy_ref_names.append(c_name)
                 comfy_ref_bytes.append(ref_bytes)
 
-    # Проверяем право на uncensored-режим (Owner / Club Member / Muse Pass на не-iOS)
+    # Check uncensored generation capability from node status
     is_uncensored = bool(getattr(ctx, "private_mode", False) or getattr(ctx, "trusted_owner", False))
     try:
         st = await check_krea_status(ctx)

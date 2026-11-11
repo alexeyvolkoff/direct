@@ -2,7 +2,7 @@ import { writable } from "svelte/store";
 import Gun from "gun/gun";
 import "gun/sea";
 import { omdKeyStore, getStoredOmdKey, deriveEncryptionKey } from "./omd-key.js";
-import { isIosNative } from "./platform.js";
+import { isNativeMobile } from "./platform.js";
 
 /**
  * MCP Application API Keys Vault.
@@ -16,8 +16,7 @@ import { isIosNative } from "./platform.js";
  *   "omd_mcp_keys:<mainPub>" -> instant availability on reload.
  */
 
-import { Capacitor } from "@capacitor/core";
-import { getGatewayHubUrl } from "./gateway-config.js";
+import { getGatewayHubUrl, getActiveGateway } from "./gateway-config.js";
 
 const LS_PREFIX = "omd_mcp_keys";
 const GRAPH_ROOT = "keys";
@@ -26,14 +25,6 @@ const SHARED_GRAPH_PREFIX = "mcp_keys:";
 const MCP_SALT = "omd-mcp-keys-salt-v1";
 
 const ALL_PRESET_MCP_APPS = [
-  {
-    id: "club_pass",
-    name: "Club Pass",
-    url: "https://whop.com/ai-studio-direct/creative-studio-direct",
-    placeholder: "pass_... / muse_...",
-    description: "Creative Studio Club Pass or Muse Pass",
-    badgeColor: "#8B5CF6",
-  },
   {
     id: "civitai",
     name: "CivitAI",
@@ -52,9 +43,21 @@ const ALL_PRESET_MCP_APPS = [
   },
 ];
 
-export const PRESET_MCP_APPS = (isIosNative() || (typeof window !== "undefined" && Capacitor.isNativePlatform()))
-  ? ALL_PRESET_MCP_APPS.filter((p) => p.id !== "club_pass")
-  : ALL_PRESET_MCP_APPS;
+export const PRESET_MCP_APPS = ALL_PRESET_MCP_APPS;
+
+export function getActiveMcpPresets(gw = null) {
+  if (isNativeMobile()) return [...ALL_PRESET_MCP_APPS];
+  const active = gw || getActiveGateway();
+  const extra = Array.isArray(active?.mcpPresets) ? active.mcpPresets : [];
+  const seen = new Set();
+  const merged = [];
+  for (const p of [...extra, ...ALL_PRESET_MCP_APPS]) {
+    if (!p || !p.id || seen.has(p.id)) continue;
+    seen.add(p.id);
+    merged.push(p);
+  }
+  return merged;
+}
 
 let identityRef = null;
 let boundPub = "";
@@ -276,7 +279,7 @@ async function pushEntriesToHub(mainPub, entriesObj) {
 async function fetchFromHub(mainPub) {
   if (!mainPub) return;
   try {
-    const resp = await fetch(`${HUB_URL}/api/mcp-keys?mainPub=${encodeURIComponent(mainPub)}`);
+    const resp = await fetch(`${getGatewayHubUrl()}/api/mcp-keys?mainPub=${encodeURIComponent(mainPub)}`);
     if (!resp.ok) return;
     const data = await resp.json();
     const keys = data && data.keys && typeof data.keys === "object" ? data.keys : {};
