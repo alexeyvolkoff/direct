@@ -504,3 +504,148 @@ html.skin-chat .dark-theme,
   --var---sds-color-text-brand-on-brand-: var(--Magenta-900);
   --var---sds-color-border-brand-default-: var(--accent);
 }
+
+/* ============================================================================
+   6. GATEWAY SKIN PRESET: CLASSIC ONMYDISK ("omd-classic") — LIGHT & DARK
+      Activated dynamically ONLY in files mode when connected to a community
+      OnMyDisk gateway (e.g. direct.onmydisk.net). Never affects .skin-chat.
+   ============================================================================ */
+html.gateway-skin-omd.light-theme:not(.skin-chat),
+html.gateway-skin-omd:not(.dark-theme):not(.omd-dark):not(.skin-chat),
+html.gateway-skin-omd .skin-files.light-theme {
+  --skin-name: "omd-classic-light";
+
+  --bg-primary: #F6F8F9;
+  --bg-secondary: #FFFFFF;
+  --bg-card: #FFFFFF;
+  --bg-card-hover: #ECF0F2;
+  --bg-elevated: #FFFFFF;
+  --bg-soft: rgba(24, 125, 161, 0.07);
+  --bg-hover: rgba(24, 125, 161, 0.08);
+  --sidebar-bg: #FFFFFF;
+  --sidebar-shadow: 3px 0 14px rgba(0, 0, 0, 0.05);
+
+  --border-color: #D6DDE1;
+  --border-subtle: #E5ECEF;
+
+  --text-primary: #101C22;
+  --text-secondary: #546B75;
+  --text-muted: #889FA8;
+  --selected-text: #184562;
+
+  --accent: #184562;
+  --accent-hover: #2996CC;
+  --accent-active: #12344B;
+  --accent-soft: #E4F1FA;
+  --accent-border: rgba(41, 150, 204, 0.30);
+  --accent-glow: rgba(41, 150, 204, 0.20);
+  --accent-gradient: linear-gradient(135deg, #184562 0%, #2996CC 100%);
+  --accent-on-brand: #FFFFFF;
+
+  --accent-blue: var(--accent);
+  --accent-blue-hover: var(--accent-hover);
+  --accent-blue-active: var(--accent-soft);
+  --Primary: var(--accent);
+
+  --user-bubble-bg: #E4F1FA;
+  --user-bubble-border: #C8E2F4;
+  --pill-bg: #FFFFFF;
+
+  --top-menu-color: #184562;
+  --top-menu-hover-color: #2996CC;
+  --wx-color-primary: #184562;
+  --wx-color-primary-border: #184562;
+  --wx-color-primary-hover: #2996CC;
+  --wx-color-primary-selected: #E4F1FA;
+  --wx-color-primary-font: #FFFFFF;
+  --wx-background: #FFFFFF;
+  --wx-background-alt: #F4F8FA;
+  --wx-background-hover: #ECF0F2;
+  --wx-fm-background: #F6F8F9;
+  --wx-fm-select-background: #E4F1FA;
+  --wx-fm-grid-border: 1px solid #D6DDE1;
+  --wx-fm-grid-header-color: #F6F8F9;
+  --wx-fm-button-font-color: #546B75;
+  --wx-table-border: 1px solid #D6DDE1;
+  --wx-table-header-border: 1px solid #D6DDE1;
+  --wx-table-header-background: #F6F8F9;
+  --wx-table-select-background: #E4F1FA;
+  --wx-table-select-focus-background: #D4E9F7;
+  --wx-color-font: #101C22;
+  --wx-color-font-alt: #546B75;
+  --wx-color-secondary-border: #D6DDE1;
+  --wx-border: 1px solid #D6DDE1;
+
+  --scrollbar-thumb: #BAC7CE;
+  --scrollbar-thumb-hover: #9BB0BA;
+}
+
+html.gateway-skin-omd.dark-theme:not(.skin-chat),
+html.gateway-skin-omd.omd-dark:not(.skin-chat),
+html.gateway-skin-omd .skin-files.dark-theme {
+  --skin-name: "omd-classic-dark";
+
+  --bg-primary: #101C22;
+  --bg-secondary: #202A2F;
+  --bg-card: #202A2F;
+  --bg-card-hover: #29363D;
+  --bg-elevated: #243138;
+  --bg-soft: rgba(41, 150, 204, 0.12);
+  --bg-hover: rgba(41, 150, 204, 0.09);
+  --sidebar-bg: #202A2F;
+  --sidebar-shadow: 4px 0 16px rgba(0, 0, 0, 0.25);
+
+  --border-color: #3D4F57;
+  --border-subtle: #2C3B42;
+
+  --text-primary: #ECF2F5;
+  --text-secondary: #A6B8C0;
+  --text-muted: #7B9099;
+  --selected-text: #D6EEFA;
+
+  --accent: #2996CC;
+  --accent-hover: #37A9EF;
+  --accent-active: #1E7EAE;
+  --accent-soft: rgba(41, 150, 204, 0.20);
+  --accent-border: rgba(41, 150, 204, 0.38);
+  --accent-glow: rgba(41, 150, 204, 0.28);
+  --accent-gradient: linear-gradient(135deg, #1E7EAE 0%, #2996CC 100%);
+  --accent-on-brand: #FFFFFF;
+
+  --accent-blue: var(--accent);
+  --accent-blue-hover: var(--accent-hover);
+  --accent-blue-active: var(--accent-soft);
+  --Primary: var(--accent);
+
+  --user-bubble-bg: #1D2B33;
+  --user-bubble-border: #334854;
+  --pill-bg: #202A2F;
+
+  --top-menu-color: #2996CC;
+  --top-menu-hover-color: #37A9EF;
+  --wx-color-primary: #2996CC;
+  --wx-color-primary-border: #37A9EF;
+  --wx-color-primary-hover: #37A9EF;
+  --wx-color-primary-selected: rgba(41, 150, 204, 0.25);
+  --wx-color-primary-font: #FFFFFF;
+  --wx-background: #202A2F;
+  --wx-background-alt: #18242B;
+  --wx-background-hover: #29363D;
+  --wx-fm-background: #101C22;
+  --wx-fm-select-background: rgba(41, 150, 204, 0.25);
+  --wx-fm-grid-border: 1px solid #3D4F57;
+  --wx-fm-grid-header-color: #18242B;
+  --wx-fm-button-font-color: rgba(236, 242, 245, 0.85);
+  --wx-table-border: 1px solid #3D4F57;
+  --wx-table-header-border: 1px solid #3D4F57;
+  --wx-table-header-background: #18242B;
+  --wx-table-select-background: rgba(41, 150, 204, 0.25);
+  --wx-table-select-focus-background: rgba(41, 150, 204, 0.34);
+  --wx-color-font: #ECF2F5;
+  --wx-color-font-alt: #A6B8C0;
+  --wx-color-secondary-border: #3D4F57;
+  --wx-border: 1px solid #3D4F57;
+
+  --scrollbar-thumb: #435761;
+  --scrollbar-thumb-hover: #58717D;
+}

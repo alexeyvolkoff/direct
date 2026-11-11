@@ -1,8 +1,6 @@
 import Gun from "gun/gun";
 import "gun/sea";
-
-const RELAY_URL = "wss://disk.direct:8765/gun";
-
+import { getGatewayRelayWsUrl, getGatewayHubUrl } from "./gateway-config.js";
 import { sharedLinkUrl, sanitizeShareUrl } from "./public-origin.js";
 
 /**
@@ -10,13 +8,7 @@ import { sharedLinkUrl, sanitizeShareUrl } from "./public-origin.js";
  * @returns {string}
  */
 function authBaseUrl() {
-  if (typeof window === "undefined" || !window.location.hostname ||
-      window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
-    return "https://disk.direct:8765";
-  }
-  const host = window.location.hostname;
-  const proto = (window.location.protocol === "http:") ? "http:" : "https:";
-  return `${proto}//${host}:8765`;
+  return getGatewayHubUrl();
 }
 
 /**
@@ -186,11 +178,7 @@ export async function createShare(options = {}) {
 
   // 2. Put in GunDB via relay REST endpoint for guaranteed server-side persistence
   try {
-    const hubHost = (typeof window !== "undefined" && window.location.hostname && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1")
-      ? window.location.hostname
-      : "disk.direct";
-    const hubProtocol = (typeof window !== "undefined" && window.location.protocol === "http:" && hubHost !== "disk.direct") ? "http:" : "https:";
-    const hubUrl = `${hubProtocol}//${hubHost}:8765`;
+    const hubUrl = getGatewayHubUrl();
 
     fetch(`${hubUrl}/api/share-record`, {
       method: "POST",
@@ -402,7 +390,7 @@ export async function resolveShare(address, password = "", gunInstance = null) {
   const lastPartPub = ownerPub.includes(".") ? ownerPub.split(".").pop() : "";
 
   // 2. Fetch from GunDB using active .on() streaming to receive full properties as they arrive
-  const gun = gunInstance || Gun({ peers: [RELAY_URL], localStorage: false });
+  const gun = gunInstance || Gun({ peers: [getGatewayRelayWsUrl()], localStorage: false });
 
   const rawRecord = await new Promise((resolve) => {
     let resolved = false;

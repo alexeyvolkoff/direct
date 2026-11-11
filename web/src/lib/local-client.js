@@ -13,6 +13,7 @@
 import { isNativeStorageAvailable, NativeStorageDrive } from "./native-drive.js";
 import { parseStoragePath } from "./storage-path.js";
 import { deviceRegistry } from "./device-registry.js";
+import { getGatewayHost } from "./gateway-config.js";
 
 const DB_NAME = "omd_local";
 const DB_VERSION = 1;
@@ -932,9 +933,7 @@ export class LocalDrive {
       const needsServerFix = !obj.server || obj.server === "localhost" || obj.server === "127.0.0.1"
         || String(obj.server).includes("localhost") || String(obj.server).includes("127.0.0.1");
       if (needsServerFix) {
-        const h = typeof window !== "undefined" ? window.location.hostname : "";
-        const host = (!h || h === "localhost" || h === "127.0.0.1") ? "disk.direct" : h;
-        obj.server = host;
+        obj.server = getGatewayHost();
         // persist migrated value so next load is correct
         try { localStorage.setItem("omd-local-settings", JSON.stringify(obj)); } catch (_) {}
       }

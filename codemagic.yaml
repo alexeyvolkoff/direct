@@ -1,6 +1,6 @@
 workflows:
   ios-workflow:
-    name: OnMyDisk iOS
+    name: Disk Direct iOS
     max_build_duration: 60
     instance_type: mac_mini_m2
     integrations:
@@ -32,7 +32,9 @@ workflows:
           cd web
           npm install --legacy-peer-deps
           export NODE_OPTIONS="--max-old-space-size=6144"
-          export VITE_APP_VERSION="3.0.${BUILD_NUMBER:-4823}"
+          RAW_NUM="${BUILD_NUMBER:-${PROJECT_BUILD_NUMBER:-0}}"
+          if [ "$RAW_NUM" -lt 6000 ] 2>/dev/null; then BUILD_NUM=$((6000 + RAW_NUM)); else BUILD_NUM="$RAW_NUM"; fi
+          export VITE_APP_VERSION="3.1.${BUILD_NUM}"
           # No pre-compressed .gz siblings: they bloat the bundle and Android
           # AAPT2 (same dist) rejects them as duplicate resources.
           COMPRESS_ASSETS=0 npm run build
@@ -43,10 +45,11 @@ workflows:
           npx cap sync ios
       - name: Configure iOS version & build number
         script: |
-          BUILD_NUM="${BUILD_NUMBER:-4823}"
-          echo "Setting iOS Marketing Version to 3.0.1 and Build Number to $BUILD_NUM"
+          RAW_NUM="${BUILD_NUMBER:-${PROJECT_BUILD_NUMBER:-0}}"
+          if [ "$RAW_NUM" -lt 6000 ] 2>/dev/null; then BUILD_NUM=$((6000 + RAW_NUM)); else BUILD_NUM="$RAW_NUM"; fi
+          echo "Setting iOS Marketing Version to 3.1.0 and Build Number to $BUILD_NUM"
           cd mobile/ios/App
-          agvtool new-marketing-version "3.0.1"
+          agvtool new-marketing-version "3.1.0"
           agvtool new-version -all "$BUILD_NUM"
       - name: Install CocoaPods
         script: |
@@ -98,10 +101,10 @@ workflows:
             --workspace App.xcworkspace \
             --scheme App
           if [ -f "build/ios/ipa/App.ipa" ]; then
-            mv build/ios/ipa/App.ipa build/ios/ipa/OnMyDisk.ipa
-            echo "Renamed output to OnMyDisk.ipa"
+            mv build/ios/ipa/App.ipa build/ios/ipa/DiskDirect.ipa
+            echo "Renamed output to DiskDirect.ipa"
           fi
-          test -f "build/ios/ipa/OnMyDisk.ipa"
+          test -f "build/ios/ipa/DiskDirect.ipa"
     artifacts:
       - mobile/ios/App/build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log

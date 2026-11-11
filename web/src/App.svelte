@@ -55,6 +55,16 @@
   import QrScannerModal from "./components/QrScannerModal.svelte";
   import UpdateNotification from "./components/UpdateNotification.svelte";
   import OnboardingModal from "./components/OnboardingModal.svelte";
+  import GatewayTosModal from "./components/GatewayTosModal.svelte";
+  import {
+    gatewayConfig,
+    getGatewayTosUrl,
+    getGatewayPrivacyUrl,
+    getGatewayBrandPalette,
+    getGatewayRelayWsUrl,
+    getGatewayOauthBridgeOrigin,
+    applyGatewaySkinToDom,
+  } from "./lib/gateway-config.js";
   import { resolveShare, loadSharedByMe, subscribeSharedByMe, loadSharedToMe, subscribeSharedToMe, addSharedToMe, removeSharedToMe, revokeShare } from "./lib/sharing.js";
   import { publicOrigin, sharedLinkUrl, sanitizeShareUrl } from "./lib/public-origin.js";
   import { resolveAppMode, APP_MODE_CHAT, getDomainBrandTitle } from "./lib/app-mode.js";
@@ -128,7 +138,6 @@
   $: if (currentApp === "chat") chatAppMounted = true;
   $: filesOverlay = appMode === APP_MODE_CHAT && currentApp === "filemanager";
   let settingsSection = "profile";
-  let rootName = "Disk Direct";
   let terminalPort = 22;
   let activeDeviceId = null;
   let activeWebApp = null; // { linkId, deviceName, slug, name, port, entryPath, icon }
@@ -188,14 +197,29 @@
       })
       .catch(() => {});
   }
-  // Brand follows the resolved deployment domain: "AI Assistant" for the chat
-  // applet and "Disk Direct" everywhere else. Login widgets mirror this.
-  $: brandName = appMode === APP_MODE_CHAT ? "AI Assistant" : "Disk Direct";
+  // Brand follows the resolved deployment domain / active gateway: "AI Assistant"
+  // for the chat applet and the active gateway's brand ("Disk Direct" by default) everywhere else.
+  let brandLogoBroken = false;
+  let showGatewayModal = false;
+  let pendingGatewayDeepLinkUrl = "";
+  $: if ($gatewayConfig || isDarkTheme !== undefined) {
+    brandLogoBroken = false;
+  }
+  $: rootName = appMode === APP_MODE_CHAT
+    ? "AI Assistant"
+    : ($gatewayConfig?.shortName || $gatewayConfig?.brandName || "Disk Direct");
+  $: brandName = appMode === APP_MODE_CHAT
+    ? "AI Assistant"
+    : ($gatewayConfig?.brandName || "Disk Direct");
   $: brandLogoSrc = appMode === APP_MODE_CHAT
     ? (isDarkTheme ? "/customtheme/logo-chat.svg" : "/customtheme/logo-chat-dark.svg")
-    : (isDarkTheme ? "/img/logo.svg" : "/img/logo-dark.svg");
+    : (brandLogoBroken
+        ? (isDarkTheme ? "/img/logo.svg" : "/img/logo-dark.svg")
+        : (isDarkTheme ? ($gatewayConfig?.skin?.logoDark || "/img/logo.svg") : ($gatewayConfig?.skin?.logoLight || "/img/logo-dark.svg")));
   $: if (typeof document !== "undefined" && !isSharedRoute) {
-    document.title = getDomainBrandTitle();
+    document.title = appMode === APP_MODE_CHAT
+      ? getDomainBrandTitle()
+      : ($gatewayConfig?.brandName || getDomainBrandTitle());
   }
 
   // Device-namespaced id of the folder currently shown in the filemanager,
@@ -333,9 +357,43 @@
     showPairModal = true;
   }
 
+  function extractGatewayFromRawUrl(raw) {
+    if (!raw || typeof raw !== "string") return "";
+    const trimmed = raw.trim();
+    try {
+      if (/^(direct|diskdirect|onmydisk):\/\/gateway/i.test(trimmed)) {
+        const qIndex = trimmed.indexOf("?");
+        if (qIndex !== -1) {
+          const params = new URLSearchParams(trimmed.slice(qIndex + 1));
+          return params.get("url") || params.get("gateway") || "";
+        }
+      }
+      if (trimmed.includes("gateway=")) {
+        const u = new URL(trimmed, typeof window !== "undefined" ? window.location.origin : "https://disk.direct");
+        return u.searchParams.get("gateway") || "";
+      }
+    } catch (_) {}
+    return "";
+  }
+
+  function openGatewaySwitchWithUrl(targetUrl = "") {
+    if (appMode === APP_MODE_CHAT) return;
+    pendingGatewayDeepLinkUrl = targetUrl || "";
+    showGatewayModal = false;
+    setTimeout(() => {
+      showGatewayModal = true;
+    }, 0);
+  }
+
   function handleQrScan(e) {
     showQrScannerModal = false;
-    const { linkId, name } = e.detail || {};
+    const { raw, linkId, name } = e.detail || {};
+    const gwUrl = extractGatewayFromRawUrl(raw);
+    if (gwUrl) {
+      closeConnectModal();
+      openGatewaySwitchWithUrl(gwUrl);
+      return;
+    }
     if (linkId) {
       closeConnectModal();
       openPairModal(linkId, name);
@@ -902,6 +960,45 @@
   onMount(() => {
     initAppProxyServiceWorkerBridge();
     initGalleryCaptionAutoHide();
+    applyGatewaySkinToDom($gatewayConfig);
+
+    // Handle gateway switch event (preserves DID, re-points GunDB & refreshes device list)
+    const onGatewayChanged = (ev) => {
+      const nextGw = ev?.detail;
+      applyGatewaySkinToDom(nextGw || $gatewayConfig);
+      if (identity && typeof identity.reconnectRelay === "function") {
+        try {
+          identity.reconnectRelay();
+          publishAllConnectedDevices();
+          startDeviceList();
+        } catch (err) {
+          console.warn("[App] Gateway switch Gun reconnect warning:", err);
+        }
+      }
+    };
+    window.addEventListener("omd-gateway-changed", onGatewayChanged);
+
+    // Handle native/web deep links: direct://gateway?url=... or ?gateway=...
+    const onNativeDeepLink = (ev) => {
+      const rawUrl = ev?.detail?.url || "";
+      const gwUrl = extractGatewayFromRawUrl(rawUrl);
+      if (gwUrl) {
+        openGatewaySwitchWithUrl(gwUrl);
+      }
+    };
+    window.addEventListener("omd-deeplink", onNativeDeepLink);
+    if (window.__pendingDeepLinkUrl) {
+      const pending = window.__pendingDeepLinkUrl;
+      window.__pendingDeepLinkUrl = "";
+      const gwUrl = extractGatewayFromRawUrl(pending);
+      if (gwUrl) openGatewaySwitchWithUrl(gwUrl);
+    }
+    try {
+      const initGwParam = new URLSearchParams(window.location.search).get("gateway");
+      if (initGwParam) {
+        openGatewaySwitchWithUrl(initGwParam);
+      }
+    } catch (_) {}
 
     // Mark browser workspace as entered so future visits to `/` open the app directly
     // instead of the `/about` landing page, and strip `?launch=1` cleanly from the URL.
@@ -1679,7 +1776,7 @@
         const { SignInWithApple } = await import("@capacitor-community/apple-sign-in");
         const res = await SignInWithApple.authorize({
           clientId: "net.onmydisk.app",
-          redirectURI: "https://disk.direct",
+          redirectURI: getGatewayOauthBridgeOrigin(),
           scopes: "email name",
         });
         if (!res?.response?.identityToken) {
@@ -6682,10 +6779,11 @@ async function blobToBase64(blob) {
     return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
   }
 
-  $: appIconColor = isDarkTheme ? "#8691CC" : "#46508A";
-  $: brandColor = isDarkTheme ? "#7B86C4" : "#46508A";
+  $: gatewayBrandPalette = getGatewayBrandPalette($gatewayConfig, isDarkTheme);
+  $: appIconColor = gatewayBrandPalette.appIconColor;
+  $: brandColor = gatewayBrandPalette.brandColor;
   $: chatIconColor = appIconColor;
-  $: brandHoverColor = isDarkTheme ? "#929CD4" : "#5863A6";
+  $: brandHoverColor = gatewayBrandPalette.brandHoverColor;
 
   $: getCustomIcon = (file, size) => {
     if (file.mimeType === "application/x-terminal" || file.id === "subapp:terminal") {
@@ -6766,7 +6864,7 @@ async function blobToBase64(blob) {
         </div>
         <div
           class="skin-files {isDarkTheme ? 'wx-willow-dark-theme dark-theme' : 'wx-willow-theme light-theme'}"
-          style="height: 100%; {isDarkTheme ? '--top-menu-color: #7B86C4; --top-menu-hover-color: #929CD4; --wx-color-primary: #5863A6; --wx-color-primary-border: #6672B8; --wx-color-primary-hover: #6874BA; --wx-color-primary-selected: rgba(123, 134, 196, 0.18); --wx-fm-select-background: rgba(123, 134, 196, 0.18); --wx-background: #1F2430; --wx-background-alt: #191D28; --wx-background-hover: #282E3D; --wx-fm-background: #151821; --bg-secondary: #1F2430; --bg-primary: #151821; --border-color: #32394B; --wx-border: 1px solid #32394B; --selected-text: #DCE0F5; --sidebar-shadow: 4px 0 16px rgba(0, 0, 0, 0.25);' : '--top-menu-color: #46508A; --top-menu-hover-color: #5863A6; --wx-color-primary: #3D467A; --wx-color-primary-border: #3D467A; --wx-color-primary-hover: #5863A6; --wx-color-primary-selected: #E9ECF7; --wx-fm-select-background: #E9ECF7; --wx-background: #FFFFFF; --wx-background-alt: #F1F3F9; --wx-background-hover: #E9ECF5; --wx-fm-background: #F6F7FA; --bg-secondary: #FFFFFF; --bg-primary: #F6F7FA; --border-color: #D8DCE8; --wx-border: 1px solid #D8DCE8; --selected-text: #343C6B; --sidebar-shadow: 3px 0 14px rgba(22, 25, 37, 0.05);'}"
+          style="height: 100%; {gatewayBrandPalette.fmInlineStyle}"
         >
           {#key rootName + "_" + $locale}
             <Locale words={getSvarLocale($locale, rootName)}>
@@ -7415,7 +7513,7 @@ async function blobToBase64(blob) {
         <div class="login-body {isDarkTheme ? 'dark-theme' : 'light-theme'}">
           <div class="login-card">
             <div class="login-logo">
-              <img src={brandLogoSrc} alt={brandName} height="60" />
+              <img src={brandLogoSrc} alt={brandName} height="60" on:error={() => { brandLogoBroken = true; }} />
             </div>
             <h2 class="login-title mb-2">Password Protected</h2>
             <p class="login-subtitle mb-4">This shared item is encrypted. Enter password to view.</p>
@@ -7519,7 +7617,7 @@ async function blobToBase64(blob) {
             </div>
 
             <div class="login-logo">
-              <img src={brandLogoSrc} alt={brandName} height="60" />
+              <img src={brandLogoSrc} alt={brandName} height="60" on:error={() => { brandLogoBroken = true; }} />
             </div>
 
             <input
@@ -7615,9 +7713,18 @@ async function blobToBase64(blob) {
 
                   <div class="login-footer-terms">
                     {$_("terms_continue_agree", {}, "By continuing, you agree to our")} 
-                    <a href={Capacitor.isNativePlatform() ? "https://aiassistant.direct/tos" : "/tos"} target="_blank" rel="noopener noreferrer">{$_("terms_of_service", {}, "Terms of Service")}</a> &amp; 
-                    <a href={Capacitor.isNativePlatform() ? "https://aiassistant.direct/tos#gdpr" : "/tos#gdpr"} target="_blank" rel="noopener noreferrer">{$_("gdpr_cookies_ai_policy", {}, "GDPR, Cookies and AI Policy")}</a>.
+                    <a href={$gatewayConfig ? getGatewayTosUrl() : "/tos"} target="_blank" rel="noopener noreferrer">{$_("terms_of_service", {}, "Terms of Service")}</a> &amp; 
+                    <a href={$gatewayConfig ? getGatewayPrivacyUrl() : "/tos#gdpr"} target="_blank" rel="noopener noreferrer">{$_("gdpr_cookies_ai_policy", {}, "GDPR, Cookies and AI Policy")}</a>.
                   </div>
+                  {#if appMode !== APP_MODE_CHAT}
+                    <div class="login-footer-gateway" style="margin-top: 10px; font-size: 12px; opacity: 0.82; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                      <span class="text-secondary">{$_("gateway_lbl", {}, "Gateway")}: <strong>{$gatewayConfig.host}</strong></span>
+                      <span>&middot;</span>
+                      <button type="button" class="small-link" style="font-size: 12px;" on:click={() => openGatewaySwitchWithUrl("")}>
+                        {$_("change_btn", {}, "Change")}
+                      </button>
+                    </div>
+                  {/if}
                 </div>
 
           {:else if loginMode === 'key'}
@@ -7780,9 +7887,18 @@ async function blobToBase64(blob) {
 
               <div class="login-footer-terms">
                 {$_("by_creating_agree", {}, "By creating an ID, you agree to our")} 
-                <a href={Capacitor.isNativePlatform() ? "https://aiassistant.direct/tos" : "/tos"} target="_blank" rel="noopener noreferrer">{$_("terms_of_service", {}, "Terms of Service")}</a> &amp; 
-                <a href={Capacitor.isNativePlatform() ? "https://aiassistant.direct/tos#gdpr" : "/tos#gdpr"} target="_blank" rel="noopener noreferrer">{$_("gdpr_cookies_ai_policy", {}, "GDPR, Cookies and AI Policy")}</a>.
+                <a href={$gatewayConfig ? getGatewayTosUrl() : "/tos"} target="_blank" rel="noopener noreferrer">{$_("terms_of_service", {}, "Terms of Service")}</a> &amp; 
+                <a href={$gatewayConfig ? getGatewayPrivacyUrl() : "/tos#gdpr"} target="_blank" rel="noopener noreferrer">{$_("gdpr_cookies_ai_policy", {}, "GDPR, Cookies and AI Policy")}</a>.
               </div>
+              {#if appMode !== APP_MODE_CHAT}
+                <div class="login-footer-gateway" style="margin-top: 10px; font-size: 12px; opacity: 0.82; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                  <span class="text-secondary">{$_("gateway_lbl", {}, "Gateway")}: <strong>{$gatewayConfig.host}</strong></span>
+                  <span>&middot;</span>
+                  <button type="button" class="small-link" style="font-size: 12px;" on:click={() => openGatewaySwitchWithUrl("")}>
+                    {$_("change_btn", {}, "Change")}
+                  </button>
+                </div>
+              {/if}
             </div>
 
           {:else if loginMode === 'recovery'}
@@ -7922,6 +8038,13 @@ async function blobToBase64(blob) {
     showOnboardingModal = false;
     openFilesApp();
   }}
+/>
+
+<GatewayTosModal
+  bind:open={showGatewayModal}
+  initialUrl={pendingGatewayDeepLinkUrl}
+  {isDarkTheme}
+  on:close={() => { pendingGatewayDeepLinkUrl = ""; }}
 />
 
 <UpdateNotification {isDarkTheme} />

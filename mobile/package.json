@@ -1,9 +1,9 @@
 {
-  "name": "omd-mobile",
-  "version": "3.0.4823",
-  "description": "Mobile sub-project for On My Disk using Capacitor",
+  "name": "disk-direct-mobile",
+  "version": "3.1.6000",
+  "description": "Mobile sub-project for Disk Direct using Capacitor",
   "scripts": {
-    "sync": "cap sync",
+    "sync": "cap sync && find android/app/src/main/assets/public ios/App/App/public \\( -name '*.gz' -o -name '*.br' \\) -delete",
     "open:android": "cap open android",
     "open:ios": "cap open ios",
     "build:android": "cap build android",

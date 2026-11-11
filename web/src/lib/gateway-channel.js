@@ -12,6 +12,7 @@
 import { ensureChannelToken } from "./omd-key.js";
 import { deviceRegistry } from "./device-registry.js";
 import { getOrCreateLocalLinkId } from "./local-client.js";
+import { getGatewayHost, getGatewayOrigin } from "./gateway-config.js";
 
 const WS_URL_OVERRIDE_KEY = "omd_ws_url";
 
@@ -23,7 +24,7 @@ function loadQWebChannelScript() {
     const loc = window.location;
     const rawHost = loc.hostname || "";
     const isLocal = !rawHost || rawHost === "localhost" || rawHost === "127.0.0.1";
-    s.src = isLocal ? "https://disk.direct/qwebchannel/qwebchannel.js" : "/qwebchannel/qwebchannel.js";
+    s.src = isLocal ? `${getGatewayOrigin()}/qwebchannel/qwebchannel.js` : "/qwebchannel/qwebchannel.js";
     s.onload = () => resolve();
     s.onerror = () => reject(new Error("Failed to load " + s.src));
     document.head.appendChild(s);
@@ -32,11 +33,9 @@ function loadQWebChannelScript() {
 
 function defaultGatewayUrl() {
   if (typeof window === "undefined") return "";
-  const loc = window.location;
-  const rawHost = loc.hostname || "";
-  const isLocal = !rawHost || rawHost === "localhost" || rawHost === "127.0.0.1";
-  const host = isLocal ? "disk.direct" : rawHost;
-  const proto = (isLocal || host === "disk.direct" || loc.protocol === "https:") ? "wss:" : "ws:";
+  const origin = getGatewayOrigin();
+  const host = getGatewayHost();
+  const proto = origin.startsWith("http:") ? "ws:" : "wss:";
   const port = (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_SIGNAL_PORT) || "9989";
   return `${proto}//${host}:${port}`;
 }
@@ -354,12 +353,34 @@ export class GatewayChannel {
     this.backend = null;
     this._setState(false);
   }
+
+  reconnectToActiveGateway() {
+    this._stopKeepalive();
+    if (this._retryTimer) { clearTimeout(this._retryTimer); this._retryTimer = null; }
+    try { if (this._ws) this._ws.close(); } catch (_) {}
+    this._ws = null;
+    this.backend = null;
+    this._connectPromise = null;
+    this._closing = false;
+    this._retryAttempt = 0;
+    this._setState(false);
+    return this.connect();
+  }
 }
 
 let _sharedGatewayChannel = null;
+let _gatewaySwitchListenerBound = false;
 export function getSharedGatewayChannel() {
   if (!_sharedGatewayChannel) {
     _sharedGatewayChannel = new GatewayChannel();
+  }
+  if (!_gatewaySwitchListenerBound && typeof window !== "undefined") {
+    _gatewaySwitchListenerBound = true;
+    window.addEventListener("omd-gateway-changed", () => {
+      if (_sharedGatewayChannel) {
+        _sharedGatewayChannel.reconnectToActiveGateway().catch(() => {});
+      }
+    });
   }
   return _sharedGatewayChannel;
 }

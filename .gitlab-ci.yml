@@ -673,7 +673,8 @@ build_node_macos:
     #     duplicate resource of foo.js — gzip is applied by the nginx proxy anyway)
     - cd web
     - npm install --legacy-peer-deps
-    - export VITE_APP_VERSION="3.0.${CI_PIPELINE_IID}"
+    - export MOBILE_BUILD_NUM=$((6000 + ${CI_PIPELINE_IID:-0}))
+    - export VITE_APP_VERSION="3.1.${MOBILE_BUILD_NUM}"
     - COMPRESS_ASSETS=0 npm run build
     # 4. Sync Capacitor Web Assets to Native Project
     - cd ../mobile
@@ -686,10 +687,11 @@ build-android:
   <<: *android-common-setup
   script:
     # 5. Compile Android APK (signed release if keystore present, else debug)
+    - export MOBILE_BUILD_NUM=$((6000 + ${CI_PIPELINE_IID:-0}))
     - cd android
     - ./gradlew --stop
     - ./gradlew clean
-    - export BUILD_NUMBER=${CI_PIPELINE_IID}
+    - export BUILD_NUMBER=${MOBILE_BUILD_NUM}
     - if [ -f "/home/alexey/projects/omd/etc/android/keystore.properties" ] || [ -n "${KEYSTORE_PROPERTIES:-}" ]; then
         ./gradlew assembleRelease;
       else
@@ -699,19 +701,19 @@ build-android:
     # 6. Copy final APK artifact
     - mkdir -p build_android
     - if [ -f android/app/build/outputs/apk/release/app-release.apk ]; then
-        cp android/app/build/outputs/apk/release/app-release.apk build_android/OnMyDisk.apk;
+        cp android/app/build/outputs/apk/release/app-release.apk build_android/DiskDirect.apk;
       else
-        cp android/app/build/outputs/apk/debug/app-debug.apk build_android/OnMyDisk.apk;
+        cp android/app/build/outputs/apk/debug/app-debug.apk build_android/DiskDirect.apk;
       fi
-    - chmod 664 build_android/OnMyDisk.apk
+    - chmod 664 build_android/DiskDirect.apk
     # 7. Upload to central binary repository
-    - ssh -o StrictHostKeyChecking=no repo@forge.disk.direct "mkdir -p /opt/repo/OnMyDisk/Android"
-    - scp -o StrictHostKeyChecking=no build_android/OnMyDisk.apk repo@forge.disk.direct:/opt/repo/OnMyDisk/Android/OnMyDisk.apk
-    - ssh -o StrictHostKeyChecking=no repo@forge.disk.direct "chmod 664 /opt/repo/OnMyDisk/Android/OnMyDisk.apk"
+    - ssh -o StrictHostKeyChecking=no repo@forge.disk.direct "mkdir -p /opt/repo/DiskDirect/Android"
+    - scp -o StrictHostKeyChecking=no build_android/DiskDirect.apk repo@forge.disk.direct:/opt/repo/DiskDirect/Android/DiskDirect.apk
+    - ssh -o StrictHostKeyChecking=no repo@forge.disk.direct "chmod 664 /opt/repo/DiskDirect/Android/DiskDirect.apk"
   artifacts:
-    name: omd-android-apk
+    name: disk-direct-android-apk
     paths:
-      - mobile/build_android/OnMyDisk.apk
+      - mobile/build_android/DiskDirect.apk
     expire_in: 1 week
   when: manual
 
@@ -719,6 +721,7 @@ build-android-play:
   <<: *android-common-setup
   script:
     # 5. Verify Google Play Upload Keystore & compile signed Android App Bundle (.aab)
+    - export MOBILE_BUILD_NUM=$((6000 + ${CI_PIPELINE_IID:-0}))
     - |
       if [ -n "${KEYSTORE_PROPERTIES:-}" ] && [ ! -f "${KEYSTORE_PROPERTIES}" ]; then
         printf "%s" "${KEYSTORE_PROPERTIES}" > android/keystore.properties
@@ -731,24 +734,24 @@ build-android-play:
     - cd android
     - ./gradlew --stop
     - ./gradlew clean
-    - export BUILD_NUMBER=${CI_PIPELINE_IID}
+    - export BUILD_NUMBER=${MOBILE_BUILD_NUM}
     - ./gradlew bundleRelease
     - jarsigner -verify app/build/outputs/bundle/release/app-release.aab
     - cd ..
     # 6. Copy signed Google Play AAB artifact
     - mkdir -p build_android
-    - cp android/app/build/outputs/bundle/release/app-release.aab build_android/OnMyDisk.aab
-    - cp android/app/build/outputs/bundle/release/app-release.aab "build_android/OnMyDisk-3.0.${CI_PIPELINE_IID}-release.aab"
+    - cp android/app/build/outputs/bundle/release/app-release.aab build_android/DiskDirect.aab
+    - cp android/app/build/outputs/bundle/release/app-release.aab "build_android/DiskDirect-3.1.${MOBILE_BUILD_NUM}-release.aab"
     - chmod 664 build_android/*.aab
     # 7. Upload to central binary repository
-    - ssh -o StrictHostKeyChecking=no repo@forge.disk.direct "mkdir -p /opt/repo/OnMyDisk/Android"
-    - scp -o StrictHostKeyChecking=no build_android/OnMyDisk.aab repo@forge.disk.direct:/opt/repo/OnMyDisk/Android/OnMyDisk.aab
-    - ssh -o StrictHostKeyChecking=no repo@forge.disk.direct "chmod 664 /opt/repo/OnMyDisk/Android/OnMyDisk.aab"
+    - ssh -o StrictHostKeyChecking=no repo@forge.disk.direct "mkdir -p /opt/repo/DiskDirect/Android"
+    - scp -o StrictHostKeyChecking=no build_android/DiskDirect.aab repo@forge.disk.direct:/opt/repo/DiskDirect/Android/DiskDirect.aab
+    - ssh -o StrictHostKeyChecking=no repo@forge.disk.direct "chmod 664 /opt/repo/DiskDirect/Android/DiskDirect.aab"
   artifacts:
-    name: "omd-google-play-3.0.${CI_PIPELINE_IID}"
+    name: "disk-direct-google-play-3.1.${CI_PIPELINE_IID}"
     paths:
-      - mobile/build_android/OnMyDisk.aab
-      - mobile/build_android/OnMyDisk-3.0.*-release.aab
+      - mobile/build_android/DiskDirect.aab
+      - mobile/build_android/DiskDirect-3.1.*-release.aab
     expire_in: 2 weeks
   when: manual
 
@@ -759,7 +762,8 @@ build-ios:
     - linux
   script:
     - which jq >/dev/null || (apt-get update && apt-get install -y jq curl)
-    - echo "Triggering Codemagic iOS cloud build for branch ${CI_COMMIT_REF_NAME}..."
+    - export MOBILE_BUILD_NUM=$((6000 + ${CI_PIPELINE_IID:-0}))
+    - echo "Triggering Codemagic iOS cloud build for branch ${CI_COMMIT_REF_NAME} (build ${MOBILE_BUILD_NUM})..."
     - |
       CM_TOKEN="${CODEMAGIC_API_TOKEN:-}"
       if [ -z "$CM_TOKEN" ] && [ -f "/home/alexey/projects/omd/etc/codemagic.token" ]; then
@@ -768,7 +772,7 @@ build-ios:
       RESPONSE=$(curl -s -X POST https://api.codemagic.io/builds \
         -H "Content-Type: application/json" \
         -H "x-auth-token: ${CM_TOKEN}" \
-        --data "{\"appId\": \"6abe4c845eb3cd34fe4cc074\", \"workflowId\": \"ios-workflow\", \"branch\": \"${CI_COMMIT_REF_NAME}\", \"environment\": {\"variables\": {\"BUILD_NUMBER\": \"${CI_PIPELINE_IID}\"}}}")
+        --data "{\"appId\": \"6abe4c845eb3cd34fe4cc074\", \"workflowId\": \"ios-workflow\", \"branch\": \"${CI_COMMIT_REF_NAME}\", \"environment\": {\"variables\": {\"BUILD_NUMBER\": \"${MOBILE_BUILD_NUM}\"}}}")
       BUILD_ID=$(echo "$RESPONSE" | jq -r '.buildId // empty')
       if [ -z "$BUILD_ID" ]; then
         echo "Failed to start Codemagic build: $RESPONSE"
@@ -787,12 +791,12 @@ build-ios:
           IPA_URL=$(echo "$BUILD_INFO" | jq -r '.build.artefacts[]? | select(.name | endswith(".ipa")) | .url // empty' | head -n 1)
           if [ -n "$IPA_URL" ]; then
             mkdir -p build_ios
-            curl -fsSL -H "x-auth-token: ${CM_TOKEN}" "$IPA_URL" -o build_ios/OnMyDisk.ipa
-            chmod 664 build_ios/OnMyDisk.ipa
-            echo "Downloaded IPA to build_ios/OnMyDisk.ipa"
-            ssh -o StrictHostKeyChecking=no repo@forge.disk.direct "mkdir -p /opt/repo/OnMyDisk/iOS" || true
-            scp -o StrictHostKeyChecking=no build_ios/OnMyDisk.ipa repo@forge.disk.direct:/opt/repo/OnMyDisk/iOS/OnMyDisk.ipa || true
-            ssh -o StrictHostKeyChecking=no repo@forge.disk.direct "chmod 664 /opt/repo/OnMyDisk/iOS/OnMyDisk.ipa" || true
+            curl -fsSL -H "x-auth-token: ${CM_TOKEN}" "$IPA_URL" -o build_ios/DiskDirect.ipa
+            chmod 664 build_ios/DiskDirect.ipa
+            echo "Downloaded IPA to build_ios/DiskDirect.ipa"
+            ssh -o StrictHostKeyChecking=no repo@forge.disk.direct "mkdir -p /opt/repo/DiskDirect/iOS" || true
+            scp -o StrictHostKeyChecking=no build_ios/DiskDirect.ipa repo@forge.disk.direct:/opt/repo/DiskDirect/iOS/DiskDirect.ipa || true
+            ssh -o StrictHostKeyChecking=no repo@forge.disk.direct "chmod 664 /opt/repo/DiskDirect/iOS/DiskDirect.ipa" || true
           else
             echo "ERROR: Codemagic finished without producing an IPA artifact! Check logs: https://codemagic.io/app/6abe4c845eb3cd34fe4cc074/build/$BUILD_ID"
             exit 1
@@ -822,20 +826,21 @@ deploy_mobile_ota:
       fi
     # 2. Build Svelte Static Frontend in web
     #    (no .gz siblings in the OTA bundle — dead weight for WebView)
+    - export MOBILE_BUILD_NUM=$((6000 + ${CI_PIPELINE_IID:-0}))
     - cd web
     - npm install --legacy-peer-deps
-    - export VITE_APP_VERSION="3.0.${CI_PIPELINE_IID}"
+    - export VITE_APP_VERSION="3.1.${MOBILE_BUILD_NUM}"
     - COMPRESS_ASSETS=0 npm run build
     # 3. Zip the Svelte static build files (from web/dist), excluding heavy unchanged WASM suites
     - cd dist
-    - zip -r ../../omd-frontend.zip . -x "*.map" -x "*tracemonkey*" -x "wordcraft/*" -x "deckcraft/*" -x "gridcraft/*"
+    - zip -r ../../direct-frontend.zip . -x "*.map" -x "*tracemonkey*" -x "wordcraft/*" -x "deckcraft/*" -x "gridcraft/*"
     - cd ../..
     # 4. Upload zip to central binary repository for live updates
-    - ssh -o StrictHostKeyChecking=no repo@forge.disk.direct "mkdir -p /opt/repo/OnMyDisk/Android"
-    - scp -o StrictHostKeyChecking=no omd-frontend.zip repo@forge.disk.direct:/opt/repo/OnMyDisk/Android/omd-frontend.zip
+    - ssh -o StrictHostKeyChecking=no repo@forge.disk.direct "mkdir -p /opt/repo/DiskDirect/Android"
+    - scp -o StrictHostKeyChecking=no direct-frontend.zip repo@forge.disk.direct:/opt/repo/DiskDirect/Android/direct-frontend.zip
     # 5. Generate and upload version.json for OTA live update check
-    - echo "{\"version\":\"3.0.${CI_PIPELINE_IID}\"}" > version.json
-    - scp -o StrictHostKeyChecking=no version.json repo@forge.disk.direct:/opt/repo/OnMyDisk/version.json
-    - scp -o StrictHostKeyChecking=no version.json repo@forge.disk.direct:/opt/repo/OnMyDisk/Android/version.json
+    - echo "{\"version\":\"3.1.${MOBILE_BUILD_NUM}\"}" > version.json
+    - scp -o StrictHostKeyChecking=no version.json repo@forge.disk.direct:/opt/repo/DiskDirect/version.json
+    - scp -o StrictHostKeyChecking=no version.json repo@forge.disk.direct:/opt/repo/DiskDirect/Android/version.json
   when: manual
 

@@ -250,6 +250,19 @@ public class MainActivity extends BridgeActivity {
             if (streamUris != null && !streamUris.isEmpty()) {
                 processSharedUris(streamUris);
             }
+        } else if (Intent.ACTION_VIEW.equals(action) && intent.getData() != null) {
+            final String deepLinkUrl = intent.getData().toString();
+            runOnUiThread(() -> {
+                try {
+                    if (getBridge() != null && getBridge().getWebView() != null) {
+                        String escaped = JSONObject.quote(deepLinkUrl);
+                        String js = "window.__pendingDeepLinkUrl = " + escaped + "; window.dispatchEvent(new CustomEvent('omd-deeplink', { detail: { url: " + escaped + " } }));";
+                        getBridge().getWebView().evaluateJavascript(js, null);
+                    }
+                } catch (Exception e) {
+                    Log.w(TAG, "Failed to forward deep link to WebView", e);
+                }
+            });
         }
     }
 
@@ -424,10 +437,10 @@ public class MainActivity extends BridgeActivity {
         html = html.replaceAll("(?s)\\{if\\s+[a-zA-Z0-9_]+\\}[^{]*?\\{end\\s+[a-zA-Z0-9_]+\\}", "");
 
         // 2. Replace known template variables
-        html = html.replace("{TITLE}", "On My Disk")
-                   .replace("{APPTITLE}", "On My Disk")
-                   .replace("{DESCRIPTION}", "Secure P2P file sharing")
-                   .replace("{OWNER}", "OnMyDisk")
+        html = html.replace("{TITLE}", "Disk Direct")
+                   .replace("{APPTITLE}", "Disk Direct")
+                   .replace("{DESCRIPTION}", "Secure P2P personal cloud and file sharing")
+                   .replace("{OWNER}", "DiskDirect")
                    .replace("{CARD}", "summary_large_image")
                    .replace("{SERVERURL}", "")
                    .replace("{LINKURL}", "")
@@ -446,8 +459,8 @@ public class MainActivity extends BridgeActivity {
     private void enableModernEdgeToEdge() {
         int nightModeFlags = getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
         boolean isNight = nightModeFlags == android.content.res.Configuration.UI_MODE_NIGHT_YES;
-        int darkColor = android.graphics.Color.parseColor("#101C22");
-        int lightColor = android.graphics.Color.parseColor("#F6F8F9");
+        int darkColor = android.graphics.Color.parseColor("#151821");
+        int lightColor = android.graphics.Color.parseColor("#F6F7FA");
 
         SystemBarStyle statusBarStyle = isNight
             ? SystemBarStyle.dark(darkColor)
@@ -482,7 +495,7 @@ public class MainActivity extends BridgeActivity {
     private void applySystemBarsTheme() {
         int nightModeFlags = getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
         boolean isNight = nightModeFlags == android.content.res.Configuration.UI_MODE_NIGHT_YES;
-        int barBgColor = android.graphics.Color.parseColor(isNight ? "#101C22" : "#F6F8F9");
+        int barBgColor = android.graphics.Color.parseColor(isNight ? "#151821" : "#F6F7FA");
 
         View decorView = getWindow().getDecorView();
         decorView.setBackgroundColor(barBgColor);
@@ -503,10 +516,10 @@ public class MainActivity extends BridgeActivity {
                 if (nm != null) {
                     android.app.NotificationChannel ch = new android.app.NotificationChannel(
                         "omd_autopilot_high",
-                        "On My Disk AI & Moderation",
+                        "Disk Direct Notifications",
                         android.app.NotificationManager.IMPORTANCE_HIGH
                     );
-                    ch.setDescription("Rich notifications and moderation alerts from your On My Disk AI node");
+                    ch.setDescription("Rich notifications and alerts from your Disk Direct node");
                     ch.enableVibration(true);
                     nm.createNotificationChannel(ch);
                 }

@@ -2,10 +2,18 @@ import { getGatewayBase, ensureChannelToken } from "./omd-key.js";
 import { getSharedGatewayChannel } from "./gateway-channel.js";
 import { getOrCreateLocalLinkId } from "./local-client.js";
 import { getViewerSettings } from "./viewer-settings.js";
+import { getGatewayTurnHost } from "./gateway-config.js";
 
 
 let _cachedPublicNodeLinkId = null;
 let _fetchingPublicNodePromise = null;
+
+if (typeof window !== "undefined") {
+    window.addEventListener("omd-gateway-changed", () => {
+        _cachedPublicNodeLinkId = null;
+        _fetchingPublicNodePromise = null;
+    });
+}
 
 export async function resolvePublicNodeLinkId() {
     if (_cachedPublicNodeLinkId) return _cachedPublicNodeLinkId;
@@ -316,9 +324,10 @@ export class WebRTCDataChannelDrive {
             this.dc = null;
         }
 
+        const turnHost = getGatewayTurnHost();
         this.pc = new RTCPeerConnection({
             iceServers: [
-                { urls: "stun:disk.direct:3478" },
+                { urls: `stun:${turnHost}:3478` },
                 { urls: "stun:stun.cloudflare.com:3478" },
                 { urls: "stun:stun.l.google.com:19302" },
                 { urls: "stun:stun1.l.google.com:19302" },
@@ -1348,8 +1357,7 @@ export class WebRTCDataChannelDrive {
     }
 
     static turnServers() {
-        const h = typeof window !== "undefined" ? window.location.hostname : "";
-        const host = (!h || h === "localhost" || h === "127.0.0.1") ? "disk.direct" : h;
+        const host = getGatewayTurnHost();
         const servers = [
             { urls: `turn:${host}:3478?transport=udp`, username: "turnuser", credential: "turnpass" },
             { urls: `turn:${host}:3478?transport=tcp`, username: "turnuser", credential: "turnpass" }

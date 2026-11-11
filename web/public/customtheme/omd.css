@@ -1,7 +1,9 @@
 /* ============================================================================
    DIRECT DESIGN SYSTEM — omd.css
-   Dual-Skin Theme Engine for Disk Direct (Amethyst) & AI Assistant (Magenta)
-   - Skin "files" (default / .skin-files): Amethyst & Obsidian-Violet (Duplex Stream)
+   Dual-Skin Theme Engine:
+   - Skin "files" (default / .skin-files): Cool Iris / Periwinkle Slate (Sketch #1)
+     Cool slate-charcoal temperature & calm contrast matching Legacy OMD,
+     harmonized in an indigo-periwinkle register with the Duplex Stream logo.
    - Skin "chat"  (.skin-chat):            Magenta & Velvet-Plum (Neural Orbit)
    - Both skins support Light (.light-theme) and Dark (.dark-theme) modes.
    ============================================================================ */
@@ -9,20 +11,20 @@
 /* 1. GLOBAL PRIMITIVES */
 :root {
   --HitBox: #FFFFFF00;
-  --IMG1: #0D0B12E5;
+  --IMG1: #151821E5;
   --Gray-White: #FFFFFF;
 
-  /* Disk Direct Neutral-Violet Scale (Warm Obsidian / Alabaster) */
-  --Gray-100: #F8F7FC;
-  --Gray-200: #EFEBF8;
-  --Gray-300: #DDD6EB;
-  --Gray-400: #C4B8DB;
-  --Gray-500: #8B80A3;
-  --Gray-600: #5B5270;
-  --Gray-700: #2D2640;
-  --Gray-800: #16131F;
-  --Gray-900: #0D0B12;
-  --Gray-Black: #08060C;
+  /* Disk Direct Cool Periwinkle-Slate Scale (Sketch #1) */
+  --Gray-100: #F6F7FA;
+  --Gray-200: #ECEEF5;
+  --Gray-300: #D8DCE8;
+  --Gray-400: #AEB5C7;
+  --Gray-500: #7E869B;
+  --Gray-600: #5A6278;
+  --Gray-700: #32394B;
+  --Gray-800: #1F2430;
+  --Gray-900: #151821;
+  --Gray-Black: #0E1017;
 
   /* AI Assistant Neutral-Plum Pearl Scale */
   --ChatGray-100: #FAF9FB;
@@ -35,16 +37,16 @@
   --ChatGray-800: #18141D;
   --ChatGray-900: #0F0C12;
 
-  /* Amethyst Brand Scale (Disk Direct — Duplex Stream) */
-  --Amethyst-100: #F3E8FF;
-  --Amethyst-200: #E9D5FF;
-  --Amethyst-300: #D8B4FE;
-  --Amethyst-400: #C084FC;
-  --Amethyst-500: #A855F7;
-  --Amethyst-600: #9333EA;
-  --Amethyst-700: #7E22CE;
-  --Amethyst-800: #581C87;
-  --Amethyst-900: #1E0B36;
+  /* Cool Iris / Periwinkle Brand Scale (Disk Direct — Sketch #1) */
+  --Amethyst-100: #E9ECF7;
+  --Amethyst-200: #DCE0F5;
+  --Amethyst-300: #B4BBE0;
+  --Amethyst-400: #929CD4;
+  --Amethyst-500: #7B86C4;
+  --Amethyst-600: #5863A6;
+  --Amethyst-700: #3D467A;
+  --Amethyst-800: #2C3359;
+  --Amethyst-900: #191E36;
 
   /* Magenta / Orchid Brand Scale (AI Assistant — Neural Orbit) */
   --Magenta-100: #FCE7F3;
@@ -57,7 +59,7 @@
   --Magenta-800: #831843;
   --Magenta-900: #2A0926;
 
-  /* Legacy primitive remapping (eliminates old sky-blue across SDS consumers) */
+  /* Legacy primitive remapping */
   --Blue-100: var(--Amethyst-100);
   --Blue-200: var(--Amethyst-200);
   --Blue-300: var(--Amethyst-300);
@@ -68,15 +70,15 @@
   --Blue-800: var(--Amethyst-800);
   --Blue-900: var(--Amethyst-900);
 
-  --Purple-100: #F3E8FF;
-  --Purple-200: #E9D5FF;
-  --Purple-300: #D8B4FE;
-  --Purple-400: #C084FC;
-  --Purple-500: #A855F7;
-  --Purple-600: #9333EA;
-  --Purple-700: #7E22CE;
-  --Purple-800: #581C87;
-  --Purple-900: #1E0B36;
+  --Purple-100: var(--Amethyst-100);
+  --Purple-200: var(--Amethyst-200);
+  --Purple-300: var(--Amethyst-300);
+  --Purple-400: var(--Amethyst-400);
+  --Purple-500: var(--Amethyst-500);
+  --Purple-600: var(--Amethyst-600);
+  --Purple-700: var(--Amethyst-700);
+  --Purple-800: var(--Amethyst-800);
+  --Purple-900: var(--Amethyst-900);
 
   --Pink-100: #FCE7F3;
   --Pink-200: #FBCFE8;
@@ -129,7 +131,7 @@
   --Red-800: #84181C;
   --Red-900: #480709;
 
-  --Placeholder-Image: #F8F7FC;
+  --Placeholder-Image: #F6F7FA;
   --Placeholder-Avatar: #FFFFFF;
 
   /* Typography & Spacing Primitives */
@@ -160,7 +162,7 @@
 }
 
 /* ============================================================================
-   2. SKIN A: DISK DIRECT ("files" — Amethyst / Duplex Stream) — LIGHT
+   2. SKIN A: DISK DIRECT ("files" — Cool Iris / Periwinkle Slate) — LIGHT
    ============================================================================ */
 :root,
 html.light-theme:not(.skin-chat),
@@ -169,30 +171,31 @@ html.skin-files.light-theme,
 .light-theme:not(.skin-chat) {
   --skin-name: "files-light";
 
-  --bg-primary: #F8F7FC;
+  --bg-primary: #F6F7FA;
   --bg-secondary: #FFFFFF;
   --bg-card: #FFFFFF;
-  --bg-card-hover: #EFEBF8;
+  --bg-card-hover: #E9ECF5;
   --bg-elevated: #FFFFFF;
-  --bg-soft: rgba(126, 34, 206, 0.06);
-  --bg-hover: rgba(126, 34, 206, 0.08);
+  --bg-soft: rgba(61, 70, 122, 0.06);
+  --bg-hover: rgba(61, 70, 122, 0.08);
   --sidebar-bg: #FFFFFF;
-  --sidebar-shadow: 3px 0 16px rgba(24, 19, 38, 0.05);
+  --sidebar-shadow: 3px 0 14px rgba(22, 25, 37, 0.05);
 
-  --border-color: #DDD6EB;
-  --border-subtle: #ECE7F6;
+  --border-color: #D8DCE8;
+  --border-subtle: #E6E9F2;
 
-  --text-primary: #181326;
-  --text-secondary: #5B5270;
-  --text-muted: #8B80A3;
+  --text-primary: #161925;
+  --text-secondary: #5A6278;
+  --text-muted: #8B92A6;
+  --selected-text: #343C6B;
 
-  --accent: #7E22CE;
-  --accent-hover: #9333EA;
-  --accent-active: #6B21A8;
-  --accent-soft: #F3E8FF;
-  --accent-border: rgba(126, 34, 206, 0.35);
-  --accent-glow: rgba(147, 51, 234, 0.28);
-  --accent-gradient: linear-gradient(135deg, #7E22CE 0%, #A855F7 100%);
+  --accent: #3D467A;
+  --accent-hover: #5863A6;
+  --accent-active: #313966;
+  --accent-soft: #E9ECF7;
+  --accent-border: rgba(61, 70, 122, 0.28);
+  --accent-glow: rgba(61, 70, 122, 0.20);
+  --accent-gradient: linear-gradient(135deg, #3D467A 0%, #5863A6 100%);
   --accent-on-brand: #FFFFFF;
 
   /* Compatibility aliases */
@@ -204,10 +207,10 @@ html.skin-files.light-theme,
   --Success: var(--Green-500);
   --Danger: var(--Red-500);
   --Warning: var(--Yellow-400);
-  --Info: var(--Amethyst-400);
+  --Info: var(--Amethyst-500);
 
-  --user-bubble-bg: #F3E8FF;
-  --user-bubble-border: #DFC9FA;
+  --user-bubble-bg: #E9ECF7;
+  --user-bubble-border: #D5DCF0;
   --pill-bg: #FFFFFF;
 
   --success-bg: rgba(41, 204, 84, 0.12);
@@ -217,33 +220,34 @@ html.skin-files.light-theme,
   --danger-bg: rgba(248, 59, 66, 0.12);
   --danger-text: #C1141A;
 
-  /* SVAR Filemanager Tokens */
-  --top-menu-color: #7E22CE;
-  --top-menu-hover-color: #9333EA;
-  --wx-color-primary: #7E22CE;
-  --wx-color-primary-hover: #9333EA;
-  --wx-color-primary-selected: #F3E8FF;
+  /* SVAR Filemanager Tokens (Light — Sketch #1) */
+  --top-menu-color: #46508A;
+  --top-menu-hover-color: #5863A6;
+  --wx-color-primary: #3D467A;
+  --wx-color-primary-border: #3D467A;
+  --wx-color-primary-hover: #5863A6;
+  --wx-color-primary-selected: #E9ECF7;
   --wx-color-primary-font: #FFFFFF;
   --wx-background: #FFFFFF;
-  --wx-background-alt: #F4F1FA;
-  --wx-background-hover: #EFEBF8;
-  --wx-fm-background: #F8F7FC;
-  --wx-fm-select-background: #F3E8FF;
-  --wx-fm-grid-border: 1px solid #DDD6EB;
-  --wx-fm-grid-header-color: #F8F7FC;
-  --wx-fm-button-font-color: #5B5270;
-  --wx-table-border: 1px solid #DDD6EB;
-  --wx-table-header-border: 1px solid #DDD6EB;
-  --wx-table-header-background: #F8F7FC;
-  --wx-table-select-background: #F3E8FF;
-  --wx-table-select-focus-background: #E9D5FF;
-  --wx-color-font: #181326;
-  --wx-color-font-alt: #5B5270;
-  --wx-color-secondary-border: #DDD6EB;
-  --wx-border: 1px solid #DDD6EB;
+  --wx-background-alt: #F1F3F9;
+  --wx-background-hover: #E9ECF5;
+  --wx-fm-background: #F6F7FA;
+  --wx-fm-select-background: #E9ECF7;
+  --wx-fm-grid-border: 1px solid #D8DCE8;
+  --wx-fm-grid-header-color: #F6F7FA;
+  --wx-fm-button-font-color: #5A6278;
+  --wx-table-border: 1px solid #D8DCE8;
+  --wx-table-header-border: 1px solid #D8DCE8;
+  --wx-table-header-background: #F6F7FA;
+  --wx-table-select-background: #E9ECF7;
+  --wx-table-select-focus-background: #DCE0F5;
+  --wx-color-font: #161925;
+  --wx-color-font-alt: #5A6278;
+  --wx-color-secondary-border: #D8DCE8;
+  --wx-border: 1px solid #D8DCE8;
 
-  --scrollbar-thumb: #C9BFE0;
-  --scrollbar-thumb-hover: #B0A2CE;
+  --scrollbar-thumb: #BFC5D6;
+  --scrollbar-thumb-hover: #A3ABBF;
   --scrollbar-track: transparent;
 
   --logo-url: url('/img/logo-dark.svg');
@@ -268,7 +272,7 @@ html.skin-files.light-theme,
 }
 
 /* ============================================================================
-   3. SKIN A: DISK DIRECT ("files" — Amethyst / Duplex Stream) — DARK
+   3. SKIN A: DISK DIRECT ("files" — Cool Iris / Periwinkle Slate) — DARK
    ============================================================================ */
 html.dark-theme:not(.skin-chat),
 html.omd-dark:not(.skin-chat),
@@ -277,30 +281,31 @@ html.skin-files.dark-theme,
 .dark-theme:not(.skin-chat) {
   --skin-name: "files-dark";
 
-  --bg-primary: #0D0B12;
-  --bg-secondary: #16131F;
-  --bg-card: #16131F;
-  --bg-card-hover: #211C2E;
-  --bg-elevated: #1D1829;
-  --bg-soft: rgba(168, 85, 247, 0.10);
-  --bg-hover: rgba(192, 132, 252, 0.08);
-  --sidebar-bg: #16131F;
-  --sidebar-shadow: 4px 0 20px rgba(0, 0, 0, 0.35);
+  --bg-primary: #151821;
+  --bg-secondary: #1F2430;
+  --bg-card: #1F2430;
+  --bg-card-hover: #282E3D;
+  --bg-elevated: #242A38;
+  --bg-soft: rgba(123, 134, 196, 0.11);
+  --bg-hover: rgba(123, 134, 196, 0.08);
+  --sidebar-bg: #1F2430;
+  --sidebar-shadow: 4px 0 16px rgba(0, 0, 0, 0.25);
 
-  --border-color: #2D2640;
-  --border-subtle: #211C30;
+  --border-color: #32394B;
+  --border-subtle: #262C3B;
 
-  --text-primary: #F8F7FC;
-  --text-secondary: #C4B8DB;
-  --text-muted: #8B80A3;
+  --text-primary: #EEF0F6;
+  --text-secondary: #AEB5C7;
+  --text-muted: #7E869B;
+  --selected-text: #DCE0F5;
 
-  --accent: #A855F7;
-  --accent-hover: #C084FC;
-  --accent-active: #9333EA;
-  --accent-soft: rgba(168, 85, 247, 0.20);
-  --accent-border: rgba(192, 132, 252, 0.40);
-  --accent-glow: rgba(168, 85, 247, 0.35);
-  --accent-gradient: linear-gradient(135deg, #9333EA 0%, #C084FC 100%);
+  --accent: #7B86C4;
+  --accent-hover: #929CD4;
+  --accent-active: #5863A6;
+  --accent-soft: rgba(123, 134, 196, 0.18);
+  --accent-border: rgba(123, 134, 196, 0.34);
+  --accent-glow: rgba(88, 99, 166, 0.28);
+  --accent-gradient: linear-gradient(135deg, #5863A6 0%, #7B86C4 100%);
   --accent-on-brand: #FFFFFF;
 
   --accent-blue: var(--accent);
@@ -308,9 +313,9 @@ html.skin-files.dark-theme,
   --accent-blue-active: var(--accent-soft);
   --Primary: var(--accent);
 
-  --user-bubble-bg: #211932;
-  --user-bubble-border: #3B2D56;
-  --pill-bg: #16131F;
+  --user-bubble-bg: #252B3B;
+  --user-bubble-border: #39425B;
+  --pill-bg: #1F2430;
 
   --success-bg: rgba(41, 204, 84, 0.15);
   --success-text: #4EDA72;
@@ -319,33 +324,34 @@ html.skin-files.dark-theme,
   --danger-bg: rgba(248, 59, 66, 0.15);
   --danger-text: #FF6A6F;
 
-  /* SVAR Filemanager Tokens (Dark) */
-  --top-menu-color: #A855F7;
-  --top-menu-hover-color: #C084FC;
-  --wx-color-primary: #9333EA;
-  --wx-color-primary-hover: #A855F7;
-  --wx-color-primary-selected: rgba(168, 85, 247, 0.22);
+  /* SVAR Filemanager Tokens (Dark — Sketch #1) */
+  --top-menu-color: #7B86C4;
+  --top-menu-hover-color: #929CD4;
+  --wx-color-primary: #5863A6;
+  --wx-color-primary-border: #6672B8;
+  --wx-color-primary-hover: #6874BA;
+  --wx-color-primary-selected: rgba(123, 134, 196, 0.18);
   --wx-color-primary-font: #FFFFFF;
-  --wx-background: #16131F;
-  --wx-background-alt: #120F1A;
-  --wx-background-hover: #211C2E;
-  --wx-fm-background: #0D0B12;
-  --wx-fm-select-background: rgba(168, 85, 247, 0.22);
-  --wx-fm-grid-border: 1px solid #2D2640;
-  --wx-fm-grid-header-color: #120F1A;
-  --wx-fm-button-font-color: rgba(248, 247, 252, 0.85);
-  --wx-table-border: 1px solid #2D2640;
-  --wx-table-header-border: 1px solid #2D2640;
-  --wx-table-header-background: #120F1A;
-  --wx-table-select-background: rgba(168, 85, 247, 0.22);
-  --wx-table-select-focus-background: rgba(168, 85, 247, 0.30);
-  --wx-color-font: #F8F7FC;
-  --wx-color-font-alt: #C4B8DB;
-  --wx-color-secondary-border: #2D2640;
-  --wx-border: 1px solid #2D2640;
+  --wx-background: #1F2430;
+  --wx-background-alt: #191D28;
+  --wx-background-hover: #282E3D;
+  --wx-fm-background: #151821;
+  --wx-fm-select-background: rgba(123, 134, 196, 0.18);
+  --wx-fm-grid-border: 1px solid #32394B;
+  --wx-fm-grid-header-color: #191D28;
+  --wx-fm-button-font-color: rgba(238, 240, 246, 0.85);
+  --wx-table-border: 1px solid #32394B;
+  --wx-table-header-border: 1px solid #32394B;
+  --wx-table-header-background: #191D28;
+  --wx-table-select-background: rgba(123, 134, 196, 0.18);
+  --wx-table-select-focus-background: rgba(123, 134, 196, 0.26);
+  --wx-color-font: #EEF0F6;
+  --wx-color-font-alt: #AEB5C7;
+  --wx-color-secondary-border: #32394B;
+  --wx-border: 1px solid #32394B;
 
-  --scrollbar-thumb: #3D3356;
-  --scrollbar-thumb-hover: #554777;
+  --scrollbar-thumb: #454E66;
+  --scrollbar-thumb-hover: #5B6682;
   --scrollbar-track: transparent;
 
   --logo-url: url('/img/logo.svg');
@@ -497,4 +503,149 @@ html.skin-chat .dark-theme,
   --var---sds-color-text-brand-secondary-: var(--Magenta-400);
   --var---sds-color-text-brand-on-brand-: var(--Magenta-900);
   --var---sds-color-border-brand-default-: var(--accent);
+}
+
+/* ============================================================================
+   6. GATEWAY SKIN PRESET: CLASSIC ONMYDISK ("omd-classic") — LIGHT & DARK
+      Activated dynamically ONLY in files mode when connected to a community
+      OnMyDisk gateway (e.g. direct.onmydisk.net). Never affects .skin-chat.
+   ============================================================================ */
+html.gateway-skin-omd.light-theme:not(.skin-chat),
+html.gateway-skin-omd:not(.dark-theme):not(.omd-dark):not(.skin-chat),
+html.gateway-skin-omd .skin-files.light-theme {
+  --skin-name: "omd-classic-light";
+
+  --bg-primary: #F6F8F9;
+  --bg-secondary: #FFFFFF;
+  --bg-card: #FFFFFF;
+  --bg-card-hover: #ECF0F2;
+  --bg-elevated: #FFFFFF;
+  --bg-soft: rgba(24, 125, 161, 0.07);
+  --bg-hover: rgba(24, 125, 161, 0.08);
+  --sidebar-bg: #FFFFFF;
+  --sidebar-shadow: 3px 0 14px rgba(0, 0, 0, 0.05);
+
+  --border-color: #D6DDE1;
+  --border-subtle: #E5ECEF;
+
+  --text-primary: #101C22;
+  --text-secondary: #546B75;
+  --text-muted: #889FA8;
+  --selected-text: #184562;
+
+  --accent: #184562;
+  --accent-hover: #2996CC;
+  --accent-active: #12344B;
+  --accent-soft: #E4F1FA;
+  --accent-border: rgba(41, 150, 204, 0.30);
+  --accent-glow: rgba(41, 150, 204, 0.20);
+  --accent-gradient: linear-gradient(135deg, #184562 0%, #2996CC 100%);
+  --accent-on-brand: #FFFFFF;
+
+  --accent-blue: var(--accent);
+  --accent-blue-hover: var(--accent-hover);
+  --accent-blue-active: var(--accent-soft);
+  --Primary: var(--accent);
+
+  --user-bubble-bg: #E4F1FA;
+  --user-bubble-border: #C8E2F4;
+  --pill-bg: #FFFFFF;
+
+  --top-menu-color: #184562;
+  --top-menu-hover-color: #2996CC;
+  --wx-color-primary: #184562;
+  --wx-color-primary-border: #184562;
+  --wx-color-primary-hover: #2996CC;
+  --wx-color-primary-selected: #E4F1FA;
+  --wx-color-primary-font: #FFFFFF;
+  --wx-background: #FFFFFF;
+  --wx-background-alt: #F4F8FA;
+  --wx-background-hover: #ECF0F2;
+  --wx-fm-background: #F6F8F9;
+  --wx-fm-select-background: #E4F1FA;
+  --wx-fm-grid-border: 1px solid #D6DDE1;
+  --wx-fm-grid-header-color: #F6F8F9;
+  --wx-fm-button-font-color: #546B75;
+  --wx-table-border: 1px solid #D6DDE1;
+  --wx-table-header-border: 1px solid #D6DDE1;
+  --wx-table-header-background: #F6F8F9;
+  --wx-table-select-background: #E4F1FA;
+  --wx-table-select-focus-background: #D4E9F7;
+  --wx-color-font: #101C22;
+  --wx-color-font-alt: #546B75;
+  --wx-color-secondary-border: #D6DDE1;
+  --wx-border: 1px solid #D6DDE1;
+
+  --scrollbar-thumb: #BAC7CE;
+  --scrollbar-thumb-hover: #9BB0BA;
+}
+
+html.gateway-skin-omd.dark-theme:not(.skin-chat),
+html.gateway-skin-omd.omd-dark:not(.skin-chat),
+html.gateway-skin-omd .skin-files.dark-theme {
+  --skin-name: "omd-classic-dark";
+
+  --bg-primary: #101C22;
+  --bg-secondary: #202A2F;
+  --bg-card: #202A2F;
+  --bg-card-hover: #29363D;
+  --bg-elevated: #243138;
+  --bg-soft: rgba(41, 150, 204, 0.12);
+  --bg-hover: rgba(41, 150, 204, 0.09);
+  --sidebar-bg: #202A2F;
+  --sidebar-shadow: 4px 0 16px rgba(0, 0, 0, 0.25);
+
+  --border-color: #3D4F57;
+  --border-subtle: #2C3B42;
+
+  --text-primary: #ECF2F5;
+  --text-secondary: #A6B8C0;
+  --text-muted: #7B9099;
+  --selected-text: #D6EEFA;
+
+  --accent: #2996CC;
+  --accent-hover: #37A9EF;
+  --accent-active: #1E7EAE;
+  --accent-soft: rgba(41, 150, 204, 0.20);
+  --accent-border: rgba(41, 150, 204, 0.38);
+  --accent-glow: rgba(41, 150, 204, 0.28);
+  --accent-gradient: linear-gradient(135deg, #1E7EAE 0%, #2996CC 100%);
+  --accent-on-brand: #FFFFFF;
+
+  --accent-blue: var(--accent);
+  --accent-blue-hover: var(--accent-hover);
+  --accent-blue-active: var(--accent-soft);
+  --Primary: var(--accent);
+
+  --user-bubble-bg: #1D2B33;
+  --user-bubble-border: #334854;
+  --pill-bg: #202A2F;
+
+  --top-menu-color: #2996CC;
+  --top-menu-hover-color: #37A9EF;
+  --wx-color-primary: #2996CC;
+  --wx-color-primary-border: #37A9EF;
+  --wx-color-primary-hover: #37A9EF;
+  --wx-color-primary-selected: rgba(41, 150, 204, 0.25);
+  --wx-color-primary-font: #FFFFFF;
+  --wx-background: #202A2F;
+  --wx-background-alt: #18242B;
+  --wx-background-hover: #29363D;
+  --wx-fm-background: #101C22;
+  --wx-fm-select-background: rgba(41, 150, 204, 0.25);
+  --wx-fm-grid-border: 1px solid #3D4F57;
+  --wx-fm-grid-header-color: #18242B;
+  --wx-fm-button-font-color: rgba(236, 242, 245, 0.85);
+  --wx-table-border: 1px solid #3D4F57;
+  --wx-table-header-border: 1px solid #3D4F57;
+  --wx-table-header-background: #18242B;
+  --wx-table-select-background: rgba(41, 150, 204, 0.25);
+  --wx-table-select-focus-background: rgba(41, 150, 204, 0.34);
+  --wx-color-font: #ECF2F5;
+  --wx-color-font-alt: #A6B8C0;
+  --wx-color-secondary-border: #3D4F57;
+  --wx-border: 1px solid #3D4F57;
+
+  --scrollbar-thumb: #435761;
+  --scrollbar-thumb-hover: #58717D;
 }

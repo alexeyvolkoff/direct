@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "id": "disk.direct",
+  "brandName": "Disk Direct",
+  "shortName": "Disk Direct",
+  "origin": "https://disk.direct",
+  "relayWsUrl": "wss://disk.direct:8765/gun",
+  "hubUrl": "https://disk.direct:8765",
+  "turnHost": "disk.direct",
+  "oauthBridgeOrigin": "https://disk.direct",
+  "tosUrl": "https://disk.direct/tos",
+  "privacyUrl": "https://disk.direct/tos#gdpr",
+  "tosVersion": "2026-11",
+  "skin": {
+    "preset": "cool-iris",
+    "logoDark": "https://disk.direct/img/logo.svg",
+    "logoLight": "https://disk.direct/img/logo-dark.svg",
+    "favicon": "https://disk.direct/customtheme/onmydisk.svg",
+    "tokens": {}
+  }
+}

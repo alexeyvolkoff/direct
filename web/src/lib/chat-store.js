@@ -1,11 +1,7 @@
 import Gun from "gun/gun";
 import { simpleHash, createChatCrypto } from "./omd-key.js";
+import { getGatewayRelayWsUrl } from "./gateway-config.js";
 
-const RELAY_URL = "wss://disk.direct:8765/gun";
-const PEERS = [
-  "wss://disk.direct:8765/gun",
-  "wss://disk.direct:8765/gun"
-];
 const GUN_GET_TIMEOUT = 2500;
 
 function serializeForGun(obj) {
@@ -87,7 +83,7 @@ export class ChatStore {
     if (!token) throw new Error("ChatStore requires omd_key");
     this.tokenHash = simpleHash(token);
     this.crypto = createChatCrypto(token);
-    this.gun = Gun({ peers: PEERS, localStorage: false });
+    this.gun = Gun({ peers: [getGatewayRelayWsUrl()], localStorage: false });
     this.chatsCache = new Map();
     this._chatsCallbacks = new Set();
     this._notifyTimer = null;

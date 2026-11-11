@@ -15,6 +15,9 @@
   import { isIosNative, isExternalCheckoutUrl } from "../lib/platform.js";
   import FolderPicker from "./FolderPicker.svelte";
   import AssistantAvatarModal from "./AssistantAvatarModal.svelte";
+  import GatewayTosModal from "./GatewayTosModal.svelte";
+  import { gatewayConfig, getGatewayTosUrl, resetGatewayToDefault } from "../lib/gateway-config.js";
+  import { resolveAppMode, APP_MODE_CHAT } from "../lib/app-mode.js";
   import { getChatStore } from "../lib/chat-store.js";
   import { HttpDrive } from "../lib/http-drive.js";
   import { aiNodeStore, refreshPublicAiNode, setAiNodeChoice, acceptPublicAiAgreement, applyRemotePublicAiAck, publicAiAckPayload, AI_NODE_MODE_AUTO, AI_NODE_MODE_PUBLIC, AI_NODE_MODE_CUSTOM, AI_MODE_LOCAL, AI_MODE_HYBRID, AI_MODE_AGENTIC, setAiMode, setInferenceNode, addCustomAiNode, removeCustomAiNode, mergeCustomAiNodes, connectGuestAiNode } from "../lib/ai-node.js";
@@ -43,6 +46,8 @@
   let isMobile = typeof window !== "undefined" ? window.innerWidth <= 768 : false;
   let showSidebar = !isMobile;
   let hasCameraSupport = false;
+  let showGatewayModal = false;
+  const isChatMode = resolveAppMode() === APP_MODE_CHAT;
 
   function updateMobileState() {
     isMobile = window.innerWidth <= 768;
@@ -2192,7 +2197,7 @@
                 </div>
                 <div class="row-value-badge">
                   <a
-                    href={$otaState.isNative ? "https://aiassistant.direct/tos" : "/tos"}
+                    href={$gatewayConfig ? getGatewayTosUrl() : "/tos"}
                     target="_blank"
                     rel="noopener noreferrer"
                     class="btn-secondary-action btn-sm"
@@ -2930,6 +2935,53 @@
           </div>
 
           <div class="card-group">
+            {#if !isChatMode}
+              <div class="card">
+                <h4 class="card-title">{$_("gateway_server_card_title", {}, "Gateway Server & Branding")}</h4>
+                <div class="setting-row">
+                  <div class="row-text">
+                    <span class="row-label">{$gatewayConfig.brandName}</span>
+                    <span class="row-sub">{$_("gateway_server_card_sub", {}, "Active signaling gateway, theme skin, and Terms of Service. Switching preserves your DID.")}</span>
+                  </div>
+                  <div class="code-box-inline" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                    <code>{$gatewayConfig.origin}</code>
+                    <span class="badge-pill success">{$gatewayConfig.isCustom ? $_("custom_gateway", {}, "Custom") : $_("default_badge", {}, "Default")}</span>
+                  </div>
+                </div>
+
+                <div class="setting-row">
+                  <div class="row-text">
+                    <span class="row-label">{$_("gateway_actions_lbl", {}, "Gateway Connection")}</span>
+                    <span class="row-sub">
+                      <a href={$gatewayConfig.tosUrl} target="_blank" rel="noopener noreferrer" style="color: var(--accent); text-decoration: none;">
+                        {$_("terms_of_service", {}, "Terms of Service")} &nearr;
+                      </a>
+                    </span>
+                  </div>
+                  <div class="row-value-badge" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                    {#if $gatewayConfig.isCustom}
+                      <button
+                        type="button"
+                        class="btn-secondary-action btn-sm"
+                        style="padding: 5px 10px; font-size: 12px;"
+                        on:click={() => resetGatewayToDefault()}
+                      >
+                        {$_("gateway_reset_default", {}, "Reset to Default")}
+                      </button>
+                    {/if}
+                    <button
+                      type="button"
+                      class="btn-secondary-action btn-sm"
+                      style="padding: 5px 12px; font-size: 12px;"
+                      on:click={() => { showGatewayModal = true; }}
+                    >
+                      {$_("change_gateway_btn", {}, "Change Gateway…")}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            {/if}
+
             <div class="card">
               <h4 class="card-title">{$_("gundb_relay_hub", {}, "GunDB Relay & Authentication Hub")}</h4>
               <div class="setting-row">
@@ -2938,7 +2990,7 @@
                   <span class="row-sub">{$_("relay_ws_sub", {}, "Encrypted decentralized graph synchronization")}</span>
                 </div>
                 <div class="code-box-inline">
-                  <code>wss://disk.direct:8765/gun</code>
+                  <code>{$gatewayConfig.relayWsUrl}</code>
                   <span class="badge-pill success">{$_("connected", {}, "Connected")}</span>
                 </div>
               </div>
@@ -2949,7 +3001,7 @@
                   <span class="row-sub">{$_("rest_gateway_sub", {}, "Issue SEA certificates and manage account links")}</span>
                 </div>
                 <div class="code-box-inline">
-                  <code>https://disk.direct:8765</code>
+                  <code>{$gatewayConfig.hubUrl}</code>
                   <span class="badge-pill success">{$_("active", {}, "Active")}</span>
                 </div>
               </div>
@@ -4145,6 +4197,8 @@
     </div>
   </div>
 {/if}
+
+<GatewayTosModal bind:open={showGatewayModal} {isDarkTheme} />
 
 <style>
   .settings-root {

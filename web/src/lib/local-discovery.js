@@ -4,20 +4,11 @@
  * storage nodes operating within the same public IP / LAN.
  */
 
+import { getGatewayOrigin } from "./gateway-config.js";
+
 export async function fetchNearbyDevices(gatewayUrl = "") {
   try {
-    let baseUrl = gatewayUrl;
-    if (!baseUrl) {
-      if (typeof window !== "undefined") {
-        if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
-          baseUrl = "https://disk.direct";
-        } else {
-          baseUrl = window.location.origin;
-        }
-      } else {
-        baseUrl = "https://disk.direct";
-      }
-    }
+    const baseUrl = gatewayUrl || getGatewayOrigin();
 
     const res = await fetch(`${baseUrl}/api/devices/nearby`, {
       method: "GET",

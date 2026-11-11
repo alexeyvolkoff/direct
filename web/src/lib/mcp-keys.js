@@ -16,11 +16,13 @@ import { isIosNative } from "./platform.js";
  *   "omd_mcp_keys:<mainPub>" -> instant availability on reload.
  */
 
+import { Capacitor } from "@capacitor/core";
+import { getGatewayHubUrl } from "./gateway-config.js";
+
 const LS_PREFIX = "omd_mcp_keys";
 const GRAPH_ROOT = "keys";
 const GRAPH_NODE = "mcp_apps";
 const SHARED_GRAPH_PREFIX = "mcp_keys:";
-const HUB_URL = "https://disk.direct:8765";
 const MCP_SALT = "omd-mcp-keys-salt-v1";
 
 const ALL_PRESET_MCP_APPS = [
@@ -50,7 +52,7 @@ const ALL_PRESET_MCP_APPS = [
   },
 ];
 
-export const PRESET_MCP_APPS = isIosNative()
+export const PRESET_MCP_APPS = (isIosNative() || (typeof window !== "undefined" && Capacitor.isNativePlatform()))
   ? ALL_PRESET_MCP_APPS.filter((p) => p.id !== "club_pass")
   : ALL_PRESET_MCP_APPS;
 
@@ -261,7 +263,7 @@ function cleanAppId(appId) {
 async function pushEntriesToHub(mainPub, entriesObj) {
   if (!mainPub || !entriesObj || Object.keys(entriesObj).length === 0) return;
   try {
-    await fetch(`${HUB_URL}/api/mcp-keys`, {
+    await fetch(`${getGatewayHubUrl()}/api/mcp-keys`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mainPub, entries: entriesObj }),
@@ -570,7 +572,7 @@ export async function removeMcpAppKey(appId) {
   }
   if (mainPub) {
     try {
-      await fetch(`${HUB_URL}/api/mcp-keys`, {
+      await fetch(`${getGatewayHubUrl()}/api/mcp-keys`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mainPub, appId: cleanId, deleted: true, updatedAt: tombTs }),

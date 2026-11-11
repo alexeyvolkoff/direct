@@ -22,6 +22,7 @@
   import { getChatStore } from "../lib/chat-store.js";
   import { HttpDrive } from "../lib/http-drive.js";
   import { profileStore } from "../lib/profile-store.js";
+  import { gatewayConfig, getGatewayTosUrl } from "../lib/gateway-config.js";
 
   export let isOpen = false;
   export let identity = null;
@@ -1271,7 +1272,7 @@
             <label class="terms-accept-box">
               <input type="checkbox" bind:checked={termsAccepted} />
               <span>
-                {$_("onboarding_terms_agree", {}, "Я принимаю")} <a href={Capacitor.isNativePlatform() ? "https://aiassistant.direct/tos#ai" : "/tos#ai"} target="_blank" rel="noopener noreferrer">{$_("onboarding_terms_tos", {}, "условия ответственного использования ИИ")}</a> {$_("onboarding_terms_privacy", {}, "и политику конфиденциальности Disk Direct.")}
+                {$_("onboarding_terms_agree", {}, "Я принимаю")} <a href={($gatewayConfig && getGatewayTosUrl()) + "#ai"} target="_blank" rel="noopener noreferrer">{$_("onboarding_terms_tos", {}, "условия ответственного использования ИИ")}</a> {$_("onboarding_terms_privacy", {}, "и политику конфиденциальности.")}
               </span>
             </label>
 

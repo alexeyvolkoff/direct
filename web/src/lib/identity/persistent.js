@@ -8,10 +8,8 @@ import {
   saveSessionEverywhere,
   clearSessionEverywhere,
 } from "./sessionBackup.js";
+import { getGatewayRelayWsUrl, getGatewayHubUrl } from "../gateway-config.js";
 
-const RELAY_URL = "wss://disk.direct:8765/gun";
-const HUB_URL = "https://disk.direct:8765";
-const AUTH_URL = "https://disk.direct:8765";
 const STORAGE_PREFIX = "omd_did_";
 
 function accountDeletedError() {
@@ -178,6 +176,11 @@ export class PersistentIdentity {
     return downloadDidKeyfile(payload, this.profile?.name || this.profile?.user || "identity");
   }
 
+  reconnectRelay() {
+    this.gun = Gun({ peers: [getGatewayRelayWsUrl()], localStorage: false, radisk: false });
+    return this.gun;
+  }
+
   async init(opts = {}) {
     const saved = await loadSavedSessionResilient();
     if (!saved) {
@@ -235,7 +238,7 @@ export class PersistentIdentity {
       this._saveLocal();
     }
 
-    this.gun = Gun({ peers: [RELAY_URL], localStorage: false, radisk: false });
+    this.gun = Gun({ peers: [getGatewayRelayWsUrl()], localStorage: false, radisk: false });
     this._loadLocalDevices();
 
     // Notify caller immediately once local/backup credentials are hydrated so
@@ -275,7 +278,7 @@ export class PersistentIdentity {
     try {
       const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
       if (controller) checkTimer = setTimeout(() => controller.abort(), 4000);
-      const check = await fetch(AUTH_URL + "/api/auth/link", {
+      const check = await fetch(getGatewayHubUrl() + "/api/auth/link", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mainPub: this.mainPub, devicePub: this.devicePub }),
@@ -323,7 +326,7 @@ export class PersistentIdentity {
   async googleLogin(idToken) {
     const devicePair = await Gun.SEA.pair();
 
-    const resp = await fetch(AUTH_URL + "/api/auth/google-link", {
+    const resp = await fetch(getGatewayHubUrl() + "/api/auth/google-link", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -358,7 +361,7 @@ export class PersistentIdentity {
 
     this._saveLocal();
 
-    this.gun = Gun({ peers: [RELAY_URL], localStorage: false, radisk: false });
+    this.gun = Gun({ peers: [getGatewayRelayWsUrl()], localStorage: false, radisk: false });
     await new Promise((resolve) => {
       const timer = setTimeout(resolve, 2500);
       this.gun.user().auth(devicePair, (ack) => {
@@ -384,7 +387,7 @@ export class PersistentIdentity {
   async appleLogin(idToken, user = null) {
     const devicePair = await Gun.SEA.pair();
 
-    const resp = await fetch(AUTH_URL + "/api/auth/apple-link", {
+    const resp = await fetch(getGatewayHubUrl() + "/api/auth/apple-link", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -427,7 +430,7 @@ export class PersistentIdentity {
 
     this._saveLocal();
 
-    this.gun = Gun({ peers: [RELAY_URL], localStorage: false, radisk: false });
+    this.gun = Gun({ peers: [getGatewayRelayWsUrl()], localStorage: false, radisk: false });
     await new Promise((resolve) => {
       const timer = setTimeout(resolve, 2500);
       this.gun.user().auth(devicePair, (ack) => {
@@ -452,7 +455,7 @@ export class PersistentIdentity {
   async legacyLogin(omdKey) {
     const devicePair = await Gun.SEA.pair();
 
-    const resp = await fetch(AUTH_URL + "/api/auth/legacy-link", {
+    const resp = await fetch(getGatewayHubUrl() + "/api/auth/legacy-link", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -481,7 +484,7 @@ export class PersistentIdentity {
 
     this._saveLocal();
 
-    this.gun = Gun({ peers: [RELAY_URL], localStorage: false, radisk: false });
+    this.gun = Gun({ peers: [getGatewayRelayWsUrl()], localStorage: false, radisk: false });
     await new Promise((resolve) => {
       this.gun.user().auth(devicePair, (ack) => {
         if (ack.err) console.warn("[identity] gun auth warn:", ack.err);
@@ -513,7 +516,7 @@ export class PersistentIdentity {
    */
   async register(alias, password, email, image = "", locale = "") {
     if (!this.gun) {
-      this.gun = Gun({ peers: [RELAY_URL], localStorage: false, radisk: false });
+      this.gun = Gun({ peers: [getGatewayRelayWsUrl()], localStorage: false, radisk: false });
     }
 
     const cleanAlias = (alias || "").replace(/#.*$/, "").trim() || (alias || "").trim();
@@ -572,7 +575,7 @@ export class PersistentIdentity {
     const generatedKey = generateOmdKey();
 
     // Register with server (email mapping + certificate for devicePub)
-    const resp = await fetch(AUTH_URL + "/api/auth/register", {
+    const resp = await fetch(getGatewayHubUrl() + "/api/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -649,7 +652,7 @@ export class PersistentIdentity {
     const cleanPassword = password || "";
 
     if (!this.gun) {
-      this.gun = Gun({ peers: [RELAY_URL], localStorage: false, radisk: false });
+      this.gun = Gun({ peers: [getGatewayRelayWsUrl()], localStorage: false, radisk: false });
     }
 
     let pair = null;
@@ -684,7 +687,7 @@ export class PersistentIdentity {
         } catch (_) {}
 
         if (!this.gun) {
-          this.gun = Gun({ peers: [RELAY_URL], localStorage: false, radisk: false });
+          this.gun = Gun({ peers: [getGatewayRelayWsUrl()], localStorage: false, radisk: false });
         }
 
         // Direct SEA resolution avoids Gun's bug where nodes with sub-properties
@@ -832,7 +835,7 @@ export class PersistentIdentity {
     let gatewayDeleted = false;
     if (!isExplicitDidOrTag) {
       try {
-        const resp = await fetch(AUTH_URL + "/api/auth/gateway-signin", {
+        const resp = await fetch(getGatewayHubUrl() + "/api/auth/gateway-signin", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           signal: AbortSignal.timeout(8000),
@@ -921,7 +924,7 @@ export class PersistentIdentity {
     //    - Gateway path: the device pair is the one the cert was issued for.
     //    - Gun-native path: fall back to the master pair and link it.
     if (!certificate) {
-      const linkResp = await fetch(AUTH_URL + "/api/auth/link", {
+      const linkResp = await fetch(getGatewayHubUrl() + "/api/auth/link", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mainPub, devicePub: (pair && pair.pub) || devicePair.pub }),
@@ -952,7 +955,7 @@ export class PersistentIdentity {
     this._saveLocal();
 
     if (!this.gun) {
-      this.gun = Gun({ peers: [RELAY_URL], localStorage: false, radisk: false });
+      this.gun = Gun({ peers: [getGatewayRelayWsUrl()], localStorage: false, radisk: false });
     }
     await new Promise((resolve) => {
       this.gun.user().auth(this.devicePair, (ack) => {
@@ -981,7 +984,7 @@ export class PersistentIdentity {
     // The hub is a single central service on the gateway: device registry,
     // GunDB relay and all device graph writes go through it regardless of
     // the page origin (vite/localhost, node-served PWA, native app webview).
-    const hubUrl = HUB_URL;
+    const hubUrl = getGatewayHubUrl();
 
     const resp = await fetch(`${hubUrl}/api/auth/link`, {
       method: "POST",
@@ -1009,7 +1012,7 @@ export class PersistentIdentity {
     const mainPub = cleanKey.startsWith("did:gun:") ? cleanKey.replace("did:gun:", "") : cleanKey;
     const devicePair = await Gun.SEA.pair();
 
-    const resp = await fetch(AUTH_URL + "/api/auth/link", {
+    const resp = await fetch(getGatewayHubUrl() + "/api/auth/link", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mainPub, devicePub: devicePair.pub }),
@@ -1032,7 +1035,7 @@ export class PersistentIdentity {
 
     this._saveLocal();
 
-    this.gun = Gun({ peers: [RELAY_URL], localStorage: false, radisk: false });
+    this.gun = Gun({ peers: [getGatewayRelayWsUrl()], localStorage: false, radisk: false });
     await new Promise((resolve) => {
       this.gun.user().auth(devicePair, (ack) => {
         if (ack.err) console.warn("[identity] gun auth warn:", ack.err);
@@ -1099,7 +1102,7 @@ export class PersistentIdentity {
     let resolvedDid = `did:gun:${mainPub}`;
 
     try {
-      const resp = await fetch(AUTH_URL + "/api/auth/link", {
+      const resp = await fetch(getGatewayHubUrl() + "/api/auth/link", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mainPub, devicePub: devicePair.pub }),
@@ -1136,7 +1139,7 @@ export class PersistentIdentity {
       locale: String(data.locale || "").trim(),
     };
 
-    this.gun = Gun({ peers: [RELAY_URL], localStorage: false, radisk: false });
+    this.gun = Gun({ peers: [getGatewayRelayWsUrl()], localStorage: false, radisk: false });
 
     // Pull latest profile from GunDB graph if available
     await new Promise((resolve) => {
@@ -1272,7 +1275,7 @@ export class PersistentIdentity {
       throw new Error("Please enter a valid email address");
     }
 
-    const resp = await fetch(AUTH_URL + "/api/auth/request-email-change", {
+    const resp = await fetch(getGatewayHubUrl() + "/api/auth/request-email-change", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1340,7 +1343,7 @@ export class PersistentIdentity {
     // The hub is a single central service on the gateway: device registry,
     // GunDB relay and all device graph writes go through it regardless of
     // the page origin (vite/localhost, node-served PWA, native app webview).
-    const hubUrl = HUB_URL;
+    const hubUrl = getGatewayHubUrl();
 
     if (this.mainPub) {
       try {
@@ -1389,7 +1392,7 @@ export class PersistentIdentity {
     // The hub is a single central service on the gateway: device registry,
     // GunDB relay and all device graph writes go through it regardless of
     // the page origin (vite/localhost, node-served PWA, native app webview).
-    const hubUrl = HUB_URL;
+    const hubUrl = getGatewayHubUrl();
 
     if (this.mainPub) {
       try {
@@ -1470,7 +1473,7 @@ export class PersistentIdentity {
   async deleteAccount({ password = "" } = {}) {
     if (!this.mainPub) throw new Error("No account is signed in");
 
-    const resp = await fetch(AUTH_URL + "/api/auth/delete-account", {
+    const resp = await fetch(getGatewayHubUrl() + "/api/auth/delete-account", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1645,7 +1648,7 @@ export class PersistentIdentity {
     // The hub is a single central service on the gateway: device registry,
     // GunDB relay and all device graph writes go through it regardless of
     // the page origin (vite/localhost, node-served PWA, native app webview).
-    const hubUrl = HUB_URL;
+    const hubUrl = getGatewayHubUrl();
 
     try {
       const fetchPromise = fetch(`${hubUrl}/api/devices?mainPub=${encodeURIComponent(this.mainPub)}`)

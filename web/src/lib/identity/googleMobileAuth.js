@@ -1,10 +1,21 @@
 import { Capacitor, registerPlugin } from "@capacitor/core";
+import { getGatewayOauthBridgeOrigin } from "../gateway-config.js";
 
 export const GOOGLE_WEB_CLIENT_ID =
   "959849209352-vbi0vfimrqj904598felj8ieeb6to8s2.apps.googleusercontent.com";
 
-const HUB_AUTH_URL = "https://disk.direct:8765";
-const MOBILE_BRIDGE_BASE_URL = "https://disk.direct";
+function getBridgeBaseUrl() {
+  return getGatewayOauthBridgeOrigin() || "https://disk.direct";
+}
+
+function getBridgeHubAuthUrl() {
+  try {
+    const u = new URL(getBridgeBaseUrl());
+    return `${u.protocol}//${u.hostname}:8765`;
+  } catch (_) {
+    return "https://disk.direct:8765";
+  }
+}
 
 const NativeGoogleAuth = registerPlugin("NativeGoogleAuth");
 
@@ -85,7 +96,7 @@ export function startBrowserOAuthBridge(provider = "google", isSyncGesture = tru
       ? navigator.language.slice(0, 5)
       : "en";
   const queryKey = provider === "apple" ? "mobile_apple_auth" : "mobile_google_auth";
-  const bridgeUrl = `${MOBILE_BRIDGE_BASE_URL}/?${queryKey}=${encodeURIComponent(session)}&lang=${encodeURIComponent(lang)}`;
+  const bridgeUrl = `${getBridgeBaseUrl()}/?${queryKey}=${encodeURIComponent(session)}&lang=${encodeURIComponent(lang)}`;
 
   // Open synchronously before any await so iOS WKWebView never popup-blocks it
   openExternalAuthUrl(bridgeUrl, isSyncGesture);
@@ -132,7 +143,7 @@ export function startBrowserOAuthBridge(provider = "google", isSyncGesture = tru
       pollInFlight = true;
       try {
         const resp = await fetch(
-          `${HUB_AUTH_URL}/api/auth/mobile-oauth-poll?session=${encodeURIComponent(session)}&t=${Date.now()}`,
+          `${getBridgeHubAuthUrl()}/api/auth/mobile-oauth-poll?session=${encodeURIComponent(session)}&t=${Date.now()}`,
           { method: "GET", cache: "no-store" }
         );
         if (!resp.ok) return;
@@ -297,7 +308,7 @@ export function mountMobileGoogleBridgeIfRequested(targetEl) {
         <p id="omd-bridge-desc" style="font-size:14px;line-height:1.5;margin:0 0 24px;color:${prefersDark ? (isChatHost ? "#CEC6D6" : "#AEB5C7") : (isChatHost ? "#5E5468" : "#5A6278")};">${copy.desc}</p>
         <div id="omd-bridge-btn" style="display:flex;justify-content:center;min-height:44px;"></div>
         <div id="omd-bridge-return" style="display:none;margin-top:16px;">
-          <a href="onmydisk://auth-complete" style="display:inline-flex;align-items:center;justify-content:center;width:100%;height:44px;border-radius:10px;background:${bridgeAccent};color:#FFFFFF;font-weight:600;font-size:15px;text-decoration:none;">${copy.openAppBtn}</a>
+          <a href="direct://auth-complete" style="display:inline-flex;align-items:center;justify-content:center;width:100%;height:44px;border-radius:10px;background:${bridgeAccent};color:#FFFFFF;font-weight:600;font-size:15px;text-decoration:none;">${copy.openAppBtn}</a>
         </div>
         <p id="omd-bridge-status" style="font-size:13px;margin:16px 0 0;min-height:20px;color:${bridgeStatusColor};"></p>
       </div>
@@ -317,7 +328,7 @@ export function mountMobileGoogleBridgeIfRequested(targetEl) {
       statusEl.textContent = copy.verifying;
     }
     try {
-      const r = await fetch(`${HUB_AUTH_URL}/api/auth/mobile-oauth-complete`, {
+      const r = await fetch(`${getBridgeHubAuthUrl()}/api/auth/mobile-oauth-complete`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ session, provider, ...payload }),
@@ -335,7 +346,7 @@ export function mountMobileGoogleBridgeIfRequested(targetEl) {
       if (returnHost) returnHost.style.display = "block";
       setTimeout(() => {
         try {
-          window.location.href = "onmydisk://auth-complete";
+          window.location.href = "direct://auth-complete";
         } catch (_) {}
       }, 300);
       setTimeout(() => {

@@ -7,10 +7,12 @@
 import { Capacitor } from "@capacitor/core";
 import { PushNotifications } from "@capacitor/push-notifications";
 import { translate } from "./i18n/index.js";
+import { getGatewayOrigin, getGatewayHubUrl } from "./gateway-config.js";
 
 const NATIVE_SUB_STORAGE_KEY = "omd_native_push_sub";
-const DEFAULT_RELAY_URL = "https://disk.direct:8765/api/push/native";
-const DEFAULT_PUBLIC_ORIGIN = "https://disk.direct";
+function getPushRelayUrl() {
+  return `${getGatewayHubUrl()}/api/push/native`;
+}
 
 let _nativeListenersBound = false;
 
@@ -173,8 +175,8 @@ export async function subscribeToNodeWebPush({
       platform,
       token,
       endpoint,
-      relay_url: DEFAULT_RELAY_URL,
-      public_origin: DEFAULT_PUBLIC_ORIGIN
+      relay_url: getPushRelayUrl(),
+      public_origin: getGatewayOrigin()
     };
     const autoLabel =
       deviceLabel || (platform === "ios" ? "iPhone / iPad App" : "Android App");
@@ -298,8 +300,8 @@ export async function syncExistingWebPushSubscription({
         platform,
         token,
         endpoint: `native://${platform}/${token}`,
-        relay_url: DEFAULT_RELAY_URL,
-        public_origin: DEFAULT_PUBLIC_ORIGIN
+        relay_url: getPushRelayUrl(),
+        public_origin: getGatewayOrigin()
       };
       localStorage.setItem(NATIVE_SUB_STORAGE_KEY, JSON.stringify(subJson));
       await fetchFn("/push/subscribe", {

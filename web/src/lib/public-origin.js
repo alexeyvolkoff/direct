@@ -1,12 +1,9 @@
-export const DEFAULT_PUBLIC_ORIGIN = "https://disk.direct";
+import { getGatewayOrigin, DEFAULT_GATEWAY_ORIGIN } from "./gateway-config.js";
+
+export const DEFAULT_PUBLIC_ORIGIN = DEFAULT_GATEWAY_ORIGIN;
 
 export function publicOrigin() {
-  if (typeof window === "undefined") return DEFAULT_PUBLIC_ORIGIN;
-  const host = window.location.hostname;
-  if (!host || host === "localhost" || host === "127.0.0.1" || host === "[::1]") {
-    return DEFAULT_PUBLIC_ORIGIN;
-  }
-  return window.location.origin;
+  return getGatewayOrigin();
 }
 
 export function sharedLinkUrl(address) {

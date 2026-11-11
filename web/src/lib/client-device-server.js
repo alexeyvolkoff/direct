@@ -13,10 +13,10 @@ import { NativeStorageDrive, NativeStorage, isNativeStorageAvailable } from "./n
 import { GatewayChannel, getSharedGatewayChannel } from "./gateway-channel.js";
 import { ensureChannelToken, getGatewayBase, getStoredOmdKey } from "./omd-key.js";
 import { getChatStore } from "./chat-store.js";
+import { getGatewayTurnHost } from "./gateway-config.js";
 
 function turnServers() {
-  const h = typeof window !== "undefined" ? window.location.hostname : "";
-  const host = (!h || h === "localhost" || h === "127.0.0.1") ? "disk.direct" : h;
+  const host = getGatewayTurnHost();
   const servers = [
     { urls: `turn:${host}:3478?transport=udp`, username: "turnuser", credential: "turnpass" },
     { urls: `turn:${host}:3478?transport=tcp`, username: "turnuser", credential: "turnpass" }
@@ -30,13 +30,16 @@ function turnServers() {
   return servers;
 }
 
-const ICE_SERVERS = [
-  { urls: "stun:disk.direct:3478" },
-  { urls: "stun:stun.cloudflare.com:3478" },
-  { urls: "stun:stun.l.google.com:19302" },
-  { urls: "stun:stun1.l.google.com:19302" },
-  ...turnServers(),
-];
+function getIceServers() {
+  const host = getGatewayTurnHost();
+  return [
+    { urls: `stun:${host}:3478` },
+    { urls: "stun:stun.cloudflare.com:3478" },
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" },
+    ...turnServers(),
+  ];
+}
 
 const POLL_INTERVAL_MS = 1200;
 const BACKGROUND_POLL_INTERVAL_MS = 5000; // tab/PWA hidden - poll less aggressively
@@ -442,7 +445,7 @@ export class ClientDeviceServer {
     };
     this._activeConnections.set(tunnelId, conn);
 
-    conn.pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    conn.pc = new RTCPeerConnection({ iceServers: getIceServers() });
 
     conn.pc.onicecandidate = async (e) => {
       if (e.candidate && e.candidate.candidate && !conn.closed) {

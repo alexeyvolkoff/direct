@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-        <string>On My Disk</string>
+        <string>Disk Direct</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -13,7 +13,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>OnMyDisk</string>
+	<string>DiskDirect</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -48,11 +48,11 @@
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>On My Disk uses the camera to scan device pairing QR codes and capture media.</string>
+	<string>Disk Direct uses the camera to scan device pairing and gateway QR codes and capture media.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>On My Disk needs access to your photo library to sync and backup your photos and videos.</string>
+	<string>Disk Direct needs access to your photo library to sync and back up your photos and videos.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>On My Disk needs permission to save photos and videos to your photo library.</string>
+	<string>Disk Direct needs permission to save photos and videos to your photo library.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -60,6 +60,8 @@
 			<string>net.onmydisk.app</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
+				<string>direct</string>
+				<string>diskdirect</string>
 				<string>onmydisk</string>
 			</array>
 		</dict>

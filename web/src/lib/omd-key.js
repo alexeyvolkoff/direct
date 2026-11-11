@@ -259,14 +259,10 @@ function readSessionCookie() {
  * Fresh guests get a locally generated 32-hex key persisted in localStorage,
  * editable later via the anonymous profile (storeOmdKey).
  */
+import { getGatewayOrigin } from "./gateway-config.js";
+
 export function getGatewayBase() {
-  if (typeof window === "undefined") return "https://disk.direct";
-  const loc = window.location;
-  const rawHost = loc.hostname || "";
-  const isLocal = !rawHost || rawHost === "localhost" || rawHost === "127.0.0.1";
-  const host = isLocal ? "disk.direct" : rawHost;
-  const proto = (isLocal || host === "disk.direct" || loc.protocol === "https:") ? "https:" : "http:";
-  return `${proto}//${host}`;
+  return getGatewayOrigin();
 }
 
 export async function ensureChannelToken() {

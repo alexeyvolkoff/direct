@@ -1,7 +1,7 @@
 import { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'direct.disk.app',
+  appId: 'net.onmydisk.app',
   appName: 'Disk Direct',
   webDir: '../web/dist',
   bundledWebRuntime: false,

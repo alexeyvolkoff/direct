@@ -17,15 +17,17 @@ android {
         applicationId "net.onmydisk.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        def defaultBuildNumber = "4823"
-        def buildNum = System.getenv("BUILD_NUMBER") ?: defaultBuildNumber
-        versionCode buildNum.isInteger() ? buildNum.toInteger() : 4823
-        versionName "3.0." + buildNum
+        def defaultBuildNumber = "6000"
+        def rawBuildNum = (System.getenv("BUILD_NUMBER") ?: defaultBuildNumber).toString()
+        def parsedBuildNum = rawBuildNum.isInteger() ? rawBuildNum.toInteger() : 6000
+        def monotonicBuildNum = parsedBuildNum < 6000 ? (6000 + parsedBuildNum) : parsedBuildNum
+        versionCode monotonicBuildNum
+        versionName "3.1." + monotonicBuildNum
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
-            ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+            ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~:!*.gz:!*.br'
         }
     }
     signingConfigs {

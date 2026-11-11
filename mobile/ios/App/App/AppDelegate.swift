@@ -61,7 +61,20 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
+        forwardDeepLinkToWebView(url)
         return ApplicationDelegateProxy.shared.application(app, open: url, options: options)
+    }
+
+    private func forwardDeepLinkToWebView(_ url: URL) {
+        let raw = url.absoluteString
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+        let js = "window.__pendingDeepLinkUrl='\(raw)';window.dispatchEvent(new CustomEvent('omd-deeplink',{detail:{url:'\(raw)'}}));"
+        DispatchQueue.main.async { [weak self] in
+            if let vc = self?.window?.rootViewController as? CAPBridgeViewController {
+                vc.webView?.evaluateJavaScript(js, completionHandler: nil)
+            }
+        }
     }
 
     func application(_ application: UIApplication, continue userActivity: NSUserActivity, restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void) -> Bool {
