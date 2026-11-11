@@ -2520,6 +2520,10 @@
       section.online = chatsEntryOnline;
       updateRootFilesData();
     }
+    if (typeof window !== "undefined" && window.__omdChatsOnline !== chatsEntryOnline) {
+      window.__omdChatsOnline = chatsEntryOnline;
+      window.dispatchEvent(new CustomEvent("omd-chats-online", { detail: chatsEntryOnline }));
+    }
   }
 
   let refreshDevicesTimer = null;

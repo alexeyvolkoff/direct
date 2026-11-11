@@ -18,6 +18,7 @@
 	registerMenuItem("upload", UploadButton);
 
 	let profile = $state(typeof window !== "undefined" ? window.__omdProfile : null);
+	let chatsOnline = $state(typeof window !== "undefined" ? Boolean(window.__omdChatsOnline) : false);
 	let imgFailed = $state(false);
 	let curVersion = $state(
 		(typeof import.meta !== "undefined" && import.meta.env && import.meta.env.DEV)
@@ -36,10 +37,16 @@
 		imgFailed = false;
 	}
 
+	function onChatsOnline(e) {
+		chatsOnline = Boolean(e && e.detail);
+	}
+
 	onMount(() => {
 		if (typeof window !== "undefined") {
 			profile = window.__omdProfile;
+			chatsOnline = Boolean(window.__omdChatsOnline);
 			window.addEventListener("omd-profile-update", onProfileUpdate);
+			window.addEventListener("omd-chats-online", onChatsOnline);
 			if (import.meta.env && import.meta.env.DEV) {
 				curVersion = (import.meta.env && import.meta.env.VITE_APP_VERSION) || "3.0.0";
 			} else if (window.__omdAppVersion && window.__omdAppVersion !== "{VERSION}") {
@@ -57,6 +64,7 @@
 	onDestroy(() => {
 		if (typeof window !== "undefined") {
 			window.removeEventListener("omd-profile-update", onProfileUpdate);
+			window.removeEventListener("omd-chats-online", onChatsOnline);
 			if (unsubVersion) unsubVersion();
 			if (unsubOta) unsubOta();
 		}
@@ -171,6 +179,21 @@
 	<Drive />
 	<div class="wx-sidebar-nav-wrap">
 		{#if !readonly}
+			<button
+				type="button"
+				class="wx-sidebar-nav-btn"
+				title={translate("chats", {}, "Chats")}
+				onclick={() => openApplet("chat")}
+			>
+				<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+				</svg>
+				<span>{translate("chats", {}, "Chats")}</span>
+				<span
+					class="wx-sidebar-online-dot {chatsOnline ? 'online' : 'offline'}"
+					title={chatsOnline ? "Online" : "Offline"}
+				></span>
+			</button>
 			<button
 				type="button"
 				class="wx-sidebar-nav-btn"
@@ -483,6 +506,22 @@
 
 	.wx-sidebar-nav-btn svg {
 		flex-shrink: 0;
+	}
+
+	.wx-sidebar-online-dot {
+		margin-left: auto;
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		flex-shrink: 0;
+	}
+
+	.wx-sidebar-online-dot.online {
+		background-color: #10b981;
+	}
+
+	.wx-sidebar-online-dot.offline {
+		background-color: rgba(148, 163, 184, 0.45);
 	}
 
 	.wx-sidebar-update-badge {

@@ -371,20 +371,22 @@
           const newest = unarchived[0] || list[0];
 
           if (!userSelectedChatManually) {
-            // After refresh / on initial load: always open the most recently updated chat
+            // After refresh / on initial load: preselect the most recently updated
+            // chat in the background without overriding an explicit activeView
+            // ('creations' or 'memory') passed on first mount.
             if (newest) {
-              selectChat(newest._id);
+              selectChat(newest._id, { switchView: false });
             } else if (!list.length) {
-              startNewChat();
+              startNewChat({ switchView: false });
               userSelectedChatManually = false;
             }
           } else {
             // User manually selected a chat during this session: keep it unless it was removed
             if (!list.some((c) => c._id === activeChatId)) {
               if (newest) {
-                selectChat(newest._id);
+                selectChat(newest._id, { switchView: false });
               } else if (!list.length) {
-                startNewChat();
+                startNewChat({ switchView: false });
               }
             }
           }
@@ -447,11 +449,13 @@
     }
   }
 
-  function selectChat(id) {
+  function selectChat(id, { switchView = true } = {}) {
     if (id && id !== activeChatId) {
       isChatLoading = true;
     }
-    activeView = "chat";
+    if (switchView) {
+      activeView = "chat";
+    }
     activeChatId = id;
     if (typeof localStorage !== "undefined" && id) {
       localStorage.setItem("omc_active_chat_id", id);
@@ -459,15 +463,17 @@
     chatMenuOpenId = null;
     renamingChatId = null;
     // On mobile, auto-close sidebar after selection
-    if (typeof window !== "undefined" && window.innerWidth < 768) {
+    if (switchView && typeof window !== "undefined" && window.innerWidth < 768) {
       sidebarOpen = false;
     }
   }
 
-  function startNewChat() {
+  function startNewChat({ switchView = true } = {}) {
     isChatLoading = true;
-    activeView = "chat";
-    userSelectedChatManually = true;
+    if (switchView) {
+      activeView = "chat";
+      userSelectedChatManually = true;
+    }
     const id = newChatId();
     activeChatId = id;
     if (typeof localStorage !== "undefined") {
@@ -1235,6 +1241,20 @@
               <span>{$_("files_app", {}, "Files")}</span>
             </button>
           {/if}
+
+          <button
+            class="nav-link-btn"
+            class:active={activeView === "chat"}
+            on:click={() => {
+              activeView = "chat";
+              if (typeof window !== "undefined" && window.innerWidth < 768) sidebarOpen = false;
+            }}
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+            <span>{$_("chats", {}, "Chats")}</span>
+          </button>
 
           <button
             class="nav-link-btn"

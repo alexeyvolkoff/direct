@@ -42,7 +42,7 @@
 
 <ul use:delegateClick={{ click, toggle }}>
 	{#each folders as folder (folder ? folder.id : Math.random())}
-		{#if folder && (folder.type === "folder" || folder.isDir || folder.isDevice || folder.id === "/chats")}
+		{#if folder && (folder.type === "folder" || folder.isDir || folder.isDevice)}
 			<Folder {folder} />
 		{/if}
 	{/each}
