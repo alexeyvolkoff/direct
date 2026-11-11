@@ -230,10 +230,10 @@
       letterSpacing: 0,
       customGlyphs: true,
       theme: {
-        background: '#16131F',
-        foreground: '#F8F7FC',
-        cursor: '#C084FC',
-        selectionBackground: 'rgba(168, 85, 247, 0.3)'
+        background: '#1F2430',
+        foreground: '#F6F7FA',
+        cursor: '#929CD4',
+        selectionBackground: 'rgba(123, 134, 196, 0.3)'
       }
     });
 
@@ -734,7 +734,7 @@
     flex-direction: column;
     width: 100%;
     height: 100%;
-    background-color: var(--wx-background, #16131F);
+    background-color: var(--wx-background, #1F2430);
   }
 
   .terminal-wrapper {
@@ -742,14 +742,14 @@
     flex-direction: column;
     height: 100%;
     width: 100%;
-    background-color: var(--wx-background, #16131F);
+    background-color: var(--wx-background, #1F2430);
   }
 
   :global(.xterm),
   :global(.xterm .xterm-viewport),
   :global(.xterm .xterm-screen),
   :global(.xterm .xterm-rows) {
-    background-color: var(--wx-background, #16131F) !important;
+    background-color: var(--wx-background, #1F2430) !important;
   }
 
   .terminal-toolbar {
@@ -757,9 +757,9 @@
     justify-content: space-between;
     align-items: center;
     padding: 8px 16px;
-    background-color: #1D1829;
+    background-color: #242A38;
     color: #fff;
-    border-bottom: 1px solid #2D2640;
+    border-bottom: 1px solid #32394B;
   }
 
   .terminal-toolbar .title {
@@ -807,10 +807,10 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    background: #1D1829;
+    background: #242A38;
     padding: 16px 24px;
     border-radius: 8px;
-    border: 1px solid #2D2640;
+    border: 1px solid #32394B;
     color: #fff;
     font-size: 14px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
@@ -820,7 +820,7 @@
     width: 18px;
     height: 18px;
     border: 2px solid rgba(255, 255, 255, 0.3);
-    border-top-color: #C084FC;
+    border-top-color: #929CD4;
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }
@@ -841,7 +841,7 @@
     gap: 6px;
     height: 26px;
     background: rgba(29, 24, 41, 0.92);
-    color: #C4B8DB;
+    color: #AEB5C7;
     font-size: 12px;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     letter-spacing: 0.02em;
@@ -866,7 +866,7 @@
     width: 4px;
     height: 4px;
     border-radius: 50%;
-    background: #C084FC;
+    background: #929CD4;
     animation: dot-blink 1.4s infinite;
     font-style: normal;
   }
@@ -914,8 +914,8 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
-    background: var(--wx-background-alt, #120F1A);
-    border: 1px solid var(--border-color, #2D2640);
+    background: var(--wx-background-alt, #191D28);
+    border: 1px solid var(--border-color, #32394B);
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
     border-radius: 12px;
     padding: 24px;
@@ -932,13 +932,13 @@
 
   .prompt-label {
     font-size: 12px;
-    color: var(--wx-color-font-alt, #8B80A3);
+    color: var(--wx-color-font-alt, #7E869B);
     margin-top: 4px;
   }
 
   .prompt-input {
-    background: var(--wx-background, #16131F);
-    border: 1px solid var(--border-color, #2D2640);
+    background: var(--wx-background, #1F2430);
+    border: 1px solid var(--border-color, #32394B);
     border-radius: 6px;
     color: var(--wx-color-font, #fff);
     padding: 9px 12px;
@@ -948,12 +948,12 @@
   }
 
   .prompt-input:focus {
-    border-color: var(--wx-color-primary, #9333EA);
+    border-color: var(--wx-color-primary, #5863A6);
   }
 
   .prompt-hint {
     font-size: 12px;
-    color: var(--wx-color-font-alt, #8B80A3);
+    color: var(--wx-color-font-alt, #7E869B);
     margin-bottom: 4px;
   }
 
@@ -962,14 +962,14 @@
     align-items: center;
     gap: 8px;
     font-size: 12px;
-    color: var(--wx-color-font-alt, #8B80A3);
+    color: var(--wx-color-font-alt, #7E869B);
     margin-top: 10px;
     cursor: pointer;
     user-select: none;
   }
 
   .prompt-check input {
-    accent-color: var(--wx-color-primary, #9333EA);
+    accent-color: var(--wx-color-primary, #5863A6);
   }
 
   .prompt-error {
@@ -984,7 +984,7 @@
 
   .prompt-btn {
     margin-top: 12px;
-    background: var(--wx-color-primary, #9333EA);
+    background: var(--wx-color-primary, #5863A6);
     border: none;
     border-radius: 6px;
     color: #fff;
@@ -996,6 +996,6 @@
   }
 
   .prompt-btn:hover {
-    background: var(--wx-color-primary-hover, #A855F7);
+    background: var(--wx-color-primary-hover, #7B86C4);
   }
 </style>

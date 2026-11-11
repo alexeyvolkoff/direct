@@ -329,14 +329,14 @@
 
   .modal-card.light-theme {
     background: #ffffff;
-    color: #0D0B12;
-    border-color: #DDD6EB;
+    color: #151821;
+    border-color: #D8DCE8;
   }
 
   .modal-card.dark-theme {
-    background: #16131F;
+    background: #1F2430;
     color: #ffffff;
-    border-color: #2D2640;
+    border-color: #32394B;
   }
 
   .modal-header {
@@ -348,11 +348,11 @@
   }
 
   .light-theme .modal-header {
-    border-bottom-color: #DDD6EB;
+    border-bottom-color: #D8DCE8;
   }
 
   .dark-theme .modal-header {
-    border-bottom-color: #2D2640;
+    border-bottom-color: #32394B;
   }
 
   .header-info {
@@ -365,8 +365,8 @@
     width: 40px;
     height: 40px;
     border-radius: 10px;
-    background: rgba(168, 85, 247, 0.15);
-    color: #9333EA;
+    background: rgba(123, 134, 196, 0.15);
+    color: #5863A6;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -380,7 +380,7 @@
 
   .modal-sub {
     font-size: 12px;
-    color: #8B80A3;
+    color: #7E869B;
     margin: 2px 0 0 0;
   }
 
@@ -388,7 +388,7 @@
     background: transparent;
     border: none;
     cursor: pointer;
-    color: #8B80A3;
+    color: #7E869B;
     padding: 6px;
     border-radius: 8px;
     display: flex;
@@ -414,14 +414,14 @@
     align-items: center;
     padding: 30px;
     gap: 12px;
-    color: #8B80A3;
+    color: #7E869B;
   }
 
   .spinner {
     width: 32px;
     height: 32px;
     border: 3px solid rgba(139, 128, 163, 0.2);
-    border-top-color: #9333EA;
+    border-top-color: #5863A6;
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }
@@ -459,7 +459,7 @@
 
   .btn-copy {
     padding: 9px 16px;
-    background: #9333EA;
+    background: #5863A6;
     color: #ffffff;
     border: none;
     border-radius: 8px;
@@ -471,12 +471,12 @@
   }
 
   .btn-copy:hover {
-    background: #7E22CE;
+    background: #3D467A;
   }
 
   .link-help {
     font-size: 12px;
-    color: #8B80A3;
+    color: #7E869B;
     margin: 0;
   }
 
@@ -507,7 +507,7 @@
 
   .option-desc {
     font-size: 11px;
-    color: #8B80A3;
+    color: #7E869B;
   }
 
   .password-input-wrap {
@@ -543,14 +543,14 @@
   }
 
   .select-input option {
-    background-color: #16131F;
+    background-color: #1F2430;
     color: #ffffff;
   }
 
   :global(.light-theme) .select-input option,
   :global(html:not(.omd-dark)) .select-input option {
     background-color: #ffffff;
-    color: #0D0B12;
+    color: #151821;
   }
 
   /* Switches */
@@ -593,7 +593,7 @@
   }
 
   input:checked + .slider {
-    background-color: #9333EA;
+    background-color: #5863A6;
   }
 
   input:checked + .slider:before {
@@ -628,11 +628,11 @@
   }
 
   .light-theme .modal-footer {
-    border-top-color: #DDD6EB;
+    border-top-color: #D8DCE8;
   }
 
   .dark-theme .modal-footer {
-    border-top-color: #2D2640;
+    border-top-color: #32394B;
   }
 
   .footer-spacer {
@@ -641,7 +641,7 @@
 
   .btn-primary {
     padding: 9px 18px;
-    background: #9333EA;
+    background: #5863A6;
     color: #ffffff;
     border: none;
     border-radius: 8px;
@@ -652,7 +652,7 @@
   }
 
   .btn-primary:hover {
-    background: #A855F7;
+    background: #7B86C4;
   }
 
   .btn-cancel {

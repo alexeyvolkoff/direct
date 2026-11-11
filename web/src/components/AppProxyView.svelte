@@ -346,7 +346,7 @@
     padding: 6px 14px;
     border-radius: 6px;
     border: 1px solid rgba(255, 255, 255, 0.2);
-    background: var(--accent, #9333EA);
+    background: var(--accent, #5863A6);
     color: #fff;
     font-size: 13px;
     cursor: pointer;
@@ -355,7 +355,7 @@
     width: 14px;
     height: 14px;
     border: 2px solid rgba(139, 128, 163, 0.3);
-    border-top-color: var(--accent, #A855F7);
+    border-top-color: var(--accent, #7B86C4);
     border-radius: 50%;
     animation: omd-app-spin 0.75s linear infinite;
   }

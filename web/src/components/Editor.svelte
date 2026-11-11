@@ -21,10 +21,10 @@
       inherit: true,
       rules: [],
       colors: {
-        'editor.background': '#16131F',
-        'editor.lineHighlightBackground': '#211C2E',
-        'editorLineNumber.foreground': '#5B5270',
-        'editorLineNumber.activeForeground': '#C4B8DB',
+        'editor.background': '#1F2430',
+        'editor.lineHighlightBackground': '#282E3D',
+        'editorLineNumber.foreground': '#5A6278',
+        'editorLineNumber.activeForeground': '#AEB5C7',
         'editor.selectionBackground': '#581C8788'
       }
     });
@@ -86,16 +86,16 @@
     flex-direction: column;
     width: 100%;
     height: 100%;
-    background-color: var(--wx-background, #16131F);
+    background-color: var(--wx-background, #1F2430);
   }
 
   .editor-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background-color: var(--wx-background-alt, #120F1A);
+    background-color: var(--wx-background-alt, #191D28);
     padding: 8px 16px;
-    border-bottom: 1px solid var(--border-color, #2D2640);
+    border-bottom: 1px solid var(--border-color, #32394B);
   }
 
   .filename {
@@ -127,6 +127,6 @@
     flex: 1;
     min-height: 0; /* Important for flex child to not overflow */
     width: 100%;
-    background-color: var(--wx-background, #16131F);
+    background-color: var(--wx-background, #1F2430);
   }
 </style>

@@ -294,7 +294,7 @@
 
 	.wx-card-placeholder i {
 		font-size: 80px;
-		color: var(--wx-color-primary, #C084FC);
+		color: var(--wx-color-primary, #929CD4);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -303,7 +303,7 @@
 
 	.wx-preview i {
 		font-size: 80px;
-		color: var(--wx-color-primary, #C084FC);
+		color: var(--wx-color-primary, #929CD4);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -416,7 +416,7 @@
 
 	.wx-more-desktop:hover {
 		background-color: var(--wx-button-background, rgba(255, 255, 255, 0.12));
-		color: var(--wx-color-primary, #C084FC);
+		color: var(--wx-color-primary, #929CD4);
 		border-radius: 50%;
 	}
 
@@ -458,7 +458,7 @@
 	}
 	.wx-device-badge.offline {
 		background-color: rgba(139, 128, 163, 0.15);
-		color: #8B80A3;
+		color: #7E869B;
 	}
 	.wx-device-badge-dot {
 		width: 4px;
@@ -481,7 +481,7 @@
 		display: flex;
 		align-items: center;
 		width: fit-content;
-		color: var(--top-menu-color, var(--wx-color-primary, #C084FC));
+		color: var(--top-menu-color, var(--wx-color-primary, #929CD4));
 		user-select: none;
 		font-weight: 500;
 		cursor: pointer;
@@ -517,7 +517,7 @@
 		}
 
 		.wx-selected {
-			background-color: rgba(168, 85, 247, 0.18) !important;
+			background-color: rgba(123, 134, 196, 0.18) !important;
 			outline: none !important;
 		}
 
@@ -614,9 +614,9 @@
 			width: 22px;
 			height: 22px;
 			border-radius: 50%;
-			background: rgba(13, 11, 18, 0.85);
+			background: rgba(21, 24, 33, 0.85);
 			border: 1px solid rgba(255, 255, 255, 0.15);
-			color: var(--wx-icon-color, #C4B8DB);
+			color: var(--wx-icon-color, #AEB5C7);
 			opacity: 0.9;
 			z-index: 2;
 			box-sizing: border-box;

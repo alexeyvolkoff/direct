@@ -504,13 +504,13 @@
     <aside class="playlist-sidebar" class:open={showPlaylist}>
       <div class="sidebar-header">
         <div class="sidebar-title-group">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#C084FC" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#929CD4" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="8" y1="6" x2="21" y2="6"></line>
             <line x1="8" y1="12" x2="21" y2="12"></line>
             <line x1="8" y1="18" x2="21" y2="18"></line>
-            <circle cx="4" cy="6" r="1.5" fill="#C084FC"></circle>
-            <circle cx="4" cy="12" r="1.5" fill="#C084FC"></circle>
-            <circle cx="4" cy="18" r="1.5" fill="#C084FC"></circle>
+            <circle cx="4" cy="6" r="1.5" fill="#929CD4"></circle>
+            <circle cx="4" cy="12" r="1.5" fill="#929CD4"></circle>
+            <circle cx="4" cy="18" r="1.5" fill="#929CD4"></circle>
           </svg>
           <span class="sidebar-heading">{$_("playlist", {}, "Playlist")} ({playlist.length})</span>
         </div>
@@ -694,8 +694,8 @@
 
   .header-btn:hover,
   .header-btn.active {
-    background: rgba(168, 85, 247, 0.7);
-    border-color: #A855F7;
+    background: rgba(123, 134, 196, 0.7);
+    border-color: #7B86C4;
     transform: scale(1.05);
   }
 
@@ -743,7 +743,7 @@
   .video-info-title {
     font-size: 15px;
     font-weight: 700;
-    color: #F8F7FC;
+    color: #F6F7FA;
     margin: 0;
     line-height: 1.4;
     word-break: break-word;
@@ -773,7 +773,7 @@
 
   .video-info-desc {
     font-size: 12.5px;
-    color: #8B80A3;
+    color: #7E869B;
     margin: 0;
     line-height: 1.45;
     word-break: break-word;
@@ -784,7 +784,7 @@
     display: inline-block;
     background: rgba(255, 255, 255, 0.08);
     border: 1px solid rgba(255, 255, 255, 0.12);
-    color: #C4B8DB;
+    color: #AEB5C7;
     padding: 2px 7px;
     border-radius: 6px;
     font-size: 11.5px;
@@ -837,13 +837,13 @@
   .sidebar-heading {
     font-size: 13.5px;
     font-weight: 600;
-    color: #F4F1FA;
+    color: #F1F3F9;
   }
 
   .sidebar-close-btn {
     background: transparent;
     border: none;
-    color: #8B80A3;
+    color: #7E869B;
     cursor: pointer;
     padding: 5px;
     border-radius: 6px;
@@ -891,16 +891,16 @@
   }
 
   .playlist-card.active {
-    background: rgba(168, 85, 247, 0.22);
+    background: rgba(123, 134, 196, 0.22);
     border-color: rgba(55, 169, 239, 0.8);
-    box-shadow: 0 4px 14px rgba(168, 85, 247, 0.25);
+    box-shadow: 0 4px 14px rgba(123, 134, 196, 0.25);
   }
 
   .card-thumb {
     width: 100px;
     height: 60px;
     border-radius: 6px;
-    background: #16131F;
+    background: #1F2430;
     position: relative;
     overflow: hidden;
     flex-shrink: 0;
@@ -943,7 +943,7 @@
 
   .eq-bar {
     width: 2.5px;
-    background: #C084FC;
+    background: #929CD4;
     border-radius: 1px;
     animation: eqBounce 0.8s ease-in-out infinite alternate;
   }
@@ -967,7 +967,7 @@
   .card-title {
     font-size: 13px;
     font-weight: 600;
-    color: #F4F1FA;
+    color: #F1F3F9;
     line-height: 1.35;
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -976,12 +976,12 @@
   }
 
   .playlist-card.active .card-title {
-    color: #C084FC;
+    color: #929CD4;
   }
 
   .card-desc {
     font-size: 11.5px;
-    color: #8B80A3;
+    color: #7E869B;
     line-height: 1.3;
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -1106,7 +1106,7 @@
     right: 0 !important;
     width: 100% !important;
     height: 54px !important;
-    background: linear-gradient(to top, rgba(13, 11, 18, 0.95) 0%, rgba(13, 11, 18, 0.7) 70%, rgba(0, 0, 0, 0) 100%) !important;
+    background: linear-gradient(to top, rgba(21, 24, 33, 0.95) 0%, rgba(21, 24, 33, 0.7) 70%, rgba(0, 0, 0, 0) 100%) !important;
     display: flex !important;
     align-items: center !important;
     justify-content: flex-start !important;
@@ -1142,7 +1142,7 @@
 
   :global(.video-js .vjs-control-bar .vjs-button:hover) {
     background: rgba(255, 255, 255, 0.18) !important;
-    color: #A855F7 !important;
+    color: #7B86C4 !important;
   }
 
   :global(.video-js .vjs-control-bar .vjs-button .vjs-icon-placeholder:before) {
@@ -1188,7 +1188,7 @@
 
   :global(.video-js .vjs-volume-level) {
     border-radius: 3px !important;
-    background-color: #9333EA !important;
+    background-color: #5863A6 !important;
     height: 100% !important;
   }
 
@@ -1206,7 +1206,7 @@
     padding: 0 4px !important;
     display: inline-flex !important;
     align-items: center !important;
-    color: #C4B8DB !important;
+    color: #AEB5C7 !important;
     min-width: auto !important;
   }
 
@@ -1228,7 +1228,7 @@
 
   :global(.video-js .vjs-play-progress) {
     border-radius: 4px !important;
-    background-color: #9333EA !important;
+    background-color: #5863A6 !important;
   }
 
   :global(.video-js .vjs-play-progress:before) {
@@ -1280,7 +1280,7 @@
 
   :global(.video-js .vjs-playback-rate:hover) {
     background: rgba(255, 255, 255, 0.18) !important;
-    color: #A855F7 !important;
+    color: #7B86C4 !important;
   }
 
   :global(.video-js .vjs-playback-rate .vjs-playback-rate-value) {
@@ -1292,7 +1292,7 @@
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
-    color: #F4F1FA !important;
+    color: #F1F3F9 !important;
     text-align: center !important;
     pointer-events: none !important;
   }
@@ -1307,7 +1307,7 @@
   }
 
   :global(.video-js .vjs-playback-rate .vjs-menu-content) {
-    background: rgba(13, 11, 18, 0.95) !important;
+    background: rgba(21, 24, 33, 0.95) !important;
     border: 1px solid rgba(139, 128, 163, 0.2) !important;
     border-radius: 8px !important;
     padding: 6px 0 !important;
@@ -1320,7 +1320,7 @@
     font-weight: 600 !important;
     padding: 8px 12px !important;
     text-align: center !important;
-    color: #C4B8DB !important;
+    color: #AEB5C7 !important;
     border-radius: 4px !important;
     margin: 2px 4px !important;
     cursor: pointer !important;
@@ -1329,7 +1329,7 @@
 
   :global(.video-js .vjs-playback-rate .vjs-menu-item:hover),
   :global(.video-js .vjs-playback-rate .vjs-menu-item.vjs-selected) {
-    background: #9333EA !important;
+    background: #5863A6 !important;
     color: #ffffff !important;
   }
 </style>

@@ -118,7 +118,7 @@
 		border-radius: 6px;
 		background: transparent;
 		border: none;
-		color: var(--wx-color-font-alt, #8B80A3);
+		color: var(--wx-color-font-alt, #7E869B);
 		font-family: var(--wx-font-family);
 		font-size: 13px;
 		font-weight: 500;
@@ -129,7 +129,7 @@
 
 	.wx-sort-btn:hover {
 		background: var(--wx-background-alt, rgba(255, 255, 255, 0.08));
-		color: var(--wx-color-primary, #C084FC);
+		color: var(--wx-color-primary, #929CD4);
 	}
 
 	.wx-sort-btn .wxi-sort {

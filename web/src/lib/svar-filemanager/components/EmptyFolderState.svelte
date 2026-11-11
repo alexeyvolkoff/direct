@@ -223,13 +223,13 @@
 		width: 76px;
 		height: 76px;
 		border-radius: 50%;
-		background: radial-gradient(circle, rgba(168, 85, 247, 0.22) 0%, rgba(168, 85, 247, 0.03) 70%);
+		background: radial-gradient(circle, rgba(123, 134, 196, 0.22) 0%, rgba(123, 134, 196, 0.03) 70%);
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		color: var(--wx-color-primary, #7E22CE);
+		color: var(--wx-color-primary, #3D467A);
 		margin-bottom: 18px;
-		box-shadow: 0 0 24px rgba(168, 85, 247, 0.12);
+		box-shadow: 0 0 24px rgba(123, 134, 196, 0.12);
 	}
 
 	.wx-empty-title {
@@ -273,16 +273,16 @@
 	}
 
 	.wx-primary-btn {
-		background: var(--wx-color-primary, #7E22CE);
+		background: var(--wx-color-primary, #3D467A);
 		color: #ffffff;
 		border: 1px solid transparent;
-		box-shadow: 0 4px 14px rgba(168, 85, 247, 0.25);
+		box-shadow: 0 4px 14px rgba(123, 134, 196, 0.25);
 	}
 
 	.wx-primary-btn:hover {
 		transform: translateY(-1px);
 		filter: brightness(1.08);
-		box-shadow: 0 6px 18px rgba(168, 85, 247, 0.35);
+		box-shadow: 0 6px 18px rgba(123, 134, 196, 0.35);
 	}
 
 	.wx-secondary-btn {
@@ -294,8 +294,8 @@
 
 	.wx-secondary-btn:hover {
 		background: var(--wx-background-alt, rgba(127, 127, 127, 0.08));
-		border-color: var(--wx-color-primary, #7E22CE);
-		color: var(--wx-color-primary, #7E22CE);
+		border-color: var(--wx-color-primary, #3D467A);
+		color: var(--wx-color-primary, #3D467A);
 		transform: translateY(-1px);
 	}
 

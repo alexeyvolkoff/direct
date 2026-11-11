@@ -401,7 +401,7 @@
         "content",
         isChatSkin
           ? (isDarkTheme ? "#0F0C12" : "#FAF9FB")
-          : (isDarkTheme ? "#0D0B12" : "#F8F7FC")
+          : (isDarkTheme ? "#151821" : "#F6F7FA")
       );
     }
   }
@@ -6682,10 +6682,10 @@ async function blobToBase64(blob) {
     return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
   }
 
-  $: appIconColor = isDarkTheme ? "#C084FC" : "#7E22CE";
-  $: brandColor = isDarkTheme ? "#A855F7" : "#7E22CE";
+  $: appIconColor = isDarkTheme ? "#8691CC" : "#46508A";
+  $: brandColor = isDarkTheme ? "#7B86C4" : "#46508A";
   $: chatIconColor = appIconColor;
-  $: brandHoverColor = isDarkTheme ? "#C084FC" : "#9333EA";
+  $: brandHoverColor = isDarkTheme ? "#929CD4" : "#5863A6";
 
   $: getCustomIcon = (file, size) => {
     if (file.mimeType === "application/x-terminal" || file.id === "subapp:terminal") {
@@ -6766,7 +6766,7 @@ async function blobToBase64(blob) {
         </div>
         <div
           class="skin-files {isDarkTheme ? 'wx-willow-dark-theme dark-theme' : 'wx-willow-theme light-theme'}"
-          style="height: 100%; {isDarkTheme ? '--wx-color-primary: #9333EA; --wx-color-primary-hover: #A855F7; --wx-color-primary-selected: rgba(168, 85, 247, 0.22); --wx-fm-select-background: rgba(168, 85, 247, 0.22); --wx-background: #16131F; --wx-background-alt: #120F1A; --wx-fm-background: #0D0B12; --bg-secondary: #16131F; --bg-primary: #0D0B12; --border-color: #2D2640; --sidebar-shadow: 4px 0 20px rgba(0, 0, 0, 0.35);' : '--wx-color-primary: #7E22CE; --wx-color-primary-hover: #9333EA; --wx-color-primary-selected: #F3E8FF; --wx-fm-select-background: #F3E8FF; --wx-background: #FFFFFF; --wx-background-alt: #F4F1FA; --wx-fm-background: #F8F7FC; --bg-secondary: #FFFFFF; --bg-primary: #F8F7FC; --border-color: #DDD6EB; --sidebar-shadow: 3px 0 16px rgba(24, 19, 38, 0.05);'}"
+          style="height: 100%; {isDarkTheme ? '--top-menu-color: #7B86C4; --top-menu-hover-color: #929CD4; --wx-color-primary: #5863A6; --wx-color-primary-border: #6672B8; --wx-color-primary-hover: #6874BA; --wx-color-primary-selected: rgba(123, 134, 196, 0.18); --wx-fm-select-background: rgba(123, 134, 196, 0.18); --wx-background: #1F2430; --wx-background-alt: #191D28; --wx-background-hover: #282E3D; --wx-fm-background: #151821; --bg-secondary: #1F2430; --bg-primary: #151821; --border-color: #32394B; --wx-border: 1px solid #32394B; --selected-text: #DCE0F5; --sidebar-shadow: 4px 0 16px rgba(0, 0, 0, 0.25);' : '--top-menu-color: #46508A; --top-menu-hover-color: #5863A6; --wx-color-primary: #3D467A; --wx-color-primary-border: #3D467A; --wx-color-primary-hover: #5863A6; --wx-color-primary-selected: #E9ECF7; --wx-fm-select-background: #E9ECF7; --wx-background: #FFFFFF; --wx-background-alt: #F1F3F9; --wx-background-hover: #E9ECF5; --wx-fm-background: #F6F7FA; --bg-secondary: #FFFFFF; --bg-primary: #F6F7FA; --border-color: #D8DCE8; --wx-border: 1px solid #D8DCE8; --selected-text: #343C6B; --sidebar-shadow: 3px 0 14px rgba(22, 25, 37, 0.05);'}"
         >
           {#key rootName + "_" + $locale}
             <Locale words={getSvarLocale($locale, rootName)}>
@@ -8057,32 +8057,39 @@ async function blobToBase64(blob) {
   }
 
   :global(.wx-willow-theme) {
-    --top-menu-color: #7E22CE !important;
-    --top-menu-hover-color: #9333EA !important;
-    --wx-color-primary: #7E22CE !important;
-    --wx-color-primary-hover: #9333EA !important;
-    --wx-color-primary-selected: #F3E8FF !important;
-    --wx-fm-select-background: #F3E8FF !important;
+    --top-menu-color: #46508A !important;
+    --top-menu-hover-color: #5863A6 !important;
+    --wx-color-primary: #3D467A !important;
+    --wx-color-primary-border: #3D467A !important;
+    --wx-color-primary-hover: #5863A6 !important;
+    --wx-color-primary-selected: #E9ECF7 !important;
+    --wx-fm-select-background: #E9ECF7 !important;
     --wx-background: #FFFFFF !important;
-    --wx-background-alt: #F4F1FA !important;
-    --wx-background-hover: #EFEBF8 !important;
-    --wx-fm-background: #F8F7FC !important;
+    --wx-background-alt: #F1F3F9 !important;
+    --wx-background-hover: #E9ECF5 !important;
+    --wx-fm-background: #F6F7FA !important;
     --bg-secondary: #FFFFFF !important;
-    --bg-primary: #F8F7FC !important;
-    --border-color: #DDD6EB !important;
+    --bg-primary: #F6F7FA !important;
+    --border-color: #D8DCE8 !important;
+    --selected-text: #343C6B !important;
     --logo-url: url('/img/logo-dark.svg') !important;
   }
   :global(.wx-willow-dark-theme) {
-    --top-menu-color: #A855F7;
-    --top-menu-hover-color: #C084FC;
-    --wx-color-primary: #9333EA;
-    --wx-color-primary-hover: #A855F7;
-    --wx-color-primary-selected: rgba(168, 85, 247, 0.22);
-    --wx-fm-select-background: rgba(168, 85, 247, 0.22);
-    --wx-background: #16131F;
-    --wx-background-alt: #120F1A;
-    --wx-background-hover: #211C2E;
-    --wx-fm-background: #0D0B12;
+    --top-menu-color: #7B86C4;
+    --top-menu-hover-color: #929CD4;
+    --wx-color-primary: #5863A6;
+    --wx-color-primary-border: #6672B8;
+    --wx-color-primary-hover: #6874BA;
+    --wx-color-primary-selected: rgba(123, 134, 196, 0.18);
+    --wx-fm-select-background: rgba(123, 134, 196, 0.18);
+    --wx-background: #1F2430;
+    --wx-background-alt: #191D28;
+    --wx-background-hover: #282E3D;
+    --wx-fm-background: #151821;
+    --bg-secondary: #1F2430;
+    --bg-primary: #151821;
+    --border-color: #32394B;
+    --selected-text: #DCE0F5;
     --logo-url: url('/img/logo.svg') !important;
   }
 
@@ -8275,8 +8282,8 @@ async function blobToBase64(blob) {
   }
   :global(.wx-sidebar .wx-button.wx-primary),
   :global(.wx-button.wx-primary) {
-    background-color: var(--wx-color-primary, #7E22CE) !important;
-    border: 1px solid var(--wx-color-primary, #7E22CE) !important;
+    background-color: var(--wx-color-primary, #3D467A) !important;
+    border: 1px solid var(--wx-color-primary-border, var(--wx-color-primary, #3D467A)) !important;
     color: #ffffff !important;
     border-radius: 6px !important;
     font-family: 'Inter', sans-serif !important;
@@ -8298,14 +8305,14 @@ async function blobToBase64(blob) {
   }
   :global(.wx-sidebar .wx-button.wx-primary:hover),
   :global(.wx-button.wx-primary:hover) {
-    background-color: var(--wx-color-primary-hover, #9333EA) !important;
-    border-color: var(--wx-color-primary-hover, #9333EA) !important;
+    background-color: var(--wx-color-primary-hover, #5863A6) !important;
+    border-color: var(--wx-color-primary-hover, #5863A6) !important;
     color: #ffffff !important;
-    box-shadow: 0 2px 10px var(--accent-glow, rgba(147, 51, 234, 0.32)) !important;
+    box-shadow: 0 2px 8px var(--accent-glow, rgba(61, 70, 122, 0.22)) !important;
   }
   :global(.wx-willow-dark-theme .wx-sidebar .wx-button.wx-primary:hover),
   :global(.wx-willow-dark-theme .wx-button.wx-primary:hover) {
-    box-shadow: 0 2px 10px rgba(168, 85, 247, 0.38) !important;
+    box-shadow: 0 2px 8px rgba(88, 99, 166, 0.28) !important;
   }
   :global(.wx-button.wx-secondary) {
     border: 1px solid var(--border-color, var(--wx-border)) !important;
@@ -8317,8 +8324,8 @@ async function blobToBase64(blob) {
   }
   :global(.wx-button.wx-secondary:hover) {
     background-color: var(--wx-background-hover) !important;
-    border-color: var(--wx-color-primary, #9333EA) !important;
-    color: var(--wx-color-primary, #9333EA) !important;
+    border-color: var(--wx-color-primary, #5863A6) !important;
+    color: var(--wx-color-primary, #5863A6) !important;
   }
 
   /* 2. Filemanager Toolbar, Search & Controls */
@@ -8639,23 +8646,23 @@ async function blobToBase64(blob) {
     background-color: var(--wx-background-hover) !important;
   }
   :global(.wx-folder:hover i) {
-    color: var(--top-menu-hover-color, #9333EA) !important;
+    color: var(--top-menu-hover-color, #5863A6) !important;
     opacity: 1 !important;
   }
   :global(.wx-folder.wx-selected) {
-    background-color: var(--wx-fm-select-background, rgba(168, 85, 247, 0.22)) !important;
-    color: var(--top-menu-color, #A855F7) !important;
+    background-color: var(--wx-fm-select-background, rgba(123, 134, 196, 0.18)) !important;
+    color: var(--selected-text, var(--top-menu-color, #7B86C4)) !important;
     font-weight: 600 !important;
   }
   :global(.wx-folder i),
   :global(.wx-tree i) {
-    color: var(--top-menu-color, #7E22CE) !important;
-    opacity: 0.88 !important;
+    color: var(--top-menu-color, #46508A) !important;
+    opacity: 0.85 !important;
     transition: opacity 0.2s ease, color 0.2s ease !important;
   }
   :global(.wx-folder.wx-selected i),
   :global(.wx-tree .wx-selected i) {
-    color: var(--top-menu-color, #7E22CE) !important;
+    color: var(--top-menu-color, #46508A) !important;
     opacity: 1 !important;
   }
   :global(.wx-folder .wx-name) {
@@ -8852,8 +8859,8 @@ async function blobToBase64(blob) {
     :global(.wx-cards .wx-preview i) {
       font-size: 80px !important;
       line-height: 1 !important;
-      opacity: 0.88 !important;
-      color: var(--top-menu-color, #A855F7) !important;
+      opacity: 0.84 !important;
+      color: var(--top-menu-color, #7B86C4) !important;
       transition: opacity 0.25s ease, transform 0.25s ease, color 0.25s ease !important;
     }
     :global(.wx-cards .wx-preview i:before) {
@@ -8867,7 +8874,7 @@ async function blobToBase64(blob) {
       max-width: 80px !important;
       max-height: 80px !important;
       object-fit: contain !important;
-      opacity: 0.88 !important;
+      opacity: 0.84 !important;
       transition: opacity 0.25s ease, transform 0.25s ease !important;
     }
     :global(.wx-cards .wx-file-preview),
@@ -9173,15 +9180,15 @@ async function blobToBase64(blob) {
   @media (hover: hover) and (pointer: fine) {
     :global(.lg-toolbar .lg-icon:hover),
     :global(.lg-toolbar .omd-gallery-fs-btn:hover) {
-      background: rgba(147, 51, 234, 0.78) !important;
-      border-color: #C084FC !important;
+      background: var(--accent, rgba(88, 99, 166, 0.85)) !important;
+      border-color: var(--accent-hover, #929CD4) !important;
       color: #ffffff !important;
       transform: scale(1.05) !important;
     }
   }
   :global(.lg-toolbar .lg-icon:active),
   :global(.lg-toolbar .omd-gallery-fs-btn:active) {
-    background: rgba(126, 34, 206, 0.92) !important;
+    background: var(--accent-active, rgba(61, 70, 122, 0.92)) !important;
     transform: scale(0.95) !important;
   }
   :global(.lg-toolbar .omd-gallery-fs-btn svg),
@@ -9211,20 +9218,20 @@ async function blobToBase64(blob) {
   }
   /* Info button glyph follows the system theme accent */
   :global(.lg-toolbar .omd-gallery-info-btn) {
-    color: #7E22CE !important;
+    color: var(--accent, #3D467A) !important;
   }
   :global(.lg-toolbar .omd-gallery-info-btn:hover) {
     color: #ffffff !important;
   }
   :global(.dark-theme .lg-toolbar .omd-gallery-info-btn) {
-    color: #C084FC !important;
+    color: var(--accent-hover, #929CD4) !important;
   }
   :global(.dark-theme .lg-toolbar .omd-gallery-info-btn:hover) {
     color: #ffffff !important;
   }
   :global(.lg-toolbar .omd-gallery-info-btn.active) {
-    background: rgba(147, 51, 234, 0.78) !important;
-    border-color: #C084FC !important;
+    background: var(--accent, rgba(88, 99, 166, 0.85)) !important;
+    border-color: var(--accent-hover, #929CD4) !important;
     color: #ffffff !important;
   }
   /* Hide the info button while the info plate is visible (mutual visibility),
@@ -9273,10 +9280,10 @@ async function blobToBase64(blob) {
     transition: opacity 0.3s cubic-bezier(0.25, 1, 0.5, 1) !important;
   }
   :global(.dark-theme .omd-gallery-download-toast) {
-    background: rgba(22, 19, 31, 0.72);
-    border-color: rgba(192, 132, 252, 0.22);
+    background: rgba(31, 36, 48, 0.78);
+    border-color: var(--accent-border, rgba(123, 134, 196, 0.28));
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
-    color: #F8F7FC;
+    color: var(--text-primary, #EEF0F6);
   }
   :global(.omd-gallery-download-toast.is-hidden) {
     opacity: 0 !important;
@@ -9290,7 +9297,7 @@ async function blobToBase64(blob) {
   :global(.omd-gallery-download-toast .omd-dl-label) {
     font-size: 12.5px;
     font-weight: 500;
-    color: #5B5270;
+    color: var(--text-secondary, #5A6278);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -9300,7 +9307,7 @@ async function blobToBase64(blob) {
     flex: 0 0 auto;
     font-size: 11.5px;
     font-weight: 600;
-    color: #7E22CE;
+    color: var(--accent, #3D467A);
     font-variant-numeric: tabular-nums;
   }
   :global(.omd-gallery-download-toast .omd-dl-track) {
@@ -9308,7 +9315,7 @@ async function blobToBase64(blob) {
     margin-top: 6px;
     height: 4px;
     border-radius: 2px;
-    background: rgba(24, 19, 38, 0.12);
+    background: rgba(22, 25, 37, 0.12);
     overflow: hidden;
   }
   :global(.omd-gallery-download-toast .omd-dl-fill) {
@@ -9318,7 +9325,7 @@ async function blobToBase64(blob) {
     height: 100%;
     width: 0%;
     border-radius: 2px;
-    background: #9333EA;
+    background: var(--accent, #5863A6);
     transition: width 0.2s ease;
   }
   :global(.omd-gallery-download-toast.is-done .omd-dl-fill) {
@@ -9337,16 +9344,16 @@ async function blobToBase64(blob) {
     100% { left: 100%; }
   }
   :global(.dark-theme .omd-gallery-download-toast .omd-dl-label) {
-    color: #EFEBF8;
+    color: var(--text-primary, #EEF0F6);
   }
   :global(.dark-theme .omd-gallery-download-toast .omd-dl-pct) {
-    color: #C084FC;
+    color: var(--accent-hover, #929CD4);
   }
   :global(.dark-theme .omd-gallery-download-toast .omd-dl-track) {
     background: rgba(255, 255, 255, 0.14);
   }
   :global(.dark-theme .omd-gallery-download-toast .omd-dl-fill) {
-    background: #C084FC;
+    background: var(--accent, #7B86C4);
   }
   :global(.lg-outer .lg-counter) {
     order: 0 !important;
@@ -9483,18 +9490,18 @@ async function blobToBase64(blob) {
     /* Light theme tokens */
     --omd-pill-bg: rgba(255, 255, 255, 0.62);
     --omd-pill-border: rgba(255, 255, 255, 0.56);
-    --omd-pill-shadow: 0 8px 28px rgba(24, 19, 38, 0.16);
-    --omd-pill-btn-bg: rgba(24, 19, 38, 0.08);
-    --omd-pill-btn-fg: #181326;
-    --omd-pill-hover-bg: rgba(126, 34, 206, 0.9);
+    --omd-pill-shadow: 0 8px 28px rgba(22, 25, 37, 0.16);
+    --omd-pill-btn-bg: rgba(22, 25, 37, 0.08);
+    --omd-pill-btn-fg: var(--text-primary, #161925);
+    --omd-pill-hover-bg: var(--accent, #3D467A);
     --omd-pill-hover-fg: #ffffff;
-    --omd-dot-bg: rgba(24, 19, 38, 0.3);
-    --omd-dot-bg-hover: rgba(24, 19, 38, 0.55);
-    --omd-pill-accent: #7E22CE;
-    --omd-pill-glow: 0 0 8px rgba(147, 51, 234, 0.4);
-    --omd-track-bg: rgba(24, 19, 38, 0.2);
+    --omd-dot-bg: rgba(22, 25, 37, 0.3);
+    --omd-dot-bg-hover: rgba(22, 25, 37, 0.55);
+    --omd-pill-accent: var(--accent, #3D467A);
+    --omd-pill-glow: 0 0 8px var(--accent-glow, rgba(61, 70, 122, 0.32));
+    --omd-track-bg: rgba(22, 25, 37, 0.2);
     --omd-thumb-bg: #ffffff;
-    --omd-thumb-shadow: 0 0 8px rgba(147, 51, 234, 0.4), 0 2px 4px rgba(0, 0, 0, 0.25);
+    --omd-thumb-shadow: 0 0 8px var(--accent-glow, rgba(61, 70, 122, 0.32)), 0 2px 4px rgba(0, 0, 0, 0.25);
     position: fixed;
     bottom: 20px;
     left: 50%;
@@ -9521,20 +9528,20 @@ async function blobToBase64(blob) {
   }
   :global(.dark-theme .omd-gallery-bottom-bar) {
     /* Dark theme tokens */
-    --omd-pill-bg: rgba(22, 19, 31, 0.58);
-    --omd-pill-border: rgba(192, 132, 252, 0.22);
+    --omd-pill-bg: rgba(31, 36, 48, 0.65);
+    --omd-pill-border: var(--accent-border, rgba(123, 134, 196, 0.26));
     --omd-pill-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
     --omd-pill-btn-bg: rgba(255, 255, 255, 0.08);
-    --omd-pill-btn-fg: #F8F7FC;
-    --omd-pill-hover-bg: rgba(168, 85, 247, 0.9);
+    --omd-pill-btn-fg: var(--text-primary, #EEF0F6);
+    --omd-pill-hover-bg: var(--accent, #7B86C4);
     --omd-pill-hover-fg: #ffffff;
     --omd-dot-bg: rgba(255, 255, 255, 0.35);
     --omd-dot-bg-hover: rgba(255, 255, 255, 0.7);
-    --omd-pill-accent: #C084FC;
-    --omd-pill-glow: 0 0 8px rgba(192, 132, 252, 0.8);
+    --omd-pill-accent: var(--accent-hover, #929CD4);
+    --omd-pill-glow: 0 0 8px var(--accent-glow, rgba(123, 134, 196, 0.5));
     --omd-track-bg: rgba(255, 255, 255, 0.2);
     --omd-thumb-bg: #ffffff;
-    --omd-thumb-shadow: 0 0 8px rgba(192, 132, 252, 0.8), 0 2px 4px rgba(0, 0, 0, 0.4);
+    --omd-thumb-shadow: 0 0 8px var(--accent-glow, rgba(123, 134, 196, 0.5)), 0 2px 4px rgba(0, 0, 0, 0.4);
   }
   :global(.omd-gallery-bottom-bar.is-hidden),
   :global(.lg-outer.lg-hide-items .omd-gallery-bottom-bar) {
@@ -9733,8 +9740,8 @@ async function blobToBase64(blob) {
     transition: background-color 0.15s ease, transform 0.1s ease;
   }
   :global(.omd-gallery-info-plate .omd-info-close:hover) {
-    background: rgba(126, 34, 206, 0.18);
-    color: #7E22CE;
+    background: var(--accent-soft, rgba(61, 70, 122, 0.14));
+    color: var(--accent, #3D467A);
   }
   :global(.omd-gallery-info-plate .omd-info-close:active) {
     transform: scale(0.92);
@@ -9754,10 +9761,10 @@ async function blobToBase64(blob) {
 
   /* Dark theme (system / app toggle via html.dark-theme) */
   :global(.dark-theme .omd-gallery-info-plate) {
-    background: rgba(22, 19, 31, 0.68);
-    border-color: rgba(192, 132, 252, 0.22);
+    background: rgba(31, 36, 48, 0.74);
+    border-color: var(--accent-border, rgba(123, 134, 196, 0.26));
     box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
-    color: #F8F7FC;
+    color: var(--text-primary, #EEF0F6);
     scrollbar-color: rgba(255, 255, 255, 0.28) transparent;
   }
   :global(.dark-theme .omd-gallery-info-plate::-webkit-scrollbar-thumb) {
@@ -9767,18 +9774,18 @@ async function blobToBase64(blob) {
     background: rgba(255, 255, 255, 0.5) !important;
   }
   :global(.dark-theme .omd-gallery-info-plate .omd-info-title) {
-    color: #F8F7FC;
+    color: var(--text-primary, #EEF0F6);
   }
   :global(.dark-theme .omd-gallery-info-plate .omd-info-desc) {
-    color: #C4B8DB;
+    color: var(--text-secondary, #AEB5C7);
   }
   :global(.dark-theme .omd-gallery-info-plate .omd-info-close) {
     background: rgba(255, 255, 255, 0.08);
     border-color: rgba(255, 255, 255, 0.15);
-    color: #EFEBF8;
+    color: var(--text-primary, #EEF0F6);
   }
   :global(.dark-theme .omd-gallery-info-plate .omd-info-close:hover) {
-    background: rgba(168, 85, 247, 0.78);
+    background: var(--accent, rgba(123, 134, 196, 0.82));
     color: #ffffff;
   }
 
@@ -10543,7 +10550,7 @@ async function blobToBase64(blob) {
     top: 0; left: 0; right: 0; bottom: 0;
     width: 100vw;
     height: 100vh;
-    background: #0D0B12;
+    background: var(--bg-primary, #151821);
     z-index: 99999;
     display: flex;
     flex-direction: column;
@@ -10593,28 +10600,28 @@ async function blobToBase64(blob) {
   .empty-root-container.light-theme {
     --bg-secondary: #FFFFFF;
     --bg-card: #FFFFFF;
-    --border-color: #DDD6EB;
-    --text-primary: #181326;
-    --wx-color-font: #181326;
-    --wx-color-font-alt: #5B5270;
-    --wx-color-primary: #7E22CE;
-    --wx-color-primary-hover: #9333EA;
+    --border-color: #D8DCE8;
+    --text-primary: #161925;
+    --wx-color-font: #161925;
+    --wx-color-font-alt: #5A6278;
+    --wx-color-primary: #3D467A;
+    --wx-color-primary-hover: #5863A6;
     --wx-background: #FFFFFF;
-    --wx-background-alt: #F4F1FA;
-    --wx-background-hover: #EFEBF8;
+    --wx-background-alt: #F1F3F9;
+    --wx-background-hover: #E9ECF5;
   }
   .empty-root-container.dark-theme {
-    --bg-secondary: #16131F;
-    --bg-card: #16131F;
-    --border-color: #2D2640;
-    --text-primary: #F8F7FC;
-    --wx-color-font: #F8F7FC;
-    --wx-color-font-alt: #8B80A3;
-    --wx-color-primary: #9333EA;
-    --wx-color-primary-hover: #A855F7;
-    --wx-background: #0D0B12;
-    --wx-background-alt: #120F1A;
-    --wx-background-hover: #211C2E;
+    --bg-secondary: #1F2430;
+    --bg-card: #1F2430;
+    --border-color: #32394B;
+    --text-primary: #EEF0F6;
+    --wx-color-font: #EEF0F6;
+    --wx-color-font-alt: #7E869B;
+    --wx-color-primary: #5863A6;
+    --wx-color-primary-hover: #6874BA;
+    --wx-background: #151821;
+    --wx-background-alt: #191D28;
+    --wx-background-hover: #282E3D;
   }
   .empty-root-container.modal-mode {
     position: fixed;
@@ -10721,8 +10728,8 @@ async function blobToBase64(blob) {
     color: var(--wx-color-font, #F8F7FC);
   }
   :global(html.omd-dark) .empty-root-input:focus {
-    border-color: var(--wx-color-primary, #9333EA);
-    box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.25);
+    border-color: var(--wx-color-primary, #5863A6);
+    box-shadow: 0 0 0 2px var(--accent-soft, rgba(123, 134, 196, 0.25));
   }
   .empty-root-btn {
     flex-shrink: 0;

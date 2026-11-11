@@ -113,7 +113,7 @@
     position: absolute;
     inset: 0;
     overflow: hidden;
-    background: #16131F;
+    background: #1F2430;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -141,8 +141,8 @@
   .pdf-spinner {
     width: 44px;
     height: 44px;
-    border: 3.5px solid rgba(168, 85, 247, 0.2);
-    border-top-color: #C084FC;
+    border: 3.5px solid rgba(123, 134, 196, 0.2);
+    border-top-color: #929CD4;
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }
@@ -154,7 +154,7 @@
   .pdf-loading-text {
     font-size: 15px;
     font-weight: 500;
-    color: #8B80A3;
+    color: #7E869B;
   }
 
   .pdf-error-title {
@@ -165,7 +165,7 @@
 
   .pdf-error-msg {
     font-size: 13px;
-    color: #8B80A3;
+    color: #7E869B;
   }
 
   .pdf-actions {
@@ -176,7 +176,7 @@
   .pdf-btn {
     padding: 8px 18px;
     border-radius: 6px;
-    background: #7E22CE;
+    background: #3D467A;
     color: white;
     border: none;
     cursor: pointer;
