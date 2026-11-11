@@ -390,12 +390,10 @@ quint16 OnMyDiskHttpNode::serverPort()
 
 void OnMyDiskHttpNode::setupNetwork(QHttpServer* server, QSettings *settings, QString settingsSection)
 {
-    #if defined(STAGING) || defined(QT_DEBUG)
-    Q_UNUSED(settings)
-    Q_UNUSED(settingsSection)
-    qint16 port = 8081;
-    #else
     qint16 port = settings->value(QString("%1/Port").arg(settingsSection), 8081).toInt();
+    #if defined(STAGING) || defined(QT_DEBUG)
+    if (port < 1024 && !isService())
+        port = 8081;
     #endif
     server->listen(QHostAddress::AnyIPv4, port, m_maxFileSize);
 }

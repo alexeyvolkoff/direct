@@ -48,6 +48,7 @@ core/Node/router/etc/onmydisk/ssl/*
 core/Node/target/usr/bin/*
 core/Node/target/usr/lib/*
 core/Node/target/etc/onmydisk/debug/*
+core/Node/target/etc/onmydisk/ssl/*
 core/Node/target/etc/onmydisk/device.id
 core/Node/target/etc/onmydisk/device.key
 core/Node/target/etc/onmydisk/*.db
