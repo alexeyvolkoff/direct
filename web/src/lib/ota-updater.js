@@ -7,9 +7,17 @@ import { peekSavedSessionSync, saveSessionEverywhere } from './identity/sessionB
 
 const NativeStorage = registerPlugin('NativeStorage');
 
+// Native Android Live OTA endpoints (never used by regular web browsers)
 const OTA_VERSION_URL = 'https://forge.disk.direct/repo/DiskDirect/version.json';
 const OTA_BUNDLE_URL = 'https://forge.disk.direct/repo/DiskDirect/Android/direct-frontend.zip';
-const DEFAULT_VERSION = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_APP_VERSION) || '3.0.4823';
+
+// Same-origin web deployment manifest emitted by Vite into dist/assets/web-version.json
+const WEB_VERSION_PATH = '/assets/web-version.json';
+
+const DEFAULT_VERSION = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_APP_VERSION) || '3.1.6000';
+const WEB_BUILD_ID = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_WEB_BUILD_ID) || '';
+
+let latestWebBuildId = '';
 
 async function getNativeAppVersion() {
   if (typeof window !== 'undefined' && Capacitor.isNativePlatform()) {
@@ -26,33 +34,19 @@ async function getNativeAppVersion() {
 }
 
 function getInitialAppVersion() {
-  // In Vite debug/dev mode, always use build version and never stale stored version
   if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.DEV) {
     return DEFAULT_VERSION;
   }
 
-  if (typeof window !== 'undefined') {
-    // 1. On mobile devices running via Capacitor native app
-    if (Capacitor.isNativePlatform()) {
-      const stored = localStorage.getItem('omd_app_version');
-      if (stored && stored !== 'builtin' && stored !== 'undefined' && stored !== '1.0' && stored !== '1.0.0' && !stored.startsWith('1.0.')) {
-        return stored;
-      }
-      return DEFAULT_VERSION;
+  if (typeof window !== 'undefined' && Capacitor.isNativePlatform()) {
+    const stored = localStorage.getItem('omd_app_version');
+    if (stored && stored !== 'builtin' && stored !== 'undefined' && stored !== '1.0' && stored !== '1.0.0' && !stored.startsWith('1.0.')) {
+      return stored;
     }
-
-    // 2. On web served by gateway (TemplateParser) or in debug via Vite
-    if (window.__omdAppVersion &&
-        window.__omdAppVersion !== '{VERSION}' &&
-        !window.__omdAppVersion.startsWith('{') &&
-        window.__omdAppVersion.trim() !== '') {
-      const ver = window.__omdAppVersion.trim();
-      try {
-        localStorage.setItem('omd_app_version', ver);
-      } catch (_) {}
-      return ver;
-    }
+    return DEFAULT_VERSION;
   }
+
+  // On web, always reflect the actual running frontend bundle version
   return DEFAULT_VERSION;
 }
 
@@ -78,7 +72,9 @@ function updateStores(version, extra = {}) {
     appVersion.set(version);
     try {
       if (typeof window !== 'undefined') {
-        localStorage.setItem('omd_app_version', version);
+        if (Capacitor.isNativePlatform()) {
+          localStorage.setItem('omd_app_version', version);
+        }
         window.__omdAppVersion = version;
         window.dispatchEvent(new CustomEvent('omd-version-update', { detail: { version, ...extra } }));
       }
@@ -121,11 +117,7 @@ if (typeof window !== 'undefined') {
 
 /**
  * Semantic/build-number version comparator.
- * Returns true only if remoteVer is strictly strictly higher than currentVer.
- * Examples:
- *   isNewerVersion("1.0.4582", "1.0.4581") => true
- *   isNewerVersion("1.0.4580", "1.0.4581") => false
- *   isNewerVersion("1.0.4581", "1.0.4581") => false
+ * Returns true only if remoteVer is strictly higher than currentVer.
  */
 export function isNewerVersion(remoteVer, currentVer) {
   if (!remoteVer || !currentVer) return false;
@@ -133,7 +125,7 @@ export function isNewerVersion(remoteVer, currentVer) {
 
   const parseParts = (v) => {
     return String(v)
-      .replace(/^[^\d]*/, '') // remove leading 'v'
+      .replace(/^[^\d]*/, '')
       .split('.')
       .map(part => parseInt(part, 10) || 0);
   };
@@ -154,10 +146,12 @@ export function isNewerVersion(remoteVer, currentVer) {
 let isChecking = false;
 
 /**
- * Check for new OTA web bundle updates and notify user
+ * Check for new updates:
+ * - Native Android: checks OTA_VERSION_URL (Capgo OTA bundle)
+ * - Web Browser: checks same-origin /assets/web-version.json buildId against baked WEB_BUILD_ID
+ * - Native iOS / Vite dev: no-op
  */
 export async function checkForOtaUpdate(force = false) {
-  // Never check for OTA updates or show reload banners in Vite dev/debug mode or on native iOS (App Store handles updates)
   if ((typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.DEV) || isIosNative()) {
     return;
   }
@@ -166,12 +160,59 @@ export async function checkForOtaUpdate(force = false) {
     return;
   }
 
-  // Do not interrupt an active update download/application
   let activeUpdating = false;
   otaState.subscribe(s => activeUpdating = s.isUpdating)();
   if (activeUpdating) return;
 
-  // Failure backoff cooldown: prevent rapid loop if downloads/connections fail
+  // ── Path A: Regular Web Browser (same-origin bundle buildId check) ──
+  if (!Capacitor.isNativePlatform()) {
+    isChecking = true;
+    try {
+      const res = await fetch(`${WEB_VERSION_PATH}?t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: { Accept: 'application/json' }
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const serverBuildId = String(data?.buildId || '').trim();
+      const serverVersion = String(data?.version || '').trim();
+
+      if (!WEB_BUILD_ID || !serverBuildId || serverBuildId === WEB_BUILD_ID) {
+        updateStores(DEFAULT_VERSION, { updateAvailable: false, serverVersion: '', isUpdating: false });
+        return;
+      }
+
+      // Loop guard: if this tab already reloaded once for this exact serverBuildId, never re-prompt
+      let alreadyReloadedForBuild = false;
+      try {
+        alreadyReloadedForBuild = sessionStorage.getItem('omd_reloaded_build_id') === serverBuildId;
+      } catch (_) {}
+      if (alreadyReloadedForBuild && !force) {
+        updateStores(DEFAULT_VERSION, { updateAvailable: false, serverVersion: '', isUpdating: false });
+        return;
+      }
+
+      latestWebBuildId = serverBuildId;
+      const lastDismissed = parseInt(localStorage.getItem('omd_ota_dismissed_time') || '0', 10);
+      const dismissedBuild = localStorage.getItem('omd_ota_dismissed_version') || '';
+      const isCooldown = !force && (dismissedBuild === serverBuildId || dismissedBuild === serverVersion) && (Date.now() - lastDismissed < 30 * 60 * 1000);
+
+      updateStores(DEFAULT_VERSION, {
+        updateAvailable: true,
+        serverVersion: serverVersion || DEFAULT_VERSION,
+        newVersion: serverVersion || DEFAULT_VERSION,
+        isNative: false,
+        dismissed: isCooldown
+      });
+    } catch (_) {
+      // Ignore transient network errors on web
+    } finally {
+      isChecking = false;
+    }
+    return;
+  }
+
+  // ── Path B: Native Android Capacitor Live OTA ──
   if (!force) {
     try {
       const failedCount = parseInt(localStorage.getItem('omd_ota_failed_count') || '0', 10);
@@ -189,47 +230,36 @@ export async function checkForOtaUpdate(force = false) {
 
   isChecking = true;
   try {
-    let data = null;
-    if (Capacitor.isNativePlatform()) {
-      const response = await CapacitorHttp.get({
-        url: `${OTA_VERSION_URL}?t=${Date.now()}`,
-        connectTimeout: 20000,
-        readTimeout: 20000
-      });
-      if (response.status !== 200 || !response.data) return;
-      data = typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
-    } else {
-      const res = await fetch(`${OTA_VERSION_URL}?t=${Date.now()}`, { cache: 'no-cache' });
-      if (!res.ok) return;
-      data = await res.json();
-    }
-    const serverVersion = String(data.version || '').trim();
+    const response = await CapacitorHttp.get({
+      url: `${OTA_VERSION_URL}?t=${Date.now()}`,
+      connectTimeout: 20000,
+      readTimeout: 20000
+    });
+    if (response.status !== 200 || !response.data) return;
+    const data = typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
+    const serverVersion = String(data?.version || '').trim();
     if (!serverVersion) return;
 
     let currentVersion = DEFAULT_VERSION;
-    if (Capacitor.isNativePlatform()) {
-      try {
-        const current = await CapacitorUpdater.current();
-        const bundle = current?.bundle || current;
-        const bundleVer = bundle && bundle.version ? String(bundle.version) : 'builtin';
-        if (bundleVer && bundleVer !== 'builtin' && bundleVer !== '1.0' && bundleVer !== 'undefined') {
-          currentVersion = bundleVer;
-        } else {
-          const nativeVer = await getNativeAppVersion();
-          currentVersion = nativeVer || localStorage.getItem('omd_app_version') || DEFAULT_VERSION;
-        }
-      } catch (_) {
-        currentVersion = localStorage.getItem('omd_app_version') || DEFAULT_VERSION;
+    try {
+      const current = await CapacitorUpdater.current();
+      const bundle = current?.bundle || current;
+      const bundleVer = bundle && bundle.version ? String(bundle.version) : 'builtin';
+      if (bundleVer && bundleVer !== 'builtin' && bundleVer !== '1.0' && bundleVer !== 'undefined') {
+        currentVersion = bundleVer;
+      } else {
+        const nativeVer = await getNativeAppVersion();
+        currentVersion = nativeVer || localStorage.getItem('omd_app_version') || DEFAULT_VERSION;
       }
-    } else {
-      currentVersion = (typeof window !== 'undefined' && window.__omdAppVersion && window.__omdAppVersion !== '{VERSION}') ? window.__omdAppVersion : (localStorage.getItem('omd_app_version') || DEFAULT_VERSION);
+    } catch (_) {
+      currentVersion = localStorage.getItem('omd_app_version') || DEFAULT_VERSION;
     }
 
     updateStores(currentVersion);
 
     if (isNewerVersion(serverVersion, currentVersion)) {
       console.log(`[OTA] Newer version available: ${serverVersion} (current: ${currentVersion})`);
-      
+
       const lastDismissed = parseInt(localStorage.getItem('omd_ota_dismissed_time') || '0', 10);
       const dismissedVer = localStorage.getItem('omd_ota_dismissed_version') || '';
       const isCooldown = !force && (dismissedVer === serverVersion) && (Date.now() - lastDismissed < 30 * 60 * 1000);
@@ -238,7 +268,7 @@ export async function checkForOtaUpdate(force = false) {
         updateAvailable: true,
         serverVersion,
         newVersion: serverVersion,
-        isNative: Capacitor.isNativePlatform(),
+        isNative: true,
         dismissed: isCooldown
       });
     } else {
@@ -253,11 +283,26 @@ export async function checkForOtaUpdate(force = false) {
 }
 
 /**
- * Perform Live OTA update with beautiful full-screen visual progress & retries.
- * Always guarantees updating directly to the LATEST server release, skipping intermediate bundles.
+ * Perform Live OTA update (Android) or clean session-safe reload (Web).
  */
 export async function performOtaUpdate(serverVer) {
   if (isIosNative()) return;
+
+  // Web browser path: record reloaded buildId in sessionStorage to prevent reload loops and reload cleanly
+  if (typeof window !== 'undefined' && !Capacitor.isNativePlatform()) {
+    try {
+      if (latestWebBuildId) {
+        sessionStorage.setItem('omd_reloaded_build_id', latestWebBuildId);
+      }
+      const activeSession = peekSavedSessionSync();
+      if (activeSession) {
+        await saveSessionEverywhere(activeSession);
+      }
+    } catch (_) {}
+    window.location.reload();
+    return;
+  }
+
   otaState.update(s => ({
     ...s,
     isUpdating: true,
@@ -269,25 +314,18 @@ export async function performOtaUpdate(serverVer) {
   let downloadListener = null;
 
   try {
-    // 1. Re-query server version immediately with timeout to guarantee connectivity & latest version
     let targetVersion = serverVer;
     try {
-      let data = null;
-      if (Capacitor.isNativePlatform()) {
-        const response = await CapacitorHttp.get({
-          url: `${OTA_VERSION_URL}?t=${Date.now()}`,
-          connectTimeout: 20000,
-          readTimeout: 20000
-        });
-        if (response.status === 200 && response.data) {
-          data = typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
+      const response = await CapacitorHttp.get({
+        url: `${OTA_VERSION_URL}?t=${Date.now()}`,
+        connectTimeout: 20000,
+        readTimeout: 20000
+      });
+      if (response.status === 200 && response.data) {
+        const data = typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
+        if (data && data.version) {
+          targetVersion = String(data.version).trim();
         }
-      } else {
-        const res = await fetch(`${OTA_VERSION_URL}?t=${Date.now()}`, { cache: 'no-cache' });
-        if (res.ok) data = await res.json();
-      }
-      if (data && data.version) {
-        targetVersion = String(data.version).trim();
       }
     } catch (netErr) {
       console.warn('[LiveUpdate] Failed to reach version endpoint:', netErr);
@@ -300,160 +338,139 @@ export async function performOtaUpdate(serverVer) {
       throw new Error('Target version not specified');
     }
 
-    if (Capacitor.isNativePlatform()) {
-      // 2. Pre-cleanup: purge any previous failed or stale download records before attempting fresh download
-      try {
-        const listRes = await CapacitorUpdater.list();
-        const bundles = listRes?.bundles || [];
-        for (const b of bundles) {
-          if (b.id && !b.isBuiltin && (b.status === 'error' || b.status === 'downloading' || b.version === targetVersion)) {
-            try {
-              await CapacitorUpdater.delete({ id: b.id });
-            } catch (_) {}
-          }
-        }
-      } catch (cleanErr) {
-        console.warn('[LiveUpdate] Pre-cleanup warning:', cleanErr);
-      }
-
-      // 3. Attach progress & failure listeners
-      let failListener = null;
-      try {
-        downloadListener = await CapacitorUpdater.addListener('download', (event) => {
-          if (event && typeof event.percent === 'number') {
-            const p = Math.min(100, Math.max(0, Math.round(event.percent)));
-            let statusText = '';
-            if (p <= 70) {
-              statusText = `${translate('ota_downloading', {}, 'Downloading update...')} ${p}%`;
-            } else if (p < 100) {
-              statusText = `${translate('ota_unpacking', {}, 'Unpacking and verifying update...')} ${p}%`;
-            } else {
-              statusText = translate('ota_applying', {}, 'Applying update...');
-            }
-            otaState.update(s => ({
-              ...s,
-              downloadPercent: p,
-              statusText
-            }));
-          }
-        });
-      } catch (e) {
-        console.warn('[LiveUpdate] Could not attach download listener:', e);
-      }
-
-      try {
-        failListener = await CapacitorUpdater.addListener('downloadFailed', (event) => {
-          console.warn('[LiveUpdate] Native downloadFailed event:', event);
-          if (event && event.error && !downloadErr) {
-            downloadErr = new Error(event.error);
-          }
-        });
-      } catch (_) {}
-
-      console.log(`[LiveUpdate] Downloading LATEST bundle v${targetVersion}...`);
-      let bundle = null;
-      let downloadErr = null;
-      const MAX_ATTEMPTS = 2;
-
-      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-        try {
-          if (attempt > 1) {
-            console.log(`[LiveUpdate] Retry attempt ${attempt}/${MAX_ATTEMPTS}...`);
-            otaState.update(s => ({
-              ...s,
-              downloadPercent: 0,
-              statusText: translate('ota_retrying', {}, 'Reconnecting and retrying...')
-            }));
-            await new Promise(r => setTimeout(r, 2000));
-          }
-
-          bundle = await CapacitorUpdater.download({
-            url: `${OTA_BUNDLE_URL}?t=${Date.now()}`,
-            version: targetVersion
-          });
-
-          if (bundle && bundle.id) {
-            downloadErr = null;
-            break;
-          }
-        } catch (err) {
-          console.warn(`[LiveUpdate] Download attempt ${attempt} error:`, err);
-          downloadErr = err;
+    try {
+      const listRes = await CapacitorUpdater.list();
+      const bundles = listRes?.bundles || [];
+      for (const b of bundles) {
+        if (b.id && !b.isBuiltin && (b.status === 'error' || b.status === 'downloading' || b.version === targetVersion)) {
+          try {
+            await CapacitorUpdater.delete({ id: b.id });
+          } catch (_) {}
         }
       }
-
-      if (downloadListener) {
-        try {
-          await downloadListener.remove();
-          downloadListener = null;
-        } catch (_) {}
-      }
-      if (failListener) {
-        try {
-          await failListener.remove();
-          failListener = null;
-        } catch (_) {}
-      }
-
-      if (!bundle || !bundle.id) {
-        throw downloadErr || new Error('Bundle download failed');
-      }
-
-      otaState.update(s => ({
-        ...s,
-        downloadPercent: 100,
-        statusText: translate('ota_applying', {}, 'Applying update...')
-      }));
-
-      // 3. Clean up any stale or intermediate downloaded bundles to prevent sequential rollback/reload loops
-      try {
-        const listRes = await CapacitorUpdater.list();
-        const bundles = listRes?.bundles || [];
-        for (const b of bundles) {
-          if (b.id && b.id !== bundle.id && !b.isBuiltin) {
-            try {
-              await CapacitorUpdater.delete({ id: b.id });
-            } catch (_) {}
-          }
-        }
-      } catch (_) {}
-
-      console.log(`[LiveUpdate] Activating latest bundle ${bundle.id} (v${targetVersion})...`);
-      try {
-        localStorage.setItem('omd_app_version', targetVersion);
-        window.__omdAppVersion = targetVersion;
-        // Successful update: clear failure counters
-        localStorage.removeItem('omd_ota_failed_count');
-        localStorage.removeItem('omd_ota_last_failed');
-        const activeSession = peekSavedSessionSync();
-        if (activeSession) {
-          await saveSessionEverywhere(activeSession);
-        }
-      } catch (_) {}
-
-      // 4. Immediately switch WebView to the latest bundle
-      await CapacitorUpdater.set({ id: bundle.id });
-    } else {
-      // PWA / Browser reload
-      localStorage.setItem('omd_app_version', targetVersion);
-      try {
-        localStorage.removeItem('omd_ota_failed_count');
-        localStorage.removeItem('omd_ota_last_failed');
-        const activeSession = peekSavedSessionSync();
-        if (activeSession) {
-          await saveSessionEverywhere(activeSession);
-        }
-      } catch (_) {}
-      await new Promise(r => setTimeout(r, 600));
-      window.location.reload();
+    } catch (cleanErr) {
+      console.warn('[LiveUpdate] Pre-cleanup warning:', cleanErr);
     }
+
+    let failListener = null;
+    let downloadErr = null;
+    try {
+      downloadListener = await CapacitorUpdater.addListener('download', (event) => {
+        if (event && typeof event.percent === 'number') {
+          const p = Math.min(100, Math.max(0, Math.round(event.percent)));
+          let statusText = '';
+          if (p <= 70) {
+            statusText = `${translate('ota_downloading', {}, 'Downloading update...')} ${p}%`;
+          } else if (p < 100) {
+            statusText = `${translate('ota_unpacking', {}, 'Unpacking and verifying update...')} ${p}%`;
+          } else {
+            statusText = translate('ota_applying', {}, 'Applying update...');
+          }
+          otaState.update(s => ({
+            ...s,
+            downloadPercent: p,
+            statusText
+          }));
+        }
+      });
+    } catch (e) {
+      console.warn('[LiveUpdate] Could not attach download listener:', e);
+    }
+
+    try {
+      failListener = await CapacitorUpdater.addListener('downloadFailed', (event) => {
+        console.warn('[LiveUpdate] Native downloadFailed event:', event);
+        if (event && event.error && !downloadErr) {
+          downloadErr = new Error(event.error);
+        }
+      });
+    } catch (_) {}
+
+    console.log(`[LiveUpdate] Downloading LATEST bundle v${targetVersion}...`);
+    let bundle = null;
+    const MAX_ATTEMPTS = 2;
+
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        if (attempt > 1) {
+          console.log(`[LiveUpdate] Retry attempt ${attempt}/${MAX_ATTEMPTS}...`);
+          otaState.update(s => ({
+            ...s,
+            downloadPercent: 0,
+            statusText: translate('ota_retrying', {}, 'Reconnecting and retrying...')
+          }));
+          await new Promise(r => setTimeout(r, 2000));
+        }
+
+        bundle = await CapacitorUpdater.download({
+          url: `${OTA_BUNDLE_URL}?t=${Date.now()}`,
+          version: targetVersion
+        });
+
+        if (bundle && bundle.id) {
+          downloadErr = null;
+          break;
+        }
+      } catch (err) {
+        console.warn(`[LiveUpdate] Download attempt ${attempt} error:`, err);
+        downloadErr = err;
+      }
+    }
+
+    if (downloadListener) {
+      try {
+        await downloadListener.remove();
+        downloadListener = null;
+      } catch (_) {}
+    }
+    if (failListener) {
+      try {
+        await failListener.remove();
+        failListener = null;
+      } catch (_) {}
+    }
+
+    if (!bundle || !bundle.id) {
+      throw downloadErr || new Error('Bundle download failed');
+    }
+
+    otaState.update(s => ({
+      ...s,
+      downloadPercent: 100,
+      statusText: translate('ota_applying', {}, 'Applying update...')
+    }));
+
+    try {
+      const listRes = await CapacitorUpdater.list();
+      const bundles = listRes?.bundles || [];
+      for (const b of bundles) {
+        if (b.id && b.id !== bundle.id && !b.isBuiltin) {
+          try {
+            await CapacitorUpdater.delete({ id: b.id });
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+
+    console.log(`[LiveUpdate] Activating latest bundle ${bundle.id} (v${targetVersion})...`);
+    try {
+      localStorage.setItem('omd_app_version', targetVersion);
+      window.__omdAppVersion = targetVersion;
+      localStorage.removeItem('omd_ota_failed_count');
+      localStorage.removeItem('omd_ota_last_failed');
+      const activeSession = peekSavedSessionSync();
+      if (activeSession) {
+        await saveSessionEverywhere(activeSession);
+      }
+    } catch (_) {}
+
+    await CapacitorUpdater.set({ id: bundle.id });
   } catch (err) {
     if (downloadListener) {
       try { await downloadListener.remove(); } catch (_) {}
     }
     console.error('[LiveUpdate] Update failed:', err);
 
-    // Track failure to prevent infinite loop
     try {
       const prevFails = parseInt(localStorage.getItem('omd_ota_failed_count') || '0', 10);
       localStorage.setItem('omd_ota_failed_count', String(prevFails + 1));
@@ -477,7 +494,7 @@ export function dismissOtaNotification() {
   otaState.subscribe(s => ver = s.serverVersion || s.newVersion)();
   try {
     localStorage.setItem('omd_ota_dismissed_time', String(Date.now()));
-    localStorage.setItem('omd_ota_dismissed_version', ver);
+    localStorage.setItem('omd_ota_dismissed_version', latestWebBuildId || ver);
   } catch (_) {}
   otaState.update(s => ({ ...s, dismissed: true, error: null, isUpdating: false }));
 }
@@ -493,6 +510,10 @@ export async function applyOtaUpdateNow() {
       return;
     } catch (_) {}
   }
+  try {
+    if (latestWebBuildId) {
+      sessionStorage.setItem('omd_reloaded_build_id', latestWebBuildId);
+    }
+  } catch (_) {}
   window.location.reload();
 }
-

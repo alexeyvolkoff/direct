@@ -72,6 +72,28 @@ function getBuildVersionInfo() {
 }
 
 const buildInfo = getBuildVersionInfo();
+const webBuildId = `${buildInfo.version}-${Date.now().toString(36)}`;
+
+function webVersionManifestPlugin() {
+  return {
+    name: 'web-version-manifest',
+    apply: 'build',
+    writeBundle(options) {
+      try {
+        const outDir = options?.dir || path.resolve(process.cwd(), 'dist');
+        const assetsDir = path.join(outDir, 'assets');
+        fs.mkdirSync(assetsDir, { recursive: true });
+        fs.writeFileSync(
+          path.join(assetsDir, 'web-version.json'),
+          JSON.stringify({ version: buildInfo.version, buildId: webBuildId }) + '\n',
+          'utf8'
+        );
+      } catch (err) {
+        console.warn('[vite] failed to write web-version.json:', err);
+      }
+    }
+  };
+}
 
 // "chat" | "files" | "" (auto). Used as the default for static/Capacitor
 // bundles and as the Vite dev default; the production gateway overrides it
@@ -146,6 +168,7 @@ function templateParserPlugin() {
 export default defineConfig({
   define: {
     'import.meta.env.VITE_APP_VERSION': JSON.stringify(buildInfo.version),
+    'import.meta.env.VITE_WEB_BUILD_ID': JSON.stringify(webBuildId),
     'import.meta.env.VITE_APP_MODE': JSON.stringify(buildAppMode),
     'PRODUCT_VERSION': JSON.stringify(Number(buildInfo.productVersion)),
     '__PRODUCT_VERSION__': JSON.stringify(buildInfo.productVersion),
@@ -198,9 +221,11 @@ export default defineConfig({
   },
   optimizeDeps: {
     include: ['@ai-sdk/svelte'],
+    exclude: ['@xterm/xterm'],
   },
   plugins: [
     templateParserPlugin(),
+    webVersionManifestPlugin(),
     svelte(),
     monacoEditorPlugin.default({
       languageWorkers: ['editorWorkerService', 'css', 'html', 'json']
@@ -241,8 +266,5 @@ export default defineConfig({
         }
       }
     }
-  },
-  optimizeDeps: {
-    exclude: ['@xterm/xterm']
   }
 });
