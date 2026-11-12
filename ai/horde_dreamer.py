@@ -1816,6 +1816,7 @@ HORDE_CONSOLE_HTML = """<!DOCTYPE html>
 <title>AI Horde Dreamer Worker</title>
 <style>
   :root {
+    color-scheme: dark;
     --bg: #0d1117;
     --card: #161b22;
     --border: #30363d;
@@ -1826,8 +1827,42 @@ HORDE_CONSOLE_HTML = """<!DOCTYPE html>
     --yellow: #d29922;
     --red: #f85149;
     --purple: #a371f7;
+    --scrollbar-thumb: #3b4452;
+    --scrollbar-thumb-hover: #525f72;
+    --scrollbar-track: transparent;
   }
-  * { box-sizing: border-box; }
+  html {
+    background: var(--bg);
+    color-scheme: dark;
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--bg);
+  }
+  * {
+    box-sizing: border-box;
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+  }
+  html::-webkit-scrollbar-track,
+  body::-webkit-scrollbar-track {
+    background: var(--bg);
+  }
+  *::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 4px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
+  }
+  *::-webkit-scrollbar-corner {
+    background: transparent !important;
+  }
   body {
     margin: 0; padding: 24px;
     background: var(--bg); color: var(--text);
@@ -1875,6 +1910,7 @@ HORDE_CONSOLE_HTML = """<!DOCTYPE html>
   button.primary { background: #238636; border-color: rgba(240,246,252,0.1); color: #fff; }
   button.accent { background: #1f6feb; border-color: rgba(240,246,252,0.1); color: #fff; }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .table-wrap { width: 100%; overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
   th { color: var(--muted); font-weight: 600; }
@@ -1965,23 +2001,25 @@ HORDE_CONSOLE_HTML = """<!DOCTYPE html>
 
   <div class="card">
     <h2>Recent Fulfilled Jobs</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>Time</th>
-          <th>Job ID</th>
-          <th>Model</th>
-          <th>Backend</th>
-          <th>Size</th>
-          <th>Time</th>
-          <th>Kudos</th>
-          <th>Prompt</th>
-        </tr>
-      </thead>
-      <tbody id="jobsTable">
-        <tr><td colspan="8" style="color:var(--muted);">No jobs recorded yet.</td></tr>
-      </tbody>
-    </table>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Job ID</th>
+            <th>Model</th>
+            <th>Backend</th>
+            <th>Size</th>
+            <th>Time</th>
+            <th>Kudos</th>
+            <th>Prompt</th>
+          </tr>
+        </thead>
+        <tbody id="jobsTable">
+          <tr><td colspan="8" style="color:var(--muted);">No jobs recorded yet.</td></tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 </div>
 
