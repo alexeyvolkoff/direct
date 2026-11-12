@@ -1,6 +1,6 @@
 """
 Asynchronous client for AI Horde (https://aihorde.net) text generation.
-Provides streaming emulation and queue status updates for OnMyChat.
+Provides streaming emulation and queue status updates for AI Assistant Direct.
 """
 
 import aiohttp
@@ -10,7 +10,7 @@ import re
 from typing import AsyncGenerator, Optional, List, Dict, Any
 
 HORDE_BASE_URL = "https://aihorde.net/api/v2"
-DEFAULT_CLIENT_AGENT = "OnMyChat:1.0.0:https://github.com/alexeyvolkoff/onmychat"
+DEFAULT_CLIENT_AGENT = "Direct:1.0.0:https://github.com/alexeyvolkoff/direct"
 ANONYMOUS_API_KEY = "0000000000"
 
 STOP_TOKENS_RE = re.compile(

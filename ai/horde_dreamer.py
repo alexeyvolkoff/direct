@@ -1,14 +1,16 @@
 """
-AI Horde Dreamer Worker & Image Client for OnMyChat (`horde_dreamer.py`).
+AI Horde Dreamer Worker & Image Client for Direct (`horde_dreamer.py`).
 
 Features:
 1. Built-in AI Horde Image Worker ("Dreamer"):
    - Unlimited 24/7 Local SDXL generation via local ComfyUI (`hordelib`-compatible
      `stable_diffusion` pipeline honoring requested `steps`, `cfg_scale`, `sampler_name`,
      `karras`/`scheduler`, and `clip_skip`) when local ComfyUI queue is idle.
-   - Optional daily-capped Modal Krea 2 (`Krea2-Turbo_fp8`) generation (default max 10/day,
-     auto-reset at UTC midnight; once reached, `Krea2-Turbo_fp8` is automatically
-     removed from `/v2/generate/pop` models for the rest of the day).
+   - Strict `AI-Horde-image-model-reference` SHA256 & byte-size verification for all
+     advertised checkpoints (with zero cross-model fallback).
+   - Optional daily-capped Modal Krea 2 (`Krea2-Turbo_fp8`) generation when reference
+     weights (`qwen_image_fp8_e4m3fn.safetensors` / `qwen3vl_4b_fp8_scaled.safetensors` /
+     `qwen_image_vae.safetensors`) are verified.
 2. AI Horde Image Generation Client (`horde_generate_image`) & `ai_mode` normalization hook.
 3. Owner-only management console at `/horde` and JSON endpoints under `/horde/api/*`
    and `/assistant/horde_worker`.
@@ -17,6 +19,7 @@ Features:
 import asyncio
 import base64
 import datetime
+import hashlib
 import io
 import json
 import logging
@@ -58,35 +61,53 @@ def is_modal_enabled() -> bool:
     return bool(str(SETTINGS.get("MODAL_COMFY_URL", "")).strip())
 
 HORDE_API_BASE = "https://aihorde.net/api/v2"
-BRIDGE_AGENT = "OnMyChat:1.0.0:https://github.com/alexeyvolkoff/onmychat"
-CLIENT_AGENT = "OnMyChat:1.0.0:https://github.com/alexeyvolkoff/onmychat"
+BRIDGE_AGENT = "Direct:1.0.0:https://github.com/alexeyvolkoff/direct"
+CLIENT_AGENT = "Direct:1.0.0:https://github.com/alexeyvolkoff/direct"
 PROMPT_SEPARATOR = "###"
 
 # Strict 1-to-1 mapping from official AI Horde model names (`AI-Horde-image-model-reference`)
-# to their corresponding ComfyUI SDXL checkpoint filenames. Only models whose `.safetensors`
-# file is physically present in `~/projects/ComfyUI/models/checkpoints/` are offered in `/v2/generate/pop`.
-LOCAL_SDXL_MODEL_CATALOG: dict[str, dict[str, str]] = {
+# to their exact reference checkpoint filenames, SHA256 digests, and byte sizes.
+# A model is only advertised or rendered if its local `.safetensors` file matches the reference SHA256.
+LOCAL_SDXL_MODEL_CATALOG: dict[str, dict[str, Any]] = {
     "CyberRealistic Pony": {
-        "ckpt": "cyberrealisticPony_v180Coreshift.safetensors",
-        "description": "Top-4 AI Horde model (Pony/SDXL Photorealism) — stays warm in VRAM",
+        "ckpt": "cyberrealisticPony_v8.safetensors",
+        "sha256": "9f90c59f3aa99d9160b5652c4c68215fdc27399e5d1c692429abf2407bb909d1",
+        "size_bytes": 6938040682,
+        "description": "Official CyberRealistic Pony v8.0 SDXL reference checkpoint",
     },
     "Pony Realism": {
         "ckpt": "ponyRealism_v21MainVAE.safetensors",
-        "description": "Official Pony Realism v2.1 SDXL checkpoint",
+        "sha256": "059934ff58033c5abb606b6b98f969ffdf7e7312d352c3be47a0440ba28d303b",
+        "size_bytes": 7105348824,
+        "description": "Official Pony Realism v2.1 SDXL reference checkpoint",
     },
     "AlbedoBase XL (SDXL)": {
         "ckpt": "albedo_base_xl.safetensors",
-        "description": "Official AlbedoBase XL SDXL checkpoint",
+        "sha256": "1718b5bb2da1ef4815fee8af8a7fc2fa8ab8f467b279eded4d991ea0cce59a6d",
+        "size_bytes": 6776583201,
+        "description": "Official AlbedoBase XL v2.1 SDXL reference checkpoint",
     },
     "SDXL 1.0": {
         "ckpt": "sd_xl_base_1.0.safetensors",
-        "description": "Official SDXL 1.0 Base checkpoint",
+        "sha256": "31e35c80fc4829d14f90153f4c74cd59c90b779f6afe05a74cd6120b893f7e5b",
+        "size_bytes": 6938078334,
+        "description": "Official SDXL 1.0 Base reference checkpoint",
     },
     "WAI-NSFW-illustrious-SDXL": {
         "ckpt": "waiNSFWIllustrious_v140.safetensors",
-        "description": "Official WAI-NSFW-illustrious-SDXL v14.0 checkpoint",
+        "sha256": "bdb59bac77d94ae7a55ff893170f9554c3f349e48a1b73c0c17c0b7c6f4d41a2",
+        "size_bytes": 6938040416,
+        "description": "Official WAI-NSFW-illustrious-SDXL v14.0 reference checkpoint",
     },
 }
+
+KREA_REFERENCE_FILES: dict[str, str] = {
+    "unet": "qwen_image_fp8_e4m3fn.safetensors",
+    "clip": "qwen3vl_4b_fp8_scaled.safetensors",
+    "vae": "qwen_image_vae.safetensors",
+}
+
+_checkpoint_sha256_cache: dict[tuple[str, int, int], str] = {}
 
 # Canonical AI Horde -> ComfyUI sampler mapping (`Haidra-Org/hordelib/hordelib/pipeline/constants.py`)
 HORDE_TO_COMFY_SAMPLERS: dict[str, str] = {
@@ -315,7 +336,7 @@ def _default_data() -> dict[str, Any]:
         or (SETTINGS.get("HORDE_API_KEY") if SETTINGS.get("HORDE_API_KEY") != "0000000000" else "")
         or ""
     ).strip()
-    raw_name = str(SETTINGS.get("HORDE_WORKER_NAME") or "OnMyChat-Dreamer").strip() or "OnMyChat-Dreamer"
+    raw_name = str(SETTINGS.get("HORDE_WORKER_NAME") or "Direct-Dreamer").strip() or "Direct-Dreamer"
     raw_models_str = str(SETTINGS.get("HORDE_WORKER_MODELS") or "").strip()
     if raw_models_str:
         default_models = [
@@ -335,7 +356,7 @@ def _default_data() -> dict[str, Any]:
         "poll_interval_busy": 2.0,
         "sdxl_enabled": True,
         "sdxl_models": default_models,
-        "krea_enabled": True,
+        "krea_enabled": False,
         "krea_daily_limit": raw_limit,
         "krea_daily_date": _utc_today_str(),
         "krea_daily_count": 0,
@@ -409,19 +430,78 @@ def get_effective_api_key(data: Optional[dict[str, Any]] = None) -> str:
     return ""
 
 
-def _is_comfy_checkpoint_installed(ckpt_name: str) -> bool:
-    """Returns True if `ckpt_name` exists in the local ComfyUI checkpoints folder."""
+def _verify_reference_checkpoint(
+    ckpt_name: Any,
+    expected_sha256: Optional[str] = None,
+    expected_size_bytes: Optional[int] = None,
+) -> bool:
+    """
+    Verifies that `ckpt_name` (or a `LOCAL_SDXL_MODEL_CATALOG` spec dict) exists in
+    `COMFY_CHECKPOINTS_DIR` and matches the exact `AI-Horde-image-model-reference`
+    byte size and SHA256 digest (cached by `(path, mtime_ns, size)`).
+    """
+    if isinstance(ckpt_name, dict):
+        expected_sha256 = ckpt_name.get("sha256", expected_sha256)
+        expected_size_bytes = ckpt_name.get("size_bytes", expected_size_bytes)
+        ckpt_name = ckpt_name.get("ckpt", "")
     if not ckpt_name:
         return False
     ckpts_dir = os.path.expanduser(str(SETTINGS.get("COMFY_CHECKPOINTS_DIR", "~/projects/ComfyUI/models/checkpoints")))
-    return os.path.isfile(os.path.join(ckpts_dir, ckpt_name))
+    full_path = os.path.join(ckpts_dir, ckpt_name)
+    try:
+        st = os.stat(full_path)
+    except OSError:
+        return False
+    if expected_size_bytes is not None and st.st_size != int(expected_size_bytes):
+        return False
+    if not expected_sha256:
+        return True
+    cache_key = (full_path, int(getattr(st, "st_mtime_ns", int(st.st_mtime * 1e9))), int(st.st_size))
+    digest = _checkpoint_sha256_cache.get(cache_key)
+    if digest is None:
+        h = hashlib.sha256()
+        try:
+            with open(full_path, "rb") as f:
+                while True:
+                    chunk = f.read(8 * 1024 * 1024)
+                    if not chunk:
+                        break
+                    h.update(chunk)
+            digest = h.hexdigest().lower()
+            _checkpoint_sha256_cache[cache_key] = digest
+        except OSError:
+            return False
+    return digest == expected_sha256.strip().lower()
+
+
+def is_krea_reference_verified() -> bool:
+    """
+    Returns True only when Modal is enabled AND `HORDE_KREA_REFERENCE_VERIFIED = true` AND
+    the configured Krea UNET/CLIP/VAE filenames match the exact AI Horde `Krea2-Turbo_fp8`
+    reference (`qwen_image_fp8_e4m3fn.safetensors`, `qwen3vl_4b_fp8_scaled.safetensors`,
+    `qwen_image_vae.safetensors`).
+    """
+    if not is_modal_enabled():
+        return False
+    flag = str(SETTINGS.get("HORDE_KREA_REFERENCE_VERIFIED", "false")).strip().lower()
+    if flag not in ("1", "true", "yes", "on"):
+        return False
+    unet_model = str(SETTINGS.get("HORDE_KREA_MODEL") or SETTINGS.get("KREA_MODEL") or "").strip()
+    clip_model = str(SETTINGS.get("HORDE_KREA_CLIP") or SETTINGS.get("KREA_CLIP") or "").strip()
+    vae_model = str(SETTINGS.get("HORDE_KREA_VAE") or SETTINGS.get("KREA_VAE") or KREA_REFERENCE_FILES["vae"]).strip()
+    return (
+        unet_model == KREA_REFERENCE_FILES["unet"]
+        and clip_model == KREA_REFERENCE_FILES["clip"]
+        and vae_model == KREA_REFERENCE_FILES["vae"]
+    )
 
 
 def get_active_models_for_pop(data: Optional[dict[str, Any]] = None) -> list[str]:
     """
     Returns the list of AI Horde models this worker currently offers for `/v2/generate/pop`:
-    - Unlimited local SDXL models when `sdxl_enabled` is True AND their `.safetensors` file is installed.
-    - `Krea2-Turbo_fp8` ONLY when `krea_enabled` is True, Modal is configured,
+    - Local SDXL models when `sdxl_enabled` is True AND their `.safetensors` file passes
+      `AI-Horde-image-model-reference` SHA256 + byte-size verification.
+    - `Krea2-Turbo_fp8` ONLY when `krea_enabled` is True, `is_krea_reference_verified()` is True,
       and today's `krea_daily_count < krea_daily_limit` (or `krea_daily_limit < 0` for unlimited).
     """
     if data is None:
@@ -437,10 +517,18 @@ def get_active_models_for_pop(data: Optional[dict[str, Any]] = None) -> list[str
         for m in data.get("sdxl_models") or ["CyberRealistic Pony"]:
             m_str = str(m).strip()
             cat_entry = LOCAL_SDXL_MODEL_CATALOG.get(m_str)
-            if cat_entry and m_str not in models and _is_comfy_checkpoint_installed(cat_entry.get("ckpt", "")):
+            if (
+                cat_entry
+                and m_str not in models
+                and _verify_reference_checkpoint(
+                    cat_entry.get("ckpt", ""),
+                    cat_entry.get("sha256"),
+                    cat_entry.get("size_bytes"),
+                )
+            ):
                 models.append(m_str)
 
-    if data.get("krea_enabled", True) and is_modal_enabled():
+    if data.get("krea_enabled", False) and is_krea_reference_verified():
         limit = int(data.get("krea_daily_limit", 10))
         used = int(data.get("krea_daily_count", 0))
         if limit < 0 or used < limit:
@@ -516,6 +604,39 @@ def _resolve_comfy_scheduler(comfy_sampler: str, scheduler: Optional[str], karra
     return eff_sched
 
 
+def _clamp_horde_int(
+    value: Any,
+    *,
+    min_val: int,
+    max_val: int,
+    default: int,
+    divisible: Optional[int] = None,
+) -> int:
+    """Normalizes an integer payload value matching `Haidra-Org/hordelib/hordelib/pipeline/payload.py` (`_clamp`)."""
+    if value is None:
+        val = default
+    else:
+        try:
+            val = int(value)
+        except (ValueError, TypeError):
+            val = default
+    if divisible and val % divisible != 0:
+        val = ((val + (divisible - 1)) // divisible) * divisible
+    return max(min_val, min(max_val, val))
+
+
+def _clamp_horde_float(value: Any, *, min_val: float, max_val: float, default: float) -> float:
+    """Normalizes a float payload value matching `Haidra-Org/hordelib/hordelib/pipeline/payload.py` (`_clamp`)."""
+    if value is None:
+        val = default
+    else:
+        try:
+            val = float(value)
+        except (ValueError, TypeError):
+            val = default
+    return max(min_val, min(max_val, val))
+
+
 def _build_sdxl_horde_workflow(
     positive_prompt: str,
     negative_prompt: str,
@@ -524,8 +645,8 @@ def _build_sdxl_horde_workflow(
     height: int,
     seed: int,
     steps: int = 30,
-    cfg: float = 7.5,
-    sampler_name: str = "k_euler_a",
+    cfg: float = 8.0,
+    sampler_name: str = "k_euler",
     karras: bool = True,
     scheduler: Optional[str] = None,
     clip_skip: int = 1,
@@ -537,11 +658,11 @@ def _build_sdxl_horde_workflow(
     (`steps`, `cfg_scale`, `sampler_name`, `karras`/`scheduler`, `clip_skip`, `seed`, `width`, `height`,
     and unmodified `positive_prompt`/`negative_prompt`).
     """
-    w_clamped = max(64, min(2048, ((int(width or 1024) + 63) // 64) * 64))
-    h_clamped = max(64, min(2048, ((int(height or 1024) + 63) // 64) * 64))
-    eff_steps = max(1, min(150, int(steps or 30)))
-    eff_cfg = max(1.0, min(100.0, float(cfg if cfg is not None else 7.5)))
-    eff_clip_skip = max(1, min(20, int(clip_skip or 1)))
+    w_clamped = _clamp_horde_int(width, min_val=64, max_val=8192, default=512, divisible=64)
+    h_clamped = _clamp_horde_int(height, min_val=64, max_val=8192, default=512, divisible=64)
+    eff_steps = _clamp_horde_int(steps, min_val=1, max_val=500, default=30)
+    eff_cfg = _clamp_horde_float(cfg, min_val=1.0, max_val=100.0, default=8.0)
+    eff_clip_skip = _clamp_horde_int(clip_skip, min_val=1, max_val=20, default=1)
     comfy_sampler = _resolve_comfy_sampler(sampler_name)
     comfy_scheduler = _resolve_comfy_scheduler(comfy_sampler, scheduler, karras)
 
@@ -598,25 +719,26 @@ def _build_krea_horde_workflow(
     width: int,
     height: int,
     seed: int,
-    steps: int = 8,
-    cfg: float = 1.5,
+    steps: int = 30,
+    cfg: float = 8.0,
     sampler_name: str = "k_euler",
     karras: bool = False,
     scheduler: Optional[str] = None,
 ) -> dict[str, Any]:
     """
     Builds the Krea 2 UNET workflow for Modal GPU execution matching `Haidra-Org/hordelib`'s
-    `qwen_krea2` pipeline, honoring the request's `steps`, `cfg_scale`, `sampler_name`,
-    `karras`/`scheduler`, `seed`, `width`, `height`, and unmodified `positive_prompt`/`negative_prompt`.
+    `qwen_krea2` pipeline (`KREA_REFERENCE_FILES`), honoring the request's exact `steps`,
+    `cfg_scale`, `sampler_name`, `karras`/`scheduler`, `seed`, `width`, `height`, and
+    unmodified `positive_prompt`/`negative_prompt`.
     """
-    unet_model = SETTINGS.get("KREA_MODEL", "CyberRealistic_Krea2_V4.0_BF16.safetensors")
-    clip_model = SETTINGS.get("KREA_CLIP", "qwen3-vl-4b-heretic.safetensors")
-    vae_model = SETTINGS.get("KREA_VAE", "qwen_image_vae.safetensors")
+    unet_model = KREA_REFERENCE_FILES["unet"]
+    clip_model = KREA_REFERENCE_FILES["clip"]
+    vae_model = KREA_REFERENCE_FILES["vae"]
 
-    w_clamped = max(64, min(2048, ((int(width or 1024) + 63) // 64) * 64))
-    h_clamped = max(64, min(2048, ((int(height or 1024) + 63) // 64) * 64))
-    eff_steps = max(1, min(50, int(steps or 8)))
-    eff_cfg = max(1.0, min(30.0, float(cfg if cfg is not None else 1.5)))
+    w_clamped = _clamp_horde_int(width, min_val=64, max_val=8192, default=512, divisible=64)
+    h_clamped = _clamp_horde_int(height, min_val=64, max_val=8192, default=512, divisible=64)
+    eff_steps = _clamp_horde_int(steps, min_val=1, max_val=500, default=30)
+    eff_cfg = _clamp_horde_float(cfg, min_val=1.0, max_val=100.0, default=8.0)
     comfy_sampler = _resolve_comfy_sampler(sampler_name)
     comfy_scheduler = _resolve_comfy_scheduler(comfy_sampler, scheduler, karras)
 
@@ -922,7 +1044,7 @@ async def run_single_dreamer_cycle(ignore_enabled: bool = False) -> dict[str, An
             logger.error(f"[HordeDreamer] Refusing to pop jobs without horde_safety: {safety_err}")
             return {"status": "safety_unavailable", "detail": _runtime_status["last_error"]}
 
-        worker_name = str(data.get("worker_name") or "OnMyChat-Dreamer").strip()[:100]
+        worker_name = str(data.get("worker_name") or "Direct-Dreamer").strip()[:100]
         max_pixels = int(data.get("max_pixels") or (1024 * 1024))
         nsfw_flag = bool(data.get("nsfw", True))
 
@@ -1000,14 +1122,15 @@ async def run_single_dreamer_cycle(ignore_enabled: bool = False) -> dict[str, An
 
                 raw_prompt = str(gen_payload.get("prompt") or "")
                 pos_prompt, neg_prompt = _split_horde_prompt(raw_prompt)
-                width = int(gen_payload.get("width") or 1024)
-                height = int(gen_payload.get("height") or 1024)
-                steps = int(gen_payload.get("ddim_steps") or gen_payload.get("steps") or 30)
-                cfg_scale = float(gen_payload.get("cfg_scale") if gen_payload.get("cfg_scale") is not None else 7.5)
-                sampler_name = str(gen_payload.get("sampler_name") or "k_euler_a")
+                width = _clamp_horde_int(gen_payload.get("width"), min_val=64, max_val=8192, default=512, divisible=64)
+                height = _clamp_horde_int(gen_payload.get("height"), min_val=64, max_val=8192, default=512, divisible=64)
+                raw_steps = gen_payload.get("ddim_steps") if gen_payload.get("ddim_steps") is not None else gen_payload.get("steps")
+                steps = _clamp_horde_int(raw_steps, min_val=1, max_val=500, default=30)
+                cfg_scale = _clamp_horde_float(gen_payload.get("cfg_scale"), min_val=1.0, max_val=100.0, default=8.0)
+                sampler_name = str(gen_payload.get("sampler_name") or "k_euler")
                 karras = bool(gen_payload.get("karras", True))
                 scheduler = gen_payload.get("scheduler")
-                clip_skip = int(gen_payload.get("clip_skip") or 1)
+                clip_skip = _clamp_horde_int(gen_payload.get("clip_skip"), min_val=1, max_val=20, default=1)
 
                 raw_seed = gen_payload.get("seed")
                 try:
@@ -1037,19 +1160,52 @@ async def run_single_dreamer_cycle(ignore_enabled: bool = False) -> dict[str, An
                 png_bytes: Optional[bytes] = None
 
                 if is_krea_job:
-                    # Enforce hard daily limit for Krea 2 on Modal (counted on invocation so failed calls also count toward budget)
-                    fresh_data = load_dreamer_data()
-                    k_limit = int(fresh_data.get("krea_daily_limit", 10))
-                    k_used = int(fresh_data.get("krea_daily_count", 0))
-                    if k_limit >= 0 and k_used >= k_limit:
-                        logger.warning(f"[HordeDreamer] Krea daily limit ({k_used}/{k_limit}) reached; faulting job {job_id}")
+                    if not is_krea_reference_verified():
+                        logger.error(f"[HordeDreamer] Refusing Krea job {job_id}: reference weights are not verified")
                         png_bytes = None
                     else:
-                        fresh_data["krea_daily_count"] = k_used + 1
-                        save_dreamer_data(fresh_data)
-                        wf = _build_krea_horde_workflow(
+                        # Enforce hard daily limit for Krea 2 on Modal (counted on invocation so failed calls also count toward budget)
+                        fresh_data = load_dreamer_data()
+                        k_limit = int(fresh_data.get("krea_daily_limit", 10))
+                        k_used = int(fresh_data.get("krea_daily_count", 0))
+                        if k_limit >= 0 and k_used >= k_limit:
+                            logger.warning(f"[HordeDreamer] Krea daily limit ({k_used}/{k_limit}) reached; faulting job {job_id}")
+                            png_bytes = None
+                        else:
+                            fresh_data["krea_daily_count"] = k_used + 1
+                            save_dreamer_data(fresh_data)
+                            wf = _build_krea_horde_workflow(
+                                positive_prompt=pos_prompt,
+                                negative_prompt=neg_prompt,
+                                width=width,
+                                height=height,
+                                seed=seed_int,
+                                steps=steps,
+                                cfg=cfg_scale,
+                                sampler_name=sampler_name,
+                                karras=karras,
+                                scheduler=scheduler,
+                            )
+                            png_bytes = await _run_modal_krea_silent(wf)
+                else:
+                    # Strict model resolution: never fallback to another model checkpoint if `job_model` is unexpected or unverified
+                    cat_entry = LOCAL_SDXL_MODEL_CATALOG.get(job_model)
+                    if not cat_entry or not _verify_reference_checkpoint(
+                        cat_entry.get("ckpt", ""),
+                        cat_entry.get("sha256"),
+                        cat_entry.get("size_bytes"),
+                    ):
+                        logger.error(
+                            f"[HordeDreamer] Refusing job {job_id}: unexpected or unverified model '{job_model}' "
+                            f"(zero cross-model fallback)"
+                        )
+                        png_bytes = None
+                    else:
+                        ckpt_name = str(cat_entry["ckpt"])
+                        wf = _build_sdxl_horde_workflow(
                             positive_prompt=pos_prompt,
                             negative_prompt=neg_prompt,
+                            ckpt_name=ckpt_name,
                             width=width,
                             height=height,
                             seed=seed_int,
@@ -1058,26 +1214,9 @@ async def run_single_dreamer_cycle(ignore_enabled: bool = False) -> dict[str, An
                             sampler_name=sampler_name,
                             karras=karras,
                             scheduler=scheduler,
+                            clip_skip=clip_skip,
                         )
-                        png_bytes = await _run_modal_krea_silent(wf)
-                else:
-                    cat_entry = LOCAL_SDXL_MODEL_CATALOG.get(job_model) or LOCAL_SDXL_MODEL_CATALOG["CyberRealistic Pony"]
-                    ckpt_name = cat_entry["ckpt"]
-                    wf = _build_sdxl_horde_workflow(
-                        positive_prompt=pos_prompt,
-                        negative_prompt=neg_prompt,
-                        ckpt_name=ckpt_name,
-                        width=width,
-                        height=height,
-                        seed=seed_int,
-                        steps=steps,
-                        cfg=cfg_scale,
-                        sampler_name=sampler_name,
-                        karras=karras,
-                        scheduler=scheduler,
-                        clip_skip=clip_skip,
-                    )
-                    png_bytes = await _run_local_comfy_silent(wf)
+                        png_bytes = await _run_local_comfy_silent(wf)
 
                 render_sec = round(time.time() - t0, 2)
 
@@ -1296,7 +1435,7 @@ async def start_horde_dreamer() -> None:
 
 
 # ============================================================================
-# AI Horde Image Generation Client (for OnMyChat users in Horde mode)
+# AI Horde Image Generation Client (for Direct users in Horde mode)
 # ============================================================================
 
 async def horde_generate_image(
@@ -1314,7 +1453,7 @@ async def horde_generate_image(
     """
     Submits an asynchronous image generation request to AI Horde (`/api/v2/generate/async`),
     polls `/generate/check/{id}` and `/generate/status/{id}`, downloads the generated WebP,
-    and converts it to PNG bytes for seamless display in OnMyChat.
+    and converts it to PNG bytes for seamless display in AI Assistant Direct.
     Returns `(png_bytes, worker_name, actual_model)` or `(None, None, error_str)`.
     """
     eff_key = (api_key or "").strip() or get_effective_api_key() or horde_client.ANONYMOUS_API_KEY
@@ -1403,7 +1542,7 @@ async def horde_generate_image(
                     if not raw_bytes:
                         return None, None, "Failed to download generated image from AI Horde"
 
-                    # Convert WebP to PNG for OnMyChat storage & pipeline compatibility
+                    # Convert WebP to PNG for Direct storage & pipeline compatibility
                     with Image.open(io.BytesIO(raw_bytes)) as im:
                         out_png = io.BytesIO()
                         im.save(out_png, format="PNG")
@@ -1490,7 +1629,7 @@ async def _build_state_payload(refresh_user: bool = False) -> dict[str, Any]:
     return {
         "config": {
             "enabled": bool(data.get("enabled", True)),
-            "worker_name": data.get("worker_name", "OnMyChat-Dreamer"),
+            "worker_name": data.get("worker_name", "Direct-Dreamer"),
             "has_api_key": bool(raw_key),
             "masked_api_key": masked_key,
             "nsfw": bool(data.get("nsfw", True)),
@@ -1499,8 +1638,12 @@ async def _build_state_payload(refresh_user: bool = False) -> dict[str, Any]:
             "poll_interval_busy": float(data.get("poll_interval_busy", 2.0)),
             "sdxl_enabled": bool(data.get("sdxl_enabled", True)),
             "sdxl_models": data.get("sdxl_models") or ["CyberRealistic Pony"],
-            "sdxl_catalog": LOCAL_SDXL_MODEL_CATALOG,
+            "sdxl_catalog": {
+                m_name: {**spec, "verified": _verify_reference_checkpoint(spec)}
+                for m_name, spec in LOCAL_SDXL_MODEL_CATALOG.items()
+            },
             "krea_enabled": bool(data.get("krea_enabled", True)),
+            "krea_verified": is_krea_reference_verified(),
             "krea_daily_limit": int(data.get("krea_daily_limit", 10)),
             "krea_daily_date": data.get("krea_daily_date", _utc_today_str()),
             "krea_daily_count": int(data.get("krea_daily_count", 0)),
@@ -1630,11 +1773,20 @@ async def horde_reset_krea_quota(request: Request):
 @router.post("/horde/api/test_local_sdxl")
 async def horde_test_local_sdxl(request: Request):
     _require_owner(request)
+    verified_spec = next(
+        (spec for spec in LOCAL_SDXL_MODEL_CATALOG.values() if _verify_reference_checkpoint(spec)),
+        None,
+    )
+    if not verified_spec:
+        return JSONResponse(
+            {"ok": False, "error": "No reference-verified SDXL checkpoint installed in ComfyUI/models/checkpoints"},
+            status_code=400,
+        )
     t0 = time.time()
     wf = _build_sdxl_horde_workflow(
         positive_prompt="cinematic portrait of a cyberpunk hacker girl in neon rain, masterpiece",
         negative_prompt="blurry, low quality",
-        ckpt_name="cyberrealisticPony_v180Coreshift.safetensors",
+        ckpt_name=verified_spec["ckpt"],
         width=896,
         height=1152,
         seed=random.randint(1, 2147483646),
@@ -1885,11 +2037,14 @@ function renderState(d) {
     box.innerHTML = '';
     Object.keys(catalogData).forEach(mName => {
       const info = catalogData[mName];
+      const vBadge = info.verified
+        ? '<span style="color:var(--green);font-size:11px;">[✓ SHA256 verified]</span>'
+        : '<span style="color:var(--yellow);font-size:11px;">[✗ missing reference weight]</span>';
       const div = document.createElement('div');
       div.className = 'chk-row';
       div.innerHTML = `<label style="display:flex;align-items:center;gap:8px;color:var(--text);margin:0;cursor:pointer;">
         <input type="checkbox" class="sdxl-model-chk" value="${mName}" ${selected.has(mName) ? 'checked' : ''}>
-        <span><b>${mName}</b> <span style="color:var(--muted);font-size:12px;">(${info.ckpt})</span></span>
+        <span><b>${mName}</b> <span style="color:var(--muted);font-size:12px;">(${info.ckpt})</span> ${vBadge}</span>
       </label>`;
       box.appendChild(div);
     });
