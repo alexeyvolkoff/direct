@@ -109,7 +109,8 @@ KREA_REFERENCE_FILES: dict[str, str] = {
 
 _checkpoint_sha256_cache: dict[tuple[str, int, int], str] = {}
 
-# Canonical AI Horde -> ComfyUI sampler mapping (`Haidra-Org/hordelib/hordelib/pipeline/constants.py`)
+# Canonical AI Horde -> ComfyUI sampler mapping (`Haidra-Org/hordelib/hordelib/pipeline/constants.py`).
+# Samplers not supported by ComfyUI (such as `plms`) are intentionally excluded rather than substituted.
 HORDE_TO_COMFY_SAMPLERS: dict[str, str] = {
     "k_euler": "euler",
     "k_euler_a": "euler_ancestral",
@@ -125,7 +126,6 @@ HORDE_TO_COMFY_SAMPLERS: dict[str, str] = {
     "ddim": "ddim",
     "dpmsolver": "dpmpp_2m",
     "lcm": "lcm",
-    "plms": "euler",
     "uni_pc": "uni_pc",
     "uni_pc_bh2": "uni_pc_bh2",
     "dpmpp_2m_sde": "dpmpp_2m_sde",
@@ -153,6 +153,12 @@ HORDE_TO_COMFY_SAMPLERS: dict[str, str] = {
     "gradient_estimation_cfg_pp": "gradient_estimation_cfg_pp",
 }
 
+SUPPORTED_HORDE_SAMPLERS: tuple[str, ...] = tuple(HORDE_TO_COMFY_SAMPLERS.keys())
+MAX_HORDE_SEED: int = 0xFFFFFFFFFFFFFFFF  # 2**64 - 1 (ComfyUI KSampler full uint64 range)
+MIN_HORDE_DIMENSION: int = 64
+MAX_HORDE_DIMENSION: int = 8192
+HORDE_DIMENSION_MULTIPLE: int = 64
+
 COMFY_SUPPORTED_SCHEDULERS: frozenset[str] = frozenset(
     {
         "normal",
@@ -177,11 +183,13 @@ _wake_event = asyncio.Event()
 _safety_init_lock = threading.Lock()
 _nsfw_checker: Optional[NSFWChecker] = None
 _censor_png_cache: dict[str, bytes] = {}
+_pending_deliveries: dict[str, dict[str, Any]] = {}
 
 # Live in-memory telemetry
 _runtime_status: dict[str, Any] = {
-    "state": "stopped",  # stopped | idle_polling | waiting_local_busy | rendering | evaluating_safety | error | paused
+    "state": "stopped",  # stopped | idle_polling | waiting_local_busy | rendering | evaluating_safety | awaiting_delivery | error | paused
     "current_job_id": None,
+    "current_job_stage": None,
     "current_model": None,
     "current_backend": None,
     "last_pop_ts": 0.0,
@@ -364,6 +372,7 @@ def _default_data() -> dict[str, Any]:
         "sdxl_jobs_completed": 0,
         "krea_jobs_completed": 0,
         "total_jobs_faulted": 0,
+        "total_jobs_submit_failed": 0,
         "total_csam_filtered": 0,
         "total_nsfw_censored": 0,
         "total_kudos_earned": 0.0,
@@ -578,23 +587,29 @@ def _split_horde_prompt(raw_prompt: str) -> tuple[str, str]:
 
 
 def _resolve_comfy_sampler(sampler_name: Optional[str]) -> str:
-    """Maps an AI Horde sampler name to its canonical ComfyUI KSampler `sampler_name`."""
-    raw = str(sampler_name or "k_euler").strip().lower()
-    return HORDE_TO_COMFY_SAMPLERS.get(raw, "euler")
+    """
+    Maps an AI Horde sampler name to its canonical ComfyUI KSampler `sampler_name`.
+    Raises `ValueError` for unsupported/unknown samplers instead of silently substituting `euler`.
+    """
+    if sampler_name is None or str(sampler_name).strip() == "":
+        return HORDE_TO_COMFY_SAMPLERS["k_euler"]
+    raw = str(sampler_name).strip().lower()
+    if raw not in HORDE_TO_COMFY_SAMPLERS:
+        raise ValueError(f"Unsupported sampler_name for ComfyUI worker: {sampler_name!r}")
+    return HORDE_TO_COMFY_SAMPLERS[raw]
 
 
 def _resolve_comfy_scheduler(comfy_sampler: str, scheduler: Optional[str], karras: bool = True) -> str:
     """
     Resolves the ComfyUI KSampler `scheduler` from the AI Horde request's `scheduler` and `karras` fields,
     matching `Haidra-Org/AI-Horde/horde/consts.py` (`scheduler_for_request`) and `Haidra-Org/hordelib`
-    (`dpmpp_3m_sde` schedule guard).
+    (`dpmpp_3m_sde` schedule guard). Raises `ValueError` if an explicit `scheduler` is unsupported.
     """
-    if scheduler is not None:
+    if scheduler is not None and str(scheduler).strip() != "":
         cand = str(scheduler).strip().lower()
-        if cand in COMFY_SUPPORTED_SCHEDULERS:
-            eff_sched = cand
-        else:
-            eff_sched = "karras" if karras else "normal"
+        if cand not in COMFY_SUPPORTED_SCHEDULERS:
+            raise ValueError(f"Unsupported scheduler for ComfyUI worker: {scheduler!r}")
+        eff_sched = cand
     else:
         eff_sched = "karras" if karras else "normal"
 
@@ -604,37 +619,150 @@ def _resolve_comfy_scheduler(comfy_sampler: str, scheduler: Optional[str], karra
     return eff_sched
 
 
-def _clamp_horde_int(
-    value: Any,
+def _normalize_horde_seed(raw_seed: Any) -> int:
+    """
+    Preserves server-normalized seeds across the full supported ComfyUI uint64 range (`0 .. 2^64-1`),
+    including seed `0`. Generates a random seed ONLY when `raw_seed` is `None` or empty string.
+    Raises `ValueError` if `raw_seed` is non-integer, negative, or exceeds `2^64 - 1`.
+    """
+    if raw_seed is None:
+        return random.randint(0, 0xFFFFFFFF)
+    if isinstance(raw_seed, bool):
+        raise ValueError(f"Invalid boolean seed: {raw_seed!r}")
+    if isinstance(raw_seed, str):
+        s = raw_seed.strip()
+        if s == "":
+            return random.randint(0, 0xFFFFFFFF)
+        try:
+            seed_int = int(s, 10)
+        except ValueError as exc:
+            raise ValueError(f"Invalid non-integer seed: {raw_seed!r}") from exc
+    elif isinstance(raw_seed, int):
+        seed_int = int(raw_seed)
+    else:
+        raise ValueError(f"Invalid seed type: {type(raw_seed).__name__}")
+
+    if seed_int < 0 or seed_int > MAX_HORDE_SEED:
+        raise ValueError(f"Seed {seed_int} is outside supported range [0, {MAX_HORDE_SEED}]")
+    return seed_int
+
+
+def _validate_horde_dimensions(
+    width: Any,
+    height: Any,
     *,
-    min_val: int,
-    max_val: int,
-    default: int,
-    divisible: Optional[int] = None,
-) -> int:
-    """Normalizes an integer payload value matching `Haidra-Org/hordelib/hordelib/pipeline/payload.py` (`_clamp`)."""
-    if value is None:
-        val = default
-    else:
+    max_pixels: Optional[int] = None,
+) -> tuple[int, int]:
+    """
+    Validates and preserves exact server-normalized dimensions without silent clamping or resizing.
+    Raises `ValueError` if `width` or `height` is outside `[64, 8192]`, not divisible by `64`,
+    or if `width * height > max_pixels`.
+    """
+    def _parse_dim(val: Any, name: str) -> int:
+        if val is None:
+            return 512
+        if isinstance(val, bool):
+            raise ValueError(f"Invalid boolean {name}: {val!r}")
+        if isinstance(val, float) and not val.is_integer():
+            raise ValueError(f"Non-integer {name}: {val!r}")
         try:
-            val = int(value)
-        except (ValueError, TypeError):
-            val = default
-    if divisible and val % divisible != 0:
-        val = ((val + (divisible - 1)) // divisible) * divisible
-    return max(min_val, min(max_val, val))
+            d = int(val)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"Invalid {name}: {val!r}") from exc
+        if d < MIN_HORDE_DIMENSION or d > MAX_HORDE_DIMENSION:
+            raise ValueError(f"{name}={d} is outside supported range [{MIN_HORDE_DIMENSION}, {MAX_HORDE_DIMENSION}]")
+        if d % HORDE_DIMENSION_MULTIPLE != 0:
+            raise ValueError(f"{name}={d} must be divisible by {HORDE_DIMENSION_MULTIPLE}")
+        return d
+
+    w = _parse_dim(width, "width")
+    h = _parse_dim(height, "height")
+    if max_pixels is not None and (w * h) > int(max_pixels):
+        raise ValueError(f"Requested resolution {w}x{h} ({w * h} px) exceeds worker max_pixels ({max_pixels})")
+    return w, h
 
 
-def _clamp_horde_float(value: Any, *, min_val: float, max_val: float, default: float) -> float:
-    """Normalizes a float payload value matching `Haidra-Org/hordelib/hordelib/pipeline/payload.py` (`_clamp`)."""
+def _validate_horde_int_param(value: Any, *, name: str, min_val: int, max_val: int, default: int) -> int:
+    """Validates an integer generation parameter without silent clamping of out-of-range values."""
     if value is None:
-        val = default
-    else:
-        try:
-            val = float(value)
-        except (ValueError, TypeError):
-            val = default
-    return max(min_val, min(max_val, val))
+        return default
+    if isinstance(value, bool):
+        raise ValueError(f"Invalid boolean {name}: {value!r}")
+    if isinstance(value, float) and not value.is_integer():
+        raise ValueError(f"Non-integer {name}: {value!r}")
+    try:
+        val = int(value)
+    except (ValueError, TypeError) as exc:
+        raise ValueError(f"Invalid {name}: {value!r}") from exc
+    if val < min_val or val > max_val:
+        raise ValueError(f"{name}={val} is outside supported range [{min_val}, {max_val}]")
+    return val
+
+
+def _validate_horde_float_param(value: Any, *, name: str, min_val: float, max_val: float, default: float) -> float:
+    """Validates a float generation parameter without silent clamping of out-of-range values."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        raise ValueError(f"Invalid boolean {name}: {value!r}")
+    try:
+        val = float(value)
+    except (ValueError, TypeError) as exc:
+        raise ValueError(f"Invalid {name}: {value!r}") from exc
+    if val < min_val or val > max_val:
+        raise ValueError(f"{name}={val} is outside supported range [{min_val}, {max_val}]")
+    return val
+
+
+def _validate_supported_job_payload(gen_payload: dict[str, Any], *, max_pixels: Optional[int] = None) -> dict[str, Any]:
+    """
+    Validates that an incoming AI Horde payload uses only supported features and valid parameter
+    bounds, preserving exact dimensions, seeds, steps, CFG, clip_skip, sampler, and scheduler.
+    Raises `ValueError` if any unsupported feature (LoRAs, ControlNet, img2img, post-processing,
+    unsupported sampler/scheduler, or out-of-bounds dimension/seed/parameter) is present.
+    """
+    if gen_payload.get("loras"):
+        raise ValueError("Unsupported payload feature: loras")
+    if gen_payload.get("control_type") or gen_payload.get("control_net"):
+        raise ValueError("Unsupported payload feature: controlnet")
+    if gen_payload.get("source_image") or gen_payload.get("source_processing") not in (None, "", "txt2img"):
+        raise ValueError("Unsupported payload feature: img2img / source_image")
+    if gen_payload.get("post_processing"):
+        raise ValueError("Unsupported payload feature: post_processing")
+    if gen_payload.get("tiling"):
+        raise ValueError("Unsupported payload feature: tiling")
+    if gen_payload.get("hires_fix"):
+        raise ValueError("Unsupported payload feature: hires_fix")
+
+    width, height = _validate_horde_dimensions(
+        gen_payload.get("width"),
+        gen_payload.get("height"),
+        max_pixels=max_pixels,
+    )
+    raw_steps = gen_payload.get("ddim_steps") if gen_payload.get("ddim_steps") is not None else gen_payload.get("steps")
+    steps = _validate_horde_int_param(raw_steps, name="steps", min_val=1, max_val=500, default=30)
+    cfg_scale = _validate_horde_float_param(gen_payload.get("cfg_scale"), name="cfg_scale", min_val=1.0, max_val=100.0, default=8.0)
+    clip_skip = _validate_horde_int_param(gen_payload.get("clip_skip"), name="clip_skip", min_val=1, max_val=20, default=1)
+    sampler_name = str(gen_payload.get("sampler_name") or "k_euler")
+    karras = bool(gen_payload.get("karras", True))
+    scheduler = gen_payload.get("scheduler")
+    comfy_sampler = _resolve_comfy_sampler(sampler_name)
+    comfy_scheduler = _resolve_comfy_scheduler(comfy_sampler, scheduler, karras)
+    seed_int = _normalize_horde_seed(gen_payload.get("seed"))
+
+    return {
+        "width": width,
+        "height": height,
+        "steps": steps,
+        "cfg_scale": cfg_scale,
+        "clip_skip": clip_skip,
+        "sampler_name": sampler_name,
+        "karras": karras,
+        "scheduler": scheduler,
+        "comfy_sampler": comfy_sampler,
+        "comfy_scheduler": comfy_scheduler,
+        "seed": seed_int,
+    }
 
 
 def _build_sdxl_horde_workflow(
@@ -650,19 +778,20 @@ def _build_sdxl_horde_workflow(
     karras: bool = True,
     scheduler: Optional[str] = None,
     clip_skip: int = 1,
+    max_pixels: Optional[int] = None,
 ) -> dict[str, Any]:
     """
     Builds a pure, unmodified ComfyUI SDXL text-to-image workflow matching `Haidra-Org/hordelib`'s
     `stable_diffusion` pipeline (`CheckpointLoaderSimple -> CLIPSetLastLayer -> CLIPTextEncode ->
     EmptyLatentImage -> KSampler -> VAEDecode -> PreviewImage`), honoring the exact request parameters
     (`steps`, `cfg_scale`, `sampler_name`, `karras`/`scheduler`, `clip_skip`, `seed`, `width`, `height`,
-    and unmodified `positive_prompt`/`negative_prompt`).
+    and unmodified `positive_prompt`/`negative_prompt`) without silent clamping or resizing.
     """
-    w_clamped = _clamp_horde_int(width, min_val=64, max_val=8192, default=512, divisible=64)
-    h_clamped = _clamp_horde_int(height, min_val=64, max_val=8192, default=512, divisible=64)
-    eff_steps = _clamp_horde_int(steps, min_val=1, max_val=500, default=30)
-    eff_cfg = _clamp_horde_float(cfg, min_val=1.0, max_val=100.0, default=8.0)
-    eff_clip_skip = _clamp_horde_int(clip_skip, min_val=1, max_val=20, default=1)
+    w_exact, h_exact = _validate_horde_dimensions(width, height, max_pixels=max_pixels)
+    eff_steps = _validate_horde_int_param(steps, name="steps", min_val=1, max_val=500, default=30)
+    eff_cfg = _validate_horde_float_param(cfg, name="cfg_scale", min_val=1.0, max_val=100.0, default=8.0)
+    eff_clip_skip = _validate_horde_int_param(clip_skip, name="clip_skip", min_val=1, max_val=20, default=1)
+    eff_seed = _normalize_horde_seed(seed)
     comfy_sampler = _resolve_comfy_sampler(sampler_name)
     comfy_scheduler = _resolve_comfy_scheduler(comfy_sampler, scheduler, karras)
 
@@ -685,12 +814,12 @@ def _build_sdxl_horde_workflow(
         },
         "5": {
             "class_type": "EmptyLatentImage",
-            "inputs": {"width": w_clamped, "height": h_clamped, "batch_size": 1},
+            "inputs": {"width": w_exact, "height": h_exact, "batch_size": 1},
         },
         "6": {
             "class_type": "KSampler",
             "inputs": {
-                "seed": int(seed),
+                "seed": eff_seed,
                 "steps": eff_steps,
                 "cfg": eff_cfg,
                 "sampler_name": comfy_sampler,
@@ -724,21 +853,22 @@ def _build_krea_horde_workflow(
     sampler_name: str = "k_euler",
     karras: bool = False,
     scheduler: Optional[str] = None,
+    max_pixels: Optional[int] = None,
 ) -> dict[str, Any]:
     """
     Builds the Krea 2 UNET workflow for Modal GPU execution matching `Haidra-Org/hordelib`'s
     `qwen_krea2` pipeline (`KREA_REFERENCE_FILES`), honoring the request's exact `steps`,
     `cfg_scale`, `sampler_name`, `karras`/`scheduler`, `seed`, `width`, `height`, and
-    unmodified `positive_prompt`/`negative_prompt`.
+    unmodified `positive_prompt`/`negative_prompt` without silent clamping or persistent `SaveImage`.
     """
     unet_model = KREA_REFERENCE_FILES["unet"]
     clip_model = KREA_REFERENCE_FILES["clip"]
     vae_model = KREA_REFERENCE_FILES["vae"]
 
-    w_clamped = _clamp_horde_int(width, min_val=64, max_val=8192, default=512, divisible=64)
-    h_clamped = _clamp_horde_int(height, min_val=64, max_val=8192, default=512, divisible=64)
-    eff_steps = _clamp_horde_int(steps, min_val=1, max_val=500, default=30)
-    eff_cfg = _clamp_horde_float(cfg, min_val=1.0, max_val=100.0, default=8.0)
+    w_exact, h_exact = _validate_horde_dimensions(width, height, max_pixels=max_pixels)
+    eff_steps = _validate_horde_int_param(steps, name="steps", min_val=1, max_val=500, default=30)
+    eff_cfg = _validate_horde_float_param(cfg, name="cfg_scale", min_val=1.0, max_val=100.0, default=8.0)
+    eff_seed = _normalize_horde_seed(seed)
     comfy_sampler = _resolve_comfy_sampler(sampler_name)
     comfy_scheduler = _resolve_comfy_scheduler(comfy_sampler, scheduler, karras)
 
@@ -765,12 +895,12 @@ def _build_krea_horde_workflow(
         },
         "6": {
             "class_type": "EmptySD3LatentImage",
-            "inputs": {"width": w_clamped, "height": h_clamped, "batch_size": 1},
+            "inputs": {"width": w_exact, "height": h_exact, "batch_size": 1},
         },
         "7": {
             "class_type": "KSampler",
             "inputs": {
-                "seed": int(seed),
+                "seed": eff_seed,
                 "steps": eff_steps,
                 "cfg": eff_cfg,
                 "sampler_name": comfy_sampler,
@@ -787,27 +917,129 @@ def _build_krea_horde_workflow(
             "inputs": {"samples": ["7", 0], "vae": ["3", 0]},
         },
         "9": {
-            "class_type": "SaveImage",
-            "inputs": {"filename_prefix": "generated/horde_krea", "images": ["8", 0]},
+            "class_type": "PreviewImage",
+            "inputs": {"images": ["8", 0]},
         },
     }
 
 
-async def _run_local_comfy_silent(workflow: dict[str, Any], timeout: int = 180) -> Optional[bytes]:
+def _get_comfy_base_dir() -> str:
+    """Derives the configured ComfyUI root directory from `SETTINGS` without hardcoding paths."""
+    explicit_base = str(SETTINGS.get("COMFY_DIR", "")).strip()
+    if explicit_base:
+        return os.path.expanduser(explicit_base)
+    ckpts_dir = os.path.expanduser(str(SETTINGS.get("COMFY_CHECKPOINTS_DIR", "~/projects/ComfyUI/models/checkpoints")))
+    # Typical layout: <comfy_root>/models/checkpoints
+    parent = os.path.dirname(ckpts_dir.rstrip("/\\"))
+    if os.path.basename(parent) == "models":
+        return os.path.dirname(parent)
+    return parent
+
+
+def _resolve_comfy_artifact_path(filename: str, subfolder: str = "", img_type: str = "temp") -> Optional[str]:
+    """Resolves the local filesystem path of a ComfyUI output/temp artifact from configured directories."""
+    if not filename:
+        return None
+    safe_name = os.path.basename(filename)
+    if img_type == "output":
+        base_dir = str(SETTINGS.get("COMFY_OUTPUT_DIR", "")).strip()
+        if not base_dir:
+            base_dir = os.path.join(_get_comfy_base_dir(), "output")
+    else:
+        base_dir = str(SETTINGS.get("COMFY_TEMP_DIR", "")).strip()
+        if not base_dir:
+            base_dir = os.path.join(_get_comfy_base_dir(), "temp")
+    base_dir = os.path.expanduser(base_dir)
+    if subfolder:
+        norm_sub = os.path.normpath(subfolder).lstrip("/\\")
+        if not norm_sub.startswith(".."):
+            base_dir = os.path.join(base_dir, norm_sub)
+    return os.path.join(base_dir, safe_name)
+
+
+def _remove_renderer_artifacts(artifact_paths: list[str]) -> int:
+    """Immediately deletes tracked renderer artifact files from disk and returns the count removed."""
+    removed = 0
+    for path in artifact_paths:
+        if not path:
+            continue
+        try:
+            if os.path.isfile(path) or os.path.islink(path):
+                os.remove(path)
+                removed += 1
+        except OSError as e:
+            logger.warning(f"[HordeDreamer] Failed removing renderer artifact {path}: {e}")
+    return removed
+
+
+async def _cancel_comfy_prompt(comfy_url: str, prompt_id: str) -> None:
+    """Cancels a queued or running ComfyUI prompt and deletes its history entry."""
+    if not comfy_url or not prompt_id:
+        return
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5.0)) as session:
+            try:
+                await session.post(f"{comfy_url}/queue", json={"delete": [prompt_id]})
+            except Exception:
+                pass
+            try:
+                await session.post(f"{comfy_url}/interrupt", json={"prompt_id": prompt_id})
+            except Exception:
+                pass
+            try:
+                await session.post(f"{comfy_url}/history", json={"delete": [prompt_id]})
+            except Exception:
+                pass
+    except Exception as e:
+        logger.debug(f"[HordeDreamer] Cleanup for ComfyUI prompt {prompt_id} raised: {e}")
+
+
+async def _delete_comfy_history(session: aiohttp.ClientSession, comfy_url: str, prompt_id: str) -> None:
+    """Removes a completed prompt from ComfyUI's in-memory `/history` so previews are not retained."""
+    if not comfy_url or not prompt_id:
+        return
+    try:
+        async with session.post(
+            f"{comfy_url}/history",
+            json={"delete": [prompt_id]},
+            timeout=aiohttp.ClientTimeout(total=5.0),
+        ):
+            pass
+    except Exception:
+        pass
+
+
+async def _run_local_comfy_silent(
+    workflow: dict[str, Any],
+    timeout: float = 180.0,
+    tracked_artifacts: Optional[list[str]] = None,
+) -> Optional[bytes]:
     """
-    Executes a workflow on local ComfyUI (`COMFY_API_URL`) without emitting WebSocket progress
-    to chat users, and cleans up temporary output files from disk.
+    Executes a workflow on local ComfyUI (`COMFY_API_URL`) with a strict wall-clock deadline (`timeout`),
+    disables live latent previews, deletes generated temp/output artifacts and ComfyUI history immediately
+    after reading the image bytes into memory, and cancels the ComfyUI prompt on timeout or cancellation.
     """
     comfy_url = str(SETTINGS.get("COMFY_API_URL", "http://localhost:8188")).rstrip("/")
-    comfy_output_dir = str(SETTINGS.get("COMFY_OUTPUT_DIR", ""))
     client_id = str(uuid.uuid4())
     ws_url = f"{comfy_url.replace('http', 'ws')}/ws?clientId={client_id}"
+    prompt_id: Optional[str] = None
+    local_artifacts: list[str] = tracked_artifacts if tracked_artifacts is not None else []
+    completed_cleanly = False
 
-    try:
+    async def _execute() -> Optional[bytes]:
+        nonlocal prompt_id, completed_cleanly
         async with aiohttp.ClientSession() as session:
-            async with session.ws_connect(ws_url, timeout=15.0) as ws:
-                payload = {"prompt": workflow, "client_id": client_id}
-                async with session.post(f"{comfy_url}/prompt", json=payload, timeout=aiohttp.ClientTimeout(total=15.0)) as resp:
+            async with session.ws_connect(ws_url, timeout=15.0, receive_timeout=float(timeout)) as ws:
+                payload = {
+                    "prompt": workflow,
+                    "client_id": client_id,
+                    "extra_data": {"preview_method": "none"},
+                }
+                async with session.post(
+                    f"{comfy_url}/prompt",
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=15.0),
+                ) as resp:
                     if resp.status != 200:
                         err_txt = await resp.text()
                         logger.error(f"[HordeDreamer] ComfyUI /prompt HTTP {resp.status}: {err_txt[:200]}")
@@ -819,13 +1051,8 @@ async def _run_local_comfy_silent(workflow: dict[str, Any], timeout: int = 180) 
                         return None
 
                 final_image_data: Optional[bytes] = None
-                loop_start = time.time()
 
                 async for msg in ws:
-                    if time.time() - loop_start > timeout:
-                        logger.error(f"[HordeDreamer] Timeout ({timeout}s) waiting for local ComfyUI prompt {prompt_id}")
-                        break
-
                     if msg.type == aiohttp.WSMsgType.TEXT:
                         data = json.loads(msg.data)
                         msg_type = data.get("type")
@@ -833,6 +1060,7 @@ async def _run_local_comfy_silent(workflow: dict[str, Any], timeout: int = 180) 
 
                         if msg_type == "executing":
                             if data_content.get("node") is None and data_content.get("prompt_id") == prompt_id:
+                                completed_cleanly = True
                                 break
                         elif msg_type == "execution_error" and data_content.get("prompt_id") == prompt_id:
                             logger.error(f"[HordeDreamer] Local ComfyUI execution error: {data_content}")
@@ -841,51 +1069,73 @@ async def _run_local_comfy_silent(workflow: dict[str, Any], timeout: int = 180) 
                             outputs = data_content.get("output") or {}
                             if isinstance(outputs, dict) and "images" in outputs:
                                 for image in outputs.get("images") or []:
-                                    filename = image.get("filename")
-                                    subfolder = image.get("subfolder", "")
-                                    img_type = image.get("type", "output")
+                                    filename = str(image.get("filename") or "")
+                                    subfolder = str(image.get("subfolder") or "")
+                                    img_type = str(image.get("type") or "temp")
+                                    art_path = _resolve_comfy_artifact_path(filename, subfolder, img_type)
+                                    if art_path and art_path not in local_artifacts:
+                                        local_artifacts.append(art_path)
                                     params = {"filename": filename, "subfolder": subfolder, "type": img_type}
                                     async with session.get(f"{comfy_url}/view", params=params) as img_resp:
                                         if img_resp.status == 200:
                                             final_image_data = await img_resp.read()
-                                    # Keep the latest 30 temp preview files for ComfyUI Queue sidebar,
-                                    # and prune older ones so ComfyUI/temp/ never fills the disk.
-                                    if img_type == "temp":
-                                        _prune_comfy_temp(keep=30)
+                    elif msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
+                        break
+
+                if prompt_id:
+                    await _delete_comfy_history(session, comfy_url, prompt_id)
+                _remove_renderer_artifacts(local_artifacts)
                 return final_image_data
+
+    try:
+        return await asyncio.wait_for(_execute(), timeout=float(timeout))
+    except asyncio.TimeoutError:
+        logger.error(f"[HordeDreamer] Hard deadline ({timeout}s) exceeded waiting for local ComfyUI prompt {prompt_id}")
+        if prompt_id:
+            await asyncio.shield(_cancel_comfy_prompt(comfy_url, prompt_id))
+        _remove_renderer_artifacts(local_artifacts)
+        return None
+    except asyncio.CancelledError:
+        if prompt_id and not completed_cleanly:
+            await asyncio.shield(_cancel_comfy_prompt(comfy_url, prompt_id))
+        _remove_renderer_artifacts(local_artifacts)
+        raise
     except Exception as e:
         logger.error(f"[HordeDreamer] Error in _run_local_comfy_silent: {e}")
+        if prompt_id and not completed_cleanly:
+            await asyncio.shield(_cancel_comfy_prompt(comfy_url, prompt_id))
+        _remove_renderer_artifacts(local_artifacts)
         return None
 
 
-def _prune_comfy_temp(keep: int = 30) -> None:
-    """Keep only the newest `keep` preview PNGs in ComfyUI/temp/ so the Queue UI works without filling disk."""
+async def _cleanup_modal_artifact(artifact_ref: Optional[str]) -> None:
+    """Requests immediate deletion of a remote Modal renderer artifact if one was reported."""
+    if not artifact_ref:
+        return
+    url = str(SETTINGS.get("MODAL_COMFY_URL", "")).strip()
+    if not url:
+        return
+    headers = {"Content-Type": "application/json"}
+    token = str(SETTINGS.get("MODAL_AUTH_TOKEN", "")).strip()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    cleanup_endpoint = url.rstrip("/") + "/cleanup"
     try:
-        temp_dir = os.path.expanduser("~/projects/ComfyUI/temp")
-        if not os.path.isdir(temp_dir):
-            return
-        entries = []
-        for name in os.listdir(temp_dir):
-            if name.startswith("ComfyUI_temp_") and name.endswith(".png"):
-                full = os.path.join(temp_dir, name)
-                try:
-                    entries.append((os.path.getmtime(full), full))
-                except OSError:
-                    pass
-        entries.sort(reverse=True)
-        for _, old_path in entries[keep:]:
-            try:
-                os.remove(old_path)
-            except OSError:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5.0)) as session:
+            async with session.post(cleanup_endpoint, json={"artifact": artifact_ref}, headers=headers):
                 pass
     except Exception:
         pass
 
 
-async def _run_modal_krea_silent(workflow: dict[str, Any], timeout: int = 180) -> Optional[bytes]:
+async def _run_modal_krea_silent(
+    workflow: dict[str, Any],
+    timeout: float = 180.0,
+    tracked_remote_artifacts: Optional[list[str]] = None,
+) -> Optional[bytes]:
     """
-    Dispatches a Krea 2 workflow to remote Modal GPU without emitting progress events
-    to the node's interactive chat stream.
+    Dispatches a Krea 2 workflow to remote Modal GPU with an enforced overall deadline (`timeout`)
+    and tracks any remote artifact identifiers for post-safety cleanup.
     """
     url = str(SETTINGS.get("MODAL_COMFY_URL", "")).strip()
     if not url:
@@ -897,13 +1147,15 @@ async def _run_modal_krea_silent(workflow: dict[str, Any], timeout: int = 180) -
         headers["Authorization"] = f"Bearer {token}"
 
     stream_endpoint = url.rstrip("/") + "/generate_stream"
-    try:
+    remote_artifacts = tracked_remote_artifacts if tracked_remote_artifacts is not None else []
+
+    async def _execute_modal() -> Optional[bytes]:
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 stream_endpoint,
-                json={"workflow": workflow},
+                json={"workflow": workflow, "ephemeral": True},
                 headers=headers,
-                timeout=aiohttp.ClientTimeout(total=timeout),
+                timeout=aiohttp.ClientTimeout(total=float(timeout)),
             ) as resp:
                 if resp.status != 200:
                     err_txt = await resp.text()
@@ -927,6 +1179,9 @@ async def _run_modal_krea_silent(workflow: dict[str, Any], timeout: int = 180) -
                             ev = json.loads(line.decode("utf-8"))
                         except Exception:
                             continue
+                        art_id = ev.get("artifact") or ev.get("filename")
+                        if art_id and str(art_id) not in remote_artifacts:
+                            remote_artifacts.append(str(art_id))
                         if ev.get("event") in ("done", "result") and ev.get("image_b64"):
                             image_bytes = base64.b64decode(ev["image_b64"])
                         elif ev.get("event") == "error":
@@ -934,13 +1189,30 @@ async def _run_modal_krea_silent(workflow: dict[str, Any], timeout: int = 180) -
                 if buf.strip() and not image_bytes:
                     try:
                         ev = json.loads(bytes(buf).strip().decode("utf-8"))
+                        art_id = ev.get("artifact") or ev.get("filename")
+                        if art_id and str(art_id) not in remote_artifacts:
+                            remote_artifacts.append(str(art_id))
                         if ev.get("event") in ("done", "result") and ev.get("image_b64"):
                             image_bytes = base64.b64decode(ev["image_b64"])
                     except Exception:
                         pass
                 return image_bytes
+
+    try:
+        return await asyncio.wait_for(_execute_modal(), timeout=float(timeout))
+    except asyncio.TimeoutError:
+        logger.error(f"[HordeDreamer] Hard deadline ({timeout}s) exceeded waiting for Modal Krea stream")
+        for art in remote_artifacts:
+            await asyncio.shield(_cleanup_modal_artifact(art))
+        return None
+    except asyncio.CancelledError:
+        for art in remote_artifacts:
+            await asyncio.shield(_cleanup_modal_artifact(art))
+        raise
     except Exception as e:
         logger.error(f"[HordeDreamer] Error in _run_modal_krea_silent: {e}")
+        for art in remote_artifacts:
+            await asyncio.shield(_cleanup_modal_artifact(art))
         return None
 
 
@@ -1006,10 +1278,175 @@ async def fetch_horde_user_info(api_key: Optional[str] = None, force: bool = Fal
     return _runtime_status.get("user_info")
 
 
+async def _fault_popped_job(
+    session: Optional[aiohttp.ClientSession],
+    job_id: str,
+    seed_int: int,
+    headers: dict[str, str],
+    *,
+    reason: str,
+    job_model: str = "unknown",
+    backend_label: str = "Local SDXL",
+    width: int = 512,
+    height: int = 512,
+    steps: int = 30,
+    duration_sec: float = 0.0,
+    pos_prompt: str = "",
+) -> dict[str, Any]:
+    """
+    Terminal fault handler for any popped job that failed during validation, workflow construction,
+    rendering, safety evaluation, or image conversion. Guarantees AI Horde is notified (`state='faulted'`)
+    and local telemetry records the fault without leaving an orphaned job.
+    """
+    fault_body = {
+        "id": job_id,
+        "generation": "faulted",
+        "state": "faulted",
+        "seed": int(seed_int) if isinstance(seed_int, int) and seed_int >= 0 else 0,
+        "censored": False,
+    }
+    sent = False
+    if session is not None and not session.closed:
+        try:
+            async with session.post(
+                f"{HORDE_API_BASE}/generate/submit",
+                json=fault_body,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=10.0),
+            ) as resp:
+                sent = resp.status in (200, 201, 202, 400, 404)
+        except Exception:
+            sent = False
+    if not sent:
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10.0)) as fallback_session:
+                async with fallback_session.post(
+                    f"{HORDE_API_BASE}/generate/submit",
+                    json=fault_body,
+                    headers=headers,
+                ):
+                    pass
+        except Exception as e:
+            logger.warning(f"[HordeDreamer] Failed sending fault notification for job {job_id}: {e}")
+
+    upd = load_dreamer_data()
+    upd["total_jobs_faulted"] = int(upd.get("total_jobs_faulted", 0)) + 1
+    upd.setdefault("recent_jobs", []).insert(0, {
+        "id": job_id,
+        "ts": int(time.time()),
+        "model": job_model,
+        "backend": backend_label,
+        "resolution": f"{width}x{height}",
+        "steps": steps,
+        "duration_sec": duration_sec,
+        "kudos": 0.0,
+        "status": "faulted",
+        "error": reason,
+        "prompt_preview": pos_prompt[:100],
+    })
+    save_dreamer_data(upd)
+    _runtime_status["state"] = "error"
+    _runtime_status["last_error"] = reason
+    _runtime_status["current_job_id"] = None
+    _runtime_status["current_job_stage"] = None
+    _runtime_status["current_model"] = None
+    _runtime_status["current_backend"] = None
+    return {"status": "faulted", "job_id": job_id, "detail": reason}
+
+
+async def _submit_generation_with_retry(
+    session: aiohttp.ClientSession,
+    submit_body: dict[str, Any],
+    headers: dict[str, str],
+    *,
+    max_attempts: int = 3,
+    retry_delay: float = 1.0,
+) -> dict[str, Any]:
+    """
+    Submits a completed generation to `/v2/generate/submit` with bounded retry for transient failures
+    (HTTP 408/425/429/5xx and connection/timeout errors) and duplicate-completion reconciliation.
+    Never treats HTTP 4xx/5xx or connection failures as a successful completion.
+    """
+    job_id = str(submit_body.get("id") or "")
+    last_error = ""
+    last_status = 0
+    had_ambiguous_attempt = False
+
+    for attempt in range(max_attempts):
+        try:
+            async with session.post(
+                f"{HORDE_API_BASE}/generate/submit",
+                json=submit_body,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=30.0),
+            ) as sub_resp:
+                last_status = sub_resp.status
+                sub_txt = await sub_resp.text()
+
+                if sub_resp.status in (200, 201, 202):
+                    reward = 0.0
+                    try:
+                        sub_json = json.loads(sub_txt) if sub_txt.strip() else {}
+                        reward = float(sub_json.get("reward") or 0.0)
+                    except Exception:
+                        reward = 0.0
+                    return {
+                        "acknowledged": True,
+                        "reward": reward,
+                        "status_code": sub_resp.status,
+                        "error": "",
+                    }
+
+                # Handle ambiguous outcome where a previous attempt timed out or 5xx'd after the backend
+                # had already recorded the submission.
+                lower_txt = sub_txt.lower()
+                if had_ambiguous_attempt and sub_resp.status in (400, 404, 409) and any(
+                    marker in lower_txt
+                    for marker in ("already submitted", "already completed", "duplicate")
+                ):
+                    logger.info(f"[HordeDreamer] Reconciled duplicate submit for job {job_id} after prior ambiguous attempt.")
+                    return {
+                        "acknowledged": True,
+                        "reward": 0.0,
+                        "status_code": sub_resp.status,
+                        "reconciled": True,
+                        "error": "",
+                    }
+
+                last_error = f"Submit HTTP {sub_resp.status}: {sub_txt[:180]}"
+                logger.error(f"[HordeDreamer] Submit attempt {attempt + 1}/{max_attempts} failed ({sub_resp.status}) for {job_id}: {sub_txt[:200]}")
+
+                if sub_resp.status in (408, 425, 429, 500, 502, 503, 504):
+                    had_ambiguous_attempt = True
+                    if attempt + 1 < max_attempts:
+                        await asyncio.sleep(retry_delay * (attempt + 1))
+                        continue
+                break
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            had_ambiguous_attempt = True
+            last_error = f"Submit connection error: {e}"
+            logger.warning(f"[HordeDreamer] Submit attempt {attempt + 1}/{max_attempts} network error for {job_id}: {e}")
+            if attempt + 1 < max_attempts:
+                await asyncio.sleep(retry_delay * (attempt + 1))
+                continue
+            break
+
+    return {
+        "acknowledged": False,
+        "reward": 0.0,
+        "status_code": last_status,
+        "error": last_error or "Submit failed without server acknowledgement",
+    }
+
+
 async def run_single_dreamer_cycle(ignore_enabled: bool = False) -> dict[str, Any]:
     """
-    Executes a single `pop -> render -> upload R2 -> submit` cycle.
+    Executes a single `pop -> validate -> render -> safety -> upload R2 -> submit` cycle.
     Protected by `_worker_lock` so manual trigger and background loop never overlap.
+    Guarantees every popped job follows a terminal handling path (`acknowledged`, `faulted`, or
+    `submit_failed` with pending delivery state).
     """
     async with _worker_lock:
         data = load_dreamer_data()
@@ -1091,7 +1528,6 @@ async def run_single_dreamer_cycle(ignore_enabled: bool = False) -> dict[str, An
                             logger.warning(f"[HordeDreamer] {_runtime_status['last_error']}")
                             return {"status": "unsafe_ip", "detail": _runtime_status["last_error"]}
                         if "Maintenance mode" in err_text or "WorkerMaintenance" in err_text:
-                            # Never auto-clear maintenance mode: respect moderator/owner maintenance state and pause the worker.
                             data["enabled"] = False
                             save_dreamer_data(data)
                             _runtime_status["state"] = "paused"
@@ -1122,61 +1558,97 @@ async def run_single_dreamer_cycle(ignore_enabled: bool = False) -> dict[str, An
 
                 raw_prompt = str(gen_payload.get("prompt") or "")
                 pos_prompt, neg_prompt = _split_horde_prompt(raw_prompt)
-                width = _clamp_horde_int(gen_payload.get("width"), min_val=64, max_val=8192, default=512, divisible=64)
-                height = _clamp_horde_int(gen_payload.get("height"), min_val=64, max_val=8192, default=512, divisible=64)
-                raw_steps = gen_payload.get("ddim_steps") if gen_payload.get("ddim_steps") is not None else gen_payload.get("steps")
-                steps = _clamp_horde_int(raw_steps, min_val=1, max_val=500, default=30)
-                cfg_scale = _clamp_horde_float(gen_payload.get("cfg_scale"), min_val=1.0, max_val=100.0, default=8.0)
-                sampler_name = str(gen_payload.get("sampler_name") or "k_euler")
-                karras = bool(gen_payload.get("karras", True))
-                scheduler = gen_payload.get("scheduler")
-                clip_skip = _clamp_horde_int(gen_payload.get("clip_skip"), min_val=1, max_val=20, default=1)
-
-                raw_seed = gen_payload.get("seed")
-                try:
-                    seed_int = int(str(raw_seed).strip()) if raw_seed is not None and str(raw_seed).strip() != "" else 0
-                except Exception:
-                    seed_int = 0
-                if seed_int <= 0:
-                    seed_int = random.randint(1, 2147483646)
-                else:
-                    seed_int = seed_int % 2147483647 or 1
-
                 is_krea_job = (job_model == KREA_HORDE_MODEL_NAME)
                 backend_label = "Modal Krea 2" if is_krea_job else "Local SDXL"
 
+                job_stage = "popped"
+                seed_int = 0
+                width = 512
+                height = 512
+                steps = 30
+                t0 = time.time()
+                local_artifacts: list[str] = []
+                remote_artifacts: list[str] = []
+
                 _runtime_status["state"] = "rendering"
                 _runtime_status["current_job_id"] = job_id
+                _runtime_status["current_job_stage"] = job_stage
                 _runtime_status["current_model"] = job_model
                 _runtime_status["current_backend"] = backend_label
 
-                logger.info(
-                    f"[HordeDreamer] Popped job {job_id} | model='{job_model}' ({backend_label}) | "
-                    f"{width}x{height} | steps={steps} | sampler={sampler_name} | cfg={cfg_scale} | "
-                    f"clip_skip={clip_skip} | prompt='{pos_prompt[:70]}'"
-                )
+                try:
+                    validated = _validate_supported_job_payload(gen_payload, max_pixels=max_pixels)
+                    width = validated["width"]
+                    height = validated["height"]
+                    steps = validated["steps"]
+                    cfg_scale = validated["cfg_scale"]
+                    clip_skip = validated["clip_skip"]
+                    sampler_name = validated["sampler_name"]
+                    karras = validated["karras"]
+                    scheduler = validated["scheduler"]
+                    seed_int = validated["seed"]
 
-                t0 = time.time()
-                png_bytes: Optional[bytes] = None
+                    job_stage = "rendering"
+                    _runtime_status["current_job_stage"] = job_stage
 
-                if is_krea_job:
-                    if not is_krea_reference_verified():
-                        logger.error(f"[HordeDreamer] Refusing Krea job {job_id}: reference weights are not verified")
-                        png_bytes = None
-                    else:
-                        # Enforce hard daily limit for Krea 2 on Modal (counted on invocation so failed calls also count toward budget)
-                        fresh_data = load_dreamer_data()
-                        k_limit = int(fresh_data.get("krea_daily_limit", 10))
-                        k_used = int(fresh_data.get("krea_daily_count", 0))
-                        if k_limit >= 0 and k_used >= k_limit:
-                            logger.warning(f"[HordeDreamer] Krea daily limit ({k_used}/{k_limit}) reached; faulting job {job_id}")
-                            png_bytes = None
+                    logger.info(
+                        f"[HordeDreamer] Popped job {job_id} | model='{job_model}' ({backend_label}) | "
+                        f"{width}x{height} | steps={steps} | sampler={sampler_name} | cfg={cfg_scale} | "
+                        f"clip_skip={clip_skip} | seed={seed_int} | prompt='{pos_prompt[:70]}'"
+                    )
+
+                    png_bytes: Optional[bytes] = None
+                    render_error_reason = f"Render failed on {backend_label} for job {job_id}"
+
+                    if is_krea_job:
+                        if not is_krea_reference_verified():
+                            render_error_reason = f"Refusing Krea job {job_id}: reference weights are not verified"
+                            logger.error(f"[HordeDreamer] {render_error_reason}")
                         else:
-                            fresh_data["krea_daily_count"] = k_used + 1
-                            save_dreamer_data(fresh_data)
-                            wf = _build_krea_horde_workflow(
+                            fresh_data = load_dreamer_data()
+                            k_limit = int(fresh_data.get("krea_daily_limit", 10))
+                            k_used = int(fresh_data.get("krea_daily_count", 0))
+                            if k_limit >= 0 and k_used >= k_limit:
+                                render_error_reason = f"Krea daily limit ({k_used}/{k_limit}) reached; faulting job {job_id}"
+                                logger.warning(f"[HordeDreamer] {render_error_reason}")
+                            else:
+                                fresh_data["krea_daily_count"] = k_used + 1
+                                save_dreamer_data(fresh_data)
+                                wf = _build_krea_horde_workflow(
+                                    positive_prompt=pos_prompt,
+                                    negative_prompt=neg_prompt,
+                                    width=width,
+                                    height=height,
+                                    seed=seed_int,
+                                    steps=steps,
+                                    cfg=cfg_scale,
+                                    sampler_name=sampler_name,
+                                    karras=karras,
+                                    scheduler=scheduler,
+                                    max_pixels=max_pixels,
+                                )
+                                png_bytes = await _run_modal_krea_silent(
+                                    wf,
+                                    tracked_remote_artifacts=remote_artifacts,
+                                )
+                    else:
+                        cat_entry = LOCAL_SDXL_MODEL_CATALOG.get(job_model)
+                        if not cat_entry or not _verify_reference_checkpoint(
+                            cat_entry.get("ckpt", ""),
+                            cat_entry.get("sha256"),
+                            cat_entry.get("size_bytes"),
+                        ):
+                            render_error_reason = (
+                                f"Refusing job {job_id}: unexpected or unverified model '{job_model}' "
+                                f"(zero cross-model fallback)"
+                            )
+                            logger.error(f"[HordeDreamer] {render_error_reason}")
+                        else:
+                            ckpt_name = str(cat_entry["ckpt"])
+                            wf = _build_sdxl_horde_workflow(
                                 positive_prompt=pos_prompt,
                                 negative_prompt=neg_prompt,
+                                ckpt_name=ckpt_name,
                                 width=width,
                                 height=height,
                                 seed=seed_int,
@@ -1185,82 +1657,45 @@ async def run_single_dreamer_cycle(ignore_enabled: bool = False) -> dict[str, An
                                 sampler_name=sampler_name,
                                 karras=karras,
                                 scheduler=scheduler,
+                                clip_skip=clip_skip,
+                                max_pixels=max_pixels,
                             )
-                            png_bytes = await _run_modal_krea_silent(wf)
-                else:
-                    # Strict model resolution: never fallback to another model checkpoint if `job_model` is unexpected or unverified
-                    cat_entry = LOCAL_SDXL_MODEL_CATALOG.get(job_model)
-                    if not cat_entry or not _verify_reference_checkpoint(
-                        cat_entry.get("ckpt", ""),
-                        cat_entry.get("sha256"),
-                        cat_entry.get("size_bytes"),
-                    ):
-                        logger.error(
-                            f"[HordeDreamer] Refusing job {job_id}: unexpected or unverified model '{job_model}' "
-                            f"(zero cross-model fallback)"
-                        )
-                        png_bytes = None
-                    else:
-                        ckpt_name = str(cat_entry["ckpt"])
-                        wf = _build_sdxl_horde_workflow(
-                            positive_prompt=pos_prompt,
-                            negative_prompt=neg_prompt,
-                            ckpt_name=ckpt_name,
+                            png_bytes = await _run_local_comfy_silent(
+                                wf,
+                                tracked_artifacts=local_artifacts,
+                            )
+
+                    render_sec = round(time.time() - t0, 2)
+                    _remove_renderer_artifacts(local_artifacts)
+
+                    if not png_bytes:
+                        for art in remote_artifacts:
+                            await _cleanup_modal_artifact(art)
+                        job_stage = "faulted"
+                        return await _fault_popped_job(
+                            session,
+                            job_id,
+                            seed_int,
+                            headers,
+                            reason=render_error_reason,
+                            job_model=job_model,
+                            backend_label=backend_label,
                             width=width,
                             height=height,
-                            seed=seed_int,
                             steps=steps,
-                            cfg=cfg_scale,
-                            sampler_name=sampler_name,
-                            karras=karras,
-                            scheduler=scheduler,
-                            clip_skip=clip_skip,
+                            duration_sec=render_sec,
+                            pos_prompt=pos_prompt,
                         )
-                        png_bytes = await _run_local_comfy_silent(wf)
 
-                render_sec = round(time.time() - t0, 2)
-
-                if not png_bytes:
-                    # Report faulted so AI Horde immediately re-queues the job for another worker
-                    fault_body = {
-                        "id": job_id,
-                        "generation": "faulted",
-                        "state": "faulted",
-                        "seed": seed_int,
-                        "censored": False,
-                    }
-                    try:
-                        await session.post(f"{HORDE_API_BASE}/generate/submit", json=fault_body, headers=headers)
-                    except Exception:
-                        pass
-                    upd = load_dreamer_data()
-                    upd["total_jobs_faulted"] = int(upd.get("total_jobs_faulted", 0)) + 1
-                    upd.setdefault("recent_jobs", []).insert(0, {
-                        "id": job_id,
-                        "ts": int(time.time()),
-                        "model": job_model,
-                        "backend": backend_label,
-                        "resolution": f"{width}x{height}",
-                        "steps": steps,
-                        "duration_sec": render_sec,
-                        "kudos": 0.0,
-                        "status": "faulted",
-                        "prompt_preview": pos_prompt[:100],
-                    })
-                    save_dreamer_data(upd)
-                    _runtime_status["state"] = "error"
-                    _runtime_status["last_error"] = f"Render failed on {backend_label} for job {job_id}"
-                    _runtime_status["current_job_id"] = None
-                    return {"status": "faulted", "job_id": job_id}
-
-                # Evaluate generated image safety (NSFW & CSAM scanning via horde_safety)
-                _runtime_status["state"] = "evaluating_safety"
-                censor_nsfw_req = bool(
-                    gen_payload.get("use_nsfw_censor")
-                    or gen_payload.get("censor_nsfw")
-                    or pop_data.get("censor_nsfw")
-                )
-                try:
+                    # Evaluate generated image safety (NSFW & CSAM scanning via horde_safety)
+                    job_stage = "evaluating_safety"
+                    _runtime_status["state"] = "evaluating_safety"
+                    _runtime_status["current_job_stage"] = job_stage
+                    censor_nsfw_req = bool(
+                        gen_payload.get("use_nsfw_censor")
+                        or gen_payload.get("censor_nsfw")
+                        or pop_data.get("censor_nsfw")
+                    )
                     safety_res = await asyncio.to_thread(
                         _evaluate_image_safety,
                         png_bytes,
@@ -1269,111 +1704,178 @@ async def run_single_dreamer_cycle(ignore_enabled: bool = False) -> dict[str, An
                         not nsfw_flag,
                         {},
                     )
-                except Exception as safety_eval_err:
-                    logger.error(f"[HordeDreamer] horde_safety check failed for job {job_id}: {safety_eval_err}")
-                    fault_body = {
-                        "id": job_id,
-                        "generation": "faulted",
-                        "state": "faulted",
-                        "seed": seed_int,
-                        "censored": False,
-                    }
-                    try:
-                        await session.post(f"{HORDE_API_BASE}/generate/submit", json=fault_body, headers=headers)
-                    except Exception:
-                        pass
-                    upd = load_dreamer_data()
-                    upd["total_jobs_faulted"] = int(upd.get("total_jobs_faulted", 0)) + 1
-                    save_dreamer_data(upd)
-                    _runtime_status["state"] = "error"
-                    _runtime_status["last_error"] = f"Safety check failed for job {job_id}: {safety_eval_err}"
-                    _runtime_status["current_job_id"] = None
-                    return {"status": "faulted", "job_id": job_id}
 
-                final_png_bytes = safety_res["final_png_bytes"]
-                submit_state = safety_res["submit_state"]
-                is_censored = bool(safety_res["censored"])
-                gen_metadata = safety_res["gen_metadata"]
-                if safety_res.get("is_csam"):
-                    logger.warning(f"[HordeDreamer] CSAM detected by horde_safety in job {job_id}. Image replaced with CSAM censor placeholder.")
-                elif is_censored:
-                    logger.info(f"[HordeDreamer] NSFW censored by horde_safety in job {job_id} (censor_nsfw={censor_nsfw_req}, sfw_worker={not nsfw_flag}).")
+                    final_png_bytes = safety_res["final_png_bytes"]
+                    submit_state = safety_res["submit_state"]
+                    is_censored = bool(safety_res["censored"])
+                    gen_metadata = safety_res["gen_metadata"]
 
-                webp_bytes = _convert_png_to_webp(final_png_bytes, quality=92)
-                if r2_url and r2_url.startswith("http"):
-                    uploaded = await _upload_webp_to_r2(session, r2_url, webp_bytes)
-                    if not uploaded:
-                        logger.warning(f"[HordeDreamer] R2 upload failed for {job_id}, falling back to inline base64 submit")
+                    # Ensure any local or remote renderer artifacts are purged on CSAM/censorship
+                    _remove_renderer_artifacts(local_artifacts)
+                    if safety_res.get("is_csam") or is_censored or remote_artifacts:
+                        for art in remote_artifacts:
+                            await _cleanup_modal_artifact(art)
+
+                    if safety_res.get("is_csam"):
+                        logger.warning(f"[HordeDreamer] CSAM detected by horde_safety in job {job_id}. Image replaced with CSAM censor placeholder.")
+                    elif is_censored:
+                        logger.info(f"[HordeDreamer] NSFW censored by horde_safety in job {job_id} (censor_nsfw={censor_nsfw_req}, sfw_worker={not nsfw_flag}).")
+
+                    webp_bytes = _convert_png_to_webp(final_png_bytes, quality=92)
+
+                    # Transition to `awaiting_delivery`: from this point on we have a valid safety-checked
+                    # result and must never fault an already accepted/pending-delivery job.
+                    job_stage = "awaiting_delivery"
+                    _runtime_status["state"] = "awaiting_delivery"
+                    _runtime_status["current_job_stage"] = job_stage
+
+                    if r2_url and r2_url.startswith("http"):
+                        uploaded = await _upload_webp_to_r2(session, r2_url, webp_bytes)
+                        if not uploaded:
+                            logger.warning(f"[HordeDreamer] R2 upload failed for {job_id}, falling back to inline base64 submit")
+                            generation_field = base64.b64encode(webp_bytes).decode("ascii")
+                        else:
+                            generation_field = "R2"
+                    else:
                         generation_field = base64.b64encode(webp_bytes).decode("ascii")
+
+                    submit_body: dict[str, Any] = {
+                        "id": job_id,
+                        "generation": generation_field,
+                        "state": submit_state,
+                        "seed": seed_int,
+                        "censored": is_censored,
+                        "gen_metadata": gen_metadata,
+                    }
+                    _pending_deliveries[job_id] = {
+                        "submit_body": submit_body,
+                        "ts": time.time(),
+                        "model": job_model,
+                        "backend": backend_label,
+                    }
+
+                    delivery = await _submit_generation_with_retry(session, submit_body, headers)
+                    if not delivery.get("acknowledged"):
+                        job_stage = "submit_failed"
+                        err_msg = str(delivery.get("error") or "Submit rejected by AI Horde")
+                        upd = load_dreamer_data()
+                        upd["total_jobs_submit_failed"] = int(upd.get("total_jobs_submit_failed", 0)) + 1
+                        failed_record = {
+                            "id": job_id,
+                            "ts": int(time.time()),
+                            "model": job_model,
+                            "backend": backend_label,
+                            "resolution": f"{width}x{height}",
+                            "steps": steps,
+                            "duration_sec": render_sec,
+                            "kudos": 0.0,
+                            "status": "submit_failed",
+                            "censored": is_censored,
+                            "error": err_msg,
+                            "prompt_preview": "[CSAM Filtered]" if safety_res.get("is_csam") else pos_prompt[:100],
+                        }
+                        upd.setdefault("recent_jobs", []).insert(0, failed_record)
+                        save_dreamer_data(upd)
+                        _runtime_status["state"] = "error"
+                        _runtime_status["last_error"] = err_msg
+                        _runtime_status["current_job_id"] = None
+                        _runtime_status["current_job_stage"] = None
+                        _runtime_status["current_model"] = None
+                        _runtime_status["current_backend"] = None
+                        return {"status": "submit_failed", "job_id": job_id, "detail": err_msg}
+
+                    job_stage = "acknowledged"
+                    _pending_deliveries.pop(job_id, None)
+                    reward = float(delivery.get("reward") or 0.0)
+
+                    mps = round((width * height * steps) / 1_000_000.0, 2)
+                    upd = load_dreamer_data()
+                    upd["total_jobs_completed"] = int(upd.get("total_jobs_completed", 0)) + 1
+                    if is_krea_job:
+                        upd["krea_jobs_completed"] = int(upd.get("krea_jobs_completed", 0)) + 1
                     else:
-                        generation_field = "R2"
-                else:
-                    generation_field = base64.b64encode(webp_bytes).decode("ascii")
+                        upd["sdxl_jobs_completed"] = int(upd.get("sdxl_jobs_completed", 0)) + 1
+                    if safety_res.get("is_csam"):
+                        upd["total_csam_filtered"] = int(upd.get("total_csam_filtered", 0)) + 1
+                    elif is_censored:
+                        upd["total_nsfw_censored"] = int(upd.get("total_nsfw_censored", 0)) + 1
+                    upd["total_kudos_earned"] = round(float(upd.get("total_kudos_earned", 0.0)) + reward, 2)
+                    upd["total_megapixelsteps"] = round(float(upd.get("total_megapixelsteps", 0.0)) + mps, 2)
 
-                submit_body: dict[str, Any] = {
-                    "id": job_id,
-                    "generation": generation_field,
-                    "state": submit_state,
-                    "seed": seed_int,
-                    "censored": is_censored,
-                    "gen_metadata": gen_metadata,
-                }
+                    job_record = {
+                        "id": job_id,
+                        "ts": int(time.time()),
+                        "model": job_model,
+                        "backend": backend_label,
+                        "resolution": f"{width}x{height}",
+                        "steps": steps,
+                        "duration_sec": render_sec,
+                        "kudos": round(reward, 2),
+                        "status": submit_state,
+                        "censored": is_censored,
+                        "prompt_preview": "[CSAM Filtered]" if safety_res.get("is_csam") else pos_prompt[:100],
+                    }
+                    upd.setdefault("recent_jobs", []).insert(0, job_record)
+                    save_dreamer_data(upd)
 
-                reward = 0.0
-                async with session.post(f"{HORDE_API_BASE}/generate/submit", json=submit_body, headers=headers) as sub_resp:
-                    sub_txt = await sub_resp.text()
-                    if sub_resp.status in (200, 201, 202):
+                    _runtime_status["last_submit_ts"] = time.time()
+                    _runtime_status["last_error"] = ""
+                    _runtime_status["current_job_id"] = None
+                    _runtime_status["current_job_stage"] = None
+                    _runtime_status["current_model"] = None
+                    _runtime_status["current_backend"] = None
+                    _runtime_status["state"] = "idle_polling"
+
+                    logger.info(
+                        f"[HordeDreamer] Submitted job {job_id} ({job_model} via {backend_label}, state={submit_state}, censored={is_censored}) in {render_sec}s -> "
+                        f"+{reward:.1f} Kudos (Krea today: {upd['krea_daily_count']}/{upd['krea_daily_limit']})"
+                    )
+                    return {"status": "ok", "job": job_record}
+
+                except BaseException as job_exc:
+                    _remove_renderer_artifacts(local_artifacts)
+                    for art in remote_artifacts:
                         try:
-                            sub_json = json.loads(sub_txt)
-                            reward = float(sub_json.get("reward") or 0.0)
+                            await asyncio.shield(_cleanup_modal_artifact(art))
                         except Exception:
-                            reward = 0.0
-                    else:
-                        logger.error(f"[HordeDreamer] Submit failed ({sub_resp.status}) for {job_id}: {sub_txt[:200]}")
-                        _runtime_status["last_error"] = f"Submit HTTP {sub_resp.status}: {sub_txt[:150]}"
+                            pass
 
-                mps = round((width * height * steps) / 1_000_000.0, 2)
-                upd = load_dreamer_data()
-                upd["total_jobs_completed"] = int(upd.get("total_jobs_completed", 0)) + 1
-                if is_krea_job:
-                    upd["krea_jobs_completed"] = int(upd.get("krea_jobs_completed", 0)) + 1
-                else:
-                    upd["sdxl_jobs_completed"] = int(upd.get("sdxl_jobs_completed", 0)) + 1
-                if safety_res.get("is_csam"):
-                    upd["total_csam_filtered"] = int(upd.get("total_csam_filtered", 0)) + 1
-                elif is_censored:
-                    upd["total_nsfw_censored"] = int(upd.get("total_nsfw_censored", 0)) + 1
-                upd["total_kudos_earned"] = round(float(upd.get("total_kudos_earned", 0.0)) + reward, 2)
-                upd["total_megapixelsteps"] = round(float(upd.get("total_megapixelsteps", 0.0)) + mps, 2)
+                    if job_stage in ("popped", "rendering", "evaluating_safety"):
+                        reason = f"{type(job_exc).__name__} during {job_stage} for job {job_id}: {job_exc}"
+                        logger.error(f"[HordeDreamer] {reason}")
+                        fault_res = await asyncio.shield(
+                            _fault_popped_job(
+                                session,
+                                job_id,
+                                seed_int,
+                                headers,
+                                reason=reason,
+                                job_model=job_model,
+                                backend_label=backend_label,
+                                width=width,
+                                height=height,
+                                steps=steps,
+                                duration_sec=round(time.time() - t0, 2),
+                                pos_prompt=pos_prompt,
+                            )
+                        )
+                        job_stage = "faulted"
+                        if isinstance(job_exc, asyncio.CancelledError):
+                            raise
+                        return fault_res
 
-                job_record = {
-                    "id": job_id,
-                    "ts": int(time.time()),
-                    "model": job_model,
-                    "backend": backend_label,
-                    "resolution": f"{width}x{height}",
-                    "steps": steps,
-                    "duration_sec": render_sec,
-                    "kudos": round(reward, 2),
-                    "status": submit_state,
-                    "censored": is_censored,
-                    "prompt_preview": "[CSAM Filtered]" if safety_res.get("is_csam") else pos_prompt[:100],
-                }
-                upd.setdefault("recent_jobs", []).insert(0, job_record)
-                save_dreamer_data(upd)
-
-                _runtime_status["last_submit_ts"] = time.time()
-                _runtime_status["last_error"] = ""
-                _runtime_status["current_job_id"] = None
-                _runtime_status["current_model"] = None
-                _runtime_status["current_backend"] = None
-                _runtime_status["state"] = "idle_polling"
-
-                logger.info(
-                    f"[HordeDreamer] Submitted job {job_id} ({job_model} via {backend_label}, state={submit_state}, censored={is_censored}) in {render_sec}s -> "
-                    f"+{reward:.1f} Kudos (Krea today: {upd['krea_daily_count']}/{upd['krea_daily_limit']})"
-                )
-                return {"status": "ok", "job": job_record}
+                    # If `job_stage` is `awaiting_delivery` or `acknowledged`, never fault an already-rendered
+                    # or already-accepted result.
+                    _runtime_status["current_job_id"] = None
+                    _runtime_status["current_job_stage"] = None
+                    _runtime_status["current_model"] = None
+                    _runtime_status["current_backend"] = None
+                    if job_stage != "acknowledged":
+                        _runtime_status["state"] = "error"
+                        _runtime_status["last_error"] = f"Delivery interrupted for job {job_id}: {job_exc}"
+                    if isinstance(job_exc, asyncio.CancelledError):
+                        raise
+                    return {"status": "submit_failed", "job_id": job_id, "detail": str(job_exc)}
 
         except asyncio.CancelledError:
             raise
@@ -1381,6 +1883,7 @@ async def run_single_dreamer_cycle(ignore_enabled: bool = False) -> dict[str, An
             _runtime_status["state"] = "error"
             _runtime_status["last_error"] = str(e)
             _runtime_status["current_job_id"] = None
+            _runtime_status["current_job_stage"] = None
             logger.error(f"[HordeDreamer] Cycle exception: {e}", exc_info=True)
             return {"status": "error", "detail": str(e)}
 
@@ -1410,7 +1913,7 @@ async def _dreamer_worker_loop() -> None:
                 sleep_sec = 6.0
             elif st == "unsafe_ip":
                 sleep_sec = 300.0
-            elif st == "error":
+            elif st in ("error", "submit_failed", "faulted"):
                 sleep_sec = 20.0
             else:
                 sleep_sec = float(data.get("poll_interval_idle") or 10.0)
@@ -1438,6 +1941,28 @@ async def start_horde_dreamer() -> None:
 # AI Horde Image Generation Client (for Direct users in Horde mode)
 # ============================================================================
 
+async def cancel_horde_image_task(
+    task_id: str,
+    api_key: str = horde_client.ANONYMOUS_API_KEY,
+    client_agent: str = CLIENT_AGENT,
+) -> None:
+    """Cancels an unfinished image generation request on AI Horde (`DELETE /api/v2/generate/status/{id}`)."""
+    if not task_id:
+        return
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5.0)) as session:
+            async with session.delete(
+                f"{HORDE_API_BASE}/generate/status/{task_id}",
+                headers={
+                    "apikey": api_key or horde_client.ANONYMOUS_API_KEY,
+                    "Client-Agent": client_agent,
+                },
+            ) as resp:
+                logger.info(f"[HordeDreamer] Cancelled abandoned image task {task_id}: status={resp.status}")
+    except Exception as e:
+        logger.warning(f"[HordeDreamer] Error cancelling image task {task_id}: {e}")
+
+
 async def horde_generate_image(
     prompt: str,
     negative_prompt: str = "",
@@ -1449,11 +1974,14 @@ async def horde_generate_image(
     model: str = "CyberRealistic Pony",
     api_key: str = "",
     max_wait_seconds: int = 180,
+    poll_interval: float = 2.5,
 ) -> tuple[Optional[bytes], Optional[str], Optional[str]]:
     """
     Submits an asynchronous image generation request to AI Horde (`/api/v2/generate/async`),
     polls `/generate/check/{id}` and `/generate/status/{id}`, downloads the generated WebP,
     and converts it to PNG bytes for seamless display in AI Assistant Direct.
+    Explicitly cancels the AI Horde request if abandoned due to timeout, `is_possible=False`,
+    task cancellation, or download/status failure.
     Returns `(png_bytes, worker_name, actual_model)` or `(None, None, error_str)`.
     """
     eff_key = (api_key or "").strip() or get_effective_api_key() or horde_client.ANONYMOUS_API_KEY
@@ -1471,7 +1999,7 @@ async def horde_generate_image(
         "karras": True,
         "n": 1,
     }
-    if seed is not None and int(seed) > 0:
+    if seed is not None and int(seed) >= 0:
         params["seed"] = str(int(seed))
 
     req_body = {
@@ -1491,6 +2019,9 @@ async def horde_generate_image(
         "Client-Agent": CLIENT_AGENT,
     }
 
+    task_id: Optional[str] = None
+    task_terminal = False
+
     try:
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=max_wait_seconds)) as session:
             async with session.post(f"{HORDE_API_BASE}/generate/async", json=req_body, headers=headers) as resp:
@@ -1505,8 +2036,8 @@ async def horde_generate_image(
 
             elapsed = 0.0
             while elapsed < max_wait_seconds:
-                await asyncio.sleep(2.5)
-                elapsed += 2.5
+                await asyncio.sleep(poll_interval)
+                elapsed += poll_interval
 
                 async with session.get(f"{HORDE_API_BASE}/generate/check/{task_id}", headers={"Client-Agent": CLIENT_AGENT}) as c_resp:
                     if c_resp.status != 200:
@@ -1514,6 +2045,7 @@ async def horde_generate_image(
                     chk = await c_resp.json()
 
                 if chk.get("faulted"):
+                    task_terminal = True
                     return None, None, "AI Horde worker faulted while generating image"
                 if chk.get("is_possible") is False:
                     return None, None, "No AI Horde image workers available for the selected model"
@@ -1523,6 +2055,7 @@ async def horde_generate_image(
                         if s_resp.status != 200:
                             break
                         st = await s_resp.json()
+                    task_terminal = True
                     gens = st.get("generations") or []
                     if not gens:
                         return None, None, "AI Horde returned empty generations list"
@@ -1549,9 +2082,18 @@ async def horde_generate_image(
                         return out_png.getvalue(), worker_name, used_model
 
             return None, None, f"Timed out waiting for AI Horde image ({max_wait_seconds}s)"
+    except asyncio.CancelledError:
+        logger.info(f"[HordeDreamer] horde_generate_image cancelled, aborting task {task_id}")
+        raise
     except Exception as e:
         logger.error(f"[HordeDreamer] horde_generate_image error: {e}")
         return None, None, str(e)
+    finally:
+        if task_id and not task_terminal:
+            try:
+                await asyncio.shield(cancel_horde_image_task(task_id, eff_key, CLIENT_AGENT))
+            except Exception as cancel_err:
+                logger.warning(f"[HordeDreamer] Failed to cancel abandoned image task {task_id}: {cancel_err}")
 
 
 def install_horde_client_hooks() -> None:
@@ -1654,6 +2196,7 @@ async def _build_state_payload(refresh_user: bool = False) -> dict[str, Any]:
             "sdxl_jobs_completed": int(data.get("sdxl_jobs_completed", 0)),
             "krea_jobs_completed": int(data.get("krea_jobs_completed", 0)),
             "total_jobs_faulted": int(data.get("total_jobs_faulted", 0)),
+            "total_jobs_submit_failed": int(data.get("total_jobs_submit_failed", 0)),
             "total_csam_filtered": int(data.get("total_csam_filtered", 0)),
             "total_nsfw_censored": int(data.get("total_nsfw_censored", 0)),
             "total_kudos_earned": round(float(data.get("total_kudos_earned", 0.0)), 2),
@@ -1663,6 +2206,7 @@ async def _build_state_payload(refresh_user: bool = False) -> dict[str, Any]:
         "runtime": {
             "state": _runtime_status.get("state", "stopped"),
             "current_job_id": _runtime_status.get("current_job_id"),
+            "current_job_stage": _runtime_status.get("current_job_stage"),
             "current_model": _runtime_status.get("current_model"),
             "current_backend": _runtime_status.get("current_backend"),
             "last_pop_ts": _runtime_status.get("last_pop_ts", 0.0),
@@ -1670,6 +2214,8 @@ async def _build_state_payload(refresh_user: bool = False) -> dict[str, Any]:
             "last_error": _runtime_status.get("last_error", ""),
             "last_skipped": _runtime_status.get("last_skipped") or {},
             "active_models_offered": get_active_models_for_pop(data),
+            "supported_samplers": list(SUPPORTED_HORDE_SAMPLERS),
+            "supported_schedulers": sorted(COMFY_SUPPORTED_SCHEDULERS),
             "bridge_agent": BRIDGE_AGENT,
             "safety_available": bool(_runtime_status.get("safety_available", HORDE_SAFETY_AVAILABLE)),
             "safety_loaded": bool(_runtime_status.get("safety_loaded", False)),

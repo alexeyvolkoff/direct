@@ -146,6 +146,7 @@ async def horde_generate_stream(
     }
 
     task_id = None
+    task_terminal = False
     try:
         timeout = aiohttp.ClientTimeout(total=max_wait_seconds, connect=15)
         async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -181,6 +182,7 @@ async def horde_generate_stream(
                     st = await s_resp.json()
 
                 if st.get("faulted"):
+                    task_terminal = True
                     logging.warning(f"[Horde] Task {task_id} faulted")
                     yield {"error": "Генерация в Орде прервана с ошибкой воркера", "done": True}
                     return
@@ -191,6 +193,7 @@ async def horde_generate_stream(
                     return
 
                 if st.get("done") and st.get("generations"):
+                    task_terminal = True
                     gen = st["generations"][0]
                     full_text = gen.get("text", "")
                     full_text = STOP_TOKENS_RE.sub("", full_text).strip()
@@ -236,11 +239,13 @@ async def horde_generate_stream(
 
     except asyncio.CancelledError:
         logging.info(f"[Horde] Stream cancelled by client, aborting task {task_id}")
-        if task_id:
-            asyncio.create_task(cancel_horde_task(task_id, api_key, client_agent))
         raise
     except Exception as e:
         logging.error(f"[Horde] Unexpected stream exception: {e}")
         yield {"error": f"AI Horde connection error: {str(e)}", "done": True}
     finally:
-        pass
+        if task_id and not task_terminal:
+            try:
+                await asyncio.shield(cancel_horde_task(task_id, api_key, client_agent))
+            except Exception as cancel_err:
+                logging.warning(f"[Horde] Failed to cancel abandoned task {task_id}: {cancel_err}")

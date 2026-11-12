@@ -47,13 +47,26 @@ Instead of installing and maintaining a separate Docker container or standalone 
    * Strictly offers only official AI Horde models (`AI-Horde-image-model-reference`) whose exact `.safetensors` checkpoints are installed in your local `ComfyUI/models/checkpoints/` directory and pass **exact byte-size and SHA256 digest verification** against `AI-Horde-image-model-reference` (e.g., **`CyberRealistic Pony`**, **`Pony Realism`**, **`AlbedoBase XL (SDXL)`**, **`SDXL 1.0`**, **`WAI-NSFW-illustrious-SDXL`**). Unexpected or unverified models are never substituted with another checkpoint.
 3. **Optional Daily-Capped Modal `Krea2-Turbo_fp8`**:
    * If a remote Modal GPU endpoint is configured (`MODAL_COMFY_URL`) and the official `Krea2-Turbo_fp8` reference weights pass SHA256 verification, you can optionally contribute `Krea2-Turbo_fp8` with a strict daily generation cap (e.g. `HORDE_KREA_DAILY_LIMIT = 10` per UTC day). Once the daily quota is reached, `Krea2-Turbo_fp8` is automatically removed from `/v2/generate/pop` while local SDXL continues 24/7 at zero cost.
-4. **Mandatory `horde-safety` (NSFW & CSAM) Scanning & Maintenance Mode Compliance**:
+4. **Mandatory `horde-safety` (NSFW & CSAM) Scanning, Zero Artifact Retention & Maintenance Compliance**:
    * Every generated image is scanned via [`horde-safety`](https://github.com/Haidra-Org/horde-safety) (`NSFWChecker` with `CLIP ViT-L/14` + `DeepDanbooru` on CPU, using 0 MB of GPU VRAM) prior to R2 upload and `/v2/generate/submit`.
    * Fail-closed safety: the worker refuses to pop jobs if `horde-safety` is unavailable, replaces CSAM or SFW-censored outputs with official AI Horde censor images (`nsfw_censor_*.png`), and reports `state: "csam"` / `"censored"` and `gen_metadata`.
+   * **Zero Renderer Artifact Retention**: Live latent previews are disabled (`preview_method: "none"`). As soon as the rendered PNG bytes are read from ComfyUI `/view`, the worker deletes the prompt entry from ComfyUI's in-memory `/history` (`POST /history {"delete": [prompt_id]}`) and immediately removes the temporary/output file from `COMFY_TEMP_DIR` / `COMFY_OUTPUT_DIR` (and invokes `/cleanup` for remote Modal artifacts). No unchecked, censored, or CSAM-flagged images are retained on disk or in ComfyUI history.
    * If the worker is placed into **Maintenance Mode** on AI Horde, it automatically pauses polling (`enabled = false`) and never auto-clears the maintenance flag.
 5. **Built-in Web Console & P2P Node App**:
    * Accessible locally at **`http://localhost:4000/horde`** or remotely from anywhere as the **AI Horde** app inside **Disk Direct** via the **[P2P App Proxy](/apps/)**.
-   * Displays live status (`RENDERING` / `IDLE_POLLING`), Kudos balance, session Megapixelsteps (MPS), model toggles, daily quota controls, and a real-time log of fulfilled jobs.
+   * Displays live status (`RENDERING` / `EVALUATING_SAFETY` / `AWAITING_DELIVERY` / `IDLE_POLLING`), Kudos balance, session Megapixelsteps (MPS), model SHA256 verification status, daily quota controls, and a real-time log of fulfilled/faulted jobs.
+
+### Supported Bridge Capabilities (`Direct:1.0.0:https://github.com/alexeyvolkoff/direct`)
+
+| Capability | Supported Contract |
+| :--- | :--- |
+| **`bridge_agent`** | `Direct:1.0.0:https://github.com/alexeyvolkoff/direct` |
+| **Supported Samplers** | `k_euler`, `k_euler_a`, `k_heun`, `k_dpm_2`, `k_dpm_2_a`, `k_lms`, `k_dpm_fast`, `k_dpm_adaptive`, `k_dpmpp_2s_a`, `k_dpmpp_sde`, `k_dpmpp_2m`, `ddim`, `dpmsolver`, `lcm`, `uni_pc`, `uni_pc_bh2`, `dpmpp_2m_sde`, `dpmpp_3m_sde`, `ddpm`, `deis`, `ipndm`, `res_multistep`, `gradient_estimation`, `heunpp2`, `er_sde`, `sa_solver`, `ipndm_v`, `dpmpp_2m_sde_heun`, `sa_solver_pece`, `seeds_2`, `seeds_3`, `res_multistep_ancestral`, `euler_cfg_pp`, `euler_ancestral_cfg_pp`, `dpmpp_2s_ancestral_cfg_pp`, `dpmpp_2m_cfg_pp`, `res_multistep_cfg_pp`, `res_multistep_ancestral_cfg_pp`, `gradient_estimation_cfg_pp` *(Note: `plms` is not supported by ComfyUI and is explicitly excluded/rejected)* |
+| **Supported Schedulers** | `normal`, `karras`, `simple`, `sgm_uniform`, `exponential`, `ddim_uniform`, `beta`, `linear_quadratic`, `kl_optimal` |
+| **Dimensions (`width`, `height`)** | `64..8192` (multiples of `64`, bounded by worker `max_pixels`, default `1048576`). Preserved verbatim; out-of-range or non-multiple-of-64 dimensions are rejected rather than resized. |
+| **Seeds (`seed`)** | `0 .. 18446744073709551615` (`0 .. 2^64 - 1`). Preserved verbatim (including `seed = 0`). |
+| **Steps / CFG / CLIP Skip** | `steps`: `1..500`, `cfg_scale`: `1.0..100.0`, `clip_skip`: `1..20` (preserved verbatim). |
+| **Unsupported Features** | `img2img`, `painting`, `post_processing`, `lora`, `controlnet`, `tiling`, `hires_fix` (advertised as `false` in `/v2/generate/pop` and rejected if dispatched). |
 
 ---
 
