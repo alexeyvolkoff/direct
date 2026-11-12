@@ -62,6 +62,7 @@ const PRESERVED_CACHES = new Set([CACHE_NAME, 'omd-sites-v1', APP_CLIENT_CACHE])
 const hostClientIds = new Set();
 const nonAppClientIds = new Set();
 const appClients = new Map(); // clientId -> { linkId, appSlug }
+const appHostByTarget = new Map(); // `${linkId}:${appSlug}` -> host clientId
 let appClientsHydrated = false;
 let appClientsHydratePromise = null;
 
@@ -148,47 +149,87 @@ async function getAppClientBinding(clientId) {
     return null;
 }
 
-async function findHostWindowClient(excludeClientId) {
-    for (const hid of Array.from(hostClientIds)) {
-        if (hid === excludeClientId) continue;
+async function findHostWindowClient(excludeClientId, linkId = '', appSlug = '', skipIds = null) {
+    const targetKey = (linkId && appSlug) ? `${linkId}:${String(appSlug).toLowerCase()}` : '';
+    if (targetKey && appHostByTarget.has(targetKey)) {
+        const preferredId = appHostByTarget.get(targetKey);
+        if (preferredId && preferredId !== excludeClientId && !(skipIds && skipIds.has(preferredId))) {
+            try {
+                const pc = await self.clients.get(preferredId);
+                if (pc) return pc;
+                appHostByTarget.delete(targetKey);
+                hostClientIds.delete(preferredId);
+            } catch (_) {
+                appHostByTarget.delete(targetKey);
+                hostClientIds.delete(preferredId);
+            }
+        }
+    }
+
+    const candidates = [];
+    const seenIds = new Set();
+    // Iterate MRU-first (newest registered host window first)
+    for (const hid of Array.from(hostClientIds).reverse()) {
+        if (!hid || hid === excludeClientId || (skipIds && skipIds.has(hid))) continue;
         try {
             const c = await self.clients.get(hid);
-            if (c) return c;
-            hostClientIds.delete(hid);
+            if (c) {
+                seenIds.add(c.id);
+                candidates.push(c);
+            } else {
+                hostClientIds.delete(hid);
+            }
         } catch (_) {
             hostClientIds.delete(hid);
         }
     }
+
     const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    const candidates = all.filter((c) => {
-        if (!c || c.id === excludeClientId) return false;
-        if (appClients.has(c.id)) return false;
+    for (const c of all) {
+        if (!c || c.id === excludeClientId || seenIds.has(c.id) || (skipIds && skipIds.has(c.id))) continue;
+        if (appClients.has(c.id)) continue;
         try {
             const cu = new URL(c.url);
-            if (cu.pathname.startsWith('/__app/')) return false;
+            if (cu.pathname.startsWith('/__app/')) continue;
         } catch (_) {}
-        return true;
-    });
+        candidates.push(c);
+    }
+
     return candidates.find((c) => c.focused) || candidates.find((c) => c.visibilityState === 'visible') || candidates[0] || null;
 }
 
-async function handleAppProxyFetch(event, linkId, appSlug, targetPathWithQuery) {
-    const hostClient = await findHostWindowClient(event.clientId);
-    if (!hostClient) {
-        return new Response('Disk Direct P2P host window is not open. Please open this app from your node workspace.', {
-            status: 503,
-            headers: { 'Content-Type': 'text/plain; charset=utf-8' }
-        });
-    }
+function sendAppProxyRequestToHost(hostClient, payload, bodyBuffer) {
+    return new Promise((resolve) => {
+        const mc = new MessageChannel();
+        const timer = setTimeout(() => {
+            resolve({ error: 'P2P App Proxy request timed out', status: 504 });
+        }, 125000);
 
+        mc.port1.onmessage = (msgEvent) => {
+            clearTimeout(timer);
+            resolve(msgEvent.data || {});
+        };
+
+        const transfer = [mc.port2];
+        if (bodyBuffer && bodyBuffer.byteLength > 0) {
+            transfer.push(bodyBuffer);
+        }
+        hostClient.postMessage(payload, transfer);
+    });
+}
+
+async function handleAppProxyFetch(event, linkId, appSlug, targetPathWithQuery) {
     const req = event.request;
     const method = (req.method || 'GET').toUpperCase();
-    let bodyBuffer = null;
+    let rawBodyBytes = null;
     if (method !== 'GET' && method !== 'HEAD') {
         try {
-            bodyBuffer = await req.arrayBuffer();
+            const ab = await req.arrayBuffer();
+            if (ab && ab.byteLength > 0) {
+                rawBodyBytes = new Uint8Array(ab);
+            }
         } catch (_) {
-            bodyBuffer = null;
+            rawBodyBytes = null;
         }
     }
 
@@ -197,52 +238,62 @@ async function handleAppProxyFetch(event, linkId, appSlug, targetPathWithQuery) 
         headers[key] = value;
     });
 
-    return new Promise((resolve) => {
-        const mc = new MessageChannel();
-        const timer = setTimeout(() => {
-            resolve(new Response('P2P App Proxy request timed out', { status: 504 }));
-        }, 125000);
-
-        mc.port1.onmessage = (msgEvent) => {
-            clearTimeout(timer);
-            const data = msgEvent.data || {};
-            if (data.error) {
-                resolve(new Response(String(data.error), {
-                    status: data.status || 502,
+    const skipIds = new Set();
+    let data = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+        const hostClient = await findHostWindowClient(event.clientId, linkId, appSlug, skipIds);
+        if (!hostClient) {
+            if (!data) {
+                return new Response('Disk Direct P2P host window is not open. Please open this app from your node workspace.', {
+                    status: 503,
                     headers: { 'Content-Type': 'text/plain; charset=utf-8' }
-                }));
-                return;
+                });
             }
-            if (data.redirectUrl && (data.status === 301 || data.status === 302 || data.status === 303 || data.status === 307 || data.status === 308)) {
-                const absRedirect = new URL(data.redirectUrl, self.location.origin).toString();
-                resolve(Response.redirect(absRedirect, data.status));
-                return;
-            }
-            const status = data.status || 200;
-            const resHeaders = new Headers(data.headers || {});
-            const nullBody = method === 'HEAD' || status === 204 || status === 205 || status === 304;
-            resolve(new Response(nullBody ? null : (data.bodyBuffer || new ArrayBuffer(0)), {
-                status,
-                statusText: data.statusText || '',
-                headers: resHeaders
-            }));
-        };
-
-        const transfer = [mc.port2];
-        if (bodyBuffer && bodyBuffer.byteLength > 0) {
-            transfer.push(bodyBuffer);
+            break;
         }
-        hostClient.postMessage({
+
+        const bodyCopy = rawBodyBytes ? rawBodyBytes.slice().buffer : null;
+        data = await sendAppProxyRequestToHost(hostClient, {
             type: 'APP_PROXY_FETCH',
             linkId,
             appSlug,
             path: targetPathWithQuery,
             method,
             headers,
-            bodyBuffer,
+            bodyBuffer: bodyCopy,
             mode: req.mode,
             referrer: req.referrer || ''
-        }, transfer);
+        }, bodyCopy);
+
+        const errStr = data && data.error ? String(data.error) : '';
+        if (errStr && errStr.includes('PeerConnections')) {
+            skipIds.add(hostClient.id);
+            hostClientIds.delete(hostClient.id);
+            for (const [k, cid] of appHostByTarget.entries()) {
+                if (cid === hostClient.id) appHostByTarget.delete(k);
+            }
+            continue;
+        }
+        break;
+    }
+
+    if (!data || data.error) {
+        return new Response(String((data && data.error) || 'P2P App Proxy tunnel failed'), {
+            status: (data && data.status) || 502,
+            headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+        });
+    }
+    if (data.redirectUrl && (data.status === 301 || data.status === 302 || data.status === 303 || data.status === 307 || data.status === 308)) {
+        const absRedirect = new URL(data.redirectUrl, self.location.origin).toString();
+        return Response.redirect(absRedirect, data.status);
+    }
+    const status = data.status || 200;
+    const resHeaders = new Headers(data.headers || {});
+    const nullBody = method === 'HEAD' || status === 204 || status === 205 || status === 304;
+    return new Response(nullBody ? null : (data.bodyBuffer || new ArrayBuffer(0)), {
+        status,
+        statusText: data.statusText || '',
+        headers: resHeaders
     });
 }
 
@@ -568,9 +619,14 @@ self.addEventListener('message', function(event) {
         });
     } else if (event.data && event.data.type === 'REGISTER_APP_HOST') {
         if (clientId) {
+            // Refresh MRU order so the most recently active host window is checked first
+            hostClientIds.delete(clientId);
             hostClientIds.add(clientId);
             nonAppClientIds.add(clientId);
             appClients.delete(clientId);
+            if (event.data.linkId && event.data.appSlug) {
+                appHostByTarget.set(`${event.data.linkId}:${String(event.data.appSlug).toLowerCase()}`, clientId);
+            }
         }
     } else if (event.data && event.data.type === 'REGISTER_APP_CLIENT') {
         if (clientId && event.data.linkId && event.data.appSlug) {

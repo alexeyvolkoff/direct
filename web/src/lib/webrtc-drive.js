@@ -7,6 +7,45 @@ import { getGatewayTurnHost } from "./gateway-config.js";
 
 let _cachedPublicNodeLinkId = null;
 let _fetchingPublicNodePromise = null;
+const _activePeerDrives = new Set();
+const MAX_ACTIVE_PEER_DRIVES = 120;
+
+function _reapOrphanedPeerDrives() {
+    const now = Date.now();
+    for (const d of Array.from(_activePeerDrives)) {
+        if (!d || !d.pc) {
+            _activePeerDrives.delete(d);
+            continue;
+        }
+        const pcState = d.pc.connectionState;
+        const iceState = d.pc.iceConnectionState;
+        const dcState = d.dc ? d.dc.readyState : "closed";
+        const ageMs = now - (d._pcCreatedAt || now);
+        if (
+            d._disposed ||
+            pcState === "closed" ||
+            pcState === "failed" ||
+            iceState === "closed" ||
+            iceState === "failed" ||
+            (!d.autoReconnectEnabled && dcState === "closed" && ageMs > 5000) ||
+            (!d.isConnected && !d._isConnecting && ageMs > 20000) ||
+            (!d.isConnected && ageMs > 35000)
+        ) {
+            try { d.disconnect(true); } catch (_) {}
+            _activePeerDrives.delete(d);
+        }
+    }
+    if (_activePeerDrives.size >= MAX_ACTIVE_PEER_DRIVES) {
+        const sorted = Array.from(_activePeerDrives).sort((a, b) => (a._pcCreatedAt || 0) - (b._pcCreatedAt || 0));
+        for (const d of sorted) {
+            if (_activePeerDrives.size < MAX_ACTIVE_PEER_DRIVES) break;
+            if (!d.autoReconnectEnabled || !d.isConnected) {
+                try { d.disconnect(true); } catch (_) {}
+                _activePeerDrives.delete(d);
+            }
+        }
+    }
+}
 
 if (typeof window !== "undefined") {
     window.addEventListener("omd-gateway-changed", () => {
@@ -120,6 +159,32 @@ export class WebRTCDataChannelDrive {
     }
 
 
+    _detachRtcObjects() {
+        const dc = this.dc;
+        this.dc = null;
+        if (dc) {
+            try {
+                dc.onopen = null;
+                dc.onclose = null;
+                dc.onmessage = null;
+                dc.onerror = null;
+                dc.close();
+            } catch (_) {}
+        }
+        const pc = this.pc;
+        this.pc = null;
+        if (pc) {
+            try {
+                pc.onicecandidate = null;
+                pc.onconnectionstatechange = null;
+                pc.oniceconnectionstatechange = null;
+                pc.ondatachannel = null;
+                pc.close();
+            } catch (_) {}
+        }
+        _activePeerDrives.delete(this);
+    }
+
     /** Permanent teardown - disables auto-reconnect for this drive. */
     close() {
         this.disconnect(true);
@@ -150,14 +215,7 @@ export class WebRTCDataChannelDrive {
             resolve();
         }
         this._readyReceived = false;
-        if (this.dc) {
-            try { this.dc.close(); } catch (_) {}
-            this.dc = null;
-        }
-        if (this.pc) {
-            try { this.pc.close(); } catch (_) {}
-            this.pc = null;
-        }
+        this._detachRtcObjects();
         if (this._wsSignalHandler) {
             const gatewayChan = getSharedGatewayChannel();
             if (gatewayChan) gatewayChan.offTunnelOpen(this._wsSignalHandler);
@@ -315,26 +373,29 @@ export class WebRTCDataChannelDrive {
             clearTimeout(this._handshakeTimer);
             this._handshakeTimer = null;
         }
-        if (this.pc) {
-            try { this.pc.close(); } catch (_) {}
-            this.pc = null;
-        }
-        if (this.dc) {
-            try { this.dc.close(); } catch (_) {}
-            this.dc = null;
-        }
+        this._detachRtcObjects();
+        _reapOrphanedPeerDrives();
 
         const turnHost = getGatewayTurnHost();
-        this.pc = new RTCPeerConnection({
-            iceServers: [
-                { urls: `stun:${turnHost}:3478` },
-                { urls: "stun:stun.cloudflare.com:3478" },
-                { urls: "stun:stun.l.google.com:19302" },
-                { urls: "stun:stun1.l.google.com:19302" },
-                ...WebRTCDataChannelDrive.turnServers()
-            ]
-        });
+        try {
+            this.pc = new RTCPeerConnection({
+                iceServers: [
+                    { urls: `stun:${turnHost}:3478` },
+                    { urls: "stun:stun.cloudflare.com:3478" },
+                    { urls: "stun:stun.l.google.com:19302" },
+                    { urls: "stun:stun1.l.google.com:19302" },
+                    ...WebRTCDataChannelDrive.turnServers()
+                ]
+            });
+        } catch (err) {
+            this._isConnecting = false;
+            this._notifyStatus("error");
+            throw err;
+        }
+        this._pcCreatedAt = Date.now();
+        _activePeerDrives.add(this);
 
+        try {
         this.dc = this.pc.createDataChannel("p2p-tunnel");
         if (this.port || this.service || this.onRawMessage) {
             this.dc.binaryType = "arraybuffer";
@@ -459,23 +520,34 @@ export class WebRTCDataChannelDrive {
                 try { req.reject(new Error("DataChannel closed")); } catch (_) {}
             }
             this.pendingRequests.clear();
+            this._detachRtcObjects();
             this._notifyStatus("disconnected");
-            this._scheduleReconnect("DataChannel closed");
+            if (this.autoReconnectEnabled && !this._disposed) {
+                this._scheduleReconnect("DataChannel closed");
+            } else {
+                this.disconnect(true);
+            }
         };
 
         this.pc.onconnectionstatechange = () => {
             if (!this.pc) return;
-            console.log("[WebRTC] PeerConnection state for", this.targetLinkId, ":", this.pc.connectionState);
-            if (this.pc.connectionState === "connected") {
+            const connState = this.pc.connectionState;
+            console.log("[WebRTC] PeerConnection state for", this.targetLinkId, ":", connState);
+            if (connState === "connected") {
                 this.getIceConnectionType().catch(() => {});
-            } else if (this.pc.connectionState === "failed" || this.pc.connectionState === "closed") {
+            } else if (connState === "failed" || connState === "closed") {
                 this.isConnected = false;
                 for (const [id, req] of this.pendingRequests.entries()) {
-                    try { req.reject(new Error("PeerConnection " + this.pc.connectionState)); } catch (_) {}
+                    try { req.reject(new Error("PeerConnection " + connState)); } catch (_) {}
                 }
                 this.pendingRequests.clear();
+                this._detachRtcObjects();
                 this._notifyStatus("disconnected");
-                this._scheduleReconnect("PeerConnection " + this.pc.connectionState);
+                if (this.autoReconnectEnabled && !this._disposed) {
+                    this._scheduleReconnect("PeerConnection " + connState);
+                } else {
+                    this.disconnect(true);
+                }
             }
         };
 
@@ -491,8 +563,13 @@ export class WebRTCDataChannelDrive {
                     try { req.reject(new Error("ICE connection " + state)); } catch (_) {}
                 }
                 this.pendingRequests.clear();
+                this._detachRtcObjects();
                 this._notifyStatus("disconnected");
-                this._scheduleReconnect("ICE connection " + state);
+                if (this.autoReconnectEnabled && !this._disposed) {
+                    this._scheduleReconnect("ICE connection " + state);
+                } else {
+                    this.disconnect(true);
+                }
             }
         };
 
@@ -698,7 +775,9 @@ export class WebRTCDataChannelDrive {
             }
         }, 10000);
 
+        if (!this.pc) return;
         const offer = await this.pc.createOffer();
+        if (!this.pc) return;
         await this.pc.setLocalDescription(offer);
 
         console.log("[WebRTC] Sending offer SDP to node via HTTP:", this.targetLinkId);
@@ -723,6 +802,10 @@ export class WebRTCDataChannelDrive {
                 await this.sendSignaling("candidate", cand);
             }
             this._pendingLocalCandidates = [];
+        }
+        } catch (err) {
+            this.disconnect();
+            throw err;
         }
     }
 

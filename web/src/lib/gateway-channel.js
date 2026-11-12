@@ -50,6 +50,7 @@ export class GatewayChannel {
     this._keepaliveTimer = null;
     this._retryAttempt = 0;
     this._linkId = typeof window !== "undefined" ? getOrCreateLocalLinkId() : null;
+    this._registeredLinkId = "";
     this._tunnelOpenHandlers = [];
     this._linkConnectedHandlers = [];
     this._linkDisconnectedHandlers = [];
@@ -66,8 +67,9 @@ export class GatewayChannel {
         this._retryAttempt = 0;
         this.connected = false;
         this.backend = null;
+        this._registeredLinkId = "";
         this.connect();
-      } else if (this._linkId) {
+      } else if (this._linkId && this._registeredLinkId !== this._linkId) {
         this.registerDevice(this._linkId);
       }
     };
@@ -163,12 +165,15 @@ export class GatewayChannel {
         this._stopKeepalive();
         this._setState(false);
         this.backend = null;
+        this._registeredLinkId = "";
         this._scheduleReconnect();
         return;
       }
-      if (this._linkId) {
-        this.registerDevice(this._linkId);
-      }
+      // Send QWebChannel idle frame (type: 4) so nginx/proxies keep the WebSocket open
+      // without re-triggering ClientNotifier::setLinkId / linkConnected broadcasts every 25s.
+      try {
+        this._ws.send(JSON.stringify({ type: 4 }));
+      } catch (_) {}
     }, 25000);
   }
 
@@ -281,13 +286,17 @@ export class GatewayChannel {
                 }, 5000);
                 backend.subscribeChannel(token || "", this._linkId || "", (ok) => {
                   clearTimeout(timer);
+                  if (ok && this._linkId) this._registeredLinkId = this._linkId;
                   console.log("[GatewayChannel] Channel registered on server:", ok);
                   resolve(ok);
                 });
               });
             } else {
               if (token && backend && "token" in backend) backend.token = token;
-              if (this._linkId && backend) backend.linkID = this._linkId;
+              if (this._linkId && backend) {
+                backend.linkID = this._linkId;
+                this._registeredLinkId = this._linkId;
+              }
             }
           } catch (e) {
             console.warn("[GatewayChannel] channel subscription failed:", e);
@@ -306,6 +315,7 @@ export class GatewayChannel {
         this._stopKeepalive();
         this._setState(false);
         this.backend = null;
+        this._registeredLinkId = "";
         if (!this._closing) {
           if (wasConnected) console.warn("[GatewayChannel] WebSocket closed, reconnecting...");
           this._scheduleReconnect();
@@ -334,9 +344,11 @@ export class GatewayChannel {
   }
 
   registerDevice(linkId) {
-    if (!this.backend) return false;
+    if (!this.backend || !linkId) return false;
+    if (this.connected && this._registeredLinkId === linkId) return true;
     try {
       this.backend.linkID = linkId; // Q_PROPERTY write → setLinkId → gateway maps channel to linkId
+      this._registeredLinkId = linkId;
       return true;
     } catch (e) {
       console.warn("[GatewayChannel] registerDevice failed:", e);
@@ -351,6 +363,7 @@ export class GatewayChannel {
     try { if (this._ws) this._ws.close(); } catch (_) {}
     this._ws = null;
     this.backend = null;
+    this._registeredLinkId = "";
     this._setState(false);
   }
 
@@ -360,6 +373,7 @@ export class GatewayChannel {
     try { if (this._ws) this._ws.close(); } catch (_) {}
     this._ws = null;
     this.backend = null;
+    this._registeredLinkId = "";
     this._connectPromise = null;
     this._closing = false;
     this._retryAttempt = 0;

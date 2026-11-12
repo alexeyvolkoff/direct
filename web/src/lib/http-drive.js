@@ -290,13 +290,13 @@ export function createWebRTCTransport(targetLinkId, signalingUrl = '/api/signali
             while (Date.now() < deadline) {
                 if (drive.dc && drive.dc.readyState === 'open') return;
                 if (disconnected || drive._disposed || (!drive.pc && !drive._isConnecting && !drive.isConnected)) {
-                    try { drive.disconnect(); } catch (_) {}
+                    try { drive.disconnect(true); } catch (_) {}
                     drive = null;
                     throw new Error('Target node offline or unreachable');
                 }
                 await sleep(40);
             }
-            try { drive.disconnect(); } catch (_) {}
+            try { drive.disconnect(true); } catch (_) {}
             drive = null;
             throw new Error('P2P tunnel did not open in time');
         },
@@ -306,7 +306,7 @@ export function createWebRTCTransport(targetLinkId, signalingUrl = '/api/signali
         },
         close() {
             if (drive) {
-                try { drive.disconnect(); } catch (_) {}
+                try { drive.disconnect(true); } catch (_) {}
             }
             drive = null;
         }
@@ -326,6 +326,7 @@ class ChannelConn {
         this.busy = false;
         this.dead = false;
         this.reuseCount = 0;
+        this._countedInPool = false;
     }
 
     async open(timeoutMs) {
@@ -354,6 +355,11 @@ class ChannelConn {
 
     _onClose() {
         this.dead = true;
+        if (this.transport) {
+            const t = this.transport;
+            this.transport = null;
+            try { t.close(); } catch (_) {}
+        }
         if (this.parser) {
             const p = this.parser;
             p.end();
@@ -367,6 +373,12 @@ class ChannelConn {
             const f = this._abortStream;
             this._abortStream = null;
             f(new Error('P2P connection closed mid-response'));
+        }
+        if (!this.busy && this.onDead) {
+            const cb = this.onDead;
+            this.onDead = null;
+            this.onIdle = null;
+            cb(this);
         }
     }
 
@@ -680,11 +692,22 @@ export class HttpDrive {
     close() {
         this.closed = true;
         for (const c of this.idle.splice(0)) {
-            c.destroy();
+            this._releaseConn(c);
         }
         this.total = 0;
         const waiters = this.waiters.splice(0);
         for (const w of waiters) w.reject(new Error('HttpDrive closed'));
+    }
+
+    _releaseConn(c) {
+        if (!c) return;
+        const idx = this.idle.indexOf(c);
+        if (idx >= 0) this.idle.splice(idx, 1);
+        c.destroy();
+        if (c._countedInPool) {
+            c._countedInPool = false;
+            this.total = Math.max(0, this.total - 1);
+        }
     }
 
     _newConn() {
@@ -692,15 +715,14 @@ export class HttpDrive {
             headerTimeoutMs: this.headerTimeoutMs,
             onIdle: (c) => {
                 if (!this.closed && c.canReuse()) {
-                    this.idle.push(c);
+                    if (!this.idle.includes(c)) this.idle.push(c);
                 } else {
-                    c.destroy();
-                    this.total = Math.max(0, this.total - 1);
+                    this._releaseConn(c);
                 }
                 this._pump();
             },
             onDead: (c) => {
-                this.total = Math.max(0, this.total - 1);
+                this._releaseConn(c);
                 this._pump();
             }
         });
@@ -708,21 +730,20 @@ export class HttpDrive {
 
     async _acquire(connectTimeoutMs = 0) {
         if (this.closed) throw new Error('HttpDrive closed');
-        const idleConn = this.idle.pop();
-        if (idleConn) {
-            if (idleConn.isOpen()) return idleConn;
-            idleConn.destroy();
-            this.total--;
+        while (this.idle.length > 0) {
+            const idleConn = this.idle.pop();
+            if (idleConn && idleConn.isOpen()) return idleConn;
+            this._releaseConn(idleConn);
         }
         const effTimeout = connectTimeoutMs > 0 ? connectTimeoutMs : this.connectTimeoutMs;
         if (this.total < this.maxConns) {
-            this.total++;
             const conn = this._newConn();
+            conn._countedInPool = true;
+            this.total++;
             try {
                 await conn.open(effTimeout);
             } catch (e) {
-                conn.destroy();
-                this.total--;
+                this._releaseConn(conn);
                 throw e;
             }
             return conn;
@@ -734,24 +755,28 @@ export class HttpDrive {
         if (this.closed) return;
         while (this.waiters.length > 0) {
             const w = this.waiters.shift();
-            const idleConn = this.idle.pop();
-            if (idleConn) {
-                if (idleConn.isOpen()) {
-                    w.resolve(idleConn);
-                    continue;
+            let liveIdle = null;
+            while (this.idle.length > 0) {
+                const candidate = this.idle.pop();
+                if (candidate && candidate.isOpen()) {
+                    liveIdle = candidate;
+                    break;
                 }
-                idleConn.destroy();
-                this.total--;
+                this._releaseConn(candidate);
+            }
+            if (liveIdle) {
+                w.resolve(liveIdle);
+                continue;
             }
             if (this.total < this.maxConns) {
-                this.total++;
                 const conn = this._newConn();
+                conn._countedInPool = true;
+                this.total++;
                 conn
                     .open(w.connectTimeoutMs || this.connectTimeoutMs)
                     .then(() => w.resolve(conn))
                     .catch((e) => {
-                        conn.destroy();
-                        this.total--;
+                        this._releaseConn(conn);
                         w.reject(e);
                     })
                     .finally(() => this._pump());

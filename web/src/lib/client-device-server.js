@@ -427,12 +427,30 @@ export class ClientDeviceServer {
       return this._activeConnections.get(tunnelId);
     }
 
+    // Evict stale unconnected entries if active connections grow abnormally
+    if (this._activeConnections.size >= 64) {
+      for (const [oldId, oldConn] of this._activeConnections.entries()) {
+        if (!oldConn.isConnected) {
+          this._closeConnection(oldId, oldConn);
+          if (this._activeConnections.size < 64) break;
+        }
+      }
+      if (this._activeConnections.size >= 64) {
+        const oldestKey = this._activeConnections.keys().next().value;
+        if (oldestKey) {
+          this._closeConnection(oldestKey, this._activeConnections.get(oldestKey));
+        }
+      }
+    }
+
     console.log("[ClientDeviceServer] Initializing connection for tunnelId:", tunnelId);
 
     const conn = {
       pc: null,
       dc: null,
       closed: false,
+      isConnected: false,
+      handshakeTimer: null,
       handlingOffer: false,
       offerHandled: false,
       pendingCandidates: [],
@@ -446,6 +464,23 @@ export class ClientDeviceServer {
     this._activeConnections.set(tunnelId, conn);
 
     conn.pc = new RTCPeerConnection({ iceServers: getIceServers() });
+
+    // Reap half-open incoming tunnels whose remote peer timed out or vanished before DataChannel opened
+    conn.handshakeTimer = setTimeout(() => {
+      conn.handshakeTimer = null;
+      if (!conn.closed && !conn.isConnected) {
+        console.log("[ClientDeviceServer] Handshake timed out for incoming tunnel:", tunnelId);
+        this._closeConnection(tunnelId, conn);
+      }
+    }, 20000);
+
+    conn.pc.onconnectionstatechange = () => {
+      if (!conn.pc) return;
+      const cState = conn.pc.connectionState;
+      if (cState === "failed" || cState === "closed") {
+        this._closeConnection(tunnelId, conn);
+      }
+    };
 
     conn.pc.onicecandidate = async (e) => {
       if (e.candidate && e.candidate.candidate && !conn.closed) {
@@ -548,6 +583,10 @@ export class ClientDeviceServer {
     dc.onopen = () => {
       console.log("[ClientDeviceServer] DataChannel OPEN for", tunnelId);
       conn.isConnected = true;
+      if (conn.handshakeTimer) {
+        clearTimeout(conn.handshakeTimer);
+        conn.handshakeTimer = null;
+      }
       // Mirror of the C++ node (OnMyDiskLink/p2ptunnel.cpp): announce readiness
       // so the peer does not send its first RPC into a half-open channel.
       try { dc.send("__ready__"); } catch (_) {}
@@ -1291,10 +1330,36 @@ export class ClientDeviceServer {
   }
 
   _closeConnection(tunnelId, conn) {
-    if (conn.closed) return;
+    if (!conn || conn.closed) return;
     conn.closed = true;
-    try { if (conn.dc) conn.dc.close(); } catch (_) {}
-    try { if (conn.pc) conn.pc.close(); } catch (_) {}
+    conn.isConnected = false;
+    if (conn.handshakeTimer) {
+      clearTimeout(conn.handshakeTimer);
+      conn.handshakeTimer = null;
+    }
+    if (conn.dc) {
+      const dc = conn.dc;
+      conn.dc = null;
+      try {
+        dc.onopen = null;
+        dc.onclose = null;
+        dc.onmessage = null;
+        dc.onerror = null;
+        dc.close();
+      } catch (_) {}
+    }
+    if (conn.pc) {
+      const pc = conn.pc;
+      conn.pc = null;
+      try {
+        pc.onicecandidate = null;
+        pc.onconnectionstatechange = null;
+        pc.oniceconnectionstatechange = null;
+        pc.ondatachannel = null;
+        pc.close();
+      } catch (_) {}
+    }
+    conn.pendingCandidates = [];
     conn.openHandles.clear();
     this._activeConnections.delete(tunnelId);
     console.log("[ClientDeviceServer] Connection closed:", tunnelId);

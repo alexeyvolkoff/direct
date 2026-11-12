@@ -21,6 +21,17 @@
   let reloadNonce = 0;
   let currentSubPath = entryPath || "/";
 
+  function registerActiveAppHost() {
+    if (typeof navigator === "undefined" || !navigator.serviceWorker || !navigator.serviceWorker.controller) return;
+    try {
+      navigator.serviceWorker.controller.postMessage({
+        type: "REGISTER_APP_HOST",
+        linkId: targetLinkId || "",
+        appSlug: appSlug || ""
+      });
+    } catch (_) {}
+  }
+
   function syncAppRegistration() {
     if (!targetLinkId || !appSlug) return;
     const existing = getProxiedApp(targetLinkId, appSlug);
@@ -36,6 +47,7 @@
         icon: icon || existing?.icon || appSlug
       });
     }
+    registerActiveAppHost();
     currentSubPath = effEntry;
     iframeSrc = buildAppProxyUrl(targetLinkId, appSlug, effEntry);
   }
@@ -51,9 +63,7 @@
     }
     initAppProxyServiceWorkerBridge();
     if (navigator.serviceWorker.controller) {
-      try {
-        navigator.serviceWorker.controller.postMessage({ type: "REGISTER_APP_HOST" });
-      } catch (_) {}
+      registerActiveAppHost();
       swReady = true;
       return;
     }
@@ -61,6 +71,7 @@
     try {
       const reg = await navigator.serviceWorker.ready;
       if (navigator.serviceWorker.controller) {
+        registerActiveAppHost();
         swReady = true;
         return;
       }
@@ -78,9 +89,7 @@
         });
       }
       if (navigator.serviceWorker.controller) {
-        try {
-          navigator.serviceWorker.controller.postMessage({ type: "REGISTER_APP_HOST" });
-        } catch (_) {}
+        registerActiveAppHost();
       }
       swReady = true;
     } catch (err) {
