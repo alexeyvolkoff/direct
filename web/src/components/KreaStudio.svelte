@@ -8456,7 +8456,7 @@
     flex-direction: column;
     height: 100%;
     width: 100%;
-    background: #0F0A10;
+    background: var(--bg-primary, #0F0A10);
     color: #F7ECF2;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     position: relative;
@@ -8513,7 +8513,7 @@
   .studio-badge {
     font-size: 16px;
     font-weight: 700;
-    background: linear-gradient(135deg, #a78bfa 0%, #ec4899 100%);
+    background: var(--accent-gradient);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
   }
@@ -8612,8 +8612,8 @@
 
   .sort-order-btn.is-active {
     color: var(--accent-blue, #F472B6);
-    background: rgba(236, 72, 153, 0.12);
-    border-color: rgba(236, 72, 153, 0.3);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 30%, transparent);
   }
 
   .icon-btn.spinning svg {
@@ -8669,19 +8669,19 @@
     gap: 6px;
     padding: 8px 16px;
     border-radius: 8px;
-    background: linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%);
+    background: var(--accent-gradient);
     color: #fff;
     border: none;
     font-size: 13px;
     font-weight: 600;
     cursor: pointer;
-    box-shadow: 0 4px 12px rgba(236, 72, 153, 0.35);
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 35%, transparent);
     transition: all 0.2s;
   }
 
   .ai-factory-btn:hover {
     transform: translateY(-1px);
-    box-shadow: 0 6px 18px rgba(236, 72, 153, 0.5);
+    box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 50%, transparent);
   }
 
   .create-persona-btn {
@@ -8690,13 +8690,13 @@
     gap: 8px;
     padding: 8px 16px;
     border-radius: 8px;
-    background: linear-gradient(135deg, #A855F7 0%, #8b5cf6 100%);
+    background: var(--accent-gradient);
     color: #fff;
     border: none;
     font-size: 13px;
     font-weight: 600;
     cursor: pointer;
-    box-shadow: 0 4px 12px rgba(168, 85, 247, 0.3);
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 30%, transparent);
     transition: all 0.2s;
   }
 
@@ -8777,7 +8777,7 @@
     justify-content: center;
     font-size: 11px;
     font-weight: bold;
-    border: 2px solid #0F0A10;
+    border: 2px solid var(--bg-primary, #0F0A10);
   }
 
   .persona-header-row {
@@ -8803,9 +8803,9 @@
   .persona-ref-chip {
     font-size: 10px;
     font-weight: 700;
-    color: #F472B6;
-    background: rgba(236, 72, 153, 0.15);
-    border: 1px solid rgba(236, 72, 153, 0.35);
+    color: var(--accent-hover);
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
     padding: 2px 6px;
     border-radius: 6px;
     display: inline-flex;
@@ -8927,8 +8927,8 @@
   }
 
   .krea-studio-root.light-theme .gallery-load-spinner {
-    border-color: rgba(168, 85, 247, 0.18);
-    border-top-color: #A855F7;
+    border-color: color-mix(in srgb, var(--accent) 18%, transparent);
+    border-top-color: var(--accent);
   }
 
   .loading-gallery-text {
@@ -9018,8 +9018,8 @@
       box-shadow: 0 0 15px rgba(139, 92, 246, 0.15);
     }
     100% {
-      border-color: rgba(236, 72, 153, 0.65);
-      box-shadow: 0 0 30px rgba(236, 72, 153, 0.3);
+      border-color: color-mix(in srgb, var(--accent) 65%, transparent);
+      box-shadow: 0 0 30px color-mix(in srgb, var(--accent) 30%, transparent);
     }
   }
 
@@ -9039,8 +9039,8 @@
     position: absolute;
     inset: -60%;
     background: radial-gradient(circle at 50% 50%, rgba(139, 92, 246, 0.25), transparent 55%),
-                radial-gradient(circle at 80% 20%, rgba(236, 72, 153, 0.2), transparent 45%),
-                radial-gradient(circle at 20% 80%, rgba(236, 72, 153, 0.2), transparent 45%);
+                radial-gradient(circle at 80% 20%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 45%),
+                radial-gradient(circle at 20% 80%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 45%);
     animation: rotateMesh 10s linear infinite;
   }
 
@@ -9054,7 +9054,7 @@
     width: 140px;
     height: 140px;
     border-radius: 50%;
-    background: radial-gradient(circle, rgba(168, 85, 247, 0.35) 0%, rgba(168, 85, 247, 0) 70%);
+    background: radial-gradient(circle, color-mix(in srgb, var(--accent) 35%, transparent) 0%, transparent 70%);
     filter: blur(20px);
     animation: floatOrb 4s ease-in-out infinite alternate;
   }
@@ -9135,12 +9135,12 @@
     left: 0;
     width: 35%;
     border-radius: 9999px;
-    background: linear-gradient(90deg, #8b5cf6, #ec4899);
+    background: var(--accent-gradient);
     animation: indeterminateProgress 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
   }
 
   .progress-bar-fill.downloading {
-    background: linear-gradient(90deg, #EC4899, #10b981);
+    background: linear-gradient(90deg, var(--accent), #10b981);
     animation: indeterminateProgress 0.9s cubic-bezier(0.4, 0, 0.2, 1) infinite;
   }
 
@@ -9212,7 +9212,7 @@
 
   .krea-studio-root.light-theme .gallery-card-thumb-wrap::before {
     border-color: rgba(153, 128, 148, 0.16);
-    border-top-color: rgba(168, 85, 247, 0.6);
+    border-top-color: color-mix(in srgb, var(--accent) 60%, transparent);
   }
 
   .gallery-card-thumb-wrap.thumb-loading::before {
@@ -9882,7 +9882,7 @@
   }
 
   .pill-btn.active {
-    background: linear-gradient(135deg, #7c3aed, #A855F7);
+    background: var(--accent-gradient);
     color: #ffffff;
     font-weight: 600;
     box-shadow: 0 2px 6px rgba(124, 58, 237, 0.35);
@@ -9959,15 +9959,15 @@
   }
 
   .dropdown-trigger-btn.has-archetype {
-    background: rgba(236, 72, 153, 0.15);
-    border-color: rgba(236, 72, 153, 0.5);
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 50%, transparent);
     color: #fdf2f8;
     font-weight: 600;
   }
 
   .dropdown-trigger-btn.has-archetype.active {
-    border-color: #ec4899;
-    box-shadow: 0 0 0 2px rgba(236, 72, 153, 0.25);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
   }
 
   .trigger-label {
@@ -9995,7 +9995,7 @@
     left: 0;
     width: 300px;
     max-width: calc(100vw - 32px);
-    background: #1A121D;
+    background: var(--bg-secondary, #1A121D);
     border: 1px solid rgba(255, 255, 255, 0.15);
     border-radius: 12px;
     box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05);
@@ -10035,7 +10035,7 @@
   .popup-reset-link {
     background: transparent;
     border: none;
-    color: #f472b6;
+    color: var(--accent-hover);
     font-size: 10px;
     cursor: pointer;
     padding: 0;
@@ -10075,8 +10075,8 @@
   }
 
   .archetype-popup .popup-option-card.selected {
-    background: rgba(236, 72, 153, 0.18);
-    border-color: rgba(236, 72, 153, 0.35);
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 35%, transparent);
   }
 
   .popup-option-row {
@@ -10139,15 +10139,15 @@
   }
 
   .archetype-popup .inline-weight-slider {
-    accent-color: #ec4899;
+    accent-color: var(--accent);
   }
 
   .archetype-popup .inline-weight-slider::-webkit-slider-thumb {
-    background: #ec4899;
+    background: var(--accent);
   }
 
   .archetype-popup .inline-weight-slider::-moz-range-thumb {
-    background: #ec4899;
+    background: var(--accent);
   }
 
   .inline-weight-val {
@@ -10160,7 +10160,7 @@
   }
 
   .archetype-popup .inline-weight-val {
-    color: #f472b6;
+    color: var(--accent-hover);
   }
 
   .popup-option-item {
@@ -10190,7 +10190,7 @@
   }
 
   .archetype-popup .popup-option-item.selected {
-    background: rgba(236, 72, 153, 0.18);
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
     color: #fdf2f8;
   }
 
@@ -10296,10 +10296,10 @@
   }
 
   .option-check-icon.checked {
-    background: #ec4899;
-    border-color: #ec4899;
+    background: var(--accent);
+    border-color: var(--accent);
     color: #ffffff;
-    box-shadow: 0 0 8px rgba(236, 72, 153, 0.35);
+    box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 35%, transparent);
   }
 
   .option-check-icon .check-svg {
@@ -10403,14 +10403,14 @@
   }
 
   .style-pill {
-    background: rgba(236, 72, 153, 0.2);
-    border: 1px solid rgba(236, 72, 153, 0.35);
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
     color: #FBCFE8;
   }
 
   .archetype-pill {
-    background: rgba(236, 72, 153, 0.2);
-    border: 1px solid rgba(236, 72, 153, 0.4);
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
     color: #fbcfe8;
   }
 
@@ -10483,19 +10483,19 @@
   }
 
   .token-badge-ref {
-    background: rgba(236, 72, 153, 0.25);
+    background: color-mix(in srgb, var(--accent) 25%, transparent);
     color: #F9A8D4;
-    border: 1px solid rgba(236, 72, 153, 0.4);
+    border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
   }
 
   .token-badge-style {
-    background: rgba(236, 72, 153, 0.25);
+    background: color-mix(in srgb, var(--accent) 25%, transparent);
     color: #F9A8D4;
   }
 
   .token-badge-archetype {
-    background: rgba(236, 72, 153, 0.25);
-    color: #f472b6;
+    background: color-mix(in srgb, var(--accent) 25%, transparent);
+    color: var(--accent-hover);
   }
 
   .token-badge-user {
@@ -10555,7 +10555,7 @@
     right: 20px;
     max-width: 820px;
     margin: 0 auto;
-    background: #1A121D;
+    background: var(--bg-secondary, #1A121D);
     border: 1px solid rgba(255, 255, 255, 0.15);
     border-radius: 16px;
     box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
@@ -10683,7 +10683,7 @@
 
   .prompt-style-badge {
     background: rgba(139, 92, 246, 0.2);
-    color: #c084fc;
+    color: var(--accent-hover);
     padding: 1px 6px;
     border-radius: 4px;
     font-weight: 500;
@@ -10734,7 +10734,7 @@
     height: 42px;
     padding: 0 20px;
     border-radius: 10px;
-    background: linear-gradient(135deg, #7c3aed 0%, #ec4899 100%);
+    background: var(--accent-gradient);
     border: none;
     color: #fff;
     font-weight: 600;
@@ -10753,7 +10753,7 @@
   }
 
   .generate-submit-btn.busy {
-    background: #352339;
+    background: var(--border-color, #352339);
     cursor: not-allowed;
   }
 
@@ -10780,7 +10780,7 @@
   }
 
   .persona-modal-card {
-    background: #1A121D;
+    background: var(--bg-secondary, #1A121D);
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 16px;
     width: 100%;
@@ -10910,7 +10910,7 @@
     align-items: center;
     justify-content: center;
     font-size: 10px;
-    color: #c084fc;
+    color: var(--accent-hover);
     gap: 4px;
   }
 
@@ -10970,12 +10970,12 @@
   }
 
   .archetype-select option {
-    background: #1A121D;
+    background: var(--bg-secondary, #1A121D);
     color: #fff;
   }
 
   .generate-avatar-btn {
-    background: linear-gradient(135deg, #7c3aed, #A855F7);
+    background: var(--accent-gradient);
     color: #ffffff;
     border: none;
     border-radius: 8px;
@@ -11032,7 +11032,7 @@
   }
 
   .vision-inline-link:hover:not(:disabled) {
-    color: #c084fc;
+    color: var(--accent-hover);
   }
 
   .vision-inline-link:disabled {
@@ -11047,7 +11047,7 @@
     gap: 6px;
     background: rgba(139, 92, 246, 0.15);
     border: 1px solid rgba(139, 92, 246, 0.4);
-    color: #c084fc;
+    color: var(--accent-hover);
     padding: 6px 12px;
     border-radius: 8px;
     font-size: 11px;
@@ -11060,7 +11060,7 @@
 
   .vision-analyze-btn:hover:not(:disabled) {
     background: rgba(139, 92, 246, 0.28);
-    border-color: #a855f7;
+    border-color: var(--accent);
     color: #ffffff;
   }
 
@@ -11126,7 +11126,7 @@
     width: 100%;
     padding: 10px 16px;
     border-radius: 10px;
-    background: linear-gradient(135deg, #7c3aed 0%, #ec4899 100%);
+    background: var(--accent-gradient);
     border: none;
     color: #fff;
     font-weight: 600;
@@ -11218,7 +11218,7 @@
   }
 
   .save-btn {
-    background: linear-gradient(135deg, #A855F7 0%, #8b5cf6 100%);
+    background: var(--accent-gradient);
     border: none;
     color: #fff;
     padding: 7px 18px;
@@ -11428,7 +11428,7 @@
     color: #7D6376;
   }
   .krea-studio-root.light-theme .card-toolbar .toolbar-btn:hover {
-    background: rgba(168, 85, 247, 0.1);
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
     color: #9333EA;
   }
   .krea-studio-root.light-theme .card-toolbar .card-delete-btn:hover {
@@ -11536,7 +11536,7 @@
 
   .krea-studio-root.light-theme .dropdown-trigger-btn.has-archetype {
     background: #fdf2f8;
-    border-color: #f472b6;
+    border-color: var(--accent-hover);
     color: #9d174d;
   }
 
@@ -11712,10 +11712,10 @@
   }
 
   .krea-studio-root.light-theme .archetype-popup .option-check-icon.checked {
-    background: #ec4899;
-    border-color: #ec4899;
+    background: var(--accent);
+    border-color: var(--accent);
     color: #ffffff;
-    box-shadow: 0 1px 3px rgba(236, 72, 153, 0.25);
+    box-shadow: 0 1px 3px color-mix(in srgb, var(--accent) 25%, transparent);
   }
 
   .krea-studio-root.light-theme .aspect-chip {
@@ -11744,7 +11744,7 @@
     background: #F2E5ED;
   }
   .krea-studio-root.light-theme .pill-btn.active {
-    background: linear-gradient(135deg, #7c3aed, #A855F7);
+    background: var(--accent-gradient);
     color: #ffffff;
     box-shadow: 0 2px 6px rgba(124, 58, 237, 0.25);
   }
@@ -11802,7 +11802,7 @@
   }
   .krea-studio-root.light-theme .archetype-pill {
     background: #fce7f3;
-    border-color: #f472b6;
+    border-color: var(--accent-hover);
     color: #9d174d;
   }
   .krea-studio-root.light-theme .tokens-preview-panel {
@@ -12078,8 +12078,8 @@
   }
 
   .confirm-modal-box {
-    background: #1A121D;
-    border: 1px solid #352339;
+    background: var(--bg-secondary, #1A121D);
+    border: 1px solid var(--border-color, #352339);
     border-radius: 14px;
     width: 440px;
     max-width: 92vw;
@@ -12155,12 +12155,12 @@
 
   .confirm-btn.cancel {
     background: #221727;
-    border-color: #352339;
+    border-color: var(--border-color, #352339);
     color: #D4BECF;
   }
 
   .confirm-btn.cancel:hover {
-    background: #352339;
+    background: var(--border-color, #352339);
   }
 
   .confirm-btn.danger {
@@ -12422,7 +12422,7 @@
   .add-ref-mini-btn:hover {
     background: rgba(139, 92, 246, 0.15);
     border-color: #8b5cf6;
-    color: #c084fc;
+    color: var(--accent-hover);
   }
 
   .sdxl-ref-controls {
@@ -12579,15 +12579,15 @@
     background: rgba(0, 0, 0, 0.05);
   }
   .mode-toggle-btn.active {
-    background: linear-gradient(135deg, rgba(168, 85, 247, 0.4), rgba(168, 85, 247, 0.4));
-    border-color: rgba(168, 85, 247, 0.5);
+    background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 40%, transparent), color-mix(in srgb, var(--accent) 40%, transparent));
+    border-color: color-mix(in srgb, var(--accent) 50%, transparent);
     color: #fff;
     font-weight: 600;
-    box-shadow: 0 2px 10px rgba(168, 85, 247, 0.25);
+    box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 25%, transparent);
   }
   :global(.light-theme) .mode-toggle-btn.active {
-    background: linear-gradient(135deg, rgba(168, 85, 247, 0.18), rgba(168, 85, 247, 0.18));
-    border-color: rgba(168, 85, 247, 0.4);
+    background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 18%, transparent), color-mix(in srgb, var(--accent) 18%, transparent));
+    border-color: color-mix(in srgb, var(--accent) 40%, transparent);
     color: #7E22CE;
   }
   .mode-toggle-btn .mode-icon {
@@ -12900,7 +12900,7 @@
   }
 
   .story-folder-pill.active {
-    background: linear-gradient(135deg, #A855F7 0%, #8b5cf6 100%);
+    background: var(--accent-gradient);
     border-color: transparent;
     color: #fff;
     font-weight: 600;
@@ -12912,8 +12912,8 @@
     border-radius: 14px;
     font-size: 12px;
     font-weight: 600;
-    background: rgba(236, 72, 153, 0.18);
-    border: 1px solid rgba(236, 72, 153, 0.45);
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
     color: #fbcfe8;
     cursor: pointer;
   }
@@ -13075,8 +13075,8 @@
   }
 
   .ctx-chip.persona {
-    border-color: rgba(244, 114, 182, 0.35);
-    background: rgba(236, 72, 153, 0.18);
+    border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
     color: #fce7f3;
   }
 
@@ -13211,7 +13211,7 @@
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: #ec4899;
+    background: var(--accent);
     animation: pulse 1s infinite ease-in-out;
   }
 
@@ -13344,7 +13344,7 @@
   }
 
   .dir-shoot-now-btn {
-    background: linear-gradient(135deg, #ec4899 0%, #f43f5e 100%);
+    background: var(--accent-gradient);
     border: none;
     color: #fff;
     border-radius: 8px;
@@ -13401,8 +13401,8 @@
   }
 
   .story-new-btn.subtle {
-    background: rgba(236, 72, 153, 0.14);
-    border-color: rgba(236, 72, 153, 0.35);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 35%, transparent);
     color: #fbcfe8;
   }
 
@@ -13539,7 +13539,7 @@
 
   .plan-btn.primary {
     flex: 1;
-    background: linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%);
+    background: var(--accent-gradient);
   }
 
   .plan-btn.secondary {
@@ -13573,8 +13573,8 @@
   }
 
   .scene-card.shooting {
-    border-color: #ec4899;
-    box-shadow: 0 0 14px rgba(236, 72, 153, 0.25);
+    border-color: var(--accent);
+    box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 25%, transparent);
   }
 
   .scene-card.done {
@@ -13640,7 +13640,7 @@
     border-radius: 8px;
     overflow: hidden;
     max-height: 180px;
-    background: #0F0A10;
+    background: var(--bg-primary, #0F0A10);
   }
 
   .scene-thumb-img {
@@ -13754,7 +13754,7 @@
   }
 
   .add-scene-inline-btn.highlight {
-    border-color: rgba(236, 72, 153, 0.45);
+    border-color: color-mix(in srgb, var(--accent) 45%, transparent);
     color: #f9a8d4;
   }
 
@@ -13780,7 +13780,7 @@
   }
 
   .series-shoot-all-btn {
-    background: linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%);
+    background: var(--accent-gradient);
   }
 
   .series-stop-btn {
@@ -13805,8 +13805,8 @@
   }
 
   .story-util-btn.civitai {
-    border-color: rgba(236, 72, 153, 0.4);
-    background: rgba(236, 72, 153, 0.12);
+    border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
     color: #F9A8D4;
   }
 
@@ -14054,7 +14054,7 @@
   }
   .krea-studio-root.light-theme .story-new-btn.subtle {
     background: #fce7f3;
-    border-color: #f472b6;
+    border-color: var(--accent-hover);
     color: #9d174d;
   }
   .krea-studio-root.light-theme .slug-pill,
@@ -14121,7 +14121,7 @@
   }
   .krea-studio-root.light-theme .story-util-btn.civitai {
     background: #FCE7F3;
-    border-color: #F472B6;
+    border-color: var(--accent-hover);
     color: #BE185D;
   }
 
@@ -14286,8 +14286,8 @@
   }
 
   .studio-tier-badge.muse {
-    background: linear-gradient(135deg, rgba(236, 72, 153, 0.18), rgba(139, 92, 246, 0.22));
-    border: 1px solid rgba(236, 72, 153, 0.42);
+    background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 18%, transparent), rgba(139, 92, 246, 0.22));
+    border: 1px solid color-mix(in srgb, var(--accent) 42%, transparent);
     color: #fbcfe8;
   }
 
@@ -14298,8 +14298,8 @@
   }
 
   .studio-tier-badge.member {
-    background: rgba(236, 72, 153, 0.16);
-    border: 1px solid rgba(236, 72, 153, 0.38);
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 38%, transparent);
     color: #FBCFE8;
   }
 
@@ -14363,7 +14363,7 @@
     align-items: center;
     padding: 5px 11px;
     border-radius: 7px;
-    background: linear-gradient(135deg, #8b5cf6, #A855F7);
+    background: var(--accent-gradient);
     color: #fff !important;
     font-weight: 600;
     font-size: 12px;
@@ -14501,7 +14501,7 @@
     font-weight: 700;
     letter-spacing: 0.01em;
     color: #ffffff;
-    background: linear-gradient(135deg, rgba(124, 58, 237, 0.92), rgba(168, 85, 247, 0.92));
+    background: linear-gradient(135deg, rgba(124, 58, 237, 0.92), color-mix(in srgb, var(--accent) 92%, transparent));
     border: 1px solid rgba(221, 214, 254, 0.55);
     box-shadow: 0 3px 10px rgba(15, 10, 16, 0.45);
     backdrop-filter: blur(8px);

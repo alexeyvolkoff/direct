@@ -489,8 +489,8 @@ export function applyGatewaySkinToDom(gateway = getActiveGateway()) {
   const root = document.documentElement;
   if (!root) return;
 
-  // NEVER modify chat mode theme or assets!
-  if (resolveAppMode() === APP_MODE_CHAT || root.classList.contains("skin-chat")) {
+  // NEVER modify standalone chat-domain theme or assets (aiassistant.direct)!
+  if (resolveAppMode() === APP_MODE_CHAT) {
     return;
   }
 

@@ -442,8 +442,11 @@
 
   // Keep <html> in sync with both active theme (dark/light) and active skin
   // ("skin-chat" Magenta/Orchid vs "skin-files" Amethyst/Duplex Stream).
+  // Classic OnMyDisk gateways ("omd-classic") retain their unified cyan/slate skin across all views.
+  $: isOmdClassicSkin = appMode !== APP_MODE_CHAT && $gatewayConfig?.skin?.preset === "omd-classic";
   $: isChatSkin =
     !isSharedRoute &&
+    !isOmdClassicSkin &&
     (currentApp === "chat" ||
       (currentApp === "settings" && (previousApp === "chat" || (!previousApp && appMode === APP_MODE_CHAT))) ||
       ((!authorized || loginMode === "recovery") && appMode === APP_MODE_CHAT));
@@ -459,9 +462,11 @@
     if (metaTheme) {
       metaTheme.setAttribute(
         "content",
-        isChatSkin
-          ? (isDarkTheme ? "#0F0C12" : "#FAF9FB")
-          : (isDarkTheme ? "#151821" : "#F6F7FA")
+        isOmdClassicSkin
+          ? (isDarkTheme ? "#202A2F" : "#FFFFFF")
+          : isChatSkin
+            ? (isDarkTheme ? "#0F0C12" : "#FAF9FB")
+            : (isDarkTheme ? "#151821" : "#F6F7FA")
       );
     }
   }

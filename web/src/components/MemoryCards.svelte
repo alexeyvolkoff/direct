@@ -1380,9 +1380,9 @@
   }
 
   .count-pill {
-    background: rgba(236, 72, 153, 0.2);
-    color: #F472B6;
-    border: 1px solid rgba(236, 72, 153, 0.3);
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
+    color: var(--accent-hover);
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
     border-radius: 999px;
     font-size: 11px;
     font-weight: 600;
@@ -1493,8 +1493,8 @@
   }
 
   .header-icon-btn.new-card-btn:hover {
-    background: rgba(236, 72, 153, 0.18);
-    color: #F472B6;
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    color: var(--accent-hover);
   }
 
   .new-card-menu-wrap {
@@ -1715,9 +1715,9 @@
   }
 
   .cat-pill.active {
-    background: rgba(236, 72, 153, 0.18);
-    border-color: rgba(236, 72, 153, 0.45);
-    color: #F472B6;
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+    color: var(--accent-hover);
     font-weight: 600;
   }
 
@@ -1737,9 +1737,9 @@
   }
 
   .tags-pill-selected {
-    background: rgba(236, 72, 153, 0.2);
-    border: 1px solid #F472B6;
-    color: #F472B6;
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
+    border: 1px solid var(--accent-hover);
+    color: var(--accent-hover);
     border-radius: 999px;
     font-size: 11px;
     font-weight: 600;
@@ -1810,18 +1810,18 @@
   }
 
   .tag-cloud-chip:hover {
-    border-color: #F472B6;
-    color: #F472B6;
+    border-color: var(--accent-hover);
+    color: var(--accent-hover);
   }
 
   .tag-cloud-chip.person-tag-chip {
-    background: rgba(236, 72, 153, 0.16);
-    border-color: rgba(236, 72, 153, 0.45);
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 45%, transparent);
     color: var(--accent-blue, #EC4899);
     font-weight: 600;
   }
   .tag-cloud-chip.person-tag-chip:hover {
-    background: rgba(236, 72, 153, 0.28);
+    background: color-mix(in srgb, var(--accent) 28%, transparent);
     border-color: var(--accent-blue, #EC4899);
   }
   .tag-person-icon {
@@ -1837,9 +1837,9 @@
     opacity: 0.85;
   }
   .tag-cloud-chip.active {
-    background: rgba(236, 72, 153, 0.2);
-    border-color: #F472B6;
-    color: #F472B6;
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
+    border-color: var(--accent-hover);
+    color: var(--accent-hover);
     font-weight: 600;
   }
 
@@ -1897,7 +1897,7 @@
   .memory-card:hover {
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
     transform: translateY(-2px);
-    border-color: rgba(236, 72, 153, 0.35);
+    border-color: color-mix(in srgb, var(--accent) 35%, transparent);
   }
 
   .memory-app.light-theme .memory-card {
@@ -1912,8 +1912,8 @@
   }
 
   .memory-card:focus-visible {
-    border-color: #F472B6;
-    box-shadow: 0 0 0 2px rgba(236, 72, 153, 0.4);
+    border-color: var(--accent-hover);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent);
   }
 
   /* Card Header */
@@ -1949,9 +1949,9 @@
   }
 
   .memory-card.kind-folder .card-kind-label {
-    background: rgba(168, 85, 247, 0.16);
-    color: #c084fc;
-    border: 1px solid rgba(168, 85, 247, 0.3);
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    color: var(--accent-hover);
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
   }
 
   .memory-card.kind-image .card-kind-label {
@@ -1961,9 +1961,9 @@
   }
 
   .memory-card.kind-doc .card-kind-label {
-    background: rgba(236, 72, 153, 0.16);
-    color: #F472B6;
-    border: 1px solid rgba(236, 72, 153, 0.3);
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    color: var(--accent-hover);
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
   }
 
   .memory-card.kind-link .card-kind-label {
@@ -2042,8 +2042,8 @@
   }
 
   .card-top-btn:hover {
-    color: #F472B6;
-    background: rgba(236, 72, 153, 0.15);
+    color: var(--accent-hover);
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
   }
 
   .card-top-btn.delete-btn:hover {
@@ -2220,9 +2220,9 @@
   .card-tag-chip {
     font-size: 10px;
     font-weight: 600;
-    color: #F472B6;
-    background: rgba(236, 72, 153, 0.15);
-    border: 1px solid rgba(236, 72, 153, 0.25);
+    color: var(--accent-hover);
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
     border-radius: 999px;
     padding: 1px 7px;
     white-space: nowrap;
@@ -2283,10 +2283,10 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #F472B6;
-    background: rgba(236, 72, 153, 0.1);
-    border: 1px solid rgba(236, 72, 153, 0.2);
-    box-shadow: 0 0 40px rgba(236, 72, 153, 0.15);
+    color: var(--accent-hover);
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+    box-shadow: 0 0 40px color-mix(in srgb, var(--accent) 15%, transparent);
   }
 
   .empty-title {
@@ -2331,14 +2331,14 @@
   }
 
   .empty-action-btn.primary {
-    background: linear-gradient(135deg, #EC4899, #F472B6);
+    background: var(--accent-gradient);
     color: #ffffff;
-    box-shadow: 0 4px 16px rgba(236, 72, 153, 0.3);
+    box-shadow: 0 4px 16px color-mix(in srgb, var(--accent) 30%, transparent);
   }
 
   .empty-action-btn.primary:hover {
     transform: translateY(-1px);
-    box-shadow: 0 6px 22px rgba(236, 72, 153, 0.45);
+    box-shadow: 0 6px 22px color-mix(in srgb, var(--accent) 45%, transparent);
     filter: brightness(1.05);
   }
 
@@ -2352,9 +2352,9 @@
   .empty-action-btn.secondary:hover {
     transform: translateY(-1px);
     background: var(--bg-card-hover, rgba(255, 255, 255, 0.12));
-    border-color: #F472B6;
-    color: #F472B6;
-    box-shadow: 0 4px 14px rgba(236, 72, 153, 0.2);
+    border-color: var(--accent-hover);
+    color: var(--accent-hover);
+    box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 20%, transparent);
   }
 
   .empty-action-btn .btn-emoji {
@@ -2385,7 +2385,7 @@
     background: #FAF9FB;
     border-color: #DB2777;
     color: #DB2777;
-    box-shadow: 0 4px 14px rgba(236, 72, 153, 0.15);
+    box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 15%, transparent);
   }
 
   @media (max-width: 520px) {
@@ -2414,7 +2414,7 @@
 
   .ghost-reset-btn:hover {
     color: var(--text-primary, #ffffff);
-    border-color: #F472B6;
+    border-color: var(--accent-hover);
   }
 
   /* Scroll FABs */
@@ -2453,8 +2453,8 @@
   }
 
   .scroll-fab:hover {
-    color: #F472B6;
-    border-color: #F472B6;
+    color: var(--accent-hover);
+    border-color: var(--accent-hover);
   }
 
   /* Responsive */
@@ -2528,8 +2528,8 @@
     align-items: center;
     gap: 14px;
     padding: 12px 18px;
-    background: rgba(236, 72, 153, 0.1);
-    border: 1px solid rgba(236, 72, 153, 0.3);
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
     border-radius: 12px;
     margin-bottom: 20px;
   }
@@ -2549,7 +2549,7 @@
   }
   .scan-circle-bg {
     fill: none;
-    stroke: rgba(236, 72, 153, 0.2);
+    stroke: color-mix(in srgb, var(--accent) 20%, transparent);
     stroke-width: 3.2;
   }
   .scan-circle-fill {
@@ -2711,9 +2711,9 @@
   }
   .btn-person-action.primary {
     width: 100%;
-    background: rgba(236, 72, 153, 0.15);
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
     color: var(--accent-blue, #EC4899);
-    border-color: rgba(236, 72, 153, 0.35);
+    border-color: color-mix(in srgb, var(--accent) 35%, transparent);
   }
   .btn-person-action.primary:hover {
     background: var(--accent-blue, #EC4899);
@@ -2773,9 +2773,9 @@
     width: 34px;
     height: 34px;
     border-radius: 9px;
-    background: rgba(236, 72, 153, 0.14);
-    border: 1px solid rgba(236, 72, 153, 0.28);
-    color: #F472B6;
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+    color: var(--accent-hover);
     display: flex;
     align-items: center;
     justify-content: center;

@@ -25,6 +25,8 @@
   import { getStoredOmdKey } from "../lib/omd-key.js";
   import { sanitizeExternalCheckoutText } from "../lib/platform.js";
   import { DEFAULT_JUNE_SYSTEM_PROMPT, DEFAULT_JUNE_FUN_PROMPT, blobToDataUrl } from "../lib/assistant-defaults.js";
+  import { gatewayConfig } from "../lib/gateway-config.js";
+  import { resolveAppMode, APP_MODE_CHAT } from "../lib/app-mode.js";
 
   marked.use(markedKatex({ throwOnError: false, nonStandard: true }));
   marked.setOptions({ breaks: true, gfm: true });
@@ -6129,7 +6131,13 @@ function lastFreshTitle(messages) {
       </form>
 
       <div class="composer-disclaimer">
-        <span>{$_("chat_disclaimer", {}, "AI Assistant · AI that keeps your data yours")}</span>
+        <span>{
+          (resolveAppMode() !== APP_MODE_CHAT && $gatewayConfig?.skin?.preset === "omd-classic")
+            ? $_("chat_disclaimer", {}, "On My Chat · AI that keeps your data yours").replace(/^AI Assistant\b/, "On My Chat")
+            : (resolveAppMode() !== APP_MODE_CHAT && $gatewayConfig?.skin?.preset === "custom" && $gatewayConfig?.brandName)
+              ? $_("chat_disclaimer", {}, "AI Assistant · AI that keeps your data yours").replace(/^AI Assistant\b/, $gatewayConfig.brandName)
+              : $_("chat_disclaimer", {}, "AI Assistant · AI that keeps your data yours")
+        }</span>
       </div>
     </div>
   </div>
@@ -6283,13 +6291,13 @@ function lastFreshTitle(messages) {
   .hero-avatar.clickable:hover {
     transform: scale(1.06);
     border-radius: 50%;
-    box-shadow: 0 6px 30px rgba(236, 72, 153, 0.6);
+    box-shadow: 0 6px 30px color-mix(in srgb, var(--accent) 60%, transparent);
   }
 
   .entry-avatar.clickable:hover {
     transform: scale(1.08);
     border-radius: 50%;
-    box-shadow: 0 0 16px rgba(244, 114, 182, 0.6);
+    box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 60%, transparent);
   }
   .chat-container {
     display: flex;
@@ -6351,19 +6359,19 @@ function lastFreshTitle(messages) {
     height: 68px;
     border-radius: 50%;
     object-fit: cover;
-    box-shadow: 0 4px 24px rgba(236, 72, 153, 0.45);
+    box-shadow: 0 4px 24px color-mix(in srgb, var(--accent) 45%, transparent);
   }
 
   .avatar-hero-spark {
     width: 68px;
     height: 68px;
     border-radius: 50%;
-    background: linear-gradient(135deg, #EC4899, #A855F7);
+    background: var(--accent-gradient);
     display: flex;
     align-items: center;
     justify-content: center;
     color: #fff;
-    box-shadow: 0 4px 24px rgba(236, 72, 153, 0.45);
+    box-shadow: 0 4px 24px color-mix(in srgb, var(--accent) 45%, transparent);
   }
 
   .hero-assistant-meta {
@@ -6398,7 +6406,7 @@ function lastFreshTitle(messages) {
   }
 
   .gradient-text {
-    background: linear-gradient(90deg, #F472B6, #EC4899, #C084FC);
+    background: var(--accent-gradient);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
   }
@@ -6494,9 +6502,9 @@ function lastFreshTitle(messages) {
 
   @keyframes card-focus-flash {
     0%, 60% {
-      background: rgba(236, 72, 153, 0.16);
+      background: color-mix(in srgb, var(--accent) 16%, transparent);
       border-radius: 14px;
-      outline: 2px solid rgba(236, 72, 153, 0.5);
+      outline: 2px solid color-mix(in srgb, var(--accent) 50%, transparent);
       outline-offset: 2px;
     }
     100% {
@@ -6574,8 +6582,8 @@ function lastFreshTitle(messages) {
 
   .user-rework-btn:hover {
     color: var(--accent-blue);
-    background: rgba(236, 72, 153, 0.12);
-    border-color: rgba(236, 72, 153, 0.25);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 25%, transparent);
   }
 
   .user-copy-btn:hover {
@@ -6608,8 +6616,8 @@ function lastFreshTitle(messages) {
     height: 36px;
     border-radius: 50%;
     object-fit: cover;
-    border: 2px solid #F472B6;
-    box-shadow: 0 0 10px rgba(236, 72, 153, 0.4);
+    border: 2px solid var(--accent-hover);
+    box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 40%, transparent);
     box-sizing: border-box;
   }
 
@@ -6617,9 +6625,9 @@ function lastFreshTitle(messages) {
     width: 36px;
     height: 36px;
     border-radius: 50%;
-    border: 2px solid #F472B6;
-    box-shadow: 0 0 10px rgba(236, 72, 153, 0.4);
-    background: linear-gradient(135deg, #EC4899, #A855F7);
+    border: 2px solid var(--accent-hover);
+    box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 40%, transparent);
+    background: var(--accent-gradient);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -6651,7 +6659,7 @@ function lastFreshTitle(messages) {
     font-size: 0.72rem;
     padding: 1px 6px;
     border-radius: 4px;
-    background: rgba(236, 72, 153, 0.14);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
     color: var(--accent-blue);
     font-weight: 500;
   }
@@ -6751,15 +6759,15 @@ function lastFreshTitle(messages) {
   }
 
   .markdown-body :global(th) {
-    background: rgba(236, 72, 153, 0.08);
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
     font-weight: 600;
   }
 
   /* Gemini Reasoning/Thinking Accordion */
   .gemini-reasoning {
     margin: 6px 0 12px;
-    background: rgba(236, 72, 153, 0.05);
-    border: 1px solid rgba(236, 72, 153, 0.2);
+    background: color-mix(in srgb, var(--accent) 5%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
     border-radius: 12px;
     overflow: hidden;
   }
@@ -6803,7 +6811,7 @@ function lastFreshTitle(messages) {
     font-size: 0.85rem;
     color: var(--text-secondary);
     line-height: 1.5;
-    border-top: 1px solid rgba(236, 72, 153, 0.12);
+    border-top: 1px solid color-mix(in srgb, var(--accent) 12%, transparent);
     max-height: 340px;
     overflow-y: auto;
   }
@@ -7069,8 +7077,8 @@ function lastFreshTitle(messages) {
   }
 
   .rag-facts-accordion.new-fact {
-    background: rgba(168, 85, 247, 0.05);
-    border-color: rgba(168, 85, 247, 0.25);
+    background: color-mix(in srgb, var(--accent) 5%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 25%, transparent);
   }
 
   .rag-facts-accordion summary {
@@ -7088,7 +7096,7 @@ function lastFreshTitle(messages) {
   }
 
   .rag-facts-accordion.new-fact summary {
-    color: #c084fc;
+    color: var(--accent-hover);
   }
 
   .rag-facts-accordion summary::-webkit-details-marker {
@@ -7120,7 +7128,7 @@ function lastFreshTitle(messages) {
   }
 
   .rag-facts-accordion.new-fact .facts-inner {
-    border-top-color: rgba(168, 85, 247, 0.15);
+    border-top-color: color-mix(in srgb, var(--accent) 15%, transparent);
   }
 
   /* Status indicator */
@@ -7150,7 +7158,7 @@ function lastFreshTitle(messages) {
   /* Sources toggle in message toolbar */
   .sources-toggle-btn.active {
     color: var(--accent-blue);
-    background: rgba(236, 72, 153, 0.12);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
   }
 
   .sources-chevron {
@@ -7301,7 +7309,7 @@ function lastFreshTitle(messages) {
 
   .markdown-body :global(.inline-file-chip:hover) {
     background: #2B2336;
-    border-color: rgba(236, 72, 153, 0.45);
+    border-color: color-mix(in srgb, var(--accent) 45%, transparent);
     color: #FFFFFF;
   }
 
@@ -7353,8 +7361,8 @@ function lastFreshTitle(messages) {
   }
 
   .markdown-body :global(.inline-file-chip:hover .inline-file-icon) {
-    color: #F472B6;
-    border-color: rgba(236, 72, 153, 0.35);
+    color: var(--accent-hover);
+    border-color: color-mix(in srgb, var(--accent) 35%, transparent);
   }
 
   .chat-container.light-theme .markdown-body :global(.inline-file-chip:hover .inline-file-icon) {
@@ -7426,7 +7434,7 @@ function lastFreshTitle(messages) {
     margin: 12px 0;
     padding: 14px 16px;
     border-radius: 14px;
-    background: rgba(236, 72, 153, 0.08);
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
     border: 1px solid var(--accent-blue);
   }
 
@@ -7690,7 +7698,7 @@ function lastFreshTitle(messages) {
 
   .composer-pill:focus-within {
     border-color: var(--accent-blue);
-    box-shadow: 0 4px 28px rgba(236, 72, 153, 0.2);
+    box-shadow: 0 4px 28px color-mix(in srgb, var(--accent) 20%, transparent);
   }
 
   /* Plus Button and Tools Popup */
@@ -7724,7 +7732,7 @@ function lastFreshTitle(messages) {
 
   .composer-action-btn.active {
     color: var(--accent-blue);
-    background: rgba(236, 72, 153, 0.15);
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
   }
 
   .plus-icon {
@@ -7840,13 +7848,13 @@ function lastFreshTitle(messages) {
   }
 
   .tool-icon-circle.recognize {
-    background: rgba(168, 85, 247, 0.15);
-    color: #c084fc;
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    color: var(--accent-hover);
   }
 
   .tool-icon-circle.generate {
-    background: rgba(236, 72, 153, 0.15);
-    color: #f472b6;
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    color: var(--accent-hover);
   }
 
   .tool-meta {
@@ -7879,7 +7887,7 @@ function lastFreshTitle(messages) {
     font-weight: 600;
     padding: 1px 6px;
     border-radius: 6px;
-    background: rgba(236, 72, 153, 0.12);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
     color: var(--accent-blue);
     flex-shrink: 0;
   }
@@ -7950,7 +7958,7 @@ function lastFreshTitle(messages) {
   .composer-send-btn.active {
     background: var(--accent-blue);
     color: #ffffff;
-    box-shadow: 0 2px 10px rgba(236, 72, 153, 0.4);
+    box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 40%, transparent);
   }
 
   .composer-send-btn:disabled {
@@ -8126,7 +8134,7 @@ function lastFreshTitle(messages) {
   }
 
   .card-rework-btn:hover {
-    background: rgba(236, 72, 153, 0.25);
+    background: color-mix(in srgb, var(--accent) 25%, transparent);
   }
 
   .import-request-text {
@@ -8185,7 +8193,7 @@ function lastFreshTitle(messages) {
 
   .import-result-badge.recognizing {
     background: rgba(192, 132, 252, 0.2);
-    color: #c084fc;
+    color: var(--accent-hover);
   }
 
   .import-result-loading {
@@ -8289,16 +8297,16 @@ function lastFreshTitle(messages) {
     font-weight: 500;
     margin: 8px 0;
     width: fit-content;
-    background: rgba(236, 72, 153, 0.08);
-    border: 1px solid rgba(236, 72, 153, 0.2);
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
     color: var(--accent-blue);
     animation: fadeIn 0.2s ease-out;
   }
 
   .active-stream-status.typing,
   .active-stream-status.processing {
-    background: rgba(236, 72, 153, 0.12);
-    border-color: rgba(236, 72, 153, 0.3);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 30%, transparent);
     color: var(--accent-blue);
   }
 
@@ -8317,13 +8325,13 @@ function lastFreshTitle(messages) {
   .active-stream-status.searching {
     background: rgba(192, 132, 252, 0.10);
     border-color: rgba(192, 132, 252, 0.28);
-    color: #c084fc;
+    color: var(--accent-hover);
   }
 
   .active-stream-status.performing {
-    background: rgba(168, 85, 247, 0.08);
-    border-color: rgba(168, 85, 247, 0.25);
-    color: #a855f7;
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 25%, transparent);
+    color: var(--accent);
   }
 
   .active-stream-status.executing {
@@ -8333,9 +8341,9 @@ function lastFreshTitle(messages) {
   }
 
   .active-stream-status.generating {
-    background: rgba(236, 72, 153, 0.12);
-    border-color: rgba(236, 72, 153, 0.32);
-    color: #f472b6;
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 32%, transparent);
+    color: var(--accent-hover);
   }
 
   .active-stream-status.generating .status-icon-bubble {
@@ -8343,7 +8351,7 @@ function lastFreshTitle(messages) {
     animation: rotate 1.2s linear infinite;
     transform-origin: center center;
     font-size: 1.15rem;
-    filter: drop-shadow(0 0 6px rgba(236, 72, 153, 0.6));
+    filter: drop-shadow(0 0 6px color-mix(in srgb, var(--accent) 60%, transparent));
   }
 
   .status-icon-bubble {
@@ -8492,7 +8500,7 @@ function lastFreshTitle(messages) {
   }
 
   .chat-placeholder-svg.spinner-pulse {
-    filter: drop-shadow(0 6px 20px rgba(236, 72, 153, 0.45));
+    filter: drop-shadow(0 6px 20px color-mix(in srgb, var(--accent) 45%, transparent));
   }
 
   .chat-placeholder-text {
@@ -8895,7 +8903,7 @@ function lastFreshTitle(messages) {
   .gen-style-pill.active:focus {
     background: var(--accent-blue);
     color: #ffffff !important;
-    box-shadow: 0 2px 8px rgba(236, 72, 153, 0.35);
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 35%, transparent);
   }
 
   .gen-panel-controls {
@@ -8922,8 +8930,8 @@ function lastFreshTitle(messages) {
   }
 
   .gen-toggle-btn.active {
-    background: rgba(236, 72, 153, 0.12);
-    border-color: rgba(236, 72, 153, 0.3);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 30%, transparent);
   }
 
   .gen-checkbox-hidden {
@@ -8981,7 +8989,7 @@ function lastFreshTitle(messages) {
   }
 
   .gen-icon-btn.active {
-    background: rgba(236, 72, 153, 0.15);
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
     color: var(--accent-blue);
     border-color: var(--accent-blue);
   }
@@ -9033,7 +9041,7 @@ function lastFreshTitle(messages) {
   }
 
   .gen-lora-chip.active {
-    background: rgba(236, 72, 153, 0.18);
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
     border-color: var(--accent-blue);
     color: var(--accent-blue);
     font-weight: 600;
@@ -9169,7 +9177,7 @@ function lastFreshTitle(messages) {
   }
 
   .prompt-style-badge {
-    background: rgba(236, 72, 153, 0.12);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
     color: var(--accent-blue);
     padding: 1px 6px;
     border-radius: 4px;

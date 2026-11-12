@@ -504,9 +504,9 @@
   }
 
   .avatar-modal-card {
-    --card-bg: #1A121D;
-    --card-border: #352339;
-    --card-shadow: 0 24px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(236, 72, 153, 0.18);
+    --card-bg: var(--bg-secondary, #1A121D);
+    --card-border: var(--border-color, #352339);
+    --card-shadow: 0 24px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
     --card-color: #FDF8FC;
     --header-title: #FDF8FC;
     --header-sub: #D4BECF;
@@ -514,7 +514,7 @@
     --close-btn: #998094;
     --close-btn-hover-bg: rgba(255, 255, 255, 0.08);
     --close-btn-hover: #FDF8FC;
-    --circle-bg: #0F0A10;
+    --circle-bg: var(--bg-primary, #0F0A10);
     --circle-loader-bg: rgba(15, 10, 16, 0.78);
     --carousel-btn-bg: rgba(255, 255, 255, 0.08);
     --carousel-btn-border: rgba(255, 255, 255, 0.1);
@@ -523,9 +523,9 @@
     --carousel-badge-bg: rgba(255, 255, 255, 0.06);
     --label-color: #D4BECF;
     --input-bg: rgba(255, 255, 255, 0.05);
-    --input-border: #352339;
+    --input-border: var(--border-color, #352339);
     --input-color: #FDF8FC;
-    --input-option-bg: #1A121D;
+    --input-option-bg: var(--bg-secondary, #1A121D);
     --hint-color: #998094;
     --footer-bg: rgba(0, 0, 0, 0.2);
     --footer-border: rgba(255, 255, 255, 0.08);
@@ -693,8 +693,8 @@
     width: 140px;
     height: 140px;
     border-radius: 50%;
-    border: 3px solid #EC4899;
-    box-shadow: 0 0 24px rgba(236, 72, 153, 0.45);
+    border: 3px solid var(--accent);
+    box-shadow: 0 0 24px color-mix(in srgb, var(--accent) 45%, transparent);
     overflow: hidden;
     background: var(--circle-bg);
     display: flex;
@@ -725,8 +725,8 @@
   .spinner {
     width: 32px;
     height: 32px;
-    border: 3px solid rgba(236, 72, 153, 0.3);
-    border-top-color: #EC4899;
+    border: 3px solid color-mix(in srgb, var(--accent) 30%, transparent);
+    border-top-color: var(--accent);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }
@@ -769,7 +769,7 @@
   }
 
   .carousel-btn:hover:not(:disabled) {
-    background: rgba(236, 72, 153, 0.2);
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
   }
 
   .carousel-btn:disabled {
@@ -789,7 +789,7 @@
   .btn-text-subtle {
     background: transparent;
     border: none;
-    color: #EC4899;
+    color: var(--accent);
     font-size: 0.82rem;
     font-weight: 500;
     display: inline-flex;
@@ -802,7 +802,7 @@
   }
 
   .btn-text-subtle:hover {
-    background: rgba(236, 72, 153, 0.12);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
   }
 
   .avatar-fields {
@@ -863,8 +863,8 @@
   }
 
   .select-styled:focus {
-    border-color: #EC4899;
-    box-shadow: 0 0 0 2px rgba(236, 72, 153, 0.2);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
   }
 
   .select-styled option {
@@ -889,8 +889,8 @@
   }
 
   .textarea-styled:focus {
-    border-color: #EC4899;
-    box-shadow: 0 0 0 2px rgba(236, 72, 153, 0.2);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
   }
 
   .textarea-styled::-webkit-scrollbar {
@@ -978,7 +978,7 @@
   }
 
   .btn-primary {
-    background: linear-gradient(135deg, #EC4899 0%, #A855F7 100%);
+    background: var(--accent-gradient);
     border: none;
     color: #ffffff;
     padding: 8px 20px;
@@ -986,12 +986,12 @@
     font-weight: 600;
     cursor: pointer;
     transition: filter 0.15s, box-shadow 0.15s;
-    box-shadow: 0 2px 10px rgba(236, 72, 153, 0.4);
+    box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 40%, transparent);
   }
 
   .btn-primary:hover:not(:disabled) {
     filter: brightness(1.08);
-    box-shadow: 0 4px 14px rgba(236, 72, 153, 0.5);
+    box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 50%, transparent);
   }
 
   .btn-secondary:disabled,

@@ -507,12 +507,15 @@ html.skin-chat .dark-theme,
 
 /* ============================================================================
    6. GATEWAY SKIN PRESET: CLASSIC ONMYDISK ("omd-classic") — LIGHT & DARK
-      Activated dynamically ONLY in files mode when connected to a community
-      OnMyDisk gateway (e.g. direct.onmydisk.net). Never affects .skin-chat.
+      Activated dynamically on community OnMyDisk gateways (e.g. direct.onmydisk.net).
+      Applies across both files and chat/AI views; never affects standalone APP_MODE_CHAT.
    ============================================================================ */
-html.gateway-skin-omd.light-theme:not(.skin-chat),
-html.gateway-skin-omd:not(.dark-theme):not(.omd-dark):not(.skin-chat),
-html.gateway-skin-omd .skin-files.light-theme {
+html.gateway-skin-omd.light-theme,
+html.gateway-skin-omd:not(.dark-theme):not(.omd-dark),
+html.gateway-skin-omd .skin-files.light-theme,
+html.gateway-skin-omd .skin-chat.light-theme,
+html.gateway-skin-omd.light-theme .skin-chat,
+html.gateway-skin-omd:not(.dark-theme):not(.omd-dark) .skin-chat {
   --skin-name: "omd-classic-light";
 
   --bg-primary: #F6F8F9;
@@ -582,9 +585,12 @@ html.gateway-skin-omd .skin-files.light-theme {
   --logo-url: url('/customtheme/logo-omd-dark.svg');
 }
 
-html.gateway-skin-omd.dark-theme:not(.skin-chat),
-html.gateway-skin-omd.omd-dark:not(.skin-chat),
-html.gateway-skin-omd .skin-files.dark-theme {
+html.gateway-skin-omd.dark-theme,
+html.gateway-skin-omd.omd-dark,
+html.gateway-skin-omd .skin-files.dark-theme,
+html.gateway-skin-omd .skin-chat.dark-theme,
+html.gateway-skin-omd.dark-theme .skin-chat,
+html.gateway-skin-omd.omd-dark .skin-chat {
   --skin-name: "omd-classic-dark";
 
   --bg-primary: #101C22;

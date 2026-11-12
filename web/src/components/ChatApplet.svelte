@@ -17,6 +17,8 @@
   import { isFileSystemAccessAvailable, addShareFromPicker, addOpfsShare } from "../lib/local-client.js";
   import { parseStoragePath } from "../lib/storage-path.js";
   import { aiNodeStore, aiOnmychatHeaders } from "../lib/ai-node.js";
+  import { gatewayConfig } from "../lib/gateway-config.js";
+  import { resolveAppMode, APP_MODE_CHAT } from "../lib/app-mode.js";
 
   export let targetLinkId = "";
   export let targetDevice = null;
@@ -430,7 +432,18 @@
   $: explicitlyArchived = chats.filter((c) => c.archived || c.updated === "1970-01-01T00:00:00Z");
   $: allArchivedChats = [...overflowChats, ...explicitlyArchived];
 
-  $: logoChatSrc = isDarkTheme ? "/customtheme/logo-chat.svg" : "/customtheme/logo-chat-dark.svg";
+  $: isOmdClassicGateway = resolveAppMode() !== APP_MODE_CHAT && $gatewayConfig?.skin?.preset === "omd-classic";
+  $: isCustomGatewaySkin = resolveAppMode() !== APP_MODE_CHAT && $gatewayConfig?.skin?.preset === "custom";
+  $: logoChatSrc = isOmdClassicGateway
+    ? (isDarkTheme ? "/customtheme/logo-omd-chat.svg" : "/customtheme/logo-omd-chat-dark.svg")
+    : isCustomGatewaySkin
+      ? (isDarkTheme ? ($gatewayConfig?.skin?.logoDark || "/customtheme/logo-chat.svg") : ($gatewayConfig?.skin?.logoLight || "/customtheme/logo-chat-dark.svg"))
+      : (isDarkTheme ? "/customtheme/logo-chat.svg" : "/customtheme/logo-chat-dark.svg");
+  $: logoChatAlt = isOmdClassicGateway
+    ? "On My Chat"
+    : isCustomGatewaySkin
+      ? ($gatewayConfig?.brandName || "AI Assistant")
+      : "AI Assistant";
 
   async function handleArchiveChat(id) {
     chatMenuOpenId = null;
@@ -1012,7 +1025,7 @@
 
         <img
           src={logoChatSrc}
-          alt="AI Assistant"
+          alt={logoChatAlt}
           class="sidebar-logo-img"
         />
 

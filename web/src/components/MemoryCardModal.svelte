@@ -1520,9 +1520,9 @@
     z-index: 10;
   }
   .face-box:hover {
-    border-color: #F472B6;
-    background: rgba(244, 114, 182, 0.18);
-    box-shadow: 0 0 12px rgba(244, 114, 182, 0.4);
+    border-color: var(--accent-hover);
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 40%, transparent);
   }
   .face-box.dragging {
     cursor: grabbing;
@@ -1534,10 +1534,10 @@
     background: rgba(16, 185, 129, 0.18);
   }
   .face-box.selected {
-    border-color: #EC4899;
+    border-color: var(--accent);
     border-style: solid;
-    background: rgba(236, 72, 153, 0.25);
-    box-shadow: 0 0 16px rgba(236, 72, 153, 0.6);
+    background: color-mix(in srgb, var(--accent) 25%, transparent);
+    box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 60%, transparent);
   }
 
   .face-handle {
@@ -1545,7 +1545,7 @@
     width: 9px;
     height: 9px;
     background: #ffffff;
-    border: 1.5px solid #EC4899;
+    border: 1.5px solid var(--accent);
     border-radius: 2px;
     z-index: 20;
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
@@ -1587,8 +1587,8 @@
   .face-edit-panel {
     margin-top: 8px;
     padding: 10px 12px;
-    background: rgba(236, 72, 153, 0.08);
-    border: 1px solid rgba(236, 72, 153, 0.25);
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
     border-radius: 8px;
   }
   .face-edit-header {

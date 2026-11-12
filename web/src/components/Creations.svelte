@@ -2465,9 +2465,9 @@
   }
 
   .count-pill {
-    background: rgba(236, 72, 153, 0.2);
-    color: #F472B6;
-    border: 1px solid rgba(236, 72, 153, 0.3);
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
+    color: var(--accent-hover);
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
     border-radius: 999px;
     font-size: 11px;
     font-weight: 600;
@@ -2489,7 +2489,7 @@
   }
 
   .header-folder-badge:hover {
-    color: #F472B6;
+    color: var(--accent-hover);
   }
 
   .folder-path {
@@ -2701,7 +2701,7 @@
     position: relative;
     width: 100%;
     min-height: 240px;
-    background: #0F0A10;
+    background: var(--bg-primary, #0F0A10);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2733,9 +2733,9 @@
   }
 
   .load-btn {
-    background: rgba(236, 72, 153, 0.2);
-    color: #F472B6;
-    border: 1px solid rgba(236, 72, 153, 0.4);
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
+    color: var(--accent-hover);
+    border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
     padding: 8px 16px;
     border-radius: 20px;
     font-size: 13px;
@@ -2745,7 +2745,7 @@
   }
 
   .load-btn:hover {
-    background: rgba(236, 72, 153, 0.35);
+    background: color-mix(in srgb, var(--accent) 35%, transparent);
   }
 
   .card-footer {
@@ -2831,8 +2831,8 @@
 
   /* 4. In-flight Generating Placeholder Card */
   .placeholder-card {
-    border: 1px solid rgba(236, 72, 153, 0.4);
-    box-shadow: 0 0 25px rgba(236, 72, 153, 0.2);
+    border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+    box-shadow: 0 0 25px color-mix(in srgb, var(--accent) 20%, transparent);
   }
 
   .placeholder-img-wrap {
@@ -2850,7 +2850,7 @@
     position: absolute;
     inset: -2px;
     border-radius: 16px;
-    background: linear-gradient(90deg, #EC4899, #8b5cf6, #ec4899, #EC4899);
+    background: var(--accent-gradient);
     background-size: 300% 300%;
     animation: magicGlow 4s linear infinite;
     opacity: 0.6;
@@ -2888,8 +2888,8 @@
     position: absolute;
     inset: 0;
     border-radius: 50%;
-    border: 3px solid rgba(236, 72, 153, 0.2);
-    border-top-color: #F472B6;
+    border: 3px solid color-mix(in srgb, var(--accent) 20%, transparent);
+    border-top-color: var(--accent-hover);
     animation: spin 1.2s cubic-bezier(0.5, 0, 0.5, 1) infinite;
   }
 
@@ -3139,11 +3139,11 @@
     width: 80px;
     height: 80px;
     border-radius: 50%;
-    background: radial-gradient(circle, rgba(236, 72, 153, 0.25) 0%, rgba(236, 72, 153, 0) 70%);
+    background: radial-gradient(circle, color-mix(in srgb, var(--accent) 25%, transparent) 0%, transparent 70%);
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #F472B6;
+    color: var(--accent-hover);
     margin-bottom: 16px;
   }
 
@@ -3162,7 +3162,7 @@
   }
 
   .folder-prompt-glow {
-    background: radial-gradient(circle, rgba(236, 72, 153, 0.3) 0%, rgba(236, 72, 153, 0) 70%);
+    background: radial-gradient(circle, color-mix(in srgb, var(--accent) 30%, transparent) 0%, transparent 70%);
     color: var(--accent-blue, #F472B6);
   }
 
@@ -3179,13 +3179,13 @@
     border: none;
     cursor: pointer;
     transition: all 0.2s ease;
-    box-shadow: 0 4px 14px rgba(236, 72, 153, 0.35);
+    box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 35%, transparent);
   }
 
   .primary-select-folder-btn:hover {
     background: #DB2777;
     transform: translateY(-1px);
-    box-shadow: 0 6px 18px rgba(236, 72, 153, 0.5);
+    box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 50%, transparent);
   }
 
   .starter-prompts {
@@ -3225,9 +3225,9 @@
   }
 
   .starter-chip:hover {
-    background: rgba(236, 72, 153, 0.12);
-    border-color: rgba(236, 72, 153, 0.4);
-    color: #F472B6;
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+    color: var(--accent-hover);
     transform: translateY(-1px);
   }
 
@@ -3318,7 +3318,7 @@
 
   .composer-pill:focus-within {
     border-color: var(--accent-blue, #EC4899);
-    box-shadow: 0 4px 28px rgba(236, 72, 153, 0.2);
+    box-shadow: 0 4px 28px color-mix(in srgb, var(--accent) 20%, transparent);
   }
 
   .composer-action-wrap {
@@ -3352,7 +3352,7 @@
 
   .composer-action-btn.active {
     color: var(--accent-blue, #EC4899);
-    background: rgba(236, 72, 153, 0.15);
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
   }
 
   .plus-icon {
@@ -3422,7 +3422,7 @@
   .composer-send-btn.active {
     background: var(--accent-blue, #EC4899);
     color: #ffffff;
-    box-shadow: 0 2px 10px rgba(236, 72, 153, 0.4);
+    box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 40%, transparent);
   }
 
   .composer-send-btn:disabled {
@@ -3518,7 +3518,7 @@
   .gen-style-pill.active:focus {
     background: var(--accent-blue, #EC4899);
     color: #ffffff !important;
-    box-shadow: 0 2px 8px rgba(236, 72, 153, 0.35);
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 35%, transparent);
   }
 
   .gen-panel-controls {
@@ -3545,8 +3545,8 @@
   }
 
   .gen-toggle-btn.active {
-    background: rgba(236, 72, 153, 0.12);
-    border-color: rgba(236, 72, 153, 0.3);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 30%, transparent);
   }
 
   .gen-checkbox-hidden {
@@ -3604,7 +3604,7 @@
   }
 
   .gen-icon-btn.active {
-    background: rgba(236, 72, 153, 0.15);
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
     color: var(--accent-blue, #EC4899);
     border-color: var(--accent-blue, #EC4899);
   }
@@ -3658,11 +3658,11 @@
   }
 
   .gen-lora-chip.active {
-    background: rgba(236, 72, 153, 0.18);
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
     border-color: var(--accent-blue, #EC4899);
     color: var(--accent-blue, #EC4899);
     font-weight: 500;
-    box-shadow: 0 0 0 1px rgba(236, 72, 153, 0.3) inset;
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent) inset;
   }
 
   .gen-divider {
@@ -3806,7 +3806,7 @@
   }
 
   .prompt-style-badge {
-    background: rgba(236, 72, 153, 0.12);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
     color: var(--accent-blue, #EC4899);
     padding: 1px 6px;
     border-radius: 4px;
@@ -4151,8 +4151,8 @@
     padding: 10px 14px;
     margin-bottom: 10px;
     border-radius: 12px;
-    background: linear-gradient(135deg, rgba(168, 85, 247, 0.12), rgba(168, 85, 247, 0.14));
-    border: 1px solid rgba(168, 85, 247, 0.35);
+    background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 12%, transparent), color-mix(in srgb, var(--accent) 14%, transparent));
+    border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
     backdrop-filter: blur(8px);
     animation: bannerFadeIn 0.2s ease-out;
   }
@@ -4186,7 +4186,7 @@
     font-size: 0.82rem;
     font-weight: 600;
     border-radius: 8px;
-    background: linear-gradient(135deg, #A855F7, #a855f7);
+    background: var(--accent-gradient);
     color: #fff !important;
     text-decoration: none !important;
     transition: opacity 0.15s, transform 0.15s;
@@ -4277,15 +4277,15 @@
     background: rgba(0, 0, 0, 0.05);
   }
   .mode-toggle-btn.active {
-    background: linear-gradient(135deg, rgba(168, 85, 247, 0.4), rgba(168, 85, 247, 0.4));
-    border-color: rgba(168, 85, 247, 0.5);
+    background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 40%, transparent), color-mix(in srgb, var(--accent) 40%, transparent));
+    border-color: color-mix(in srgb, var(--accent) 50%, transparent);
     color: #fff;
     font-weight: 600;
-    box-shadow: 0 2px 10px rgba(168, 85, 247, 0.25);
+    box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 25%, transparent);
   }
   :global(.light-theme) .mode-toggle-btn.active {
-    background: linear-gradient(135deg, rgba(168, 85, 247, 0.18), rgba(168, 85, 247, 0.18));
-    border-color: rgba(168, 85, 247, 0.4);
+    background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 18%, transparent), color-mix(in srgb, var(--accent) 18%, transparent));
+    border-color: color-mix(in srgb, var(--accent) 40%, transparent);
     color: #7E22CE;
   }
   .mode-toggle-btn .mode-icon {
