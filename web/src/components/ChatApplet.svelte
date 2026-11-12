@@ -444,6 +444,9 @@
     : isCustomGatewaySkin
       ? ($gatewayConfig?.brandName || "AI Assistant")
       : "AI Assistant";
+  $: sidebarLogoAlign = resolveAppMode() === APP_MODE_CHAT
+    ? "center"
+    : ($gatewayConfig?.skin?.logoAlign || "center");
 
   async function handleArchiveChat(id) {
     chatMenuOpenId = null;
@@ -1011,7 +1014,11 @@
     <!-- Left Sessions Sidebar -->
     <aside class="sidebar" class:collapsed={!sidebarOpen}>
       <!-- Centered Logo Brand Header in Sidebar -->
-      <div class="sidebar-brand">
+      <div
+        class="sidebar-brand"
+        class:logo-align-left={sidebarLogoAlign === "left"}
+        class:logo-align-right={sidebarLogoAlign === "right"}
+      >
         <button
           class="icon-btn sidebar-collapse-btn"
           title={$_("fold", {}, "Collapse sidebar")}
@@ -1865,12 +1872,22 @@
 
   .sidebar-logo-img {
     height: 29px;
-    max-width: calc(100% - 76px);
+    max-width: calc(100% - 80px);
     width: auto;
     object-fit: contain;
     user-select: none;
     display: block;
-    margin-top: 0;
+    margin: 0 auto;
+  }
+
+  .sidebar-brand.logo-align-left .sidebar-logo-img {
+    margin-left: 4px;
+    margin-right: auto;
+  }
+
+  .sidebar-brand.logo-align-right .sidebar-logo-img {
+    margin-left: auto;
+    margin-right: 4px;
   }
 
   .sidebar-brand-spacer {

@@ -46,6 +46,7 @@ export const DEFAULT_GATEWAY = Object.freeze({
     preset: "cool-iris",
     logoDark: "/img/logo.svg",
     logoLight: "/img/logo-dark.svg",
+    logoAlign: "center",
     favicon: "/customtheme/onmydisk.svg",
     tokens: {},
   }),
@@ -138,12 +139,16 @@ export function buildManifestForOrigin(origin, rawManifest = null) {
   const wsProto = isHttps ? "wss:" : "ws:";
   const httpProto = isHttps ? "https:" : "http:";
 
+  const rawLogoAlign = String(rawManifest?.skin?.logoAlign || "center").trim().toLowerCase();
+  const logoAlign = ["left", "center", "right"].includes(rawLogoAlign) ? rawLogoAlign : "center";
+
   if (cleanOrigin === DEFAULT_GATEWAY_ORIGIN && (!rawManifest || rawManifest.id === "disk.direct")) {
     return {
       ...DEFAULT_GATEWAY,
       mcpPresets: sanitizeMcpPresets(rawManifest?.mcpPresets, cleanOrigin),
       skin: {
         ...DEFAULT_GATEWAY.skin,
+        logoAlign,
         logoDark: isLocalBrowserHost() ? `${DEFAULT_GATEWAY_ORIGIN}/img/logo.svg` : "/img/logo.svg",
         logoLight: isLocalBrowserHost() ? `${DEFAULT_GATEWAY_ORIGIN}/img/logo-dark.svg` : "/img/logo-dark.svg",
       },
@@ -218,6 +223,7 @@ export function buildManifestForOrigin(origin, rawManifest = null) {
       preset,
       logoDark: sanitizeUrl(effectiveRawLogoDark, cleanOrigin, defaultLogoDark),
       logoLight: sanitizeUrl(effectiveRawLogoLight, cleanOrigin, defaultLogoLight),
+      logoAlign,
       favicon: sanitizeUrl(effectiveRawFavicon, cleanOrigin, defaultFavicon),
       tokens: cleanTokens,
     },
@@ -495,8 +501,11 @@ export function applyGatewaySkinToDom(gateway = getActiveGateway()) {
   }
 
   const preset = gateway?.skin?.preset || "cool-iris";
+  const rawAlign = String(gateway?.skin?.logoAlign || "center").trim().toLowerCase();
+  const logoAlign = ["left", "center", "right"].includes(rawAlign) ? rawAlign : "center";
   root.classList.toggle("gateway-skin-omd", preset === "omd-classic");
   root.classList.toggle("gateway-skin-custom", preset === "custom");
+  root.style.setProperty("--sidebar-logo-align", logoAlign);
 
   // Clear any previously injected custom gateway CSS variables
   for (const cssVar of ALLOWED_CUSTOM_CSS_VARS) {
@@ -578,6 +587,8 @@ export function applyGatewaySkinToDom(gateway = getActiveGateway()) {
  */
 export function getGatewayBrandPalette(gateway = getActiveGateway(), isDarkTheme = true) {
   const preset = gateway?.skin?.preset || "cool-iris";
+  const rawAlign = String(gateway?.skin?.logoAlign || "center").trim().toLowerCase();
+  const logoAlign = ["left", "center", "right"].includes(rawAlign) ? rawAlign : "center";
   const omdAssetBase = isLocalBrowserHost() ? DEFAULT_GATEWAY_ORIGIN : "";
 
   if (preset === "omd-classic") {
@@ -588,8 +599,8 @@ export function getGatewayBrandPalette(gateway = getActiveGateway(), isDarkTheme
       brandColor: isDarkTheme ? "#2996CC" : "#184562",
       brandHoverColor: isDarkTheme ? "#37A9EF" : "#2996CC",
       fmInlineStyle: isDarkTheme
-        ? `--logo-url: url('${logoDark}'); --top-menu-color: #2996CC; --top-menu-hover-color: #37A9EF; --wx-color-primary: #2996CC; --wx-color-primary-border: #37A9EF; --wx-color-primary-hover: #37A9EF; --wx-color-primary-selected: rgba(41, 150, 204, 0.25); --wx-fm-select-background: rgba(41, 150, 204, 0.25); --wx-background: #202A2F; --wx-background-alt: #18242B; --wx-background-hover: #29363D; --wx-fm-background: #101C22; --bg-secondary: #202A2F; --bg-primary: #101C22; --border-color: #3D4F57; --wx-border: 1px solid #3D4F57; --selected-text: #D6EEFA; --sidebar-shadow: 4px 0 16px rgba(0, 0, 0, 0.25);`
-        : `--logo-url: url('${logoLight}'); --top-menu-color: #184562; --top-menu-hover-color: #2996CC; --wx-color-primary: #184562; --wx-color-primary-border: #184562; --wx-color-primary-hover: #2996CC; --wx-color-primary-selected: #E4F1FA; --wx-fm-select-background: #E4F1FA; --wx-background: #FFFFFF; --wx-background-alt: #F4F8FA; --wx-background-hover: #ECF0F2; --wx-fm-background: #F6F8F9; --bg-secondary: #FFFFFF; --bg-primary: #F6F8F9; --border-color: #D6DDE1; --wx-border: 1px solid #D6DDE1; --selected-text: #184562; --sidebar-shadow: 3px 0 14px rgba(0, 0, 0, 0.05);`,
+        ? `--logo-url: url('${logoDark}'); --sidebar-logo-align: ${logoAlign}; --top-menu-color: #2996CC; --top-menu-hover-color: #37A9EF; --wx-color-primary: #2996CC; --wx-color-primary-border: #37A9EF; --wx-color-primary-hover: #37A9EF; --wx-color-primary-selected: rgba(41, 150, 204, 0.25); --wx-fm-select-background: rgba(41, 150, 204, 0.25); --wx-background: #202A2F; --wx-background-alt: #18242B; --wx-background-hover: #29363D; --wx-fm-background: #101C22; --bg-secondary: #202A2F; --bg-primary: #101C22; --border-color: #3D4F57; --wx-border: 1px solid #3D4F57; --selected-text: #D6EEFA; --sidebar-shadow: 4px 0 16px rgba(0, 0, 0, 0.25);`
+        : `--logo-url: url('${logoLight}'); --sidebar-logo-align: ${logoAlign}; --top-menu-color: #184562; --top-menu-hover-color: #2996CC; --wx-color-primary: #184562; --wx-color-primary-border: #184562; --wx-color-primary-hover: #2996CC; --wx-color-primary-selected: #E4F1FA; --wx-fm-select-background: #E4F1FA; --wx-background: #FFFFFF; --wx-background-alt: #F4F8FA; --wx-background-hover: #ECF0F2; --wx-fm-background: #F6F8F9; --bg-secondary: #FFFFFF; --bg-primary: #F6F8F9; --border-color: #D6DDE1; --wx-border: 1px solid #D6DDE1; --selected-text: #184562; --sidebar-shadow: 3px 0 14px rgba(0, 0, 0, 0.05);`,
     };
   }
 
@@ -608,8 +619,8 @@ export function getGatewayBrandPalette(gateway = getActiveGateway(), isDarkTheme
       brandColor: c,
       brandHoverColor: ch,
       fmInlineStyle: isDarkTheme
-        ? `--logo-url: url('${logoDark}'); --top-menu-color: ${c}; --top-menu-hover-color: ${ch}; --wx-color-primary: ${c}; --wx-color-primary-border: ${c}; --wx-color-primary-hover: ${ch}; --wx-color-primary-selected: color-mix(in srgb, ${c} 22%, transparent); --wx-fm-select-background: color-mix(in srgb, ${c} 22%, transparent); --wx-background: #1F2430; --wx-background-alt: #191D28; --wx-background-hover: #282E3D; --wx-fm-background: #151821; --bg-secondary: #1F2430; --bg-primary: #151821; --border-color: #32394B; --wx-border: 1px solid #32394B; --selected-text: #EEF0F6; --sidebar-shadow: 4px 0 16px rgba(0, 0, 0, 0.25);`
-        : `--logo-url: url('${logoLight}'); --top-menu-color: ${c}; --top-menu-hover-color: ${ch}; --wx-color-primary: ${c}; --wx-color-primary-border: ${c}; --wx-color-primary-hover: ${ch}; --wx-color-primary-selected: color-mix(in srgb, ${c} 14%, #FFFFFF); --wx-fm-select-background: color-mix(in srgb, ${c} 14%, #FFFFFF); --wx-background: #FFFFFF; --wx-background-alt: #F1F3F9; --wx-background-hover: #E9ECF5; --wx-fm-background: #F6F7FA; --bg-secondary: #FFFFFF; --bg-primary: #F6F7FA; --border-color: #D8DCE8; --wx-border: 1px solid #D8DCE8; --selected-text: ${c}; --sidebar-shadow: 3px 0 14px rgba(22, 25, 37, 0.05);`,
+        ? `--logo-url: url('${logoDark}'); --sidebar-logo-align: ${logoAlign}; --top-menu-color: ${c}; --top-menu-hover-color: ${ch}; --wx-color-primary: ${c}; --wx-color-primary-border: ${c}; --wx-color-primary-hover: ${ch}; --wx-color-primary-selected: color-mix(in srgb, ${c} 22%, transparent); --wx-fm-select-background: color-mix(in srgb, ${c} 22%, transparent); --wx-background: #1F2430; --wx-background-alt: #191D28; --wx-background-hover: #282E3D; --wx-fm-background: #151821; --bg-secondary: #1F2430; --bg-primary: #151821; --border-color: #32394B; --wx-border: 1px solid #32394B; --selected-text: #EEF0F6; --sidebar-shadow: 4px 0 16px rgba(0, 0, 0, 0.25);`
+        : `--logo-url: url('${logoLight}'); --sidebar-logo-align: ${logoAlign}; --top-menu-color: ${c}; --top-menu-hover-color: ${ch}; --wx-color-primary: ${c}; --wx-color-primary-border: ${c}; --wx-color-primary-hover: ${ch}; --wx-color-primary-selected: color-mix(in srgb, ${c} 14%, #FFFFFF); --wx-fm-select-background: color-mix(in srgb, ${c} 14%, #FFFFFF); --wx-background: #FFFFFF; --wx-background-alt: #F1F3F9; --wx-background-hover: #E9ECF5; --wx-fm-background: #F6F7FA; --bg-secondary: #FFFFFF; --bg-primary: #F6F7FA; --border-color: #D8DCE8; --wx-border: 1px solid #D8DCE8; --selected-text: ${c}; --sidebar-shadow: 3px 0 14px rgba(22, 25, 37, 0.05);`,
     };
   }
 
@@ -621,8 +632,8 @@ export function getGatewayBrandPalette(gateway = getActiveGateway(), isDarkTheme
     brandColor: isDarkTheme ? "#7B86C4" : "#46508A",
     brandHoverColor: isDarkTheme ? "#929CD4" : "#5863A6",
     fmInlineStyle: isDarkTheme
-      ? `--logo-url: url('${defLogoDark}'); --top-menu-color: #7B86C4; --top-menu-hover-color: #929CD4; --wx-color-primary: #5863A6; --wx-color-primary-border: #6672B8; --wx-color-primary-hover: #6874BA; --wx-color-primary-selected: rgba(123, 134, 196, 0.18); --wx-fm-select-background: rgba(123, 134, 196, 0.18); --wx-background: #1F2430; --wx-background-alt: #191D28; --wx-background-hover: #282E3D; --wx-fm-background: #151821; --bg-secondary: #1F2430; --bg-primary: #151821; --border-color: #32394B; --wx-border: 1px solid #32394B; --selected-text: #DCE0F5; --sidebar-shadow: 4px 0 16px rgba(0, 0, 0, 0.25);`
-      : `--logo-url: url('${defLogoLight}'); --top-menu-color: #46508A; --top-menu-hover-color: #5863A6; --wx-color-primary: #3D467A; --wx-color-primary-border: #3D467A; --wx-color-primary-hover: #5863A6; --wx-color-primary-selected: #E9ECF7; --wx-fm-select-background: #E9ECF7; --wx-background: #FFFFFF; --wx-background-alt: #F1F3F9; --wx-background-hover: #E9ECF5; --wx-fm-background: #F6F7FA; --bg-secondary: #FFFFFF; --bg-primary: #F6F7FA; --border-color: #D8DCE8; --wx-border: 1px solid #D8DCE8; --selected-text: #343C6B; --sidebar-shadow: 3px 0 14px rgba(22, 25, 37, 0.05);`,
+      ? `--logo-url: url('${defLogoDark}'); --sidebar-logo-align: ${logoAlign}; --top-menu-color: #7B86C4; --top-menu-hover-color: #929CD4; --wx-color-primary: #5863A6; --wx-color-primary-border: #6672B8; --wx-color-primary-hover: #6874BA; --wx-color-primary-selected: rgba(123, 134, 196, 0.18); --wx-fm-select-background: rgba(123, 134, 196, 0.18); --wx-background: #1F2430; --wx-background-alt: #191D28; --wx-background-hover: #282E3D; --wx-fm-background: #151821; --bg-secondary: #1F2430; --bg-primary: #151821; --border-color: #32394B; --wx-border: 1px solid #32394B; --selected-text: #DCE0F5; --sidebar-shadow: 4px 0 16px rgba(0, 0, 0, 0.25);`
+      : `--logo-url: url('${defLogoLight}'); --sidebar-logo-align: ${logoAlign}; --top-menu-color: #46508A; --top-menu-hover-color: #5863A6; --wx-color-primary: #3D467A; --wx-color-primary-border: #3D467A; --wx-color-primary-hover: #5863A6; --wx-color-primary-selected: #E9ECF7; --wx-fm-select-background: #E9ECF7; --wx-background: #FFFFFF; --wx-background-alt: #F1F3F9; --wx-background-hover: #E9ECF5; --wx-fm-background: #F6F7FA; --bg-secondary: #FFFFFF; --bg-primary: #F6F7FA; --border-color: #D8DCE8; --wx-border: 1px solid #D8DCE8; --selected-text: #343C6B; --sidebar-shadow: 3px 0 14px rgba(22, 25, 37, 0.05);`,
   };
 }
 

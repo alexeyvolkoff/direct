@@ -8553,16 +8553,18 @@ async function blobToBase64(blob) {
   }
   :global(.wx-toolbar .wx-left .wx-name) {
     margin-right: auto !important;
-    margin-left: 34px !important; /* Center with sidebar */
+    margin-left: 0 !important;
+    flex: 0 1 206px !important; /* 238px sidebar - 2 * 16px toolbar padding => exact center at x = 119px */
     font-size: 0 !important;
-    width: 152px;
+    width: 206px;
     height: 34px;
     display: flex;
     align-items: center;
+    justify-content: center;
     background-image: var(--logo-url);
     background-size: contain;
     background-repeat: no-repeat;
-    background-position: left center;
+    background-position: var(--sidebar-logo-align, center) center;
     transform: translateY(1px);
   }
 
