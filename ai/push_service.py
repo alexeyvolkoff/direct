@@ -433,7 +433,7 @@ def _send_single_native_push_sync(sub_entry: dict[str, Any], payload_obj: dict[s
     relay_body = {
         "platform": platform,
         "token": token,
-        "title": payload_obj.get("title") or "On My Disk",
+        "title": payload_obj.get("title") or "Disk Direct",
         "body": payload_obj.get("body") or "",
         "image": image_url,
         "tag": payload_obj.get("tag") or "",
@@ -548,7 +548,7 @@ async def send_custom_push(
 
         payload_obj: dict[str, Any] = {
             "type": "custom_push",
-            "title": title or "On My Disk",
+            "title": title or "Disk Direct",
             "body": body or "",
             "icon": icon or "/customtheme/onmydisk.svg",
             "badge": badge or "/customtheme/onmydisk.svg",

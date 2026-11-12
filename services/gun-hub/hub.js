@@ -590,17 +590,17 @@ async function handleShareMeta(req, res) {
       description: 'This share is password-protected.',
       isDir: !!data.isDir,
       hasCover: false,
-      ownerName: data.ownerName || 'OMD User',
+      ownerName: data.ownerName || 'Disk Direct User',
       protected: true,
     });
   }
 
-  const title       = data.title || data.name || 'Shared on OnMyDisk';
+  const title       = data.title || data.name || 'Shared on Disk Direct';
   const description = data.description ||
     (data.isDir ? `Shared folder "${title}"` : `Shared file "${title}"`) +
-    ' via On My Disk P2P storage';
+    ' via Disk Direct P2P storage';
   const hasCover    = !!(data.hasCover || data.customAttributes?.cover || data.customAttributes?.preview);
-  const ownerName   = data.ownerName || 'OMD User';
+  const ownerName   = data.ownerName || 'Disk Direct User';
   const mimeType    = data.mimeType || '';
   const isDir       = !!(data.isDir || data.type === 'folder');
 
@@ -2527,7 +2527,7 @@ async function handleNativePushSend(req, res) {
 
   const platform = String(body?.platform || '').toLowerCase().trim();
   const token = String(body?.token || '').trim();
-  const title = String(body?.title || 'On My Disk');
+  const title = String(body?.title || 'Disk Direct');
   const textBody = String(body?.body || '');
   const image = String(body?.image || '').trim();
   const tag = String(body?.tag || '').trim();

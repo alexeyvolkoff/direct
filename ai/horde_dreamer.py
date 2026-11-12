@@ -1661,7 +1661,7 @@ HORDE_CONSOLE_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>OnMyChat · AI Horde Dreamer Worker</title>
+<title>AI Horde Dreamer Worker</title>
 <style>
   :root {
     --bg: #0d1117;
@@ -1777,7 +1777,7 @@ HORDE_CONSOLE_HTML = """<!DOCTYPE html>
     <div class="card">
       <h2>Worker Settings & Modal Krea 2 Cap</h2>
       <label>Worker Name</label>
-      <input type="text" id="workerName" placeholder="OnMyChat-Dreamer">
+      <input type="text" id="workerName" placeholder="Direct-Dreamer">
       <label>AI Horde Worker API Key</label>
       <input type="password" id="apiKey" placeholder="Leave unchanged or paste new API key">
       <label>Krea 2 (Modal) Daily Generation Limit (0 = off, 10 = max 10/day)</label>
