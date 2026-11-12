@@ -51,7 +51,7 @@
   "ai_assistant": "Assistente AI",
   "ai_index": "Indice dell'intelligenza artificiale",
   "ai_node": "Nodo IA",
-  "ai_node_auto": "Auto (nodo IA personale)",
+  "ai_node_auto": "Auto (nodo personale o fallback pubblico)",
   "ai_node_custom": "Specificato...",
   "ai_node_desc": "Scegli il nodo IA a cui connettere le chat: il tuo nodo personale o quello pubblico.",
   "ai_node_public_selected": "Connesso al nodo pubblico di AI Assistant.",

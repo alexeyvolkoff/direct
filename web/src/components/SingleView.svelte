@@ -20,12 +20,17 @@
   import { getViewerSettings } from "../lib/viewer-settings.js";
   import { isCameraRollFolder, isImageOrVideo, isVideoFile, formatDuration, isIgnoredFile } from "../lib/svar-filemanager/components/CameraRoll/media-utils.js";
   import { resolveAppMode, APP_MODE_CHAT } from "../lib/app-mode.js";
+  import { gatewayConfig } from "../lib/gateway-config.js";
 
   $: isChatDomain = resolveAppMode() === APP_MODE_CHAT;
-  $: brandName = isChatDomain ? "AI Assistant" : "Disk Direct";
+  $: brandName = isChatDomain
+    ? "AI Assistant"
+    : ($gatewayConfig?.brandName || "Disk Direct");
   $: brandLogoSrc = isChatDomain
     ? (isDarkTheme ? "/customtheme/logo-chat.svg" : "/customtheme/logo-chat-dark.svg")
-    : (isDarkTheme ? "/img/logo.svg" : "/img/logo-dark.svg");
+    : (isDarkTheme
+        ? ($gatewayConfig?.skin?.logoDark || "/img/logo.svg")
+        : ($gatewayConfig?.skin?.logoLight || "/img/logo-dark.svg"));
 
   export let shareData = null; // { name, path, isDir, mimeType, size, ownerName, linkId }
   export let isDarkTheme = false;

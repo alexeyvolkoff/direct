@@ -51,7 +51,7 @@
   "ai_assistant": "AI 助理",
   "ai_index": "AI 指數",
   "ai_node": "AI 節點",
-  "ai_node_auto": "自動（專屬 AI 節點）",
+  "ai_node_auto": "自動（優先專屬節點，備援至公共節點）",
   "ai_node_custom": "指定...",
   "ai_node_desc": "選擇聊天連線的 AI 節點：您自己的專屬節點或公共節點。",
   "ai_node_public_selected": "已連線到 AI Assistant 公共節點。",

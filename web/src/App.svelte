@@ -214,7 +214,9 @@
   $: brandLogoSrc = appMode === APP_MODE_CHAT
     ? (isDarkTheme ? "/customtheme/logo-chat.svg" : "/customtheme/logo-chat-dark.svg")
     : (brandLogoBroken
-        ? (isDarkTheme ? "/img/logo.svg" : "/img/logo-dark.svg")
+        ? ($gatewayConfig?.skin?.preset === "omd-classic"
+            ? (isDarkTheme ? "/customtheme/logo-omd.svg" : "/customtheme/logo-omd-dark.svg")
+            : (isDarkTheme ? "/img/logo.svg" : "/img/logo-dark.svg"))
         : (isDarkTheme ? ($gatewayConfig?.skin?.logoDark || "/img/logo.svg") : ($gatewayConfig?.skin?.logoLight || "/img/logo-dark.svg")));
   $: if (typeof document !== "undefined" && !isSharedRoute) {
     document.title = appMode === APP_MODE_CHAT
@@ -8267,7 +8269,7 @@ async function blobToBase64(blob) {
     --bg-primary: #F6F7FA !important;
     --border-color: #D8DCE8 !important;
     --selected-text: #343C6B !important;
-    --logo-url: url('/img/logo-dark.svg') !important;
+    --logo-url: url('/img/logo-dark.svg');
   }
   :global(.wx-willow-dark-theme) {
     --top-menu-color: #7B86C4;
@@ -8285,7 +8287,7 @@ async function blobToBase64(blob) {
     --bg-primary: #151821;
     --border-color: #32394B;
     --selected-text: #DCE0F5;
-    --logo-url: url('/img/logo.svg') !important;
+    --logo-url: url('/img/logo.svg');
   }
 
   /* Custom wxi-terminal menu icon: masked with the terminal SVG above */

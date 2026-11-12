@@ -218,5 +218,21 @@ export function isOnMyChatDomain() {
 }
 
 export function getDomainBrandTitle() {
-  return isOnMyChatDomain() ? "AI Assistant Direct" : "Disk Direct";
+  if (isOnMyChatDomain()) return "AI Assistant Direct";
+  if (typeof window !== "undefined") {
+    try {
+      const raw = window.localStorage?.getItem("omd_active_gateway_v1");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.brandName && typeof parsed.brandName === "string") {
+          return parsed.brandName;
+        }
+      }
+    } catch (_) {}
+    const host = String(window.location?.hostname || "").toLowerCase();
+    if (host === "onmydisk.net" || host.endsWith(".onmydisk.net") || host === "onmydisk.com" || host.endsWith(".onmydisk.com")) {
+      return "On My Disk";
+    }
+  }
+  return "Disk Direct";
 }

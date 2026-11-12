@@ -51,7 +51,7 @@
   "ai_assistant": "Yapay Zeka Asistanı",
   "ai_index": "YZ İndeksi",
   "ai_node": "Yapay Zeka Düğümü",
-  "ai_node_auto": "Otomatik (kendi YZ düğümünüz)",
+  "ai_node_auto": "Otomatik (kendi düğümünüz, yedek genel düğüm)",
   "ai_node_custom": "Belirtilen...",
   "ai_node_desc": "Sohbetlerinizin bağlanacağı yapay zeka düğümünü seçin: kendi düğümünüz veya genel düğüm.",
   "ai_node_public_selected": "AI Assistant Genel Düğümüne bağlandı.",

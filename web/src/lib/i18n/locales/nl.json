@@ -51,7 +51,7 @@
   "ai_assistant": "AI Assistent",
   "ai_index": "AI-index",
   "ai_node": "AI-node",
-  "ai_node_auto": "Automatisch (eigen AI-node)",
+  "ai_node_auto": "Automatisch (eigen node of terugval op openbaar)",
   "ai_node_custom": "Opgegeven...",
   "ai_node_desc": "Kies de AI-node waarmee uw chats verbinding maken: uw eigen node of de openbare node.",
   "ai_node_public_selected": "Verbonden met openbare AI Assistant-node.",

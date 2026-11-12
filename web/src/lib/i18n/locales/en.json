@@ -60,7 +60,7 @@
   "ai_mode_hybrid": "Hybrid (AI Horde for fun mode)",
   "ai_mode_local": "Local (all inference on this node)",
   "ai_node": "AI Node",
-  "ai_node_auto": "Auto (own AI node)",
+  "ai_node_auto": "Auto (own node, fallback to public)",
   "ai_node_custom": "Specified...",
   "ai_node_desc": "Choose the AI node your chats connect to: your own node or the public one.",
   "ai_node_public_selected": "Connected to AI Assistant Public Node.",

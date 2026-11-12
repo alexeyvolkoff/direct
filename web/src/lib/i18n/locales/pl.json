@@ -51,7 +51,7 @@
   "ai_assistant": "Asystent AI",
   "ai_index": "Indeks AI",
   "ai_node": "Węzeł AI",
-  "ai_node_auto": "Auto (własny węzeł AI)",
+  "ai_node_auto": "Auto (własny węzeł lub zapasowy publiczny)",
   "ai_node_custom": "Określony...",
   "ai_node_desc": "Wybierz węzeł AI, z którym łączą się Twoje czaty: własny czy publiczny.",
   "ai_node_public_selected": "Połączono z publicznym węzłem AI Assistant.",

@@ -51,7 +51,7 @@
   "ai_assistant": "AI asistent",
   "ai_index": "AI indeks",
   "ai_node": "AI čvor",
-  "ai_node_auto": "Automatski (vlastiti AI čvor)",
+  "ai_node_auto": "Automatski (vlastiti čvor ili javna pričuva)",
   "ai_node_custom": "Navedeni...",
   "ai_node_desc": "Odaberite AI čvor s kojim se vaši razgovori povezuju: vaš vlastiti čvor ili javni.",
   "ai_node_public_selected": "Povezano s javnim AI Assistant čvorom.",

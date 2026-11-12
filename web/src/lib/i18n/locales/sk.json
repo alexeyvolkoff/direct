@@ -51,7 +51,7 @@
   "ai_assistant": "AI asistent",
   "ai_index": "AI Index",
   "ai_node": "Uzol AI",
-  "ai_node_auto": "Auto (vlastný uzol AI)",
+  "ai_node_auto": "Auto (vlastný uzol alebo záložný verejný)",
   "ai_node_custom": "Zadaný...",
   "ai_node_desc": "Vyberte uzol AI, ku ktorému sa pripájajú vaše chaty: váš vlastný alebo verejný.",
   "ai_node_public_selected": "Pripojené k verejnému uzlu AI Assistant.",

@@ -51,7 +51,7 @@
   "ai_assistant": "Assistente de IA",
   "ai_index": "Índice de IA",
   "ai_node": "Nó de IA",
-  "ai_node_auto": "Automático (nó de IA próprio)",
+  "ai_node_auto": "Automático (nó próprio ou fallback público)",
   "ai_node_custom": "Especificado...",
   "ai_node_desc": "Escolha o nó de IA ao qual os seus chats se conectam: o seu próprio nó ou o nó público.",
   "ai_node_public_selected": "Conectado ao nó público AI Assistant.",

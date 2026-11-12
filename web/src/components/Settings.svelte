@@ -3181,7 +3181,7 @@
                     value={aiNodeSelectValue}
                     on:change={onAiNodeChange}
                   >
-                    <option value="auto">{$_("ai_node_auto", {}, "Auto (own AI node)")}</option>
+                    <option value="auto">{$_("ai_node_auto", {}, "Auto (own node, fallback to public)")}</option>
                     {#if aiNodeDeviceOptions.length > 0}
                       {#each aiNodeDeviceOptions as opt}
                         <option value={opt.value}>{opt.label}</option>

@@ -51,7 +51,7 @@
   "ai_assistant": "Assistant IA",
   "ai_index": "Indice IA",
   "ai_node": "Nœud d'IA",
-  "ai_node_auto": "Auto (nœud d'IA propre)",
+  "ai_node_auto": "Auto (nœud personnel, repli sur public)",
   "ai_node_custom": "Spécifié...",
   "ai_node_desc": "Choisissez le nœud d'IA auquel vos discussions se connectent : votre propre nœud ou le nœud public.",
   "ai_node_public_selected": "Connecté au nœud public AI Assistant.",

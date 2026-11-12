@@ -57,8 +57,27 @@
         var h = String((window.location && window.location.hostname) || "").toLowerCase();
         var m = String(window.__omdAppMode || "").toLowerCase();
         var isChat = (m === "chat" || h === "aiassistant.direct" || h.endsWith(".aiassistant.direct") || h.indexOf("chat.") === 0 || h.indexOf("ai.") === 0 || h === "onmychat.com" || h.endsWith(".onmychat.com"));
-        var fallbackBrand = isChat ? "AI Assistant Direct" : "Disk Direct";
+        var isOmd = !isChat && (h === "onmydisk.net" || h.endsWith(".onmydisk.net") || h === "onmydisk.com" || h.endsWith(".onmydisk.com"));
+        var storedBrand = "";
+        var storedFavicon = "";
+        if (!isChat) {
+          try {
+            var rawGw = window.localStorage && window.localStorage.getItem("omd_active_gateway_v1");
+            if (rawGw) {
+              var gw = JSON.parse(rawGw);
+              if (gw && typeof gw === "object") {
+                if (gw.brandName) storedBrand = String(gw.brandName);
+                if (gw.skin && gw.skin.preset === "omd-classic") isOmd = true;
+                if (gw.skin && gw.skin.favicon) storedFavicon = String(gw.skin.favicon);
+              }
+            }
+          } catch (_) {}
+        }
+        var fallbackBrand = isChat ? "AI Assistant Direct" : (storedBrand || (isOmd ? "On My Disk" : "Disk Direct"));
         document.documentElement.classList.add(isChat ? "skin-chat" : "skin-files");
+        if (isOmd) {
+          document.documentElement.classList.add("gateway-skin-omd");
+        }
         if (!document.title || document.title.indexOf("{") !== -1) {
           document.title = fallbackBrand;
         }
@@ -81,6 +100,26 @@
           if (p192) p192.setAttribute("href", "/customtheme/icon-chat-192.png");
           var p512 = document.getElementById("omd-png512-icon");
           if (p512) p512.setAttribute("href", "/customtheme/icon-chat-512.png");
+        } else if (isOmd || storedFavicon) {
+          var omdFav = storedFavicon || "/customtheme/favicon-omd.svg";
+          if (isOmd) {
+            var tcOmd = document.querySelector('meta[name="theme-color"]');
+            if (tcOmd) tcOmd.setAttribute("content", "#202A2F");
+            var mfOmd = document.getElementById("omd-manifest");
+            if (mfOmd) mfOmd.setAttribute("href", "/manifest-omd.json");
+          }
+          var siOmd = document.getElementById("omd-shortcut-icon");
+          if (siOmd) siOmd.setAttribute("href", omdFav);
+          var svgIOmd = document.getElementById("omd-svg-icon");
+          if (svgIOmd) svgIOmd.setAttribute("href", omdFav);
+          if (isOmd) {
+            var apIOmd = document.getElementById("omd-apple-icon");
+            if (apIOmd) apIOmd.setAttribute("href", "/customtheme/icon-omd-192.png");
+            var p192Omd = document.getElementById("omd-png192-icon");
+            if (p192Omd) p192Omd.setAttribute("href", "/customtheme/icon-omd-192.png");
+            var p512Omd = document.getElementById("omd-png512-icon");
+            if (p512Omd) p512Omd.setAttribute("href", "/customtheme/icon-omd-512.png");
+          }
         }
       })();
     </script>

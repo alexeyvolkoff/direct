@@ -1,0 +1,45 @@
+{
+  "id": "/",
+  "name": "On My Disk",
+  "short_name": "On My Disk",
+  "description": "Private Peer-to-Peer Cloud Storage",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#101C22",
+  "theme_color": "#202A2F",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/customtheme/icon-omd-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/customtheme/icon-omd-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/customtheme/icon-omd-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/customtheme/icon-omd-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/customtheme/favicon-omd.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
+

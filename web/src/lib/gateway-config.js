@@ -162,8 +162,31 @@ export function buildManifestForOrigin(origin, rawManifest = null) {
     ? presetRaw
     : (isOmd ? "omd-classic" : "cool-iris");
 
-  const defaultLogoDark = `${cleanOrigin}/img/logo.svg`;
-  const defaultLogoLight = `${cleanOrigin}/img/logo-dark.svg`;
+  const omdAssetBase = isLocalBrowserHost() ? DEFAULT_GATEWAY_ORIGIN : "";
+  const defaultLogoDark = preset === "omd-classic"
+    ? `${omdAssetBase}/customtheme/logo-omd.svg`
+    : `${cleanOrigin}/img/logo.svg`;
+  const defaultLogoLight = preset === "omd-classic"
+    ? `${omdAssetBase}/customtheme/logo-omd-dark.svg`
+    : `${cleanOrigin}/img/logo-dark.svg`;
+  const defaultFavicon = preset === "omd-classic"
+    ? `${omdAssetBase}/customtheme/favicon-omd.svg`
+    : `${cleanOrigin}/favicon.ico`;
+
+  // On shared web/dist builds, generic /img/logo*.svg and /customtheme/onmydisk.svg carry
+  // Disk Direct assets. For omd-classic gateways, map those generic paths to dedicated OMD assets.
+  const rawLogoDark = String(rawManifest?.skin?.logoDark || "").trim();
+  const rawLogoLight = String(rawManifest?.skin?.logoLight || "").trim();
+  const rawFavicon = String(rawManifest?.skin?.favicon || "").trim();
+  const effectiveRawLogoDark = (preset === "omd-classic" && /\/img\/logo\.svg(\?.*)?$/i.test(rawLogoDark))
+    ? ""
+    : rawLogoDark;
+  const effectiveRawLogoLight = (preset === "omd-classic" && /\/img\/logo-dark\.svg(\?.*)?$/i.test(rawLogoLight))
+    ? ""
+    : rawLogoLight;
+  const effectiveRawFavicon = (preset === "omd-classic" && /(\/customtheme\/onmydisk\.svg|\/favicon\.ico)(\?.*)?$/i.test(rawFavicon))
+    ? ""
+    : rawFavicon;
 
   const rawTokens = (rawManifest?.skin?.tokens && typeof rawManifest.skin.tokens === "object")
     ? rawManifest.skin.tokens
@@ -193,9 +216,9 @@ export function buildManifestForOrigin(origin, rawManifest = null) {
     mcpPresets: sanitizeMcpPresets(rawManifest?.mcpPresets, cleanOrigin),
     skin: {
       preset,
-      logoDark: sanitizeUrl(rawManifest?.skin?.logoDark, cleanOrigin, defaultLogoDark),
-      logoLight: sanitizeUrl(rawManifest?.skin?.logoLight, cleanOrigin, defaultLogoLight),
-      favicon: sanitizeUrl(rawManifest?.skin?.favicon, cleanOrigin, `${cleanOrigin}/favicon.ico`),
+      logoDark: sanitizeUrl(effectiveRawLogoDark, cleanOrigin, defaultLogoDark),
+      logoLight: sanitizeUrl(effectiveRawLogoLight, cleanOrigin, defaultLogoLight),
+      favicon: sanitizeUrl(effectiveRawFavicon, cleanOrigin, defaultFavicon),
       tokens: cleanTokens,
     },
   };
@@ -444,8 +467,21 @@ export async function fetchGatewayManifest(inputUrl) {
   return buildManifestForOrigin(origin, null);
 }
 
+function sanitizeCssUrl(val, fallback = "") {
+  const raw = typeof val === "string" && val.trim() ? val.trim() : fallback;
+  return String(raw || "").replace(/["'()\\\r\n]/g, "");
+}
+
+function resolveFaviconMime(url) {
+  const clean = String(url || "").split("?")[0].toLowerCase();
+  if (clean.endsWith(".svg")) return "image/svg+xml";
+  if (clean.endsWith(".png")) return "image/png";
+  if (clean.endsWith(".webp")) return "image/webp";
+  return "image/x-icon";
+}
+
 /**
- * Applies the active gateway's CSS skin classes & whitelisted custom tokens to `<html>`.
+ * Applies the active gateway's CSS skin classes, favicon/manifest links, & whitelisted custom tokens to `<html>`.
  * Strictly no-ops in chat mode (`.skin-chat` / `aiassistant.direct`).
  */
 export function applyGatewaySkinToDom(gateway = getActiveGateway()) {
@@ -489,6 +525,52 @@ export function applyGatewaySkinToDom(gateway = getActiveGateway()) {
       root.style.setProperty("--top-menu-hover-color", accentHover);
     }
   }
+
+  // Update document favicons, PWA manifest, and theme-color to match gateway skin
+  const omdAssetBase = isLocalBrowserHost() ? DEFAULT_GATEWAY_ORIGIN : "";
+  const defaultFav = preset === "omd-classic"
+    ? `${omdAssetBase}/customtheme/favicon-omd.svg`
+    : "/customtheme/onmydisk.svg";
+  const favUrl = sanitizeCssUrl(gateway?.skin?.favicon, defaultFav) || defaultFav;
+  const favMime = resolveFaviconMime(favUrl);
+  const icon192 = preset === "omd-classic"
+    ? `${omdAssetBase}/customtheme/icon-omd-192.png`
+    : (preset === "custom" && gateway?.skin?.favicon ? favUrl : "/icon-192.png");
+  const icon512 = preset === "omd-classic"
+    ? `${omdAssetBase}/customtheme/icon-omd-512.png`
+    : (preset === "custom" && gateway?.skin?.favicon ? favUrl : "/icon-512.png");
+  const themeColor = preset === "omd-classic"
+    ? "#202A2F"
+    : (sanitizeColor(gateway?.skin?.tokens?.["--bg-secondary"]) || "#1F2430");
+
+  const tcEl = document.querySelector('meta[name="theme-color"]');
+  if (tcEl) tcEl.setAttribute("content", themeColor);
+
+  const appleTitleEl = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+  if (appleTitleEl && gateway?.shortName) {
+    appleTitleEl.setAttribute("content", gateway.shortName);
+  }
+
+  if (typeof window !== "undefined" && !Capacitor.isNativePlatform()) {
+    const mfEl = document.getElementById("omd-manifest");
+    if (mfEl) {
+      mfEl.setAttribute("href", preset === "omd-classic" ? "/manifest-omd.json" : "/manifest.json");
+    }
+  }
+
+  const shortcutEl = document.getElementById("omd-shortcut-icon");
+  if (shortcutEl) shortcutEl.setAttribute("href", favUrl);
+  const svgIconEl = document.getElementById("omd-svg-icon");
+  if (svgIconEl) {
+    svgIconEl.setAttribute("href", favUrl);
+    svgIconEl.setAttribute("type", favMime);
+  }
+  const appleIconEl = document.getElementById("omd-apple-icon");
+  if (appleIconEl) appleIconEl.setAttribute("href", icon192);
+  const png192El = document.getElementById("omd-png192-icon");
+  if (png192El) png192El.setAttribute("href", icon192);
+  const png512El = document.getElementById("omd-png512-icon");
+  if (png512El) png512El.setAttribute("href", icon512);
 }
 
 /**
@@ -496,44 +578,51 @@ export function applyGatewaySkinToDom(gateway = getActiveGateway()) {
  */
 export function getGatewayBrandPalette(gateway = getActiveGateway(), isDarkTheme = true) {
   const preset = gateway?.skin?.preset || "cool-iris";
+  const omdAssetBase = isLocalBrowserHost() ? DEFAULT_GATEWAY_ORIGIN : "";
 
   if (preset === "omd-classic") {
+    const logoDark = sanitizeCssUrl(gateway?.skin?.logoDark, `${omdAssetBase}/customtheme/logo-omd.svg`);
+    const logoLight = sanitizeCssUrl(gateway?.skin?.logoLight, `${omdAssetBase}/customtheme/logo-omd-dark.svg`);
     return {
       appIconColor: isDarkTheme ? "#37A9EF" : "#184562",
       brandColor: isDarkTheme ? "#2996CC" : "#184562",
       brandHoverColor: isDarkTheme ? "#37A9EF" : "#2996CC",
       fmInlineStyle: isDarkTheme
-        ? "--top-menu-color: #2996CC; --top-menu-hover-color: #37A9EF; --wx-color-primary: #2996CC; --wx-color-primary-border: #37A9EF; --wx-color-primary-hover: #37A9EF; --wx-color-primary-selected: rgba(41, 150, 204, 0.25); --wx-fm-select-background: rgba(41, 150, 204, 0.25); --wx-background: #202A2F; --wx-background-alt: #18242B; --wx-background-hover: #29363D; --wx-fm-background: #101C22; --bg-secondary: #202A2F; --bg-primary: #101C22; --border-color: #3D4F57; --wx-border: 1px solid #3D4F57; --selected-text: #D6EEFA; --sidebar-shadow: 4px 0 16px rgba(0, 0, 0, 0.25);"
-        : "--top-menu-color: #184562; --top-menu-hover-color: #2996CC; --wx-color-primary: #184562; --wx-color-primary-border: #184562; --wx-color-primary-hover: #2996CC; --wx-color-primary-selected: #E4F1FA; --wx-fm-select-background: #E4F1FA; --wx-background: #FFFFFF; --wx-background-alt: #F4F8FA; --wx-background-hover: #ECF0F2; --wx-fm-background: #F6F8F9; --bg-secondary: #FFFFFF; --bg-primary: #F6F8F9; --border-color: #D6DDE1; --wx-border: 1px solid #D6DDE1; --selected-text: #184562; --sidebar-shadow: 3px 0 14px rgba(0, 0, 0, 0.05);",
+        ? `--logo-url: url('${logoDark}'); --top-menu-color: #2996CC; --top-menu-hover-color: #37A9EF; --wx-color-primary: #2996CC; --wx-color-primary-border: #37A9EF; --wx-color-primary-hover: #37A9EF; --wx-color-primary-selected: rgba(41, 150, 204, 0.25); --wx-fm-select-background: rgba(41, 150, 204, 0.25); --wx-background: #202A2F; --wx-background-alt: #18242B; --wx-background-hover: #29363D; --wx-fm-background: #101C22; --bg-secondary: #202A2F; --bg-primary: #101C22; --border-color: #3D4F57; --wx-border: 1px solid #3D4F57; --selected-text: #D6EEFA; --sidebar-shadow: 4px 0 16px rgba(0, 0, 0, 0.25);`
+        : `--logo-url: url('${logoLight}'); --top-menu-color: #184562; --top-menu-hover-color: #2996CC; --wx-color-primary: #184562; --wx-color-primary-border: #184562; --wx-color-primary-hover: #2996CC; --wx-color-primary-selected: #E4F1FA; --wx-fm-select-background: #E4F1FA; --wx-background: #FFFFFF; --wx-background-alt: #F4F8FA; --wx-background-hover: #ECF0F2; --wx-fm-background: #F6F8F9; --bg-secondary: #FFFFFF; --bg-primary: #F6F8F9; --border-color: #D6DDE1; --wx-border: 1px solid #D6DDE1; --selected-text: #184562; --sidebar-shadow: 3px 0 14px rgba(0, 0, 0, 0.05);`,
     };
   }
 
-  if (preset === "custom" && gateway?.skin?.tokens) {
-    const t = gateway.skin.tokens;
+  if (preset === "custom") {
+    const t = gateway?.skin?.tokens || {};
     const darkAcc = sanitizeColor(t.accentDark || t.accent || t["--accent"], "#7B86C4");
     const darkHover = sanitizeColor(t.accentHoverDark || t.accentHover || t["--accent-hover"], darkAcc);
     const lightAcc = sanitizeColor(t.accentLight || t.accent || t["--accent"], "#46508A");
     const lightHover = sanitizeColor(t.accentHoverLight || t.accentHover || t["--accent-hover"], lightAcc);
     const c = isDarkTheme ? darkAcc : lightAcc;
     const ch = isDarkTheme ? darkHover : lightHover;
+    const logoDark = sanitizeCssUrl(gateway?.skin?.logoDark, "/img/logo.svg");
+    const logoLight = sanitizeCssUrl(gateway?.skin?.logoLight, "/img/logo-dark.svg");
     return {
       appIconColor: c,
       brandColor: c,
       brandHoverColor: ch,
       fmInlineStyle: isDarkTheme
-        ? `--top-menu-color: ${c}; --top-menu-hover-color: ${ch}; --wx-color-primary: ${c}; --wx-color-primary-border: ${c}; --wx-color-primary-hover: ${ch}; --wx-color-primary-selected: color-mix(in srgb, ${c} 22%, transparent); --wx-fm-select-background: color-mix(in srgb, ${c} 22%, transparent); --wx-background: #1F2430; --wx-background-alt: #191D28; --wx-background-hover: #282E3D; --wx-fm-background: #151821; --bg-secondary: #1F2430; --bg-primary: #151821; --border-color: #32394B; --wx-border: 1px solid #32394B; --selected-text: #EEF0F6; --sidebar-shadow: 4px 0 16px rgba(0, 0, 0, 0.25);`
-        : `--top-menu-color: ${c}; --top-menu-hover-color: ${ch}; --wx-color-primary: ${c}; --wx-color-primary-border: ${c}; --wx-color-primary-hover: ${ch}; --wx-color-primary-selected: color-mix(in srgb, ${c} 14%, #FFFFFF); --wx-fm-select-background: color-mix(in srgb, ${c} 14%, #FFFFFF); --wx-background: #FFFFFF; --wx-background-alt: #F1F3F9; --wx-background-hover: #E9ECF5; --wx-fm-background: #F6F7FA; --bg-secondary: #FFFFFF; --bg-primary: #F6F7FA; --border-color: #D8DCE8; --wx-border: 1px solid #D8DCE8; --selected-text: ${c}; --sidebar-shadow: 3px 0 14px rgba(22, 25, 37, 0.05);`,
+        ? `--logo-url: url('${logoDark}'); --top-menu-color: ${c}; --top-menu-hover-color: ${ch}; --wx-color-primary: ${c}; --wx-color-primary-border: ${c}; --wx-color-primary-hover: ${ch}; --wx-color-primary-selected: color-mix(in srgb, ${c} 22%, transparent); --wx-fm-select-background: color-mix(in srgb, ${c} 22%, transparent); --wx-background: #1F2430; --wx-background-alt: #191D28; --wx-background-hover: #282E3D; --wx-fm-background: #151821; --bg-secondary: #1F2430; --bg-primary: #151821; --border-color: #32394B; --wx-border: 1px solid #32394B; --selected-text: #EEF0F6; --sidebar-shadow: 4px 0 16px rgba(0, 0, 0, 0.25);`
+        : `--logo-url: url('${logoLight}'); --top-menu-color: ${c}; --top-menu-hover-color: ${ch}; --wx-color-primary: ${c}; --wx-color-primary-border: ${c}; --wx-color-primary-hover: ${ch}; --wx-color-primary-selected: color-mix(in srgb, ${c} 14%, #FFFFFF); --wx-fm-select-background: color-mix(in srgb, ${c} 14%, #FFFFFF); --wx-background: #FFFFFF; --wx-background-alt: #F1F3F9; --wx-background-hover: #E9ECF5; --wx-fm-background: #F6F7FA; --bg-secondary: #FFFFFF; --bg-primary: #F6F7FA; --border-color: #D8DCE8; --wx-border: 1px solid #D8DCE8; --selected-text: ${c}; --sidebar-shadow: 3px 0 14px rgba(22, 25, 37, 0.05);`,
     };
   }
 
   // Default: Disk Direct "cool-iris" (Sketch #1)
+  const defLogoDark = sanitizeCssUrl(gateway?.skin?.logoDark, "/img/logo.svg");
+  const defLogoLight = sanitizeCssUrl(gateway?.skin?.logoLight, "/img/logo-dark.svg");
   return {
     appIconColor: isDarkTheme ? "#8691CC" : "#46508A",
     brandColor: isDarkTheme ? "#7B86C4" : "#46508A",
     brandHoverColor: isDarkTheme ? "#929CD4" : "#5863A6",
     fmInlineStyle: isDarkTheme
-      ? "--top-menu-color: #7B86C4; --top-menu-hover-color: #929CD4; --wx-color-primary: #5863A6; --wx-color-primary-border: #6672B8; --wx-color-primary-hover: #6874BA; --wx-color-primary-selected: rgba(123, 134, 196, 0.18); --wx-fm-select-background: rgba(123, 134, 196, 0.18); --wx-background: #1F2430; --wx-background-alt: #191D28; --wx-background-hover: #282E3D; --wx-fm-background: #151821; --bg-secondary: #1F2430; --bg-primary: #151821; --border-color: #32394B; --wx-border: 1px solid #32394B; --selected-text: #DCE0F5; --sidebar-shadow: 4px 0 16px rgba(0, 0, 0, 0.25);"
-      : "--top-menu-color: #46508A; --top-menu-hover-color: #5863A6; --wx-color-primary: #3D467A; --wx-color-primary-border: #3D467A; --wx-color-primary-hover: #5863A6; --wx-color-primary-selected: #E9ECF7; --wx-fm-select-background: #E9ECF7; --wx-background: #FFFFFF; --wx-background-alt: #F1F3F9; --wx-background-hover: #E9ECF5; --wx-fm-background: #F6F7FA; --bg-secondary: #FFFFFF; --bg-primary: #F6F7FA; --border-color: #D8DCE8; --wx-border: 1px solid #D8DCE8; --selected-text: #343C6B; --sidebar-shadow: 3px 0 14px rgba(22, 25, 37, 0.05);",
+      ? `--logo-url: url('${defLogoDark}'); --top-menu-color: #7B86C4; --top-menu-hover-color: #929CD4; --wx-color-primary: #5863A6; --wx-color-primary-border: #6672B8; --wx-color-primary-hover: #6874BA; --wx-color-primary-selected: rgba(123, 134, 196, 0.18); --wx-fm-select-background: rgba(123, 134, 196, 0.18); --wx-background: #1F2430; --wx-background-alt: #191D28; --wx-background-hover: #282E3D; --wx-fm-background: #151821; --bg-secondary: #1F2430; --bg-primary: #151821; --border-color: #32394B; --wx-border: 1px solid #32394B; --selected-text: #DCE0F5; --sidebar-shadow: 4px 0 16px rgba(0, 0, 0, 0.25);`
+      : `--logo-url: url('${defLogoLight}'); --top-menu-color: #46508A; --top-menu-hover-color: #5863A6; --wx-color-primary: #3D467A; --wx-color-primary-border: #3D467A; --wx-color-primary-hover: #5863A6; --wx-color-primary-selected: #E9ECF7; --wx-fm-select-background: #E9ECF7; --wx-background: #FFFFFF; --wx-background-alt: #F1F3F9; --wx-background-hover: #E9ECF5; --wx-fm-background: #F6F7FA; --bg-secondary: #FFFFFF; --bg-primary: #F6F7FA; --border-color: #D8DCE8; --wx-border: 1px solid #D8DCE8; --selected-text: #343C6B; --sidebar-shadow: 3px 0 14px rgba(22, 25, 37, 0.05);`,
   };
 }
 
@@ -563,7 +652,12 @@ export function resetGatewayToDefault() {
       window.localStorage.removeItem(ACTIVE_GATEWAY_STORAGE_KEY);
     } catch (_) {}
   }
-  const def = buildManifestForOrigin(DEFAULT_GATEWAY_ORIGIN, DEFAULT_GATEWAY);
+  const baseOrigin = (!isLocalBrowserHost() && typeof window !== "undefined" && window.location.origin)
+    ? window.location.origin
+    : DEFAULT_GATEWAY_ORIGIN;
+  const def = baseOrigin === DEFAULT_GATEWAY_ORIGIN
+    ? buildManifestForOrigin(DEFAULT_GATEWAY_ORIGIN, DEFAULT_GATEWAY)
+    : buildManifestForOrigin(baseOrigin, null);
   _currentGateway = def;
   gatewayConfig.set(def);
   applyGatewaySkinToDom(def);
@@ -578,11 +672,32 @@ if (typeof document !== "undefined") {
   applyGatewaySkinToDom(_currentGateway);
 }
 
-// In a regular web browser (never on native mobile or localhost), hydrate optional
-// gateway-provided MCP presets from same-origin /.well-known/direct-gateway.json.
+// In a regular web browser (never on native mobile or localhost), hydrate gateway
+// manifest (skin, branding, relay URLs, MCP presets) from same-origin /.well-known/direct-gateway.json.
 if (typeof window !== "undefined" && !isLocalBrowserHost() && !Capacitor.isNativePlatform()) {
   const activeOrigin = _currentGateway?.isCustom ? _currentGateway.origin : window.location.origin;
-  if (activeOrigin === window.location.origin) {
+  if (activeOrigin === window.location.origin && resolveAppMode() !== APP_MODE_CHAT) {
+    fetch("/.well-known/direct-gateway.json", { method: "GET", cache: "no-cache", headers: { Accept: "application/json" } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((manifest) => {
+        if (!manifest || typeof manifest !== "object") return;
+        if (window.location.origin !== DEFAULT_GATEWAY_ORIGIN) {
+          const hydrated = buildManifestForOrigin(window.location.origin, manifest);
+          _currentGateway = hydrated;
+          gatewayConfig.set(hydrated);
+          applyGatewaySkinToDom(hydrated);
+          return;
+        }
+        if (Array.isArray(manifest.mcpPresets)) {
+          const presets = sanitizeMcpPresets(manifest.mcpPresets, window.location.origin);
+          if (presets.length > 0) {
+            _currentGateway = { ..._currentGateway, mcpPresets: presets };
+            gatewayConfig.set(_currentGateway);
+          }
+        }
+      })
+      .catch(() => {});
+  } else if (resolveAppMode() === APP_MODE_CHAT && window.location.origin) {
     fetch("/.well-known/direct-gateway.json", { method: "GET", cache: "no-cache", headers: { Accept: "application/json" } })
       .then((r) => (r.ok ? r.json() : null))
       .then((manifest) => {

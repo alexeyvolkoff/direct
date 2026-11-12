@@ -51,7 +51,7 @@
   "ai_assistant": "KI-Assistent",
   "ai_index": "KI-Index",
   "ai_node": "KI-Knoten",
-  "ai_node_auto": "Auto (eigener KI-Knoten)",
+  "ai_node_auto": "Auto (eigener Knoten, Fallback auf öffentlich)",
   "ai_node_custom": "Angegebene...",
   "ai_node_desc": "Wählen Sie den KI-Knoten, mit dem sich Ihre Chats verbinden: Ihren eigenen oder den öffentlichen Knoten.",
   "ai_node_public_selected": "Verbunden mit dem öffentlichen AI Assistant-Knoten.",

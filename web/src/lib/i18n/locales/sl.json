@@ -51,7 +51,7 @@
   "ai_assistant": "AI Asistent",
   "ai_index": "AI indeks",
   "ai_node": "Vozlišče AI",
-  "ai_node_auto": "Samodejno (lastno vozlišče AI)",
+  "ai_node_auto": "Samodejno (lastno vozlišče ali javna rezerva)",
   "ai_node_custom": "Navedeno...",
   "ai_node_desc": "Izberite vozlišče AI, s katerim se povezujejo vaši klepeti: lastno ali javno vozlišče.",
   "ai_node_public_selected": "Povezano z javnim vozliščem AI Assistant.",
