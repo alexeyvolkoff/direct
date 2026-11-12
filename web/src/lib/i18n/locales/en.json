@@ -917,6 +917,7 @@
   "onboarding_btn_finishing": "Saving...",
   "onboarding_btn_start_chat": "Start chatting in AI Assistant",
   "onboarding_btn_start_files": "Open Disk Direct files",
+  "onboarding_btn_open_workspace": "Open Workspace",
   "onboarding_congrats_subtitle": "Your personal decentralized workspace is successfully configured.",
   "onboarding_congrats_title": "Congratulations! You are all set",
   "onboarding_detected_lan": "Found on local network ({count})",

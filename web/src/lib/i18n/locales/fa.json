@@ -891,6 +891,7 @@
   "onboarding_btn_finishing": "در حال ذخیره...",
   "onboarding_btn_start_chat": "شروع گفتگو در AI Assistant",
   "onboarding_btn_start_files": "باز کردن فایل‌های Disk Direct",
+  "onboarding_btn_open_workspace": "باز کردن فضای کاری",
   "onboarding_congrats_subtitle": "فضای کاری غیرمتمرکز شخصی شما با موفقیت پیکربندی شد.",
   "onboarding_congrats_title": "تبریک! همه چیز آماده است",
   "onboarding_detected_lan": "در شبکه محلی یافت شد ({count})",

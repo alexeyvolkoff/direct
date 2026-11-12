@@ -891,6 +891,7 @@
   "onboarding_btn_finishing": "Ukladá sa...",
   "onboarding_btn_start_chat": "Začať konverzáciu v AI Assistant",
   "onboarding_btn_start_files": "Otvoriť súbory Disk Direct",
+  "onboarding_btn_open_workspace": "Otvoriť pracovný priestor",
   "onboarding_congrats_subtitle": "Váš osobný decentralizovaný pracovný priestor bol úspešne nakonfigurovaný.",
   "onboarding_congrats_title": "Gratulujeme! Všetko je pripravené",
   "onboarding_detected_lan": "Nájdené v lokálnej sieti ({count})",

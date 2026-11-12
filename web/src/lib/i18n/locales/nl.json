@@ -891,6 +891,7 @@
   "onboarding_btn_finishing": "Opslaan...",
   "onboarding_btn_start_chat": "Start gesprek in AI Assistant",
   "onboarding_btn_start_files": "Open Disk Direct-bestanden",
+  "onboarding_btn_open_workspace": "Werkruimte openen",
   "onboarding_congrats_subtitle": "Uw persoonlijke gedecentraliseerde werkruimte is succesvol geconfigureerd.",
   "onboarding_congrats_title": "Gefeliciteerd! Alles staat klaar",
   "onboarding_detected_lan": "Gevonden op lokaal netwerk ({count})",

@@ -896,6 +896,7 @@
   "onboarding_btn_finishing": "Enregistrement...",
   "onboarding_btn_start_chat": "Démarrer la discussion sur AI Assistant",
   "onboarding_btn_start_files": "Ouvrir les fichiers Disk Direct",
+  "onboarding_btn_open_workspace": "Ouvrir l'espace de travail",
   "onboarding_congrats_subtitle": "Votre espace de travail personnel et décentralisé a été configuré avec succès.",
   "onboarding_congrats_title": "Félicitations ! Tout est prêt",
   "onboarding_detected_lan": "Trouvé sur le réseau local ({count})",

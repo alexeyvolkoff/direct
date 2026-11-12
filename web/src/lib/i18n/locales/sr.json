@@ -891,6 +891,7 @@
   "onboarding_btn_finishing": "Чување...",
   "onboarding_btn_start_chat": "Започни разговор у AI Assistant",
   "onboarding_btn_start_files": "Отвори Disk Direct датотеке",
+  "onboarding_btn_open_workspace": "Отвори радни простор",
   "onboarding_congrats_subtitle": "Ваш лични децентрализовани радни простор је успешно конфигурисан.",
   "onboarding_congrats_title": "Честитамо! Све је спремно",
   "onboarding_detected_lan": "Пронађено у локалној мрежи ({count})",

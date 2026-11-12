@@ -891,6 +891,7 @@
   "onboarding_btn_finishing": "Збереження...",
   "onboarding_btn_start_chat": "Почати спілкування в AI Assistant",
   "onboarding_btn_start_files": "Відкрити Disk Direct з файлами",
+  "onboarding_btn_open_workspace": "Почати роботу",
   "onboarding_congrats_subtitle": "Ваш персональний децентралізований робочий простір успішно налаштовано.",
   "onboarding_congrats_title": "Вітаємо! Все готово до роботи",
   "onboarding_detected_lan": "Знайдено в локальній мережі ({count})",

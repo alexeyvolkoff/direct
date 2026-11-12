@@ -891,6 +891,7 @@
   "onboarding_btn_finishing": "保存中...",
   "onboarding_btn_start_chat": "开始在 AI Assistant 中交流",
   "onboarding_btn_start_files": "打开 Disk Direct 文件",
+  "onboarding_btn_open_workspace": "进入工作区",
   "onboarding_congrats_subtitle": "您的个人去中心化工作空间已成功配置。",
   "onboarding_congrats_title": "祝贺！一切准备就绪",
   "onboarding_detected_lan": "局域网中发现 ({count})",

@@ -891,6 +891,7 @@
   "onboarding_btn_finishing": "שומר...",
   "onboarding_btn_start_chat": "התחל שיחה ב-AI Assistant",
   "onboarding_btn_start_files": "פתח קבצי Disk Direct",
+  "onboarding_btn_open_workspace": "פתח סביבת עבודה",
   "onboarding_congrats_subtitle": "מרחב העבודה המבוזר האישי שלך הוגדר בהצלחה.",
   "onboarding_congrats_title": "מזל טוב! הכל מוכן",
   "onboarding_detected_lan": "נמצא ברשת המקומית ({count})",

@@ -8096,6 +8096,11 @@ async function blobToBase64(blob) {
   }}
   on:complete={() => {
     showOnboardingModal = false;
+    if (appMode === APP_MODE_CHAT) {
+      openChatsApp();
+    } else {
+      openFilesApp();
+    }
   }}
   on:open-chat={() => {
     showOnboardingModal = false;

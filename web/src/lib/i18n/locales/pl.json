@@ -891,6 +891,7 @@
   "onboarding_btn_finishing": "Zapisywanie...",
   "onboarding_btn_start_chat": "Rozpocznij rozmowę w AI Assistant",
   "onboarding_btn_start_files": "Otwórz pliki w Disk Direct",
+  "onboarding_btn_open_workspace": "Otwórz przestrzeń roboczą",
   "onboarding_congrats_subtitle": "Twoja osobista, zdecentralizowana przestrzeń robocza została pomyślnie skonfigurowana.",
   "onboarding_congrats_title": "Gratulacje! Wszystko gotowe",
   "onboarding_detected_lan": "Znaleziono w sieci lokalnej ({count})",

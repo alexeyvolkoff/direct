@@ -891,6 +891,7 @@
   "onboarding_btn_finishing": "Shranjevanje...",
   "onboarding_btn_start_chat": "Začni klepet v AI Assistant",
   "onboarding_btn_start_files": "Odpri datoteke Disk Direct",
+  "onboarding_btn_open_workspace": "Odpri delovni prostor",
   "onboarding_congrats_subtitle": "Vaš osebni decentralizirani delovni prostor je uspešno nastavljen.",
   "onboarding_congrats_title": "Čestitamo! Vse je pripravljeno",
   "onboarding_detected_lan": "Najdeno v lokalnem omrežju ({count})",

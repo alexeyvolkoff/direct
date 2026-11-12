@@ -896,6 +896,7 @@
   "onboarding_btn_finishing": "Wird gespeichert...",
   "onboarding_btn_start_chat": "Chatten in AI Assistant starten",
   "onboarding_btn_start_files": "Disk Direct-Dateien öffnen",
+  "onboarding_btn_open_workspace": "Arbeitsbereich öffnen",
   "onboarding_congrats_subtitle": "Ihr persönlicher dezentraler Arbeitsbereich wurde erfolgreich eingerichtet.",
   "onboarding_congrats_title": "Herzlichen Glückwunsch! Alles ist bereit",
   "onboarding_detected_lan": "Im lokalen Netzwerk gefunden ({count})",

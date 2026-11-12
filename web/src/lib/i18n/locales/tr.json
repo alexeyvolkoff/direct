@@ -891,6 +891,7 @@
   "onboarding_btn_finishing": "Kaydediliyor...",
   "onboarding_btn_start_chat": "AI Assistant'te Sohbet Başlat",
   "onboarding_btn_start_files": "Disk Direct Dosyalarını Aç",
+  "onboarding_btn_open_workspace": "Çalışma Alanını Aç",
   "onboarding_congrats_subtitle": "Kişisel ve merkeziyetsiz çalışma alanınız başarıyla yapılandırıldı.",
   "onboarding_congrats_title": "Tebrikler! Her şey hazır",
   "onboarding_detected_lan": "Yerel ağda bulundu ({count})",

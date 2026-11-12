@@ -1387,18 +1387,9 @@
             </div>
 
             <div class="congrats-actions">
-              <button class="btn-primary btn-large btn-chat-hero" on:click={handleStartChat}>
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2">
-                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                </svg>
-                <span>{$_("onboarding_btn_start_chat", {}, "Начать общение в AI Assistant")}</span>
-              </button>
-
-              <button class="btn-secondary btn-large" on:click={handleStartFiles}>
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-                </svg>
-                <span>{$_("onboarding_btn_start_files", {}, "Открыть Disk Direct с файлами")}</span>
+              <button class="btn-primary btn-large btn-chat-hero" on:click={closeModal}>
+                <span>{$_("onboarding_btn_open_workspace", {}, "Начать работу")}</span>
+                <span class="btn-arrow">→</span>
               </button>
             </div>
           </div>
@@ -1831,6 +1822,12 @@
     border-radius: 999px;
   }
 
+  .onboard-overlay.dark .badge-rec {
+    background: rgba(168, 85, 247, 0.22);
+    color: #E9D5FF;
+    border: 1px solid rgba(192, 132, 252, 0.30);
+  }
+
   .badge-chosen {
     font-size: 0.72rem;
     font-weight: 600;
@@ -1838,6 +1835,13 @@
     color: #15803d;
     padding: 3px 8px;
     border-radius: 999px;
+  }
+
+  .onboard-overlay.dark .badge-chosen,
+  .onboard-overlay.dark .badge-online {
+    background: rgba(16, 185, 129, 0.20);
+    color: #6EE7B7;
+    border: 1px solid rgba(52, 211, 153, 0.32);
   }
 
   .badge-online {
@@ -1985,9 +1989,15 @@
   }
 
   .onboard-overlay.dark .device-chip.active {
-    background: var(--accent-soft, rgba(168, 85, 247, 0.24));
+    background: rgba(124, 111, 166, 0.36);
     border-color: var(--accent-hover, #C084FC);
-    color: var(--bg-hover, #F5F0FF);
+    color: #FFFFFF;
+    box-shadow: 0 0 0 1px rgba(192, 132, 252, 0.24);
+  }
+
+  .onboard-overlay.dark .device-chip.active .device-chip-path {
+    color: #E2DCF0;
+    opacity: 0.92;
   }
 
   .device-chip.chip-right {
@@ -2168,6 +2178,11 @@
     transition: all 0.15s ease;
   }
 
+  .onboard-overlay.dark .widget-detected-btn {
+    border-color: var(--accent-hover, #C084FC);
+    color: #E9D5FF;
+  }
+
   .widget-detected-btn:hover {
     background: var(--accent, #7E22CE);
     color: #ffffff;
@@ -2329,6 +2344,10 @@
   .terms-accept-box a {
     color: var(--accent, #7E22CE);
     text-decoration: underline;
+  }
+
+  .onboard-overlay.dark .terms-accept-box a {
+    color: var(--accent-hover, #C084FC);
   }
 
   /* Promo Cards */
