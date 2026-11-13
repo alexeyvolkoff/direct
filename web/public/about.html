@@ -30,9 +30,15 @@
     (function () {
       try {
         var host = (window.location && window.location.hostname ? window.location.hostname : "").trim().toLowerCase().replace(/\.+$/, "");
-        var isChat = host === "aiassistant.direct" || host.indexOf("aiassistant") !== -1 || host.indexOf("chat.") === 0 || /\.onmychat\.com$/.test(host);
-        document.documentElement.classList.add(isChat ? "skin-chat" : "skin-files");
-        if (isChat) {
+        var cachedPreset = "";
+        try { cachedPreset = localStorage.getItem("omd_gateway_skin_preset") || ""; } catch (_) {}
+        var isOmd = host === "direct.onmydisk.net" || host === "onmydisk.net" || /\.onmydisk\.net$/.test(host) || cachedPreset === "omd-classic";
+        var isChat = !isOmd && (host === "aiassistant.direct" || host.indexOf("aiassistant") !== -1 || host.indexOf("chat.") === 0 || /\.onmychat\.com$/.test(host));
+        document.documentElement.classList.add(isOmd ? "skin-omd" : (isChat ? "skin-chat" : "skin-files"));
+        if (isOmd) {
+          var omdIcons = document.querySelectorAll('link[rel*="icon"]');
+          for (var j = 0; j < omdIcons.length; j++) omdIcons[j].href = "/customtheme/favicon-omd.ico";
+        } else if (isChat) {
           var icons = document.querySelectorAll('link[rel*="icon"]');
           for (var k = 0; k < icons.length; k++) icons[k].href = "/customtheme/favicon-chat.ico";
         }
@@ -48,6 +54,21 @@
             document.cookie = "omd_entered=1; path=/; max-age=31536000; SameSite=Lax";
             window.location.replace("/?launch=1" + hash);
           }
+        }
+        if (typeof fetch === "function") {
+          fetch("/.well-known/direct-gateway.json", { cache: "no-cache" })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (m) {
+              if (!m || !m.skin) return;
+              if (m.skin.preset === "omd-classic") {
+                try { localStorage.setItem("omd_gateway_skin_preset", "omd-classic"); } catch (_) {}
+                document.documentElement.classList.remove("skin-files", "skin-chat");
+                document.documentElement.classList.add("skin-omd");
+                var ic = document.querySelectorAll('link[rel*="icon"]');
+                for (var n = 0; n < ic.length; n++) ic[n].href = m.skin.favicon || "/customtheme/favicon-omd.ico";
+              }
+            })
+            .catch(function () {});
         }
       } catch (e) {}
     })();
@@ -122,6 +143,29 @@
       --copy-text: #FDF8FB;
     }
 
+    html.skin-omd {
+      --bg: #0f1720;
+      --bg-elevated: #17222e;
+      --card-bg: rgba(23, 34, 46, 0.86);
+      --card-border: rgba(148, 163, 184, 0.18);
+      --card-border-hover: rgba(40, 159, 217, 0.50);
+      --text-main: #f1f5f9;
+      --text-muted: #cbd5e1;
+      --text-sub: #94a3b8;
+      --primary: #38bdf8;
+      --primary-strong: #1180bc;
+      --primary-glow: rgba(40, 159, 217, 0.20);
+      --primary-grad: linear-gradient(135deg, #1180bc 0%, #289fd9 100%);
+      --primary-shadow: rgba(17, 128, 188, 0.34);
+      --primary-shadow-hover: rgba(40, 159, 217, 0.48);
+      --hero-grad: linear-gradient(135deg, #e0f2fe 0%, #38bdf8 50%, #1180bc 100%);
+      --code-bg: #111923;
+      --code-border: rgba(148, 163, 184, 0.22);
+      --code-text: #e2e8f0;
+      --copy-border: rgba(148, 163, 184, 0.26);
+      --copy-text: #f1f5f9;
+    }
+
     @media (prefers-color-scheme: light) {
       :root,
       html.skin-files {
@@ -170,6 +214,30 @@
         --copy-bg: #FFFFFF;
         --copy-border: #E6D3DF;
         --copy-text: #211320;
+      }
+
+      html.skin-omd {
+        --bg: #f5f7fa;
+        --bg-elevated: #ffffff;
+        --card-bg: rgba(255, 255, 255, 0.94);
+        --card-border: #dce4ee;
+        --card-border-hover: #289fd9;
+        --text-main: #182330;
+        --text-muted: #4b5d70;
+        --text-sub: #6c7f93;
+        --primary: #1180bc;
+        --primary-strong: #0e6b9e;
+        --primary-glow: rgba(17, 128, 188, 0.10);
+        --primary-grad: linear-gradient(135deg, #1180bc 0%, #289fd9 100%);
+        --primary-shadow: rgba(17, 128, 188, 0.28);
+        --primary-shadow-hover: rgba(17, 128, 188, 0.40);
+        --hero-grad: linear-gradient(135deg, #0e6b9e 0%, #1180bc 50%, #289fd9 100%);
+        --code-bg: #eef3f8;
+        --code-border: #dce4ee;
+        --code-text: #182330;
+        --copy-bg: #ffffff;
+        --copy-border: #dce4ee;
+        --copy-text: #182330;
       }
     }
 
@@ -250,6 +318,15 @@
     .brand[data-app*="Chat" i] .logo-chat,
     .brand[data-app*="Assistant" i] .logo-chat {
       display: inline-flex;
+    }
+
+    html.skin-omd .brand .logo-files,
+    html.skin-omd .brand .logo-chat {
+      display: none !important;
+    }
+
+    html.skin-omd .brand .logo-omd {
+      display: inline-flex !important;
     }
 
     .brand img {
@@ -874,6 +951,10 @@
   <header class="navbar">
     <div class="navbar-inner">
       <a href="/about" class="brand" data-app="{APPTITLE}" aria-label="{APPTITLE}">
+        <picture class="logo-omd">
+          <source srcset="/customtheme/logo-omd-dark.svg" media="(prefers-color-scheme: light)" />
+          <img src="/customtheme/logo-omd.svg" alt="{APPTITLE}" height="34" />
+        </picture>
         <picture class="logo-chat">
           <source srcset="/customtheme/logo-chat-dark.svg" media="(prefers-color-scheme: light)" />
           <img src="/customtheme/logo-chat.svg" alt="{APPTITLE}" height="34" />

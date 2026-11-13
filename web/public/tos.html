@@ -15,11 +15,32 @@
     (function () {
       try {
         var host = (window.location && window.location.hostname ? window.location.hostname : "").trim().toLowerCase().replace(/\.+$/, "");
-        var isChat = host === "aiassistant.direct" || host.indexOf("aiassistant") !== -1 || host.indexOf("chat.") === 0 || /\.onmychat\.com$/.test(host);
-        document.documentElement.classList.add(isChat ? "skin-chat" : "skin-files");
-        if (isChat) {
+        var cachedPreset = "";
+        try { cachedPreset = localStorage.getItem("omd_gateway_skin_preset") || ""; } catch (_) {}
+        var isOmd = host === "direct.onmydisk.net" || host === "onmydisk.net" || /\.onmydisk\.net$/.test(host) || cachedPreset === "omd-classic";
+        var isChat = !isOmd && (host === "aiassistant.direct" || host.indexOf("aiassistant") !== -1 || host.indexOf("chat.") === 0 || /\.onmychat\.com$/.test(host));
+        document.documentElement.classList.add(isOmd ? "skin-omd" : (isChat ? "skin-chat" : "skin-files"));
+        if (isOmd) {
+          var omdIcons = document.querySelectorAll('link[rel*="icon"]');
+          for (var j = 0; j < omdIcons.length; j++) omdIcons[j].href = "/customtheme/favicon-omd.ico";
+        } else if (isChat) {
           var icons = document.querySelectorAll('link[rel*="icon"]');
           for (var k = 0; k < icons.length; k++) icons[k].href = "/customtheme/favicon-chat.ico";
+        }
+        if (typeof fetch === "function") {
+          fetch("/.well-known/direct-gateway.json", { cache: "no-cache" })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (m) {
+              if (!m || !m.skin) return;
+              if (m.skin.preset === "omd-classic") {
+                try { localStorage.setItem("omd_gateway_skin_preset", "omd-classic"); } catch (_) {}
+                document.documentElement.classList.remove("skin-files", "skin-chat");
+                document.documentElement.classList.add("skin-omd");
+                var ic = document.querySelectorAll('link[rel*="icon"]');
+                for (var n = 0; n < ic.length; n++) ic[n].href = m.skin.favicon || "/customtheme/favicon-omd.ico";
+              }
+            })
+            .catch(function () {});
         }
       } catch (e) {}
     })();
@@ -74,6 +95,27 @@
       --pill-active-text: #FFFFFF;
     }
 
+    html.skin-omd {
+      --bg: #f5f7fa;
+      --sticky-bg: rgba(245, 247, 250, 0.88);
+      --card-bg: #ffffff;
+      --card-border: #dce4ee;
+      --text-main: #182330;
+      --text-muted: #4b5d70;
+      --text-sub: #6c7f93;
+      --primary: #1180bc;
+      --primary-hover: #289fd9;
+      --primary-gradient: linear-gradient(135deg, #1180bc 0%, #289fd9 100%);
+      --primary-shadow: rgba(17, 128, 188, 0.28);
+      --primary-shadow-hover: rgba(17, 128, 188, 0.42);
+      --accent-soft: #e0f2fe;
+      --accent-border: #bae6fd;
+      --pill-bg: #e8eff6;
+      --pill-text: #4b5d70;
+      --pill-active-bg: #1180bc;
+      --pill-active-text: #ffffff;
+    }
+
     @media (prefers-color-scheme: dark) {
       :root,
       html.skin-files {
@@ -117,6 +159,28 @@
         --pill-text: #DEC8D8;
         --pill-active-bg: #DB2777;
         --pill-active-text: #FFFFFF;
+        --shadow-card: 0 4px 24px -2px rgba(0, 0, 0, 0.45);
+      }
+
+      html.skin-omd {
+        --bg: #0f1720;
+        --sticky-bg: rgba(23, 34, 46, 0.88);
+        --card-bg: #17222e;
+        --card-border: #28384a;
+        --text-main: #f1f5f9;
+        --text-muted: #cbd5e1;
+        --text-sub: #94a3b8;
+        --primary: #38bdf8;
+        --primary-hover: #7dd3fc;
+        --primary-gradient: linear-gradient(135deg, #1180bc 0%, #289fd9 100%);
+        --primary-shadow: rgba(17, 128, 188, 0.34);
+        --primary-shadow-hover: rgba(40, 159, 217, 0.48);
+        --accent-soft: rgba(40, 159, 217, 0.14);
+        --accent-border: rgba(56, 189, 248, 0.30);
+        --pill-bg: #1e2c3b;
+        --pill-text: #cbd5e1;
+        --pill-active-bg: #1180bc;
+        --pill-active-text: #ffffff;
         --shadow-card: 0 4px 24px -2px rgba(0, 0, 0, 0.45);
       }
     }
@@ -180,6 +244,15 @@
     .brand-logo-link[data-app*="Chat" i] .logo-chat,
     .brand-logo-link[data-app*="Assistant" i] .logo-chat {
       display: inline-flex;
+    }
+
+    html.skin-omd .brand-logo-link .logo-files,
+    html.skin-omd .brand-logo-link .logo-chat {
+      display: none !important;
+    }
+
+    html.skin-omd .brand-logo-link .logo-omd {
+      display: inline-flex !important;
     }
 
     .brand-logo-link img {
@@ -451,6 +524,10 @@
     <!-- Header -->
     <header class="page-header">
       <a href="/" class="brand-logo-link" data-app="{APPTITLE}" aria-label="{APPTITLE}">
+        <picture class="logo-omd">
+          <source srcset="/customtheme/logo-omd.svg" media="(prefers-color-scheme: dark)" />
+          <img src="/customtheme/logo-omd-dark.svg" alt="{APPTITLE}" height="38" />
+        </picture>
         <picture class="logo-chat">
           <source srcset="/customtheme/logo-chat.svg" media="(prefers-color-scheme: dark)" />
           <img src="/customtheme/logo-chat-dark.svg" alt="{APPTITLE}" height="38" />
@@ -825,8 +902,9 @@
           .trim()
           .toLowerCase()
           .replace(/\.+$/, "");
-        var isChat = host === "aiassistant.direct" || /\.onmychat\.com$/.test(host);
-        var brand = isChat ? "AI Assistant" : "Disk Direct";
+        var isOmd = document.documentElement.classList.contains("skin-omd") || host === "direct.onmydisk.net" || host === "onmydisk.net" || /\.onmydisk\.net$/.test(host);
+        var isChat = !isOmd && (host === "aiassistant.direct" || /\.onmychat\.com$/.test(host));
+        var brand = isOmd ? "On My Disk" : (isChat ? "AI Assistant" : "Disk Direct");
         if (document.title.indexOf("{") !== -1) {
           document.title = document.title.replace(/\{APPTITLE\}|\{TITLE\}/g, brand);
         }

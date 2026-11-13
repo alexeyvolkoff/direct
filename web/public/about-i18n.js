@@ -1336,6 +1336,14 @@
         .trim()
         .toLowerCase()
         .replace(/\.+$/, "");
+      if (
+        document.documentElement.classList.contains("skin-omd") ||
+        host === "direct.onmydisk.net" ||
+        host === "onmydisk.net" ||
+        /\.onmydisk\.net$/.test(host)
+      ) {
+        return "On My Disk";
+      }
       if (host === "aiassistant.direct" || /\.onmychat\.com$/.test(host)) {
         return "AI Assistant";
       }
@@ -1349,6 +1357,9 @@
     var fallback = ABOUT_I18N.en;
     var meta = findLangMeta(lang);
     var brand = resolveBrandTitle();
+    var isOmd = brand === "On My Disk";
+    var currentHost = (window.location && window.location.host ? window.location.host : "direct.onmydisk.net");
+    var currentOrigin = (window.location && window.location.origin ? window.location.origin : "https://direct.onmydisk.net");
 
     window.__aboutCurrentLang = lang;
     window.__aboutCurrentDict = dict;
@@ -1359,7 +1370,7 @@
     var brandEl = document.querySelector(".brand[data-app]");
     if (brandEl) {
       var curApp = brandEl.getAttribute("data-app") || "";
-      if (!curApp || curApp.indexOf("{") !== -1) {
+      if (!curApp || curApp.indexOf("{") !== -1 || isOmd) {
         brandEl.setAttribute("data-app", brand);
         brandEl.setAttribute("aria-label", brand);
       }
@@ -1371,21 +1382,44 @@
     }
     var descMeta = document.querySelector('meta[name="description"]');
     if (descMeta && (dict.meta_desc || fallback.meta_desc)) {
-      descMeta.setAttribute("content", dict.meta_desc || fallback.meta_desc);
+      var rawDesc = dict.meta_desc || fallback.meta_desc;
+      if (isOmd) rawDesc = rawDesc.replace(/Disk Direct/g, "On My Disk");
+      descMeta.setAttribute("content", rawDesc);
     }
 
     var textNodes = document.querySelectorAll("[data-i18n]");
     for (var i = 0; i < textNodes.length; i++) {
       var key = textNodes[i].getAttribute("data-i18n");
       var val = dict[key] !== undefined ? dict[key] : fallback[key];
-      if (val !== undefined) textNodes[i].textContent = val;
+      if (val !== undefined) {
+        if (isOmd) {
+          val = val.replace(/Disk Direct/g, "On My Disk").replace(/aiassistant\.direct/g, currentHost).replace(/disk\.direct/g, currentHost);
+        }
+        textNodes[i].textContent = val;
+      }
     }
 
     var htmlNodes = document.querySelectorAll("[data-i18n-html]");
     for (var j = 0; j < htmlNodes.length; j++) {
       var hKey = htmlNodes[j].getAttribute("data-i18n-html");
       var hVal = dict[hKey] !== undefined ? dict[hKey] : fallback[hKey];
-      if (hVal !== undefined) htmlNodes[j].innerHTML = hVal;
+      if (hVal !== undefined) {
+        if (isOmd) {
+          hVal = hVal
+            .replace(/https:\/\/disk\.direct/g, currentOrigin)
+            .replace(/aiassistant\.direct/g, currentHost)
+            .replace(/disk\.direct/g, currentHost)
+            .replace(/Disk Direct/g, "On My Disk");
+        }
+        htmlNodes[j].innerHTML = hVal;
+      }
+    }
+
+    if (isOmd) {
+      var footFiles = document.querySelector('a[data-i18n="foot_files"]');
+      if (footFiles) {
+        footFiles.setAttribute("href", currentOrigin + "/?launch=1");
+      }
     }
 
     var selectEl = document.getElementById("about-lang-select");
