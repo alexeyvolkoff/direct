@@ -4306,6 +4306,7 @@ async def chat_stream(request: Request, prompt: str, omd_key: str | None = Depen
                     "The scene description is:\n"
                     "{}\n\n"
                     "TASK: Roleplay this scene. Continue conversation. Take into account the generated image, your feelings about it and the previous conversation context.\n"
+                    "CRITICAL: The image card is ALREADY shown to the user above your reply. NEVER repeat, quote, or output the raw image tags/prompt or any '[Image generated here: ...]' text.\n"
                 ).format(img_prompt)
                 llm_message = prompt
                 # [LEGACY HISTORY] save_user_message removed
@@ -4348,7 +4349,8 @@ async def chat_stream(request: Request, prompt: str, omd_key: str | None = Depen
                     "You have ALREADY generated an image based on the user's request.\n"
                     "The scene description is:\n"
                     "{}\n\n"
-                    "Your TASK: describe the generated image enthusiastically or provide a caption for it."
+                    "Your TASK: describe the generated image enthusiastically or provide a caption for it.\n"
+                    "CRITICAL: The image card is ALREADY shown to the user above your reply. NEVER repeat, quote, or output the raw image tags/prompt or any '[Image generated here: ...]' text."
                 ).format(img_prompt)
                 llm_message = prompt
                 # [LEGACY HISTORY] save_user_message removed

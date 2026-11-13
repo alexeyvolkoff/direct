@@ -4165,7 +4165,11 @@ async def generate_sdxl_studio_image(
     # Собираем положительный промпт (сюжет + паспорт персоны + микро-слайдеры)
     full_parts = []
     if prompt and prompt.strip():
-        full_parts.append(prompt.strip())
+        p_clean = prompt.strip()
+        p_low = p_clean.lower()
+        if any(k in p_low for k in ("full body", "full-body", "head to toe", "full length", "full-length")):
+            full_parts.append("wide full-length shot from head to toe, entire body visible including legs and feet, pulled back camera")
+        full_parts.append(p_clean)
     if persona_prompt and persona_prompt.strip():
         cleaned_persona = persona_prompt.strip()
         if prompt and prompt.strip():
@@ -5058,7 +5062,11 @@ async def generate_krea2_image(
     # определяла начальный латентный шум и не схлопывалась в крупный портрет.
     full_parts = []
     if prompt and prompt.strip():
-        full_parts.append(prompt.strip())
+        p_clean = prompt.strip()
+        p_low = p_clean.lower()
+        if any(k in p_low for k in ("full body", "full-body", "head to toe", "full length", "full-length")):
+            full_parts.append("wide full-length shot from head to toe, entire body visible including legs and feet, pulled back camera")
+        full_parts.append(p_clean)
     if persona_prompt and persona_prompt.strip():
         # Срезаем префиксы "portrait of / headshot of / close-up of" из паспорта,
         # если задан сюжетный промпт, чтобы сохранить масштаб и ракурс сцены

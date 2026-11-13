@@ -326,7 +326,9 @@ function uiToLegacyHistory(messages) {
         const text = (m.parts || [])
             .filter((p) => p.type === 'text')
             .map((p) => p.text)
-            .join('');
+            .join('')
+            .replace(/\[Image generated here:[^\]]*\]/gi, '')
+            .trim();
         if (text) out.push({ role: m.role, content: text });
     }
     return out;

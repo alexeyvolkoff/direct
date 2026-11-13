@@ -3853,11 +3853,14 @@ function lastFreshTitle(messages) {
           const blobUrl = imageBlobCache[key] || resolveImageUrl(p.data);
           const directUrl = generatedDirectUrl(p.data);
 
-          const srcUrl = (!p2pFailed && generatedDeviceShareUrl(sharePath)) || blobUrl
+          const srcUrl = blobUrl
+            || (!p2pFailed && generatedDeviceShareUrl(sharePath))
             || (directUrl ? (vs.downscaleImages ? `${directUrl}?size=${vs.scaleTo}` : directUrl) : "");
-          const thumbUrl = (!p2pFailed && generatedDeviceShareUrl(sharePath, "thumb")) || blobUrl
+          const thumbUrl = blobUrl
+            || (!p2pFailed && generatedDeviceShareUrl(sharePath, "thumb"))
             || (directUrl ? `${directUrl}?size=360` : srcUrl);
-          const downloadUrl = (!p2pFailed && generatedDeviceShareUrl(sharePath, "download")) || blobUrl
+          const downloadUrl = blobUrl
+            || (!p2pFailed && generatedDeviceShareUrl(sharePath, "download"))
             || directUrl || srcUrl;
 
           images.push({
@@ -5461,10 +5464,10 @@ function lastFreshTitle(messages) {
                           role="button"
                           tabindex="0"
                           on:click={() => {
-                            if (!isFailed) openChatGallery(block.data.path);
+                            if (!isFailed) openChatGallery(block.data.path || block.data.url);
                           }}
                           on:keydown={(e) => {
-                            if (e.key === "Enter" && !isFailed) openChatGallery(block.data.path);
+                            if (e.key === "Enter" && !isFailed) openChatGallery(block.data.path || block.data.url);
                           }}
                         >
                           {#if imgSrc && !isFailed && !regeneratingImages[imgKey]}
