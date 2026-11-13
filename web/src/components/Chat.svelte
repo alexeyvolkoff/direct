@@ -27,6 +27,7 @@
   import { DEFAULT_JUNE_SYSTEM_PROMPT, DEFAULT_JUNE_FUN_PROMPT, blobToDataUrl } from "../lib/assistant-defaults.js";
   import { gatewayConfig } from "../lib/gateway-config.js";
   import { resolveAppMode, APP_MODE_CHAT } from "../lib/app-mode.js";
+  import { compactPersonaForChat, isCustomPersona } from "../lib/personas-loader.js";
 
   marked.use(markedKatex({ throwOnError: false, nonStandard: true }));
   marked.setOptions({ breaks: true, gfm: true });
@@ -158,6 +159,8 @@
   export let defaultStorage = "";
   export let thumbFetcher = null;
   export let isChatLoading = false;
+  export let availablePersonas = [];
+  export let activeChatPersona = null;
 
   const dispatch = createEventDispatcher();
 
@@ -1365,6 +1368,20 @@
       })
       .catch((e) => console.warn("[chat] persist user msg error:", e));
 
+    if (activeChatPersona && isCustomPersona(activeChatPersona) && chatStore) {
+      const existingRec = chatStore.listChats().find((c) => c._id === currentId);
+      if (!existingRec || existingRec.persona_id !== activeChatPersona.id) {
+        chatStore
+          .saveChat({
+            _id: currentId,
+            persona: compactPersonaForChat(activeChatPersona),
+            persona_id: activeChatPersona.id,
+            updated: nowIso,
+          })
+          .catch(() => {});
+      }
+    }
+
     // Показываем сам промпт /learn в треде (аргоритмически это юзер-сообщение
     // и есть «реплика, породившая карточку» — карточка встанет над ним).
     if (chat && chat.messages) {
@@ -1535,6 +1552,20 @@
         content: text,
       })
       .catch((e) => console.warn("[chat] persist user msg error:", e));
+
+    if (activeChatPersona && isCustomPersona(activeChatPersona) && chatStore) {
+      const existingRec = chatStore.listChats().find((c) => c._id === currentId);
+      if (!existingRec || existingRec.persona_id !== activeChatPersona.id) {
+        chatStore
+          .saveChat({
+            _id: currentId,
+            persona: compactPersonaForChat(activeChatPersona),
+            persona_id: activeChatPersona.id,
+            updated: nowIso,
+          })
+          .catch(() => {});
+      }
+    }
 
     // Показываем сам промпт /recognize в треде (карточка встанет над ним).
     if (chat && chat.messages) {
@@ -1773,6 +1804,12 @@
 
       chatStore.saveChat({
         _id: currentId,
+        ...(activeChatPersona && isCustomPersona(activeChatPersona)
+          ? {
+              persona: compactPersonaForChat(activeChatPersona),
+              persona_id: activeChatPersona.id,
+            }
+          : {}),
         updated: new Date().toISOString(),
       }).catch(() => {});
     }
@@ -2560,6 +2597,84 @@
   let assistantTitle = "Junior assistant";
   let assistantUnsub = null;
 
+  $: effectiveAssistantName = (activeChatPersona && isCustomPersona(activeChatPersona) && activeChatPersona.name)
+    ? activeChatPersona.name
+    : assistantName;
+  $: effectiveAssistantTitle = (activeChatPersona && isCustomPersona(activeChatPersona))
+    ? (activeChatPersona.title || $_("krea_persona", {}, "Persona"))
+    : assistantTitle;
+  $: effectiveAssistantAvatarUrl = (activeChatPersona && isCustomPersona(activeChatPersona))
+    ? (activeChatPersona.avatarData || activeChatPersona.avatar || "")
+    : assistantAvatarUrl;
+
+  const personaAvatarSendCache = new Map();
+
+  async function compactAvatarForSend(persona) {
+    if (!persona) return "";
+    const raw = persona.avatarData || persona.avatar || persona.avatar_url || "";
+    if (!raw || typeof raw !== "string") return "";
+    if (!raw.startsWith("data:") || raw.length <= 90000 || typeof document === "undefined") {
+      return raw;
+    }
+    const cacheKey = `${persona.id}:${raw.length}`;
+    if (personaAvatarSendCache.has(cacheKey)) {
+      return personaAvatarSendCache.get(cacheKey);
+    }
+    try {
+      const compact = await new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          const maxSide = 512;
+          let w = img.width || maxSide;
+          let h = img.height || maxSide;
+          if (w > maxSide || h > maxSide) {
+            if (w > h) {
+              h = Math.round((h * maxSide) / w);
+              w = maxSide;
+            } else {
+              w = Math.round((w * maxSide) / h);
+              h = maxSide;
+            }
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = w;
+          canvas.height = h;
+          const ctx2d = canvas.getContext("2d");
+          ctx2d.drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL("image/jpeg", 0.85));
+        };
+        img.onerror = () => resolve(raw);
+        img.src = raw;
+      });
+      personaAvatarSendCache.set(cacheKey, compact);
+      return compact;
+    } catch (_) {
+      return raw;
+    }
+  }
+
+  async function applyActivePersonaSettings(baseSettings) {
+    if (!activeChatPersona || !isCustomPersona(activeChatPersona)) {
+      return baseSettings;
+    }
+    const pAvatar = await compactAvatarForSend(activeChatPersona);
+    return {
+      ...(baseSettings || {}),
+      assistant_name: activeChatPersona.name || baseSettings?.assistant_name || "Companion",
+      assistant_title: activeChatPersona.title || "",
+      assistant_appearance: activeChatPersona.prompt || "",
+      persona_id: activeChatPersona.id,
+      persona_name: activeChatPersona.name || "",
+      persona_title: activeChatPersona.title || "",
+      persona_prompt: activeChatPersona.prompt || "",
+      persona_personality: activeChatPersona.personality || "",
+      persona_archetype: activeChatPersona.archetype || "",
+      persona_lora: activeChatPersona.lora || "",
+      persona_render_preset: activeChatPersona.render_preset || null,
+      ...(pAvatar ? { persona_avatar: pAvatar } : {}),
+    };
+  }
+
   let lastSessionChatId = null;
   $: if (chatId && chatId !== lastSessionChatId) {
     if (!chatStore || !httpDrive) {
@@ -2772,7 +2887,7 @@
   // внутри уже ретраи и fallback на localStorage-зеркало (chat-store.js).
   async function loadAssistantSettingsForSend() {
     if (assistantSettingsData && (assistantSettingsData.fun_system_prompt || assistantSettingsData.system_prompt)) {
-      return assistantSettingsData;
+      return await applyActivePersonaSettings(assistantSettingsData);
     }
     if (chatStore && typeof chatStore.getAssistantSettings === "function") {
       try {
@@ -2792,7 +2907,7 @@
       language: $locale || "en",
       ...(resolvedName ? { name: resolvedName } : {})
     };
-    return assistantSettingsData;
+    return await applyActivePersonaSettings(assistantSettingsData);
   }
 
   let mutationObserver = null;
@@ -3319,6 +3434,20 @@ function lastFreshTitle(messages) {
         content: text,
       })
       .catch((e) => console.warn("[chat] persist user msg error:", e));
+
+    if (activeChatPersona && isCustomPersona(activeChatPersona) && chatStore) {
+      const existingRec = chatStore.listChats().find((c) => c._id === currentId);
+      if (!existingRec || existingRec.persona_id !== activeChatPersona.id) {
+        chatStore
+          .saveChat({
+            _id: currentId,
+            persona: compactPersonaForChat(activeChatPersona),
+            persona_id: activeChatPersona.id,
+            updated: nowIso,
+          })
+          .catch(() => {});
+      }
+    }
 
     shouldAutoScroll = true;
     scrollToBottom(true);
@@ -4926,84 +5055,151 @@ function lastFreshTitle(messages) {
     {#if !chat || displayMessages.length === 0}
       <!-- Gemini Welcome Hero State -->
       <div class="gemini-hero">
-        <!-- Assistant Persona Badge (Avatar on left, Name & Title on right, matching legacy screen) -->
+        <!-- Assistant / Persona Badge -->
         <div class="hero-assistant-badge">
           <!-- svelte-ignore a11y-click-events-have-key-events -->
           <!-- svelte-ignore a11y-no-static-element-interactions -->
           <div
-            class="hero-avatar clickable"
-            on:click={() => (showAvatarModal = true)}
-            role="button"
-            tabindex="0"
-            title={$_("customize_appearance", {}, "Customize appearance and avatar")}
+            class="hero-avatar"
+            class:clickable={!activeChatPersona}
+            on:click={() => { if (!activeChatPersona) showAvatarModal = true; }}
+            role={!activeChatPersona ? "button" : undefined}
+            tabindex={!activeChatPersona ? 0 : undefined}
+            title={!activeChatPersona ? $_("customize_appearance", {}, "Customize appearance and avatar") : effectiveAssistantName}
           >
-            {#if assistantAvatarUrl}
-              <img src={assistantAvatarUrl} alt={assistantName} class="avatar-hero-img" on:error={handleAvatarError} />
+            {#if effectiveAssistantAvatarUrl}
+              <img src={effectiveAssistantAvatarUrl} alt={effectiveAssistantName} class="avatar-hero-img" on:error={handleAvatarError} />
+            {:else if activeChatPersona}
+              <div class="avatar-hero-spark avatar-hero-initial">
+                {effectiveAssistantName.slice(0, 1).toUpperCase()}
+              </div>
             {:else}
-              <img src="/img/june.png" alt={assistantName} class="avatar-hero-img" on:error={handleAvatarError} />
+              <img src="/img/june.png" alt={effectiveAssistantName} class="avatar-hero-img" on:error={handleAvatarError} />
             {/if}
           </div>
           <div class="hero-assistant-meta">
-            <h2 class="hero-assistant-name">{assistantName}</h2>
-            <span class="hero-assistant-title">{assistantTitle}</span>
+            <h2 class="hero-assistant-name">{effectiveAssistantName}</h2>
+            <span class="hero-assistant-title">{effectiveAssistantTitle}</span>
           </div>
         </div>
 
+        {#if availablePersonas && availablePersonas.length > 0}
+          <div class="hero-persona-switcher" role="tablist" aria-label={$_("chat_choose_persona", {}, "Choose companion")}>
+            <button
+              type="button"
+              class="persona-switch-pill"
+              class:active={!activeChatPersona}
+              on:click={() => dispatch("select-persona", { persona: null })}
+              title={assistantTitle}
+            >
+              <span class="persona-switch-avatar-wrap">
+                <img
+                  src={assistantAvatarUrl || "/img/june.png"}
+                  alt={assistantName}
+                  class="persona-switch-avatar"
+                  on:error={handleAvatarError}
+                />
+              </span>
+              <span class="persona-switch-name">{assistantName}</span>
+            </button>
+
+            {#each availablePersonas as p (p.id)}
+              <button
+                type="button"
+                class="persona-switch-pill"
+                class:active={activeChatPersona && activeChatPersona.id === p.id}
+                on:click={() => dispatch("select-persona", { persona: p })}
+                title={p.title || p.name}
+              >
+                <span class="persona-switch-avatar-wrap">
+                  {#if p.avatarData || p.avatar}
+                    <img src={p.avatarData || p.avatar} alt={p.name} class="persona-switch-avatar" />
+                  {:else}
+                    <span class="persona-switch-initial">{(p.name || "?").slice(0, 1).toUpperCase()}</span>
+                  {/if}
+                </span>
+                <span class="persona-switch-name">{p.name}</span>
+              </button>
+            {/each}
+          </div>
+        {/if}
+
         <h1 class="hero-greeting">
           <span class="gradient-text">
-            {userName ? `${$_("hello", {}, "Hello")}, ${userName}` : $_("welcome_to_chat", {}, "Welcome to AI Assistant")}
+            {#if activeChatPersona}
+              {$_("chat_with_persona_greeting", { name: effectiveAssistantName }, `Chat with ${effectiveAssistantName}`)}
+            {:else}
+              {userName ? `${$_("hello", {}, "Hello")}, ${userName}` : $_("welcome_to_chat", {}, "Welcome to AI Assistant")}
+            {/if}
           </span>
         </h1>
-        <p class="hero-sub">
-          {$_("hero_subtext", {}, "How can I help you today with your private documents and ideas?")}
+        <p class="hero-sub" class:persona-lore-sub={Boolean(activeChatPersona)}>
+          {#if activeChatPersona}
+            {activeChatPersona.personality || activeChatPersona.prompt || $_("persona_hero_subtext", {}, "Start a conversation or roleplay scene — your persona stays in character and keeps her visual style.")}
+          {:else}
+            {$_("hero_subtext", {}, "How can I help you today with your private documents and ideas?")}
+          {/if}
         </p>
 
         <!-- Suggestion Prompt Cards -->
-        <div class="suggestion-grid">
-          <button
-            class="suggestion-card"
-            on:click={() => setQuickPrompt($_("prompt_rag_sample", {}, "Explain how RAG is implemented in AI Assistant?"))}
-          >
-            <div class="suggestion-icon">💡</div>
-            <div class="suggestion-text">
-              <strong>{$_("prompt_rag_title", {}, "Explore RAG Knowledge")}</strong>
-              <span>{$_("prompt_rag_desc", {}, "Explain how private document retrieval works")}</span>
-            </div>
-          </button>
+        {#if activeChatPersona}
+          <div class="suggestion-grid">
+            {#each [["💬","persona_prompt_hello","Hey! Tell me a little about yourself and what mood you're in right now."],["📸","persona_prompt_show","/show Send me a candid photo of yourself right now"],["🎭","persona_prompt_scene","Let's set up an atmospheric evening scene together — where are we meeting?"],["✨","persona_prompt_lore","Tell me a secret or a favorite memory from your past."]] as [icon, key, fallback]}
+              <button class="suggestion-card" on:click={() => setQuickPrompt($_(key, {}, fallback))}>
+                <div class="suggestion-icon">{icon}</div>
+                <div class="suggestion-text">
+                  <span>{$_(key, {}, fallback)}</span>
+                </div>
+              </button>
+            {/each}
+          </div>
+        {:else}
+          <div class="suggestion-grid">
+            <button
+              class="suggestion-card"
+              on:click={() => setQuickPrompt($_("prompt_rag_sample", {}, "Explain how RAG is implemented in AI Assistant?"))}
+            >
+              <div class="suggestion-icon">💡</div>
+              <div class="suggestion-text">
+                <strong>{$_("prompt_rag_title", {}, "Explore RAG Knowledge")}</strong>
+                <span>{$_("prompt_rag_desc", {}, "Explain how private document retrieval works")}</span>
+              </div>
+            </button>
 
-          <button
-            class="suggestion-card"
-            on:click={() => setQuickPrompt($_("prompt_doc_sample", {}, "Summarize the key decisions and notes from my indexed files"))}
-          >
-            <div class="suggestion-icon">📄</div>
-            <div class="suggestion-text">
-              <strong>{$_("prompt_doc_title", {}, "Summarize Documents")}</strong>
-              <span>{$_("prompt_doc_desc", {}, "Extract facts and key takeaways")}</span>
-            </div>
-          </button>
+            <button
+              class="suggestion-card"
+              on:click={() => setQuickPrompt($_("prompt_doc_sample", {}, "Summarize the key decisions and notes from my indexed files"))}
+            >
+              <div class="suggestion-icon">📄</div>
+              <div class="suggestion-text">
+                <strong>{$_("prompt_doc_title", {}, "Summarize Documents")}</strong>
+                <span>{$_("prompt_doc_desc", {}, "Extract facts and key takeaways")}</span>
+              </div>
+            </button>
 
-          <button
-            class="suggestion-card"
-            on:click={() => setQuickPrompt($_("prompt_p2p_sample", {}, "How does P2P inference preserve my data privacy?"))}
-          >
-            <div class="suggestion-icon">🛡️</div>
-            <div class="suggestion-text">
-              <strong>{$_("prompt_p2p_title", {}, "Private & Decentralized")}</strong>
-              <span>{$_("prompt_p2p_desc", {}, "Data never leaves your sovereign control")}</span>
-            </div>
-          </button>
+            <button
+              class="suggestion-card"
+              on:click={() => setQuickPrompt($_("prompt_p2p_sample", {}, "How does P2P inference preserve my data privacy?"))}
+            >
+              <div class="suggestion-icon">🛡️</div>
+              <div class="suggestion-text">
+                <strong>{$_("prompt_p2p_title", {}, "Private & Decentralized")}</strong>
+                <span>{$_("prompt_p2p_desc", {}, "Data never leaves your sovereign control")}</span>
+              </div>
+            </button>
 
-          <button
-            class="suggestion-card"
-            on:click={() => setQuickPrompt($_("prompt_draft_sample", {}, "Help me draft a concise project review update for the team"))}
-          >
-            <div class="suggestion-icon">✍️</div>
-            <div class="suggestion-text">
-              <strong>{$_("prompt_draft_title", {}, "Draft & Collaborate")}</strong>
-              <span>{$_("prompt_draft_desc", {}, "Create outlines, letters, and reviews")}</span>
-            </div>
-          </button>
-        </div>
+            <button
+              class="suggestion-card"
+              on:click={() => setQuickPrompt($_("prompt_draft_sample", {}, "Help me draft a concise project review update for the team"))}
+            >
+              <div class="suggestion-icon">✍️</div>
+              <div class="suggestion-text">
+                <strong>{$_("prompt_draft_title", {}, "Draft & Collaborate")}</strong>
+                <span>{$_("prompt_draft_desc", {}, "Create outlines, letters, and reviews")}</span>
+              </div>
+            </button>
+          </div>
+        {/if}
       </div>
     {:else}
       <!-- Active Message Thread -->
@@ -5012,28 +5208,33 @@ function lastFreshTitle(messages) {
           {@const blocks = buildBlocks(m)}
           <div class="thread-row {m.role}" data-mid={m.id}>
             {#if m.role === "assistant"}
-              <!-- Assistant Message (Gemini style: borderless, airy, circular June avatar on left) -->
+              <!-- Assistant / Persona Message -->
               <div class="assistant-entry">
                 <!-- svelte-ignore a11y-click-events-have-key-events -->
                 <!-- svelte-ignore a11y-no-static-element-interactions -->
                 <div
-                  class="entry-avatar clickable"
-                  on:click={() => (showAvatarModal = true)}
-                  role="button"
-                  tabindex="0"
-                  title={$_("customize_appearance", {}, "Customize appearance and avatar")}
+                  class="entry-avatar"
+                  class:clickable={!activeChatPersona}
+                  on:click={() => { if (!activeChatPersona) showAvatarModal = true; }}
+                  role={!activeChatPersona ? "button" : undefined}
+                  tabindex={!activeChatPersona ? 0 : undefined}
+                  title={!activeChatPersona ? $_("customize_appearance", {}, "Customize appearance and avatar") : effectiveAssistantName}
                 >
-                  {#if assistantAvatarUrl}
-                    <img src={assistantAvatarUrl} alt={assistantName} class="avatar-chat-img" on:error={handleAvatarError} />
+                  {#if effectiveAssistantAvatarUrl}
+                    <img src={effectiveAssistantAvatarUrl} alt={effectiveAssistantName} class="avatar-chat-img" on:error={handleAvatarError} />
+                  {:else if activeChatPersona}
+                    <div class="avatar-chat-initial">
+                      {effectiveAssistantName.slice(0, 1).toUpperCase()}
+                    </div>
                   {:else}
-                    <img src="/img/june.png" alt={assistantName} class="avatar-chat-img" on:error={handleAvatarError} />
+                    <img src="/img/june.png" alt={effectiveAssistantName} class="avatar-chat-img" on:error={handleAvatarError} />
                   {/if}
                 </div>
 
                 <div class="entry-content">
                   <div class="entry-header">
-                    <span class="assistant-name">{assistantName}</span>
-                    <span class="assistant-tag">{assistantTitle}</span>
+                    <span class="assistant-name">{effectiveAssistantName}</span>
+                    <span class="assistant-tag">{effectiveAssistantTitle}</span>
                   </div>
 
                   {#each blocks as block, bi}
@@ -6374,6 +6575,92 @@ function lastFreshTitle(messages) {
     box-shadow: 0 4px 24px color-mix(in srgb, var(--accent) 45%, transparent);
   }
 
+  .avatar-hero-initial {
+    font-size: 1.6rem;
+    font-weight: 700;
+  }
+
+  .hero-persona-switcher {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: -8px 0 22px;
+    max-width: 680px;
+  }
+
+  .persona-switch-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 12px 5px 6px;
+    border-radius: 999px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    font-size: 0.86rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.18s ease;
+  }
+
+  .persona-switch-pill:hover {
+    background: var(--bg-card-hover);
+    color: var(--text-primary);
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--border-color));
+    transform: translateY(-1px);
+  }
+
+  .persona-switch-pill.active {
+    background: color-mix(in srgb, var(--accent) 18%, var(--bg-card));
+    border-color: var(--accent);
+    color: var(--text-primary);
+    box-shadow: 0 2px 12px color-mix(in srgb, var(--accent) 28%, transparent);
+  }
+
+  .persona-switch-avatar-wrap {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    overflow: hidden;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--accent-gradient);
+    color: #fff;
+  }
+
+  .persona-switch-avatar {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .persona-switch-initial {
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .persona-switch-name {
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .hero-sub.persona-lore-sub {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    max-width: 580px;
+    line-height: 1.5;
+  }
+
   .hero-assistant-meta {
     display: flex;
     flex-direction: column;
@@ -6616,6 +6903,22 @@ function lastFreshTitle(messages) {
     height: 36px;
     border-radius: 50%;
     object-fit: cover;
+    border: 2px solid var(--accent-hover);
+    box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 40%, transparent);
+    box-sizing: border-box;
+  }
+
+  .avatar-chat-initial {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--accent-gradient);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.95rem;
+    font-weight: 700;
     border: 2px solid var(--accent-hover);
     box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 40%, transparent);
     box-sizing: border-box;

@@ -1821,5 +1821,15 @@
   "krea_ref_inpaint_denoise_label": "עוצמת ציור מחדש",
   "krea_ref_inpaint_denoise_hint": "0.55 — התאמה עדינה של בד ותאורה · 0.94 — החלפה מלאה של לבוש או רקע",
   "knowledge_install_node_banner": "התקן צומת משלך כדי לבנות אוטומטית מאגר ידע מהתמונות והמסמכים שלך.",
-  "knowledge_install_node_cta": "התקנת צומת"
+  "knowledge_install_node_cta": "התקנת צומת",
+  "krea_persona_chat": "צ'אט",
+  "krea_persona_chat_hint": "התחל צ'אט עם {name}",
+  "krea_save_and_chat": "שמור וצ'אט",
+  "chat_choose_persona": "בחר בן שיח",
+  "chat_with_persona_greeting": "צ'אט עם {name}",
+  "persona_hero_subtext": "התחילו שיחה או סצנת משחק תפקידים — הפרסונה נשארת בדמות ושומרת על המראה שלה.",
+  "persona_prompt_hello": "היי! ספר לי קצת על עצמך ועל מצב הרוח שלך עכשיו.",
+  "persona_prompt_show": "/show שלח לי עכשיו תמונה ספונטנית שלך",
+  "persona_prompt_scene": "בוא נבנה יחד סצנת ערב אטמוספרית — איפה נפגשים?",
+  "persona_prompt_lore": "ספר לי סוד או זיכרון אהוב מהעבר שלך."
 }

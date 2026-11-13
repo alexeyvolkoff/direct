@@ -2320,6 +2320,7 @@ class ChatInput(BaseModel):
     history: list | None = None
     knowledge: list | None = None
     prompt_id: str | None = None
+    mcp_keys: dict | None = None
 
 class ChatStreamInput(BaseModel):
     omd_key: str
@@ -2848,7 +2849,10 @@ async def get_chat_image(
 async def generate_avatar_endpoint(data: AvatarGenerateInput):
     ctx = get_ctx(data.omd_key)
     if data.settings:
-        ctx.settings.update(data.settings)
+        clean_settings = dict(data.settings)
+        p_avatar = clean_settings.pop("persona_avatar", None)
+        ctx.persona_avatar = p_avatar or None
+        ctx.settings.update(clean_settings)
         ctx.storage = ctx.settings.get("defaultStorage", "")
     try:
         # Use hardcoded prompt for avatar generation as requested
@@ -3865,10 +3869,19 @@ async def faces_scan_status_endpoint(
 # [LEGACY HISTORY] /chats endpoints removed
 
 @app.post("/chat")
-async def chat_endpoint(data: ChatInput):
+async def chat_endpoint(request: Request, data: ChatInput):
+    agentic_tunnel.note_request(request, omd_key=data.omd_key, settings_payload=data.settings)
     ctx = get_ctx(data.omd_key)
+    ctx.private_mode = trusted_private_access(request, ctx)
+    ctx.trusted_owner = trusted_owner_access(request)
+    ctx.mcp_keys = data.mcp_keys or (data.settings.get("mcp_keys") if isinstance(data.settings, dict) else None) or getattr(ctx, "mcp_keys", None) or {}
     if data.settings:
-        ctx.settings.update(data.settings)
+        clean_settings = dict(data.settings)
+        clean_settings.pop("assistant_avatar", None)
+        p_av = clean_settings.pop("persona_avatar", None)
+        if p_av:
+            ctx.persona_avatar = p_av
+        ctx.settings.update(clean_settings)
         ctx.storage = ctx.settings.get("defaultStorage", "")
     try:
         instruction=(
@@ -3994,8 +4007,13 @@ async def chat_stream(request: Request, prompt: str, omd_key: str | None = Depen
     )
 
     if provided_settings:
-        # Strip heavy fields that backend never reads — avoids sending base64 avatar every request
+        # Strip heavy base64 fields before logging/merging into ctx.settings; keep persona_avatar transiently on ctx
         provided_settings.pop("assistant_avatar", None)
+        p_avatar = provided_settings.pop("persona_avatar", None)
+        if p_avatar:
+            ctx.persona_avatar = p_avatar
+        else:
+            ctx.persona_avatar = None
         ctx.settings.update(provided_settings)
         if not ctx.user_id or ctx.user_id in ("anonymous", "system", ""):
             ctx.user_id = ctx.settings.get("name") or ctx.settings.get("username") or user_context.node_owner()
@@ -4416,7 +4434,11 @@ async def chat_stream(request: Request, prompt: str, omd_key: str | None = Depen
                 prompt_id = provided_prompt_id or ("p_" + core_service.hash_string(img_prompt + ctx.settings.get("style", "")))
 
                 upload_storage_flag = not is_inline_image
-                has_char_tag = any(k in img_prompt.lower() for k in ["<domi>", "<ada>", "<brie>", "<tifa>", "<alt>", "<influencer>", "<june>"])
+                active_p_name = str(ctx.settings.get("persona_name") or "").strip().lower()
+                has_char_tag = (
+                    any(k in img_prompt.lower() for k in ["<domi>", "<ada>", "<brie>", "<tifa>", "<alt>", "<influencer>", "<june>", "<persona>"])
+                    or (core_service.has_custom_persona(ctx) and active_p_name and active_p_name in img_prompt.lower())
+                )
                 if has_char_tag:
                     res = await core_service.generate_character_image(ctx, formatted_prompt, chat, update_history=False, prompt_id=prompt_id, upload_storage=upload_storage_flag)
                 else:
@@ -4585,7 +4607,10 @@ async def generate_character_image(request: Request, data: GenerateInput):
     ctx.private_mode = trusted_private_access(request, ctx)
     ctx.trusted_owner = trusted_owner_access(request)
     if data.settings:
-        ctx.settings.update(data.settings)
+        clean_settings = dict(data.settings)
+        p_avatar = clean_settings.pop("persona_avatar", None)
+        ctx.persona_avatar = p_avatar or None
+        ctx.settings.update(clean_settings)
         ctx.storage = ctx.settings.get("defaultStorage", "")
     ctx.mcp_keys = data.mcp_keys or (ctx.settings.get("mcp_keys") if isinstance(ctx.settings, dict) else None) or getattr(ctx, "mcp_keys", None) or {}
     try:
@@ -4643,7 +4668,10 @@ async def generate_general_image(request: Request, data: GenerateInput):
     ctx.private_mode = trusted_private_access(request, ctx)
     ctx.trusted_owner = trusted_owner_access(request)
     if data.settings:
-        ctx.settings.update(data.settings)
+        clean_settings = dict(data.settings)
+        p_avatar = clean_settings.pop("persona_avatar", None)
+        ctx.persona_avatar = p_avatar or None
+        ctx.settings.update(clean_settings)
         ctx.storage = ctx.settings.get("defaultStorage", "")
     ctx.mcp_keys = data.mcp_keys or (ctx.settings.get("mcp_keys") if isinstance(ctx.settings, dict) else None) or getattr(ctx, "mcp_keys", None) or {}
     try:
@@ -4691,7 +4719,10 @@ async def generate_krea2_endpoint(request: Request, data: KreaGenerateInput):
     ctx.private_mode = trusted_private_access(request, ctx)
     ctx.trusted_owner = trusted_owner_access(request)
     if data.settings:
-        ctx.settings.update(data.settings)
+        clean_settings = dict(data.settings)
+        p_avatar = clean_settings.pop("persona_avatar", None)
+        ctx.persona_avatar = p_avatar or None
+        ctx.settings.update(clean_settings)
         ctx.storage = ctx.settings.get("defaultStorage", "")
     ctx.mcp_keys = data.mcp_keys or (ctx.settings.get("mcp_keys") if isinstance(ctx.settings, dict) else None) or getattr(ctx, "mcp_keys", None) or {}
     try:
@@ -4861,7 +4892,10 @@ async def generate_krea_video_endpoint(request: Request, data: KreaVideoGenerate
     ctx.private_mode = trusted_private_access(request, ctx)
     ctx.trusted_owner = trusted_owner_access(request)
     if data.settings:
-        ctx.settings.update(data.settings)
+        clean_settings = dict(data.settings)
+        p_avatar = clean_settings.pop("persona_avatar", None)
+        ctx.persona_avatar = p_avatar or None
+        ctx.settings.update(clean_settings)
         ctx.storage = ctx.settings.get("defaultStorage", "")
     ctx.mcp_keys = data.mcp_keys or (ctx.settings.get("mcp_keys") if isinstance(ctx.settings, dict) else None) or getattr(ctx, "mcp_keys", None) or {}
     try:
@@ -5730,7 +5764,10 @@ async def generate_character_image_prompt(request: Request, data: GenerateInput)
     ctx.private_mode = trusted_private_access(request, ctx)
     ctx.trusted_owner = trusted_owner_access(request)
     if data.settings:
-        ctx.settings.update(data.settings)
+        clean_settings = dict(data.settings)
+        p_avatar = clean_settings.pop("persona_avatar", None)
+        ctx.persona_avatar = p_avatar or None
+        ctx.settings.update(clean_settings)
         ctx.storage = ctx.settings.get("defaultStorage", "")
     try:
         result = await core_service.generate_character_image_prompt(ctx, data.prompt, data.chat, history=data.history)
@@ -5748,7 +5785,10 @@ async def generate_general_image_prompt(request: Request, data: GenerateInput):
     ctx.private_mode = trusted_private_access(request, ctx)
     ctx.trusted_owner = trusted_owner_access(request)
     if data.settings:
-        ctx.settings.update(data.settings)
+        clean_settings = dict(data.settings)
+        p_avatar = clean_settings.pop("persona_avatar", None)
+        ctx.persona_avatar = p_avatar or None
+        ctx.settings.update(clean_settings)
         ctx.storage = ctx.settings.get("defaultStorage", "")
     try:
         if not data.prompt or data.prompt.strip() in ("", "random"):

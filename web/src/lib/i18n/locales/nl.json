@@ -1821,5 +1821,15 @@
   "krea_ref_inpaint_denoise_label": "Hertekensterkte",
   "krea_ref_inpaint_denoise_hint": "0.55 — subtiele stof- & lichtaanpassing · 0.94 — volledige kleding- of achtergrondwissel",
   "knowledge_install_node_banner": "Installeer je eigen node om automatisch een kennisbank op te bouwen uit je foto's en documenten.",
-  "knowledge_install_node_cta": "Node installeren"
+  "knowledge_install_node_cta": "Node installeren",
+  "krea_persona_chat": "Chat",
+  "krea_persona_chat_hint": "Chat starten met {name}",
+  "krea_save_and_chat": "Opslaan en chatten",
+  "chat_choose_persona": "Kies gesprekspartner",
+  "chat_with_persona_greeting": "Chat met {name}",
+  "persona_hero_subtext": "Begin een gesprek of rollenspel — de persona blijft in karakter en behoudt haar uiterlijk.",
+  "persona_prompt_hello": "Hoi! Vertel me een beetje over jezelf en je stemming nu.",
+  "persona_prompt_show": "/show Stuur me nu een spontane foto van jezelf",
+  "persona_prompt_scene": "Laten we samen een sfeervolle avondscène opzetten — waar ontmoeten we elkaar?",
+  "persona_prompt_lore": "Vertel me een geheim of een favoriete herinnering uit je verleden."
 }

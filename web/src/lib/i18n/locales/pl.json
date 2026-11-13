@@ -1821,5 +1821,15 @@
   "krea_ref_inpaint_denoise_label": "Siła przerysowania",
   "krea_ref_inpaint_denoise_hint": "0.55 — subtelna korekta tkaniny i światła · 0.94 — pełna zmiana stroju lub tła",
   "knowledge_install_node_banner": "Zainstaluj własny węzeł, aby automatycznie tworzyć bazę wiedzy ze swoich zdjęć i dokumentów.",
-  "knowledge_install_node_cta": "Zainstaluj węzeł"
+  "knowledge_install_node_cta": "Zainstaluj węzeł",
+  "krea_persona_chat": "Czat",
+  "krea_persona_chat_hint": "Rozpocznij czat z {name}",
+  "krea_save_and_chat": "Zapisz i czatuj",
+  "chat_choose_persona": "Wybierz rozmówcę",
+  "chat_with_persona_greeting": "Czat z {name}",
+  "persona_hero_subtext": "Zacznij rozmowę lub scenę fabularną — persona pozostaje w roli i zachowuje swój wygląd.",
+  "persona_prompt_hello": "Hej! Opowiedz mi trochę o sobie i swoim nastroju teraz.",
+  "persona_prompt_show": "/show Wyślij mi teraz swoje spontaniczne zdjęcie",
+  "persona_prompt_scene": "Stwórzmy razem klimatyczną wieczorną scenę — gdzie się spotkamy?",
+  "persona_prompt_lore": "Opowiedz mi sekret lub ulubione wspomnienie z przeszłości."
 }

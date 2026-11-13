@@ -1821,5 +1821,15 @@
   "krea_ref_inpaint_denoise_label": "Übermalstärke",
   "krea_ref_inpaint_denoise_hint": "0.55 — dezente Stoff- & Lichtanpassung · 0.94 — kompletter Outfit- oder Hintergrundwechsel",
   "knowledge_install_node_banner": "Installieren Sie Ihren eigenen Knoten, um automatisch eine Wissensdatenbank aus Ihren Fotos und Dokumenten aufzubauen.",
-  "knowledge_install_node_cta": "Knoten installieren"
+  "knowledge_install_node_cta": "Knoten installieren",
+  "krea_persona_chat": "Chat",
+  "krea_persona_chat_hint": "Chat mit {name} starten",
+  "krea_save_and_chat": "Speichern & Chatten",
+  "chat_choose_persona": "Gesprächspartner wählen",
+  "chat_with_persona_greeting": "Chat mit {name}",
+  "persona_hero_subtext": "Starte ein Gespräch oder Rollenspiel — die Persona bleibt in ihrer Rolle und behält ihr Aussehen.",
+  "persona_prompt_hello": "Hey! Erzähl mir ein bisschen von dir und deiner Stimmung gerade.",
+  "persona_prompt_show": "/show Schick mir jetzt ein spontanes Foto von dir",
+  "persona_prompt_scene": "Lass uns gemeinsam eine stimmungsvolle Abendszene aufbauen — wo treffen wir uns?",
+  "persona_prompt_lore": "Erzähl mir ein Geheimnis oder eine Lieblingserinnerung aus deiner Vergangenheit."
 }

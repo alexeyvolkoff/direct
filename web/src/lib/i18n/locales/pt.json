@@ -1821,5 +1821,15 @@
   "krea_ref_inpaint_denoise_label": "Intensidade de redesenho",
   "krea_ref_inpaint_denoise_hint": "0.55 — ajuste sutil de tecido e luz · 0.94 — troca completa de roupa ou fundo",
   "knowledge_install_node_banner": "Instale o seu próprio nó para criar automaticamente uma base de conhecimento a partir das suas fotos e documentos.",
-  "knowledge_install_node_cta": "Instalar nó"
+  "knowledge_install_node_cta": "Instalar nó",
+  "krea_persona_chat": "Chat",
+  "krea_persona_chat_hint": "Iniciar chat com {name}",
+  "krea_save_and_chat": "Salvar e conversar",
+  "chat_choose_persona": "Escolha o interlocutor",
+  "chat_with_persona_greeting": "Chat com {name}",
+  "persona_hero_subtext": "Comece uma conversa ou cena de roleplay — a persona mantém o personagem e a aparência.",
+  "persona_prompt_hello": "Oi! Conte-me um pouco sobre você e seu humor agora.",
+  "persona_prompt_show": "/show Envie-me agora uma foto espontânea sua",
+  "persona_prompt_scene": "Vamos montar juntos uma cena noturna cheia de atmosfera — onde nos encontramos?",
+  "persona_prompt_lore": "Conte-me um segredo ou uma lembrança favorita do seu passado."
 }

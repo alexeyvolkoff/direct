@@ -1822,5 +1822,15 @@
   "krea_ref_inpaint_denoise_label": "Redraw Strength",
   "krea_ref_inpaint_denoise_hint": "0.55 — subtle fabric & lighting tweak · 0.94 — full outfit or background replacement",
   "knowledge_install_node_banner": "Install your own node to build a knowledge base from your photos and documents automatically.",
-  "knowledge_install_node_cta": "Install a node"
+  "knowledge_install_node_cta": "Install a node",
+  "krea_persona_chat": "Chat",
+  "krea_persona_chat_hint": "Start a chat with {name}",
+  "krea_save_and_chat": "Save & Chat",
+  "chat_choose_persona": "Choose companion",
+  "chat_with_persona_greeting": "Chat with {name}",
+  "persona_hero_subtext": "Start a conversation or roleplay scene — your persona stays in character and keeps her visual style.",
+  "persona_prompt_hello": "Hey! Tell me a little about yourself and what mood you're in right now.",
+  "persona_prompt_show": "/show Send me a candid photo of yourself right now",
+  "persona_prompt_scene": "Let's set up an atmospheric evening scene together — where are we meeting?",
+  "persona_prompt_lore": "Tell me a secret or a favorite memory from your past."
 }

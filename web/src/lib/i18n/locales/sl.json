@@ -1821,5 +1821,15 @@
   "krea_ref_inpaint_denoise_label": "Moč prerisovanja",
   "krea_ref_inpaint_denoise_hint": "0.55 — rahla prilagoditev blaga in svetlobe · 0.94 — popolna menjava oblačil ali ozadja",
   "knowledge_install_node_banner": "Namestite lastno vozlišče za samodejno ustvarjanje baze znanja iz vaših fotografij in dokumentov.",
-  "knowledge_install_node_cta": "Namesti vozlišče"
+  "knowledge_install_node_cta": "Namesti vozlišče",
+  "krea_persona_chat": "Klepet",
+  "krea_persona_chat_hint": "Začni klepet z {name}",
+  "krea_save_and_chat": "Shrani in klepetaj",
+  "chat_choose_persona": "Izberi sogovornika",
+  "chat_with_persona_greeting": "Klepet z {name}",
+  "persona_hero_subtext": "Začni pogovor ali igro vlog — persona ostane v vlogi in ohrani svoj videz.",
+  "persona_prompt_hello": "Živjo! Povej mi malo o sebi in svojem razpoloženju zdaj.",
+  "persona_prompt_show": "/show Pošlji mi zdaj svojo spontano fotografijo",
+  "persona_prompt_scene": "Skupaj ustvarimo vzdušno večerno sceno — kje se dobiva?",
+  "persona_prompt_lore": "Povej mi skrivnost ali najljubši spomin iz preteklosti."
 }

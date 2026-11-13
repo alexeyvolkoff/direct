@@ -1821,5 +1821,15 @@
   "krea_ref_inpaint_denoise_label": "Jačina preoblikovanja",
   "krea_ref_inpaint_denoise_hint": "0.55 — suptilna prilagodba tkanine i svjetla · 0.94 — potpuna zamjena odjeće ili pozadine",
   "knowledge_install_node_banner": "Instalirajte vlastiti čvor kako biste automatski izradili bazu znanja iz svojih fotografija i dokumenata.",
-  "knowledge_install_node_cta": "Instaliraj čvor"
+  "knowledge_install_node_cta": "Instaliraj čvor",
+  "krea_persona_chat": "Chat",
+  "krea_persona_chat_hint": "Započni chat s {name}",
+  "krea_save_and_chat": "Spremi i chataj",
+  "chat_choose_persona": "Odaberi sugovornika",
+  "chat_with_persona_greeting": "Chat s {name}",
+  "persona_hero_subtext": "Započni razgovor ili igru uloga — persona ostaje u liku i zadržava svoj izgled.",
+  "persona_prompt_hello": "Bok! Reci mi nešto o sebi i svom raspoloženju sada.",
+  "persona_prompt_show": "/show Pošalji mi sada svoju spontanu fotografiju",
+  "persona_prompt_scene": "Zajedno stvorimo atmosferičnu večernju scenu — gdje se nalazimo?",
+  "persona_prompt_lore": "Ispričaj mi tajnu ili omiljenu uspomenu iz prošlosti."
 }

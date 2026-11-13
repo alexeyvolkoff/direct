@@ -1934,8 +1934,18 @@
     }
   }
 
-  async function savePersona() {
-    if (!personaFormName.trim() || !personaFormPrompt.trim()) return;
+  function startChatWithPersona(p, e) {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    if (!p) return;
+    dispatch("start-persona-chat", { persona: p });
+  }
+
+  async function savePersona(startChatAfter = false) {
+    if (!personaFormName.trim() || !personaFormPrompt.trim()) return null;
+    const shouldStartChat = startChatAfter === true;
     isSavingPersona = true;
     try {
       const id = editingPersonaId || ("persona_" + Date.now());
@@ -2030,9 +2040,15 @@
         selectedPersonas = selectedPersonas.map((x) => (x.id === id ? pObj : x));
       }
 
+      dispatch("personas-change", { personas });
       showPersonaModal = false;
+      if (shouldStartChat) {
+        dispatch("start-persona-chat", { persona: pObj });
+      }
+      return pObj;
     } catch (err) {
       console.error("[KreaStudio] Error saving persona:", err);
+      return null;
     } finally {
       isSavingPersona = false;
     }
@@ -2086,6 +2102,7 @@
 
     personas = personas.filter((x) => x.id !== p.id);
     selectedPersonas = selectedPersonas.filter((x) => x.id !== p.id);
+    dispatch("personas-change", { personas });
   }
 
   async function generateAiPersona() {
@@ -2127,13 +2144,18 @@
     }
   }
 
-  async function saveAiGeneratedPersona() {
-    if (!generatedAiPersona) return;
+  async function saveAiGeneratedPersona(startChatAfter = false) {
+    if (!generatedAiPersona) return null;
+    const shouldStartChat = startChatAfter === true;
     const pObj = {
       id: generatedAiPersona.id || ("persona_" + Date.now()),
       name: generatedAiPersona.name,
       title: generatedAiPersona.title,
       prompt: generatedAiPersona.prompt,
+      personality: generatedAiPersona.personality || "",
+      archetype: generatedAiPersona.archetype || aiFactoryArchetype || "",
+      lora: generatedAiPersona.lora || "",
+      render_preset: generatedAiPersona.render_preset || null,
       avatar: generatedAiPersona.avatar || "",
       avatarData: generatedAiPersona.avatarData || generatedAiPersona.avatar || "",
       createdAt: Date.now()
@@ -2184,8 +2206,13 @@
 
     personas = [pObj, ...personas];
     selectedPersonas = [pObj, ...selectedPersonas.filter((x) => x.id !== pObj.id)];
+    dispatch("personas-change", { personas });
     showAiFactoryModal = false;
     generatedAiPersona = null;
+    if (shouldStartChat) {
+      dispatch("start-persona-chat", { persona: pObj });
+    }
+    return pObj;
   }
 
   async function loadPersonas() {
@@ -2282,6 +2309,7 @@
     }
     personas = [...personas];
     selectedPersonas = getLocalSelectedPersonas(personas);
+    dispatch("personas-change", { personas });
   }
 
   async function loadCreations() {
@@ -5593,6 +5621,13 @@
                   {selectedPersonas.some((x) => x.id === p.id) ? "✓ " + $_("krea_persona_selected", {}, "Выбрана") : "+ " + $_("krea_persona_select", {}, "Выбрать")}
                 </button>
                 <button
+                  class="card-action-btn chat-btn"
+                  title={$_("krea_persona_chat_hint", { name: p.name }, `Начать чат с ${p.name}`)}
+                  on:click={(e) => startChatWithPersona(p, e)}
+                >
+                  💬 {$_("krea_persona_chat", {}, "Чат")}
+                </button>
+                <button
                   class="card-action-btn icon-only"
                   title={$_("krea_persona_edit", {}, "Редактировать")}
                   on:click={(e) => { e.stopPropagation(); openEditPersonaModal(p); }}
@@ -8162,13 +8197,22 @@
 
         <div class="modal-footer">
           <button class="cancel-btn" on:click={() => (showPersonaModal = false)}>{$_("krea_cancel", {}, "Cancel")}</button>
-          <button
-            class="save-btn"
-            disabled={isSavingPersona || !personaFormName.trim() || !personaFormPrompt.trim()}
-            on:click={savePersona}
-          >
-            {isSavingPersona ? $_("krea_saving", {}, "Saving...") : $_("krea_save", {}, "Save")}
-          </button>
+          <div class="modal-footer-actions">
+            <button
+              class="chat-save-btn"
+              disabled={isSavingPersona || !personaFormName.trim() || !personaFormPrompt.trim()}
+              on:click={() => savePersona(true)}
+            >
+              💬 {$_("krea_save_and_chat", {}, "Save & Chat")}
+            </button>
+            <button
+              class="save-btn"
+              disabled={isSavingPersona || !personaFormName.trim() || !personaFormPrompt.trim()}
+              on:click={() => savePersona(false)}
+            >
+              {isSavingPersona ? $_("krea_saving", {}, "Saving...") : $_("krea_save", {}, "Save")}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -8396,9 +8440,14 @@
         <div class="modal-footer">
           <button class="cancel-btn" on:click={() => (showAiFactoryModal = false)}>{$_("krea_close", {}, "Закрыть")}</button>
           {#if generatedAiPersona}
-            <button class="save-btn" on:click={saveAiGeneratedPersona}>
-              💾 {$_("krea_save_to_personas", {}, "Сохранить в мои персоны")}
-            </button>
+            <div class="modal-footer-actions">
+              <button class="chat-save-btn" on:click={() => saveAiGeneratedPersona(true)}>
+                💬 {$_("krea_save_and_chat", {}, "Сохранить и в чат")}
+              </button>
+              <button class="save-btn" on:click={() => saveAiGeneratedPersona(false)}>
+                💾 {$_("krea_save_to_personas", {}, "Сохранить в мои персоны")}
+              </button>
+            </div>
           {/if}
         </div>
       </div>
@@ -8852,6 +8901,18 @@
   .card-action-btn.select-btn.active {
     background: #8b5cf6;
     color: #fff;
+  }
+
+  .card-action-btn.chat-btn {
+    background: rgba(139, 92, 246, 0.16);
+    border: 1px solid rgba(167, 139, 250, 0.32);
+    color: #e9d5ff;
+  }
+
+  .card-action-btn.chat-btn:hover {
+    background: #7c3aed;
+    border-color: #7c3aed;
+    color: #ffffff;
   }
 
   .card-action-btn.icon-only {
@@ -11217,6 +11278,36 @@
     cursor: pointer;
   }
 
+  .modal-footer-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .chat-save-btn {
+    background: rgba(139, 92, 246, 0.18);
+    border: 1px solid rgba(167, 139, 250, 0.42);
+    color: #f3e8ff;
+    padding: 7px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .chat-save-btn:hover:not(:disabled) {
+    background: rgba(139, 92, 246, 0.34);
+    border-color: #a78bfa;
+    color: #ffffff;
+  }
+
+  .chat-save-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
   .save-btn {
     background: var(--accent-gradient);
     border: none;
@@ -11346,6 +11437,26 @@
   }
   .krea-studio-root.light-theme .card-action-btn.select-btn.active {
     background: #8b5cf6;
+    color: #ffffff;
+  }
+  .krea-studio-root.light-theme .card-action-btn.chat-btn {
+    background: #ede9fe;
+    border-color: #c4b5fd;
+    color: #5b21b6;
+  }
+  .krea-studio-root.light-theme .card-action-btn.chat-btn:hover {
+    background: #7c3aed;
+    border-color: #6d28d9;
+    color: #ffffff;
+  }
+  .krea-studio-root.light-theme .chat-save-btn {
+    background: #ede9fe;
+    border-color: #c4b5fd;
+    color: #5b21b6;
+  }
+  .krea-studio-root.light-theme .chat-save-btn:hover:not(:disabled) {
+    background: #7c3aed;
+    border-color: #6d28d9;
     color: #ffffff;
   }
   .krea-studio-root.light-theme .card-action-btn.danger:hover {

@@ -1822,5 +1822,15 @@
   "krea_ref_inpaint_denoise_label": "Сила перерисовки",
   "krea_ref_inpaint_denoise_hint": "0.55 — деликатная правка ткани и света · 0.94 — полная замена одежды или фона",
   "knowledge_install_node_banner": "Установите собственную ноду, чтобы создать базу знаний из ваших фотографий и документов автоматически.",
-  "knowledge_install_node_cta": "Установить ноду"
+  "knowledge_install_node_cta": "Установить ноду",
+  "krea_persona_chat": "Чат",
+  "krea_persona_chat_hint": "Начать чат с {name}",
+  "krea_save_and_chat": "Сохранить и в чат",
+  "chat_choose_persona": "Выберите собеседника",
+  "chat_with_persona_greeting": "Чат с {name}",
+  "persona_hero_subtext": "Начните разговор или ролевую сцену — персона остаётся в образе и сохраняет свой внешний вид.",
+  "persona_prompt_hello": "Привет! Расскажи немного о себе и о своём настроении сейчас.",
+  "persona_prompt_show": "/show Пришли мне свою живую фотографию прямо сейчас",
+  "persona_prompt_scene": "Давай вместе придумаем атмосферную вечернюю сцену — где мы встречаемся?",
+  "persona_prompt_lore": "Расскажи секрет или любимое воспоминание из своего прошлого."
 }

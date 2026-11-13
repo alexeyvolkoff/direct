@@ -1821,5 +1821,15 @@
   "krea_ref_inpaint_denoise_label": "Sila prekreslenia",
   "krea_ref_inpaint_denoise_hint": "0.55 — jemná úprava látky a svetla · 0.94 — úplná výmena oblečenia alebo pozadia",
   "knowledge_install_node_banner": "Nainštalujte si vlastný uzol na automatické vytvorenie bázy znalostí z vašich fotografií a dokumentov.",
-  "knowledge_install_node_cta": "Nainštalovať uzol"
+  "knowledge_install_node_cta": "Nainštalovať uzol",
+  "krea_persona_chat": "Chat",
+  "krea_persona_chat_hint": "Začať chat s {name}",
+  "krea_save_and_chat": "Uložiť a chatovať",
+  "chat_choose_persona": "Vyberte partnera",
+  "chat_with_persona_greeting": "Chat s {name}",
+  "persona_hero_subtext": "Začnite rozhovor alebo hranie rolí — persóna ostáva v úlohe a zachováva si vzhľad.",
+  "persona_prompt_hello": "Ahoj! Povedz mi niečo o sebe a o svojej nálade práve teraz.",
+  "persona_prompt_show": "/show Pošli mi hneď svoju spontánnu fotku",
+  "persona_prompt_scene": "Vytvorme spolu atmosférickú večernú scénu — kde sa stretneme?",
+  "persona_prompt_lore": "Povedz mi tajomstvo alebo obľúbenú spomienku z minulosti."
 }

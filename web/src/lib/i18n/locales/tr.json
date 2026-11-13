@@ -1821,5 +1821,15 @@
   "krea_ref_inpaint_denoise_label": "Yeniden Çizim Gücü",
   "krea_ref_inpaint_denoise_hint": "0.55 — hafif kumaş ve ışık ayarı · 0.94 — tam kıyafet veya arka plan değişimi",
   "knowledge_install_node_banner": "Fotoğraflarınızdan ve belgelerinizden otomatik olarak bir bilgi tabanı oluşturmak için kendi düğümünüzü kurun.",
-  "knowledge_install_node_cta": "Düğüm kur"
+  "knowledge_install_node_cta": "Düğüm kur",
+  "krea_persona_chat": "Sohbet",
+  "krea_persona_chat_hint": "{name} ile sohbet başlat",
+  "krea_save_and_chat": "Kaydet ve sohbet et",
+  "chat_choose_persona": "Sohbet edeceğin kişiyi seç",
+  "chat_with_persona_greeting": "{name} ile sohbet",
+  "persona_hero_subtext": "Bir sohbet veya rol yapma sahnesi başlat — persona karakterinde kalır ve görünümünü korur.",
+  "persona_prompt_hello": "Selam! Bana kendinden ve şu anki ruh halinden biraz bahset.",
+  "persona_prompt_show": "/show Hemen bana kendinin doğal bir fotoğrafını gönder",
+  "persona_prompt_scene": "Birlikte atmosferik bir akşam sahnesi kuralım — nerede buluşuyoruz?",
+  "persona_prompt_lore": "Bana geçmişinden bir sır ya da en sevdiğin anıyı anlat."
 }

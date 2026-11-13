@@ -1821,5 +1821,15 @@
   "krea_ref_inpaint_denoise_label": "Intensité de redessin",
   "krea_ref_inpaint_denoise_hint": "0.55 — ajustement subtil tissu & lumière · 0.94 — remplacement complet tenue ou décor",
   "knowledge_install_node_banner": "Installez votre propre nœud pour créer automatiquement une base de connaissances à partir de vos photos et documents.",
-  "knowledge_install_node_cta": "Installer un nœud"
+  "knowledge_install_node_cta": "Installer un nœud",
+  "krea_persona_chat": "Chat",
+  "krea_persona_chat_hint": "Démarrer un chat avec {name}",
+  "krea_save_and_chat": "Enregistrer et discuter",
+  "chat_choose_persona": "Choisir un interlocuteur",
+  "chat_with_persona_greeting": "Chat avec {name}",
+  "persona_hero_subtext": "Lancez une conversation ou une scène de jeu de rôle : la persona reste dans son personnage et garde son apparence.",
+  "persona_prompt_hello": "Salut ! Parle-moi un peu de toi et de ton humeur du moment.",
+  "persona_prompt_show": "/show Envoie-moi une photo spontanée de toi maintenant",
+  "persona_prompt_scene": "Imaginons ensemble une scène de soirée pleine d'atmosphère — où se retrouve-t-on ?",
+  "persona_prompt_lore": "Raconte-moi un secret ou un souvenir préféré de ton passé."
 }

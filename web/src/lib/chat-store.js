@@ -146,7 +146,7 @@ export class ChatStore {
       } else {
         clean.archived = false;
       }
-      if (clean.title || clean.name || clean.updated) {
+      if (clean.title || clean.name || clean.updated || clean.persona_id) {
         this.chatsCache.set(key, clean);
         this._notify();
       }
@@ -213,6 +213,12 @@ export class ChatStore {
   async saveChat(chatInfo) {
     await this.ready;
     const existing = this.chatsCache.get(chatInfo._id) || {};
+    const nextPersona =
+      chatInfo.persona !== undefined ? chatInfo.persona : (existing.persona || null);
+    const nextPersonaId =
+      chatInfo.persona !== undefined
+        ? (chatInfo.persona && chatInfo.persona.id ? chatInfo.persona.id : "")
+        : (chatInfo.persona_id !== undefined ? (chatInfo.persona_id || "") : (existing.persona_id || ""));
     const record = {
       ...existing,
       _id: chatInfo._id,
@@ -226,6 +232,8 @@ export class ChatStore {
       attached_docs: Array.isArray(chatInfo.attached_docs)
           ? chatInfo.attached_docs
           : (Array.isArray(existing.attached_docs) ? existing.attached_docs : []),
+      persona_id: nextPersonaId,
+      persona: nextPersona,
       updated: chatInfo.updated instanceof Date ? chatInfo.updated.toISOString() : (chatInfo.updated || new Date().toISOString()),
     };
     this.chatsCache.set(record._id, record);

@@ -1821,5 +1821,15 @@
   "krea_ref_inpaint_denoise_label": "重繪幅度",
   "krea_ref_inpaint_denoise_hint": "0.55 — 微調布料與光影 · 0.94 — 完全替換服裝或背景",
   "knowledge_install_node_banner": "安裝您自己的節點，即可根據您的照片和文件自動建立知識庫。",
-  "knowledge_install_node_cta": "安裝節點"
+  "knowledge_install_node_cta": "安裝節點",
+  "krea_persona_chat": "聊天",
+  "krea_persona_chat_hint": "與 {name} 開始聊天",
+  "krea_save_and_chat": "儲存並聊天",
+  "chat_choose_persona": "選擇聊天對象",
+  "chat_with_persona_greeting": "與 {name} 聊天",
+  "persona_hero_subtext": "開始對話或角色扮演場景——角色將保持人設與外觀。",
+  "persona_prompt_hello": "嘿！跟我說說你自己和你現在的心情吧。",
+  "persona_prompt_show": "/show 現在給我發一張你的隨拍照片",
+  "persona_prompt_scene": "我們一起搭建一個有氛圍的夜晚場景吧——在哪裡見面？",
+  "persona_prompt_lore": "告訴我一個秘密，或你過去最喜歡的回憶。"
 }

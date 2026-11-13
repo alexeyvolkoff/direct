@@ -1821,5 +1821,15 @@
   "krea_ref_inpaint_denoise_label": "شدت بازطراحی",
   "krea_ref_inpaint_denoise_hint": "0.55 — تغییر ظریف پارچه و نور · 0.94 — تعویض کامل لباس یا پس‌زمینه",
   "knowledge_install_node_banner": "برای ساخت خودکار پایگاه دانش از عکس‌ها و اسناد خود، نود شخصی‌تان را نصب کنید.",
-  "knowledge_install_node_cta": "نصب نود"
+  "knowledge_install_node_cta": "نصب نود",
+  "krea_persona_chat": "گفتگو",
+  "krea_persona_chat_hint": "شروع گفتگو با {name}",
+  "krea_save_and_chat": "ذخیره و گفتگو",
+  "chat_choose_persona": "همصحبت را انتخاب کنید",
+  "chat_with_persona_greeting": "گفتگو با {name}",
+  "persona_hero_subtext": "گفتگو یا صحنه نقش‌آفرینی را شروع کنید — پرسونا در نقش می‌ماند و ظاهرش را حفظ می‌کند.",
+  "persona_prompt_hello": "سلام! کمی از خودت و حال‌وهوایت بگو.",
+  "persona_prompt_show": "/show همین حالا یک عکس طبیعی از خودت برایم بفرست",
+  "persona_prompt_scene": "بیا با هم یک صحنه شبانه با حال‌وهوا بسازیم — کجا همدیگر را ببینیم؟",
+  "persona_prompt_lore": "یک راز یا خاطره دلخواه از گذشته‌ات برایم بگو."
 }

@@ -19,6 +19,12 @@
   import { aiNodeStore, aiOnmychatHeaders } from "../lib/ai-node.js";
   import { gatewayConfig } from "../lib/gateway-config.js";
   import { resolveAppMode, APP_MODE_CHAT } from "../lib/app-mode.js";
+  import {
+    loadAvailablePersonas,
+    compactPersonaForChat,
+    resolveFullPersona,
+    isCustomPersona,
+  } from "../lib/personas-loader.js";
 
   export let targetLinkId = "";
   export let targetDevice = null;
@@ -487,7 +493,10 @@
     }
   }
 
-  function startNewChat({ switchView = true } = {}) {
+  function startNewChat(opts = {}) {
+    const safeOpts = opts && typeof opts === "object" && !("detail" in opts) ? opts : {};
+    const switchView = safeOpts.switchView !== false;
+    const persona = safeOpts.persona || null;
     if (switchView) {
       activeView = "chat";
       userSelectedChatManually = true;
@@ -496,6 +505,11 @@
       isChatLoading = true;
     }
     const id = newChatId();
+    if (persona && isCustomPersona(persona)) {
+      pendingPersonasByChatId = { ...pendingPersonasByChatId, [id]: persona };
+    } else {
+      pendingPersonasByChatId = { ...pendingPersonasByChatId, [id]: null };
+    }
     activeChatId = id;
     if (typeof localStorage !== "undefined") {
       localStorage.setItem("omc_active_chat_id", id);
@@ -549,12 +563,15 @@
     const { chatId: cid, title } = e.detail || {};
     if (!cid || !title || !chatStore) return;
     const known = chats.find((c) => c._id === cid);
-    if (!known || known.title !== title) {
+    const pendingP = pendingPersonasByChatId[cid];
+    const compactP = pendingP !== undefined ? compactPersonaForChat(pendingP) : undefined;
+    if (!known || known.title !== title || (compactP && !known.persona_id)) {
       chatStore
         .saveChat({
           _id: cid,
           title,
           name: title.slice(0, 60),
+          ...(compactP !== undefined ? { persona: compactP, persona_id: compactP?.id || "" } : {}),
           updated: new Date().toISOString(),
         })
         .catch(() => {});
@@ -648,7 +665,74 @@
     }
   }
 
+  let availablePersonas = [];
+  let pendingPersonasByChatId = {};
+  let personasLoadSeq = 0;
+  let lastPersonasSig = "";
+
+  async function refreshAvailablePersonas() {
+    const seq = ++personasLoadSeq;
+    try {
+      const { customPersonas } = await loadAvailablePersonas({
+        httpDrive: drive,
+        deviceDrive: effectiveDeviceDrive,
+        defaultStorage: $profileStore?.defaultStorage || "",
+        userName: $profileStore?.name || $profileStore?.user || "",
+      });
+      if (seq === personasLoadSeq) {
+        availablePersonas = customPersonas;
+      }
+    } catch (e) {
+      console.warn("[chat-applet] persona load error:", e);
+    }
+  }
+
+  function handleStudioPersonasChange(e) {
+    const list = e.detail?.personas;
+    if (Array.isArray(list)) {
+      availablePersonas = list.filter(isCustomPersona);
+    }
+  }
+
+  function handleStartPersonaChat(e) {
+    const persona = e.detail?.persona;
+    if (!persona) return;
+    if (isCustomPersona(persona) && !availablePersonas.some((p) => p.id === persona.id)) {
+      availablePersonas = [persona, ...availablePersonas];
+    } else if (isCustomPersona(persona)) {
+      availablePersonas = availablePersonas.map((p) => (p.id === persona.id ? persona : p));
+    }
+    startNewChat({ switchView: true, persona });
+  }
+
+  function handleSelectChatPersona(e) {
+    const persona = e.detail?.persona || null;
+    if (!activeChatId) return;
+    pendingPersonasByChatId = { ...pendingPersonasByChatId, [activeChatId]: persona };
+    const compact = persona ? compactPersonaForChat(persona) : null;
+    if (chatStore && chats.some((c) => c._id === activeChatId)) {
+      chatStore
+        .saveChat({
+          _id: activeChatId,
+          persona: compact,
+          persona_id: compact?.id || "",
+        })
+        .catch(() => {});
+    }
+  }
+
+  function getChatRowPersona(c) {
+    if (!c) return null;
+    const raw = c.persona || c.persona_id || null;
+    return raw ? resolveFullPersona(raw, availablePersonas) : null;
+  }
+
   $: activeChat = chats.find((c) => c._id === activeChatId);
+  $: activeChatRawPersona =
+    pendingPersonasByChatId[activeChatId] !== undefined
+      ? pendingPersonasByChatId[activeChatId]
+      : (activeChat?.persona || activeChat?.persona_id || null);
+  $: activeChatPersona = resolveFullPersona(activeChatRawPersona, availablePersonas);
 
   function closeApp() {
     // In chat mode there is no parent surface to close; a close action from
@@ -688,6 +772,18 @@
     || null;
 
   $: effectiveDeviceDrive = userStorageDevice?.drive || (canBrowseOwnFiles(targetDevice) ? targetDevice?.drive : null);
+
+  $: {
+    const sig = [
+      drive ? (drive.targetLinkId || "http") : "",
+      effectiveDeviceDrive ? (effectiveDeviceDrive.isConnected ? "dev:connected" : "dev:pending") : "",
+      $profileStore?.defaultStorage || "",
+    ].join("|");
+    if ((drive || effectiveDeviceDrive) && sig !== lastPersonasSig) {
+      lastPersonasSig = sig;
+      refreshAvailablePersonas();
+    }
+  }
 
   function buildIndexSources() {
     const out = [];
@@ -1095,6 +1191,16 @@
                     autoFocus
                   />
                 {:else}
+                  {@const rowPersona = getChatRowPersona(c)}
+                  {#if rowPersona && rowPersona.name}
+                    <span class="session-persona-chip" title={rowPersona.name}>
+                      {#if rowPersona.avatar}
+                        <img src={rowPersona.avatar} alt={rowPersona.name} class="session-persona-avatar" />
+                      {:else}
+                        <span class="session-persona-initial">{rowPersona.name.slice(0, 1).toUpperCase()}</span>
+                      {/if}
+                    </span>
+                  {/if}
                   <span class="session-title" title={c.title || $_("new_chat", {}, "New chat")}>
                     {c.title || $_("new_chat", {}, "New chat")}
                   </span>
@@ -1484,6 +1590,8 @@
           defaultStorage={$profileStore.defaultStorage || ""}
           userName={$profileStore.name || $profileStore.user || ""}
           on:count-change={(e) => (creationsCount = e.detail)}
+          on:personas-change={handleStudioPersonasChange}
+          on:start-persona-chat={handleStartPersonaChat}
           on:toggle-sidebar={toggleSidebar}
           on:close={closeApp}
           on:open-file={(e) => forwardOpenFile(e.detail)}
@@ -1533,8 +1641,12 @@
           defaultStorage={$profileStore.defaultStorage || ""}
           currentChatTitle={activeChat?.title || activeChat?.name || ""}
           userName={$profileStore.name || $profileStore.user || ""}
+          {availablePersonas}
+          {activeChatPersona}
           on:title-change={handleTitleChange}
-          on:new-chat={startNewChat}
+          on:new-chat={() => startNewChat()}
+          on:select-persona={handleSelectChatPersona}
+          on:open-personas={() => (activeView = "creations")}
           on:open-knowledge={() => (activeView = "memory")}
           on:open-file={(e) => forwardOpenFile(e.detail)}
           on:attached-change={(e) => (attachedCards = e.detail)}
@@ -2110,6 +2222,34 @@
   .session-row.active {
     background: var(--accent-soft);
     font-weight: 500;
+  }
+
+  .session-persona-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    overflow: hidden;
+    flex-shrink: 0;
+    margin-right: 6px;
+    background: var(--accent-soft);
+    border: 1px solid var(--border-subtle);
+  }
+
+  .session-persona-avatar {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .session-persona-initial {
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1;
   }
 
   .session-title {
