@@ -8006,6 +8006,7 @@ function lastFreshTitle(messages) {
     transition: border-color 0.2s, box-shadow 0.2s;
     box-sizing: border-box;
     position: relative;
+    z-index: 30;
   }
 
   .composer-pill:focus-within {
@@ -8061,7 +8062,7 @@ function lastFreshTitle(messages) {
     left: 0;
     width: 350px;
     max-width: calc(100vw - 32px);
-    background: var(--bg-card);
+    background: color-mix(in srgb, var(--bg-main, #16111c) 95%, var(--bg-card, #1e1826));
     border: 1px solid var(--border-color);
     border-radius: 18px;
     box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.04);
