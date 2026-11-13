@@ -5066,9 +5066,8 @@ async def generate_persona_endpoint(request: Request, data: PersonaGenerateInput
     ctx = get_ctx(data.omd_key)
     ctx.private_mode = trusted_private_access(request, ctx)
     ctx.trusted_owner = trusted_owner_access(request)
-    if data.settings:
-        ctx.settings.update(data.settings)
-    ctx.mcp_keys = data.mcp_keys or (ctx.settings.get("mcp_keys") if isinstance(ctx.settings, dict) else None) or getattr(ctx, "mcp_keys", None) or {}
+    req_settings_mcp = data.settings.get("mcp_keys") if isinstance(data.settings, dict) else None
+    ctx.mcp_keys = data.mcp_keys or req_settings_mcp or (ctx.settings.get("mcp_keys") if isinstance(ctx.settings, dict) else None) or getattr(ctx, "mcp_keys", None) or {}
 
     archetype_presets = {
         "domi": {
@@ -5178,8 +5177,10 @@ async def generate_persona_endpoint(request: Request, data: PersonaGenerateInput
     b64_str = ""
     try:
         st_persona = await core_service.check_krea_status(ctx)
+        persona_tier = st_persona.get("tier") or ("owner" if _is_persona_disk_owner(request, ctx) else "guest")
+        is_paid_or_owner = persona_tier in ("owner", "muse", "member")
         is_sdxl_arch = arch_key in krea_archetypes and "sdxl" in (krea_archetypes[arch_key].get("models") or [])
-        can_use_krea = bool(st_persona.get("krea_allowed")) and await core_service.is_krea_available(ctx) and not is_sdxl_arch
+        can_use_krea = is_paid_or_owner and bool(st_persona.get("krea_allowed")) and await core_service.is_krea_available(ctx) and not is_sdxl_arch
         if can_use_krea:
             res = await core_service.generate_krea2_image(
                 ctx=ctx,
@@ -5301,11 +5302,39 @@ async def describe_persona_face(request: Request, data: PersonaDescribeFaceInput
         raise HTTPException(status_code=500, detail=str(e))
 
 
+_SAFE_PERSONA_ID_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
+
+
+def _is_safe_persona_id(persona_id: str) -> bool:
+    return bool(persona_id) and ".." not in persona_id and bool(_SAFE_PERSONA_ID_RE.fullmatch(persona_id))
+
+
+def _is_persona_disk_owner(request: Request, ctx: user_context.UserContext | None) -> bool:
+    """Строгий гейт на чтение/запись/удаление персон владельца ноды с диска."""
+    if validated_node_owner(ctx):
+        return True
+    role = trusted_caller_role(request)
+    if role == "owner":
+        return True
+    caller_did = (request.headers.get("X-OMD-Caller-DID") or request.headers.get("X-OMD-DID") or "").strip()
+    if caller_did and is_did_paired(caller_did):
+        return True
+    if role in ("guest", "shared"):
+        return False
+    client_host = request.client.host if request.client else ""
+    if client_host in ("127.0.0.1", "::1", "localhost") and request.headers.get("x-client") == "svar":
+        return True
+    return False
+
+
 @app.get("/personas")
-async def get_personas_endpoint(omd_key: str | None = Depends(get_omd_key)):
-    """Возвращает список доступных персон из папки personas рядом с generated."""
+async def get_personas_endpoint(request: Request, omd_key: str | None = Depends(get_omd_key)):
+    """Возвращает список доступных персон. Персоны с диска ноды видны только владельцу ноды."""
     ctx = get_ctx(omd_key)
-    disk_personas = core_service.load_personas_from_disk(ctx)
+    ctx.private_mode = trusted_private_access(request, ctx)
+    ctx.trusted_owner = trusted_owner_access(request)
+    is_owner = _is_persona_disk_owner(request, ctx)
+    disk_personas = core_service.load_personas_from_disk(ctx) if is_owner else []
 
     # Гарантируем наличие базовой персоны ассистента в начале списка
     has_assistant = any(p.get("id") == "june" or p.get("is_default") for p in disk_personas)
@@ -5335,11 +5364,7 @@ async def save_persona_endpoint(request: Request, data: dict):
     ctx.private_mode = trusted_private_access(request, ctx)
     ctx.trusted_owner = trusted_owner_access(request)
 
-    is_owner = False
-    try:
-        is_owner = validated_node_owner(ctx)
-    except Exception:
-        is_owner = False
+    is_owner = _is_persona_disk_owner(request, ctx)
 
     # Персоны гостей и персоны на удаленных накопителях НЕ сохраняются на диск ноды
     if not is_owner or not data.get("save_local", False):
@@ -5357,15 +5382,14 @@ async def save_persona_endpoint(request: Request, data: dict):
 
 
 @app.delete("/personas/{persona_id}")
-async def delete_persona_endpoint(persona_id: str, omd_key: str | None = Depends(get_omd_key)):
+async def delete_persona_endpoint(request: Request, persona_id: str, omd_key: str | None = Depends(get_omd_key)):
     """Удаляет персону (.json и .png) из папки personas владельца ноды."""
+    if not _is_safe_persona_id(persona_id):
+        raise HTTPException(status_code=400, detail="Invalid persona_id")
     ctx = get_ctx(omd_key)
-    is_owner = False
-    try:
-        is_owner = validated_node_owner(ctx)
-    except Exception:
-        is_owner = False
-    if not is_owner:
+    ctx.private_mode = trusted_private_access(request, ctx)
+    ctx.trusted_owner = trusted_owner_access(request)
+    if not _is_persona_disk_owner(request, ctx):
         logging.info(f"[Personas] Rejecting delete on AI node: not owner (user='{ctx.user_id}')")
         return {"status": "ok", "deleted": False, "reason": "not_owner"}
     success = core_service.delete_persona_from_disk(persona_id, ctx)
@@ -5373,14 +5397,19 @@ async def delete_persona_endpoint(persona_id: str, omd_key: str | None = Depends
 
 
 @app.get("/personas/{persona_id}/avatar")
-async def get_persona_avatar_endpoint(persona_id: str, omd_key: str | None = Depends(get_omd_key)):
-    """Отдает аватар персоны из папки personas."""
+async def get_persona_avatar_endpoint(request: Request, persona_id: str, omd_key: str | None = Depends(get_omd_key)):
+    """Отдает аватар персоны из папки personas (только владельцу ноды; дефолтный аватар June — всем)."""
+    if not _is_safe_persona_id(persona_id):
+        raise HTTPException(status_code=400, detail="Invalid persona_id")
     ctx = get_ctx(omd_key)
-    dirs = core_service.get_personas_dirs(ctx)
-    for p_dir in dirs:
-        cand = os.path.join(p_dir, f"{persona_id}.png")
-        if os.path.isfile(cand):
-            return FileResponse(cand, media_type="image/png")
+    ctx.private_mode = trusted_private_access(request, ctx)
+    ctx.trusted_owner = trusted_owner_access(request)
+    if _is_persona_disk_owner(request, ctx):
+        dirs = core_service.get_personas_dirs(ctx)
+        for p_dir in dirs:
+            cand = os.path.join(p_dir, f"{persona_id}.png")
+            if os.path.isfile(cand):
+                return FileResponse(cand, media_type="image/png")
     # Fallback на дефолтный аватар ТОЛЬКО для базовой June
     if persona_id in ("june", "default"):
         default_path = os.path.join(core_service.APP_ROOT_DIR, core_service.AVATAR_DIR, "default.png")
