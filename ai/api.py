@@ -3997,13 +3997,8 @@ async def chat_stream(request: Request, prompt: str, omd_key: str | None = Depen
     else:
         logging.info(f"[chat] provided knowledge: {len(provided_knowledge)} cards")
 
-    is_inline_image = (
-        image_delivery == "inline"
-        or request.headers.get("x-image-delivery") == "inline"
-        or (provided_settings and provided_settings.get("image_delivery") == "inline")
-        or request.headers.get("x-client") == "svar"
-        or client == "svar"
-        or (provided_settings and provided_settings.get("client") == "svar")
+    is_inline_image = not _resolve_upload_storage_flag(
+        request, ctx, None, device_push, provided_settings, image_delivery=image_delivery
     )
 
     if provided_settings:
@@ -4601,6 +4596,48 @@ async def recognize_endpoint(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _resolve_upload_storage_flag(
+    request: Request,
+    ctx: user_context.UserContext,
+    explicit_upload_storage: Optional[bool],
+    device_push: Optional[dict],
+    settings_dict: Optional[dict] = None,
+    image_delivery: Optional[str] = None,
+) -> bool:
+    """Determines whether generated image should be saved to owner's local node storage."""
+    if explicit_upload_storage is not None:
+        return bool(explicit_upload_storage)
+    delivery = (
+        image_delivery
+        or (settings_dict.get("image_delivery") if isinstance(settings_dict, dict) else None)
+        or request.headers.get("x-image-delivery")
+        or ""
+    ).strip().lower()
+    if delivery == "storage":
+        return True
+    is_owner = bool(getattr(ctx, "trusted_owner", False) or getattr(ctx, "private_mode", False))
+    if is_owner:
+        is_remote_push = False
+        if device_push:
+            try:
+                import device_push as _dp
+                is_remote_push = not _dp.is_local_target(device_push, ctx)
+            except Exception:
+                is_remote_push = True
+        if not is_remote_push:
+            return True
+    if delivery == "inline":
+        return False
+    return not bool(
+        device_push
+        or request.headers.get("X-OMD-Caller-Role")
+        or request.headers.get("X-OMD-Caller-DID")
+        or request.headers.get("X-OMD-DID")
+        or request.headers.get("x-client") == "svar"
+        or (isinstance(settings_dict, dict) and settings_dict.get("client") == "svar")
+    )
+
+
 @app.post("/generate/image/character")
 async def generate_character_image(request: Request, data: GenerateInput):
     agentic_tunnel.note_request(request, omd_key=data.omd_key, settings_payload=data.settings)
@@ -4616,18 +4653,7 @@ async def generate_character_image(request: Request, data: GenerateInput):
         ctx.storage = ctx.settings.get("defaultStorage", "")
     ctx.mcp_keys = data.mcp_keys or (ctx.settings.get("mcp_keys") if isinstance(ctx.settings, dict) else None) or getattr(ctx, "mcp_keys", None) or {}
     try:
-        is_p2p = (
-            ctx.private_mode
-            or bool(data.device_push)
-            or bool(request.headers.get("X-OMD-Caller-Role"))
-            or bool(request.headers.get("X-OMD-Caller-DID"))
-            or bool(request.headers.get("X-OMD-DID"))
-            or request.headers.get("X-OMD-Private-Mode") == "1"
-            or request.headers.get("x-client") == "svar"
-            or request.headers.get("x-image-delivery") == "inline"
-            or (data.settings and (data.settings.get("client") == "svar" or data.settings.get("image_delivery") == "inline"))
-        )
-        upload_storage_flag = data.upload_storage if data.upload_storage is not None else (not is_p2p)
+        upload_storage_flag = _resolve_upload_storage_flag(request, ctx, data.upload_storage, data.device_push, data.settings)
         if not (ctx.private_mode or ctx.is_unlimited):
             safety = await core_service.check_prompt_safety(ctx, data.prompt)
             if safety != "SAFE":
@@ -4677,18 +4703,7 @@ async def generate_general_image(request: Request, data: GenerateInput):
         ctx.storage = ctx.settings.get("defaultStorage", "")
     ctx.mcp_keys = data.mcp_keys or (ctx.settings.get("mcp_keys") if isinstance(ctx.settings, dict) else None) or getattr(ctx, "mcp_keys", None) or {}
     try:
-        is_p2p = (
-            ctx.private_mode
-            or bool(data.device_push)
-            or bool(request.headers.get("X-OMD-Caller-Role"))
-            or bool(request.headers.get("X-OMD-Caller-DID"))
-            or bool(request.headers.get("X-OMD-DID"))
-            or request.headers.get("X-OMD-Private-Mode") == "1"
-            or request.headers.get("x-client") == "svar"
-            or request.headers.get("x-image-delivery") == "inline"
-            or (data.settings and (data.settings.get("client") == "svar" or data.settings.get("image_delivery") == "inline"))
-        )
-        upload_storage_flag = data.upload_storage if data.upload_storage is not None else (not is_p2p)
+        upload_storage_flag = _resolve_upload_storage_flag(request, ctx, data.upload_storage, data.device_push, data.settings)
         if not (ctx.private_mode or ctx.is_unlimited):
             safety = await core_service.check_prompt_safety(ctx, data.prompt)
             if safety != "SAFE":
@@ -4728,18 +4743,7 @@ async def generate_krea2_endpoint(request: Request, data: KreaGenerateInput):
         ctx.storage = ctx.settings.get("defaultStorage", "")
     ctx.mcp_keys = data.mcp_keys or (ctx.settings.get("mcp_keys") if isinstance(ctx.settings, dict) else None) or getattr(ctx, "mcp_keys", None) or {}
     try:
-        is_p2p = (
-            ctx.private_mode
-            or bool(data.device_push)
-            or bool(request.headers.get("X-OMD-Caller-Role"))
-            or bool(request.headers.get("X-OMD-Caller-DID"))
-            or bool(request.headers.get("X-OMD-DID"))
-            or request.headers.get("X-OMD-Private-Mode") == "1"
-            or request.headers.get("x-client") == "svar"
-            or request.headers.get("x-image-delivery") == "inline"
-            or (data.settings and (data.settings.get("client") == "svar" or data.settings.get("image_delivery") == "inline"))
-        )
-        upload_storage_flag = data.upload_storage if data.upload_storage is not None else (not is_p2p)
+        upload_storage_flag = _resolve_upload_storage_flag(request, ctx, data.upload_storage, data.device_push, data.settings)
         if not (ctx.private_mode or ctx.is_unlimited):
             safety = await core_service.check_prompt_safety(ctx, data.prompt)
             if safety != "SAFE":
