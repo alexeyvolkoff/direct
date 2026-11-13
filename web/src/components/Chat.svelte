@@ -2444,6 +2444,7 @@
       }
       const transport = new OnmyChatTransport({
         httpDrive,
+        getHttpDrive: () => httpDrive,
         chatId: id,
         getOmdKey: () => omdKey,
         // Context compaction: reuse the last backend summary so the AI node

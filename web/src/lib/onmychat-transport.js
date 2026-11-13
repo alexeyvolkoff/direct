@@ -333,8 +333,9 @@ function uiToLegacyHistory(messages) {
 }
 
 export class OnmyChatTransport {
-    constructor({ httpDrive, chatId = 'default', getOmdKey = () => '', buildBody = null, onStatus = null, onUpdate = null, onChunk = null, onFinish = null }) {
+    constructor({ httpDrive, getHttpDrive = null, chatId = 'default', getOmdKey = () => '', buildBody = null, onStatus = null, onUpdate = null, onChunk = null, onFinish = null }) {
         this.httpDrive = httpDrive;
+        this.getHttpDrive = getHttpDrive;
         this.chatId = chatId;
         this.getOmdKey = getOmdKey;
         this.buildBody = buildBody;
@@ -394,7 +395,11 @@ export class OnmyChatTransport {
 
         let response;
         try {
-            response = await this.httpDrive.fetch('/chat/stream', {
+            const activeDrive = (typeof this.getHttpDrive === 'function' ? this.getHttpDrive() : null) || this.httpDrive;
+            if (!activeDrive) {
+                throw new Error('HttpDrive is not initialized');
+            }
+            response = await activeDrive.fetch('/chat/stream', {
                 method: 'POST',
                 headers: {
                     Accept: 'text/event-stream',

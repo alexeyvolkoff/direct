@@ -136,7 +136,7 @@
 
   $: {
     const currentDidPub = (typeof window !== "undefined" && (window.identity?.mainPub || window.identity?.pair?.pub)) || "";
-    if (!drive || drive.targetLinkId !== targetLinkId || drive.port !== port || drive.isPrivateMode !== computedPrivateMode) {
+    if (!drive || drive.targetLinkId !== targetLinkId || drive.port !== port) {
       if (drive) drive.close();
       drive = new HttpDrive({
         targetLinkId,
@@ -145,8 +145,13 @@
         didPub: currentDidPub,
         authToken: omdKey || ""
       });
-    } else if (omdKey && drive.authToken !== omdKey) {
-      drive.setAuth(omdKey);
+    } else {
+      if (drive.isPrivateMode !== computedPrivateMode) {
+        drive.setPrivateMode(computedPrivateMode);
+      }
+      if (omdKey && drive.authToken !== omdKey) {
+        drive.setAuth(omdKey);
+      }
     }
   }
 
