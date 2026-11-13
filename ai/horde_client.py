@@ -181,17 +181,6 @@ async def horde_generate_stream(
                         continue
                     st = await s_resp.json()
 
-                if st.get("faulted"):
-                    task_terminal = True
-                    logging.warning(f"[Horde] Task {task_id} faulted")
-                    yield {"error": "Генерация в Орде прервана с ошибкой воркера", "done": True}
-                    return
-
-                if st.get("is_possible") is False:
-                    logging.warning(f"[Horde] Task {task_id} unsatisfiable: no workers available")
-                    yield {"error": "В Орде сейчас нет свободных воркеров для выбранной модели", "done": True}
-                    return
-
                 if st.get("done") and st.get("generations"):
                     task_terminal = True
                     gen = st["generations"][0]
@@ -223,6 +212,17 @@ async def horde_generate_stream(
                         "eval_count": len(words),
                         "worker_info": f"{worker_name} [{actual_model}]"
                     }
+                    return
+
+                if st.get("faulted"):
+                    task_terminal = True
+                    logging.warning(f"[Horde] Task {task_id} faulted")
+                    yield {"error": "Генерация в Орде прервана с ошибкой воркера", "done": True}
+                    return
+
+                if st.get("is_possible") is False:
+                    logging.warning(f"[Horde] Task {task_id} unsatisfiable: no workers available")
+                    yield {"error": "В Орде сейчас нет свободных воркеров для выбранной модели", "done": True}
                     return
 
                 # Update queue / wait status
