@@ -1351,16 +1351,16 @@ class McpStreamFilter:
             # 4. Check for [PLAN] / [THOUGHT] / CHECKLIST: prefix
             buf_strip = self.buffer.lstrip()
             if not self.in_plan:
-                if len(buf_strip) < 15 and any(buf_strip.upper().startswith(p[:len(buf_strip)]) for p in ["[PLAN]", "[THOUGHT]", "<CHANNEL", "<|CHANNEL", "<THOUGHT>", "<THINK>"]):
+                if len(buf_strip) < 20 and any(buf_strip.upper().startswith(p[:len(buf_strip)]) for p in ["[PLAN]", "[THOUGHT]", "THINKING PROCESS:", "THOUGHT PROCESS:", "<CHANNEL", "<|CHANNEL", "<THOUGHT>", "<THINK>"]):
                     break
-                if any(buf_strip.upper().startswith(p) for p in ["[PLAN]", "PLAN:", "[CHECKLIST]", "CHECKLIST:"]):
+                if any(buf_strip.upper().startswith(p) for p in ["[PLAN]", "PLAN:", "[CHECKLIST]", "CHECKLIST:", "THINKING PROCESS:", "THOUGHT PROCESS:"]):
                     self.in_plan = True
 
             if self.in_plan:
                 if "\n" in self.buffer:
                     line, rest = self.buffer.split("\n", 1)
                     l_str = line.strip()
-                    is_plan_header = any(p in l_str.upper() for p in ["[PLAN]", "PLAN:", "CHECKLIST:"])
+                    is_plan_header = any(p in l_str.upper() for p in ["[PLAN]", "PLAN:", "CHECKLIST:", "THINKING PROCESS:", "THOUGHT PROCESS:"])
                     is_plan_item = re.match(r"^(?:-\s*\[\s*[\w\s-]*\s*\]|-\s*|\*\s*|Step\s*\d+|\d+\.\s*|•\s*)", l_str, re.IGNORECASE)
                     
                     if is_plan_header or (is_plan_item and len(l_str) > 0) or (not l_str and self.in_plan):
@@ -5215,11 +5215,20 @@ async def generate_krea2_image(
             archetype_list.append("alt")
 
     # target_loras already contains any active style LoRAs, append archetypes
+    p_low_scene = (prompt or "").lower()
+    is_wide_scene = (
+        bool(p_low_scene)
+        and any(k in p_low_scene for k in _WIDE_NON_PORTRAIT_HINTS)
+        and not any(k in p_low_scene for k in ("close-up", "closeup", "headshot"))
+    )
     for arch_id in archetype_list:
         if arch_id in ARCHETYPE_CONFIGS:
             cfg_arch = ARCHETYPE_CONFIGS[arch_id]
-            if cfg_arch.get("trigger") and cfg_arch["trigger"] not in full_parts:
-                full_parts.append(cfg_arch["trigger"])
+            arch_trigger = cfg_arch.get("trigger") or ""
+            if arch_trigger and is_wide_scene:
+                arch_trigger = re.sub(r"\s*,\s*,+", ", ", _FACIAL_DETAIL_CLAUSE_RE.sub("", arch_trigger)).strip(" ,.")
+            if arch_trigger and arch_trigger not in full_parts:
+                full_parts.append(arch_trigger)
             if cfg_arch.get("lora"):
                 if arch_id in archetype_weights and archetype_weights[arch_id] is not None:
                     a_weight = float(archetype_weights[arch_id])
@@ -5233,16 +5242,17 @@ async def generate_krea2_image(
     # Persona LoRA if requested explicitly
     if persona_lora and str(persona_lora).strip():
         plora = str(persona_lora).strip()
-        if not any(t[0] == plora for t in target_loras):
+        if not any(t[0].lower() == plora.lower() for t in target_loras):
             target_loras.append((plora, 0.8))
             logging.info(f"[Krea2] Applying Persona LoRA: {plora} (weight=0.8)")
 
-    # Custom persona LoRA if requested explicitly
+    # Custom persona LoRA if requested explicitly (deduplicated against archetype/persona LoRAs)
     if sliders.get("lora"):
-        custom_lora = sliders.get("lora")
-        custom_weight = float(sliders.get("lora_weight", 0.7))
-        target_loras.append((custom_lora, custom_weight))
-        logging.info(f"[Krea2] Applying Custom Slider LoRA: {custom_lora} (weight={custom_weight})")
+        custom_lora = str(sliders.get("lora")).strip()
+        if custom_lora and not any(t[0].lower() == custom_lora.lower() for t in target_loras):
+            custom_weight = float(sliders.get("lora_weight", 0.7))
+            target_loras.append((custom_lora, custom_weight))
+            logging.info(f"[Krea2] Applying Custom Slider LoRA: {custom_lora} (weight={custom_weight})")
 
     positive_text = ", ".join(full_parts)
     no_signs_krea = (
@@ -5334,22 +5344,27 @@ async def generate_krea2_image(
         steps = int(explicit_steps) if explicit_steps is not None and int(explicit_steps) >= 4 else 12
         logging.info(f"[Krea2] Base model: Realism (CyberRealistic: {unet_model}, sampler={sampler_name}, steps={steps}, cfg={cfg})")
 
-    # Match target_loras against available_loras
+    # Match target_loras against available_loras (deduplicating identical LoRA files)
     resolved_lora_chain = []
+    seen_lora_names = set()
     for lora_file, strength in target_loras:
         matched = None
         for al in available_loras:
             if lora_file.lower() in str(al).lower():
                 matched = al
                 break
-        if matched:
-            resolved_lora_chain.append((matched, strength))
-        elif not available_loras:
-            # Running remotely via Modal or headless runner without local object_info discovery
-            resolved_lora_chain.append((lora_file, strength))
-            logging.info(f"[Krea2] Passing LoRA '{lora_file}' directly (strength={strength}) to remote ComfyUI")
-        else:
+        resolved_name = matched if matched else (lora_file if not available_loras else None)
+        if not resolved_name:
             logging.warning(f"[Krea2] LoRA '{lora_file}' not found in ComfyUI available LoRAs — skipping LoraLoader node.")
+            continue
+        norm_name = str(resolved_name).strip().lower()
+        if norm_name in seen_lora_names:
+            continue
+        seen_lora_names.add(norm_name)
+        resolved_lora_chain.append((resolved_name, strength))
+        if not matched and not available_loras:
+            # Running remotely via Modal or headless runner without local object_info discovery
+            logging.info(f"[Krea2] Passing LoRA '{lora_file}' directly (strength={strength}) to remote ComfyUI")
 
     is_anima_base = requested_base in ["anima", "cyberrealistic_anima", "animaturbo", "anime"]
     has_krea2_edit = (
@@ -7488,6 +7503,7 @@ async def _perform_prompt_gen(ctx: UserContext,
         "messages": messages,
         "model": model,
         "stream": stream,
+        "think": bool(allow_thinking),
         "keep_alive": LLM_KEEP_ALIVE,
         "options": {
             "temperature": FUN_TEMPERATURE if fun_mode else TEMPERATURE,
@@ -8312,6 +8328,7 @@ async def generate_image_prompt(ctx: UserContext, instruction: str, prompt: str,
         "messages": messages,
         "model": tag_model,
         "stream": False,
+        "think": False,
         "options": {
             "temperature": 0.2,
             "top_p": 0.9,
