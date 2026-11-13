@@ -726,10 +726,21 @@
     }
   }
 
-  function getChatRowPersona(c) {
+  function getChatRowPersona(c, personasList = availablePersonas) {
     if (!c) return null;
     const raw = c.persona || c.persona_id || null;
-    return raw ? resolveFullPersona(raw, availablePersonas) : null;
+    if (!raw) return null;
+    const resolved = resolveFullPersona(raw, personasList);
+    if (!resolved) return null;
+    // Relative /personas/... paths must be fetched via httpDrive (resolved into blob:/data: in availablePersonas);
+    // do not pass raw /personas/... or stale blob: URLs directly to <img src> before availablePersonas loads.
+    const av = resolved.avatar || "";
+    const inLoadedList = Array.isArray(personasList) && personasList.some((p) => p && p.id === resolved.id);
+    const usableAvatar =
+      av.startsWith("data:") || (av.startsWith("blob:") && inLoadedList) || /^https?:\/\//i.test(av)
+        ? av
+        : "";
+    return { ...resolved, avatar: usableAvatar };
   }
 
   $: activeChat = chats.find((c) => c._id === activeChatId);
@@ -1196,11 +1207,18 @@
                     autoFocus
                   />
                 {:else}
-                  {@const rowPersona = getChatRowPersona(c)}
+                  {@const rowPersona = getChatRowPersona(c, availablePersonas)}
                   {#if rowPersona && rowPersona.name}
                     <span class="session-persona-chip" title={rowPersona.name}>
                       {#if rowPersona.avatar}
-                        <img src={rowPersona.avatar} alt={rowPersona.name} class="session-persona-avatar" />
+                        <img
+                          src={rowPersona.avatar}
+                          alt={rowPersona.name}
+                          class="session-persona-avatar"
+                          on:error={(e) => {
+                            if (e?.currentTarget) e.currentTarget.style.display = "none";
+                          }}
+                        />
                       {:else}
                         <span class="session-persona-initial">{rowPersona.name.slice(0, 1).toUpperCase()}</span>
                       {/if}

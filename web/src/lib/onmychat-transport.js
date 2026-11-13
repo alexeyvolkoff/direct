@@ -408,7 +408,7 @@ export class OnmyChatTransport {
                     'Content-Type': 'application/json',
                     'X-Client': 'svar',
                     'X-OMD-Platform': getClientPlatform(),
-                    'X-Image-Delivery': 'inline'
+                    'X-Image-Delivery': payload.image_delivery || 'inline'
                 },
                 body: JSON.stringify(payload),
                 signal: abortSignal

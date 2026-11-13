@@ -2469,8 +2469,13 @@
             }
             // Авто-пуш сгенерированного фото на устройство: одноразовый
             // consent-грант под этот запрос (см. buildDevicePush).
-            const devicePush = buildDevicePush();
-            if (devicePush) out.device_push = devicePush;
+            // Если хранилище находится на самой AI-ноде — сохраняем сразу на диск ноды.
+            if (isStorageOnAiNode()) {
+              out.image_delivery = "storage";
+            } else {
+              const devicePush = buildDevicePush();
+              if (devicePush) out.device_push = devicePush;
+            }
 
             // MCP application keys (Plane, Grade.app, etc.) from DiD graph
             if (typeof window !== "undefined" && typeof window.__omdGetMcpPayload === "function") {

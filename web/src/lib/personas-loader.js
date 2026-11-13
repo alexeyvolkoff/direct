@@ -96,12 +96,12 @@ export function isCustomPersona(p) {
 
 export function compactPersonaForChat(persona) {
   if (!isCustomPersona(persona)) return null;
-  const avatarUrl =
-    typeof persona.avatar_url === "string" && !persona.avatar_url.startsWith("data:")
-      ? persona.avatar_url
-      : typeof persona.avatar === "string" && !persona.avatar.startsWith("data:")
-      ? persona.avatar
-      : "";
+  const isPersistableUrl = (u) => typeof u === "string" && u && !u.startsWith("data:") && !u.startsWith("blob:");
+  const avatarUrl = isPersistableUrl(persona.avatar_url)
+    ? persona.avatar_url
+    : isPersistableUrl(persona.avatar)
+    ? persona.avatar
+    : "";
   return {
     id: persona.id,
     name: persona.name || "",
