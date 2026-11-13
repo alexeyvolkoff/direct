@@ -9670,10 +9670,10 @@ async function blobToBase64(blob) {
     justify-content: center !important;
   }
   :global(.lg-outer .lg-image) {
+    width: 100% !important;
+    height: 100% !important;
     max-height: 100vh !important;
     max-width: 100vw !important;
-    height: auto !important;
-    width: auto !important;
     object-fit: contain !important;
     margin: auto !important;
     transition: opacity 0.2s ease !important;

@@ -7408,7 +7408,11 @@ async def _perform_prompt_gen(ctx: UserContext,
 
     instruction_prompt = "*Instruction:*\n" + effective_instruction
 
-    if facts_text:
+    has_file_facts = bool(facts_text) and (not fun_mode) and (
+        intent in ("search", "explore", "tools")
+        or any(tok in facts_text.lower() for tok in (".jpg", ".jpeg", ".png", ".webp", ".pdf", ".docx", ".txt", ".md", "path:", "source:"))
+    )
+    if has_file_facts:
         instruction_prompt += (
             "\n\nCRITICAL MANDATORY RULES FOR FILES AND PHOTOS:\n"
             "1. When listing, describing, or referring to ANY file, photo, or document, you MUST ONLY mention files listed in the current *Strict facts* / *Known facts* above. NEVER mention or re-use filenames from previous conversation history or your memory!\n"

@@ -2572,7 +2572,12 @@
               }
             }
             if (m.image) {
-              parts.push({ type: "data-image", data: m.image });
+              const textIdx = parts.findIndex((p) => p.type === "text");
+              if (textIdx >= 0) {
+                parts.splice(textIdx, 0, { type: "data-image", data: m.image });
+              } else {
+                parts.unshift({ type: "data-image", data: m.image });
+              }
             }
             return {
               id: String(m.nonce || m.timestamp || Math.random().toString(36).slice(2)),
