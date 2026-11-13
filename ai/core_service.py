@@ -5607,9 +5607,11 @@ async def generate_krea2_image(
     if clean_user_prompt:
         readme_content += f"\n<!-- prompt: {clean_user_prompt} -->\n"
 
-    # Случай 1: Владелец ноды выбрал сохранение на этой ноде (save_local=True)
+    # Случай 1: Владелец ноды выбрал сохранение на этой ноде (save_local=True или upload_storage=True для владельца)
+    is_node_owner = bool(ctx and (getattr(ctx, "trusted_owner", False) or getattr(ctx, "private_mode", False)))
+    should_save_local = bool(save_local) or (bool(upload_storage) and is_node_owner)
     target_img_path = None
-    if save_local:
+    if should_save_local:
         try:
             rel_gen = f"generated/{safe_subfolder}" if safe_subfolder else "generated"
             target_dir = resolve_local_target_dir(ctx, rel_gen)
@@ -5622,16 +5624,6 @@ async def generate_krea2_image(
             with open(target_readme_path, "w", encoding="utf-8") as f:
                 f.write(readme_content)
             logging.info(f"[Krea2] Saved generated image locally on AI node: {target_img_path}")
-
-            home_dir = os.path.expanduser("~")
-            omc_dir = os.path.join(home_dir, "OnMyChat", *rel_gen.split("/"))
-            if os.path.isdir(os.path.join(home_dir, "OnMyChat")) and os.path.abspath(target_dir) != os.path.abspath(omc_dir):
-                os.makedirs(omc_dir, exist_ok=True)
-                with open(os.path.join(omc_dir, filename), "wb") as f:
-                    f.write(img_data)
-                with open(os.path.join(omc_dir, f"{base_name}.Readme.md"), "w", encoding="utf-8") as f:
-                    f.write(readme_content)
-                logging.info(f"[Krea2] Also mirrored generated image to OnMyChat: {omc_dir}/{filename}")
         except Exception as e:
             logging.warning(f"[Krea2] Local file save failed: {e}")
 

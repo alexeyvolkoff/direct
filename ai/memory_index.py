@@ -335,36 +335,6 @@ def migrate_legacy_data():
 def embed_text(text: str) -> list:
     return get_model().encode(text, show_progress_bar=False).tolist()
 
-def get_index_path(user_id: str | None = None, collection: str = "user") -> str:
-    return f"{BASE_INDEX_DIR}/{collection}.jsonl"
-
-
-
-
-
-def save_memories(ctx: UserContext, memories: list[dict], collection: str = "user"):
-    """
-    Deprecated for local storage (now uses ChromaDB), but kept for OMD sync compatibility.
-    """
-    try:
-        if (
-            ctx.storage
-            and ctx.omd_key
-            and collection == "user"
-        ):
-            # dest = f"{ctx.storage}"
-            # upload_vec_to_storage(ctx.omd_key, dest, "memory.jsonl", memories, "application/jsonl")
-            pass # redundant: handled by OrbitDB in frontend
-        else:
-            # локальный fallback (JSONL) - keeping for backup/migration if needed
-            path = get_index_path(ctx.user_id, collection)
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, "w", encoding="utf-8") as f:
-                for m in memories:
-                    f.write(json.dumps(m, ensure_ascii=False) + "\n")
-    except Exception as e:
-        print(f"[memory] Save error: {ctx.user_id} {collection} {e}")
-
 
 def add_memory_card(
     ctx: UserContext,
@@ -582,32 +552,6 @@ def load_memories(ctx: UserContext, collection: str = "user") -> list[dict]:
             return memories
     except Exception as e:
         print(f"[memory] Chroma load error: {e}")
-
-    # Legacy fallback
-    try:
-        if (
-            ctx.storage
-            and ctx.omd_key
-            and collection == "user"
-        ):
-            logging.info(f"loading memories from OMD {ctx.storage}")
-            url = f"{GATEWAY_URL}/{ctx.storage}/memory.jsonl?nocache={int(time.time())}"
-            headers = {"Authorization": f"token:{ctx.omd_key}"}
-            resp = requests.get(url, headers=headers, timeout=10)
-            if resp.status_code == 200 and resp.content.strip():
-                text = resp.content.decode("utf-8")
-                return [json.loads(line) for line in text.splitlines() if line.strip()]
-            return []
-        else:
-            index_path = f"{BASE_INDEX_DIR}/{collection}.jsonl"
-
-            if not os.path.exists(index_path):
-                return []
-
-            with open(index_path, "r", encoding="utf-8") as f:
-                return [json.loads(line) for line in f if line.strip()]
-    except Exception as e:
-        print(f"[memory] Legacy load error: {e}")
         return []
 
 async def fetch_document_text(url: str, token: str = None) -> str:

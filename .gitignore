@@ -121,7 +121,6 @@ ai/config.ini
 ai/user_data/
 ai/memory_index/
 /memory_index/
-!ai/memory_index/omd.jsonl
 ai/history/
 ai/chroma_db/
 ai/test_data/
