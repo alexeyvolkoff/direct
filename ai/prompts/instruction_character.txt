@@ -19,6 +19,7 @@ Tag Guidelines (Danbooru style):
 - NO sentences, NO narrative phrases, NO exclamation marks, NO dialogues.
 - DO NOT include meta words like "sdxl", "pony", "prompt", "pose", "action", "tags".
 - Framing & Camera: Strictly honor any user request for framing, camera angle, or distance (e.g. "full body" / "в полный рост" -> "full body shot, head to toe, standing, visible legs and footwear, wide shot, pulled back camera"; "from behind" -> "from behind, back view"; "close-up" -> "close-up portrait"). Never crop to a bust/portrait when full body or wide framing is requested.
+- Facial Details Rule: Include specific facial features (eye color, freckles, eyebrows, lips, skin texture, expression) ONLY for portraits, headshots, selfies, or close-up shots. For full-body, wide, distant, or back-view shots, OMIT fine facial details (do NOT write eye color, freckles, skin texture) — keep only general traits like hair color/style and build.
 - Continuity: Preserve the existing outfit, location, and lighting from RECENT CONVERSATION HISTORY unless the user explicitly asks to change them.
 - Describe what is visually seen: subjects, clothing (including lower body/footwear when full body), physical activity, location, atmosphere.
 

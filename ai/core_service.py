@@ -4055,6 +4055,57 @@ async def _discover_sdxl_inpaint_capabilities() -> dict:
     return caps
 
 
+_WIDE_NON_PORTRAIT_HINTS = (
+    "full body", "full-body", "head to toe", "full length", "full-length",
+    "wide shot", "long shot", "establishing shot", "from behind", "back view",
+    "walking away", "distant", "silhouette", "cowboy shot", "three-quarter",
+)
+_PORTRAIT_HINTS = (
+    "portrait", "headshot", "close-up", "closeup", "close up", "selfie", "face", "bust",
+)
+_FACIAL_DETAIL_CLAUSE_RE = re.compile(
+    r"[^,.;]*\b(?:eyes?|gaze|eyebrows?|eyelashes?|freckles?|nose|cheeks?|lips?|mouth|smile|smiling|expression|skin\s+texture|skin\s+pores|complexion|dimples?|makeup)\b[^,.;]*",
+    flags=re.IGNORECASE,
+)
+
+
+def _compose_scene_and_persona_parts(prompt: str | None, persona_prompt: str | None) -> list[str]:
+    """Assembles scene + persona prompt, keeping fine facial details ONLY for portraits/close-ups."""
+    parts: list[str] = []
+    p_clean = (prompt or "").strip()
+    p_low = p_clean.lower()
+    is_wide_non_portrait = (
+        bool(p_clean)
+        and any(k in p_low for k in _WIDE_NON_PORTRAIT_HINTS)
+        and not any(k in p_low for k in ("close-up", "closeup", "headshot"))
+    )
+    is_portrait_scene = (not p_clean) or any(k in p_low for k in _PORTRAIT_HINTS)
+
+    if p_clean:
+        if any(k in p_low for k in ("full body", "full-body", "head to toe", "full length", "full-length")):
+            parts.append("wide full-length shot from head to toe, entire body visible including legs and feet, pulled back camera, normal eye-level perspective")
+        scene_text = _FACIAL_DETAIL_CLAUSE_RE.sub("", p_clean) if is_wide_non_portrait else p_clean
+        scene_text = re.sub(r"\s*,\s*,+", ", ", scene_text).strip(" ,")
+        parts.append(scene_text or p_clean)
+
+    if persona_prompt and persona_prompt.strip():
+        cleaned_persona = persona_prompt.strip()
+        if p_clean:
+            cleaned_persona = re.sub(
+                r"^(a\s+)?(portrait|close-up|headshot|bust\s+portrait)\s+of\s+",
+                "",
+                cleaned_persona,
+                flags=re.IGNORECASE,
+            )
+        if not is_portrait_scene or is_wide_non_portrait:
+            stripped = _FACIAL_DETAIL_CLAUSE_RE.sub("", cleaned_persona)
+            stripped = re.sub(r"\s*,\s*,+", ", ", stripped).strip(" ,.")
+            cleaned_persona = stripped
+        if cleaned_persona:
+            parts.append(cleaned_persona)
+    return parts
+
+
 def _crop_head_portrait_for_ipadapter(img_bytes: bytes) -> bytes:
     """
     Если референс — ростовое или дальнее фото, вырезает квадратный портрет головы с причёской (2.8× размера лица),
@@ -4163,23 +4214,7 @@ async def generate_sdxl_studio_image(
         workflow_json = json.load(f)
 
     # Собираем положительный промпт (сюжет + паспорт персоны + микро-слайдеры)
-    full_parts = []
-    if prompt and prompt.strip():
-        p_clean = prompt.strip()
-        p_low = p_clean.lower()
-        if any(k in p_low for k in ("full body", "full-body", "head to toe", "full length", "full-length")):
-            full_parts.append("wide full-length shot from head to toe, entire body visible including legs and feet, pulled back camera")
-        full_parts.append(p_clean)
-    if persona_prompt and persona_prompt.strip():
-        cleaned_persona = persona_prompt.strip()
-        if prompt and prompt.strip():
-            cleaned_persona = re.sub(
-                r"^(a\s+)?(portrait|close-up|headshot|bust\s+portrait)\s+of\s+",
-                "",
-                cleaned_persona,
-                flags=re.IGNORECASE,
-            )
-        full_parts.append(cleaned_persona)
+    full_parts = _compose_scene_and_persona_parts(prompt, persona_prompt)
 
     detail_val = float(sliders.get("detail", 0.5))
     if detail_val >= 0.7:
@@ -5060,20 +5095,8 @@ async def generate_krea2_image(
     # Объединяем сюжет и словесный паспорт персоны.
     # Промпт сюжета (ракурс, сцена, динамика) ставим ПЕРВЫМ, чтобы композиция кадра
     # определяла начальный латентный шум и не схлопывалась в крупный портрет.
-    full_parts = []
-    if prompt and prompt.strip():
-        p_clean = prompt.strip()
-        p_low = p_clean.lower()
-        if any(k in p_low for k in ("full body", "full-body", "head to toe", "full length", "full-length")):
-            full_parts.append("wide full-length shot from head to toe, entire body visible including legs and feet, pulled back camera")
-        full_parts.append(p_clean)
-    if persona_prompt and persona_prompt.strip():
-        # Срезаем префиксы "portrait of / headshot of / close-up of" из паспорта,
-        # если задан сюжетный промпт, чтобы сохранить масштаб и ракурс сцены
-        cleaned_persona = persona_prompt.strip()
-        if prompt and prompt.strip():
-            cleaned_persona = re.sub(r'^(a\s+)?(portrait|close-up|headshot|bust\s+portrait)\s+of\s+', '', cleaned_persona, flags=re.IGNORECASE)
-        full_parts.append(cleaned_persona)
+    # Детальные черты лица оставляем только для портретов/крупных планов.
+    full_parts = _compose_scene_and_persona_parts(prompt, persona_prompt)
 
     # Применяем микро-слайдеры параметров
     sliders = sliders or {}
