@@ -1,0 +1,15 @@
+[Unit]
+Description=OnMyChat Service (direct/ai)
+After=network.target
+
+[Service]
+User=alexey
+WorkingDirectory=/home/alexey/projects/direct/ai
+# venv is shared with the legacy checkout; python -m uvicorn works regardless of venv location
+Environment="PATH=/home/alexey/projects/omd/onmychat/venv/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=/home/alexey/projects/omd/onmychat/venv/bin/python -m uvicorn api:app --host 0.0.0.0 --port 4000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

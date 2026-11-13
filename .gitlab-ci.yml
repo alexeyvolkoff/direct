@@ -305,6 +305,20 @@ deploy_direct_front:
     - linux
   when: manual
 
+deploy_onmychat:
+  stage: deploy
+  dependencies: []
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - ai/**/*
+  script:
+    - sudo -u alexey git -C /home/alexey/projects/direct fetch origin
+    - sudo -u alexey git -C /home/alexey/projects/direct pull --ff-only origin main
+    - sudo systemctl restart onmychat
+  tags:
+    - linux
+
 deploy_github:
   stage: deploy
   only:
