@@ -30,8 +30,8 @@ rm -f "$OUT"
     -x "config.ini" "agent_sessions.json" "index_exclusions.json" \
     -x "push_subscriptions.json" "vapid_keys.json" )
 
-# Include initial knowledge base snapshot and default avatar
-( cd "$SRC" && zip -ur "$OUT" memory_index/omd.jsonl avatars/June.png avatars/june.png >/dev/null 2>&1 || true )
+# Include initial Direct knowledge base snapshot (if pre-exported) and default avatar
+( cd "$SRC" && zip -ur "$OUT" avatars/June.png avatars/june.png >/dev/null 2>&1 || true )
 
 echo "==> Artifact: $OUT"
 # head closes the pipe early -> unzip dies with SIGPIPE(141) under pipefail;

@@ -1507,14 +1507,25 @@ def _is_private_media_path(doc_id: str) -> bool:
     return False
 
 
-def _is_record_allowed_public(meta: dict) -> bool:
+def resolve_public_tags_for_server(server_or_host: str | None) -> list[str]:
+    """Resolves public knowledge tags for the calling system (`omd` vs `direct`)."""
+    s = (server_or_host or "").strip().lower()
+    if "onmydisk" in s:
+        return ["omd"]
+    if "disk.direct" in s or "aiassistant.direct" in s or s == "direct":
+        return ["direct"]
+    return list(PUBLIC_TAGS)
+
+
+def _is_record_allowed_public(meta: dict, public_tags: list[str] | None = None) -> bool:
     """Жёсткая серверная ACL-проверка записи для гостевого (не-приватного) режима."""
     if not isinstance(meta, dict):
         return False
     doc_id = str(meta.get("document_id") or "").strip()
     if doc_id and _is_private_media_path(doc_id):
         return False
-    pub_tags = set(_normalize_tag(t) for t in PUBLIC_TAGS if _normalize_tag(t))
+    effective_tags = public_tags if public_tags is not None else PUBLIC_TAGS
+    pub_tags = set(_normalize_tag(t) for t in effective_tags if _normalize_tag(t))
     if not pub_tags:
         return False
     for pt in pub_tags:
@@ -1530,11 +1541,12 @@ def _is_record_allowed_public(meta: dict) -> bool:
     return bool(rec_tags & pub_tags)
 
 
-def is_document_public(doc_id: str) -> bool:
-    """Проверяет, помечен ли документ или карточка одним из PUBLIC_TAGS."""
+def is_document_public(doc_id: str, public_tags: list[str] | None = None) -> bool:
+    """Проверяет, помечен ли документ или карточка одним из public_tags (или PUBLIC_TAGS)."""
     if not doc_id or _is_private_media_path(doc_id):
         return False
-    pub_tags = set(t.lower() for t in PUBLIC_TAGS)
+    effective_tags = public_tags if public_tags is not None else PUBLIC_TAGS
+    pub_tags = set(t.lower() for t in effective_tags)
     coll = get_collection()
     candidates = [doc_id]
     stripped = _strip_device_namespace(doc_id)
@@ -1555,7 +1567,7 @@ def is_document_public(doc_id: str) -> bool:
     # Если передан путь без устройства (напр. /Knowledge/OMD), сверяем с публичными карточками
     clean_target = stripped or ("/" + doc_id.strip("/"))
     try:
-        pub_filter = _tags_match_filter(PUBLIC_TAGS)
+        pub_filter = _tags_match_filter(effective_tags)
         res = coll.get(where=pub_filter, include=["metadatas"], limit=500)
         for meta in res.get("metadatas", []):
             did = meta.get("document_id") or ""
@@ -1576,10 +1588,11 @@ def search_for_rag(
     top_k=None,
     tags_filter=None,
     document_id=None,
+    public_tags: list[str] | None = None,
 ) -> list:
     """
     Поиск для RAG-инъекции:
-    - private_mode=False (гость)       -> ВСЕГДА только PUBLIC_TAGS (и пересечение с tags_filter, если задан)
+    - private_mode=False (гость)       -> ВСЕГДА только public_tags/PUBLIC_TAGS (и пересечение с tags_filter, если задан)
     - private_mode=True + tags_filter  -> только эти теги
     - private_mode=True + document_id  -> только чанки/карточка этого файла (теги не фильтруем)
     - private_mode=True + нет тегов    -> вся база (владелец ноды)
@@ -1587,9 +1600,10 @@ def search_for_rag(
     """
     if top_k is None:
         top_k = RAG_TOP_K
+    effective_public_tags = public_tags if public_tags is not None else PUBLIC_TAGS
     required_tags = None
     if not private_mode:
-        required_tags = PUBLIC_TAGS
+        required_tags = effective_public_tags
         tag_filter = tags_filter or None
         if document_id and _is_private_media_path(document_id):
             return []
@@ -1616,7 +1630,7 @@ def search_for_rag(
         recent_first=True,
     )
     if not private_mode:
-        rows = [r for r in rows if _is_record_allowed_public(r)]
+        rows = [r for r in rows if _is_record_allowed_public(r, public_tags=effective_public_tags)]
     return rows
 
 
@@ -1624,13 +1638,15 @@ def search_files_for_ui(
     query: str,
     private_mode: bool = True,
     top_k=None,
+    public_tags: list[str] | None = None,
 ) -> list:
     """
     Поиск файлов для файлового менеджера.
     """
     if top_k is None:
         top_k = SEARCH_TOP_K
-    required_tags = None if private_mode else PUBLIC_TAGS
+    effective_public_tags = public_tags if public_tags is not None else PUBLIC_TAGS
+    required_tags = None if private_mode else effective_public_tags
     rows = search(
         query,
         required_tags=required_tags,
@@ -1639,7 +1655,7 @@ def search_files_for_ui(
         record_types=["file_chunk"],
     )
     if not private_mode:
-        rows = [r for r in rows if _is_record_allowed_public(r)]
+        rows = [r for r in rows if _is_record_allowed_public(r, public_tags=effective_public_tags)]
     return rows
 
 

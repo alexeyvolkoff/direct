@@ -124,14 +124,14 @@ log_info "Installing dependencies from requirements.txt..."
 sudo -u "$RUN_USER" /opt/onmychat/venv/bin/pip install -r /opt/onmychat/requirements.txt
 sudo -u "$RUN_USER" /opt/onmychat/venv/bin/pip install 'numpy<2.0'
 
-# Pre-load OMD Knowledge Base (ChromaDB) and SentenceTransformers model cache
-log_info "Setting up OMD Knowledge Base and embedding model..."
+# Pre-load Direct Knowledge Base (ChromaDB) and SentenceTransformers model cache
+log_info "Setting up Direct Knowledge Base and embedding model..."
 mkdir -p /opt/onmychat/memory_index/unified_index
 if [ ! -f /opt/onmychat/memory_index/unified_index/chroma.sqlite3 ]; then
-    log_info "Downloading pre-indexed OMD knowledge base..."
-    curl -fsSL "https://forge.disk.direct/repo/OnMyChat/chroma_omd.tar.gz" | tar -xz -C /opt/onmychat/memory_index/unified_index/ || log_warning "Failed to download ChromaDB knowledge base."
+    log_info "Downloading pre-indexed Direct knowledge base..."
+    curl -fsSL "https://forge.disk.direct/repo/OnMyChat/chroma_direct.tar.gz" | tar -xz -C /opt/onmychat/memory_index/unified_index/ || log_warning "Failed to download ChromaDB knowledge base."
 else
-    log_info "OMD knowledge base already present."
+    log_info "Direct knowledge base already present."
 fi
 chown -R "$RUN_USER:$RUN_USER" /opt/onmychat/memory_index
 

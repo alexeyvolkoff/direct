@@ -2213,6 +2213,7 @@ async def search(
 
     ctx = get_ctx(omd_key)
     private_mode = trusted_private_access(request, ctx)
+    public_tags = _request_public_tags(request)
 
     out_dict = {}
     grouped_documents = {}
@@ -2222,7 +2223,8 @@ async def search(
         results = unified_memory.search_files_for_ui(
             query=q,
             private_mode=private_mode,
-            top_k=max(limit * 3, 30)
+            top_k=max(limit * 3, 30),
+            public_tags=public_tags,
         )
         for r in results:
             doc_id = r.get("document_id") or r.get("id", "").split(":chunk:")[0]
@@ -3217,7 +3219,20 @@ def _folder_cover_exists(doc_id: str) -> bool:
 DEVICE_CARD_TEXT_LIMIT = 300
 
 
-def _device_cards_response(offset: int = 0, limit: int = None, public_only: bool = False):
+def _request_public_tags(request: Request) -> list[str]:
+    """Resolves public knowledge tags (`omd` vs `direct`) from trusted node/host headers."""
+    server_hint = (
+        request.headers.get("X-OMD-Server")
+        or request.headers.get("X-Forwarded-Host")
+        or request.headers.get("Origin")
+        or request.headers.get("Referer")
+        or request.headers.get("Host")
+        or ""
+    )
+    return unified_memory.resolve_public_tags_for_server(server_hint)
+
+
+def _device_cards_response(offset: int = 0, limit: int = None, public_only: bool = False, public_tags: list[str] | None = None):
     """Карточки on-device: memory_card + проиндексированные документы (группы file_chunk).
 
     Внимание: base64-превью НЕ отдаём в списке (4611+ фото = сотни МБ JSON и
@@ -3228,7 +3243,8 @@ def _device_cards_response(offset: int = 0, limit: int = None, public_only: bool
     один мегабайтный ответ). Без limit — прежний полный ответ (совместимость).
     """
     cards = unified_memory.get_all_memory_cards() + unified_memory.get_indexed_documents()
-    pub_tags = set(t.lower() for t in unified_memory.PUBLIC_TAGS)
+    effective_pub_tags = public_tags if public_tags is not None else unified_memory.PUBLIC_TAGS
+    pub_tags = set(t.lower() for t in effective_pub_tags)
     out = []
     for c in cards:
         doc_id = c.get("document_id") or c.get("path") or ""
@@ -3337,7 +3353,12 @@ async def device_memory_endpoint(
         is_owner = True
 
     try:
-        page = _device_cards_response(offset=offset, limit=limit or None, public_only=not is_owner)
+        page = _device_cards_response(
+            offset=offset,
+            limit=limit or None,
+            public_only=not is_owner,
+            public_tags=_request_public_tags(request),
+        )
     except Exception as e:
         logging.error(f"[device_memory] list error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -4017,6 +4038,11 @@ async def chat_stream(request: Request, prompt: str, omd_key: str | None = Depen
             ctx.storage = provided_settings["defaultStorage"]
     else:
         logging.info(f"NO provided_settings received for {ctx.user_id}")
+
+    req_pub_tags = _request_public_tags(request)
+    ctx.settings["_public_tags"] = req_pub_tags
+    if req_pub_tags and not provided_settings.get("kb_id"):
+        ctx.settings["kb_id"] = req_pub_tags[0]
 
     async def event_generator():
         try:

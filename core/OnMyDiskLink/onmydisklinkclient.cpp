@@ -1410,13 +1410,14 @@ static bool isDIDRegistered(QSettings *settings, const QString &didPub)
 
 // Removes spoofable identity headers from the incoming request head and
 // appends the node-validated ones.
-QByteArray OnMyDiskLinkClient::injectCallerHeaders(const QByteArray &head, const QString &user, const QString &role, const QString &targetOwner, const QString &did)
+QByteArray OnMyDiskLinkClient::injectCallerHeaders(const QByteArray &head, const QString &user, const QString &role, const QString &targetOwner, const QString &did, const QString &server)
 {
     static const QStringList kBlocked = {
         QStringLiteral("x-omd-caller-user"),
         QStringLiteral("x-omd-caller-role"),
         QStringLiteral("x-omd-target-owner"),
         QStringLiteral("x-omd-node-local"),
+        QStringLiteral("x-omd-server"),
     };
 
     QByteArray result;
@@ -1446,6 +1447,8 @@ QByteArray OnMyDiskLinkClient::injectCallerHeaders(const QByteArray &head, const
         result += QStringLiteral("X-OMD-Target-Owner: %1\r\n").arg(targetOwner).toUtf8();
     if (!did.isEmpty())
         result += QStringLiteral("X-OMD-Caller-DID: %1\r\n").arg(did).toUtf8();
+    if (!server.isEmpty())
+        result += QStringLiteral("X-OMD-Server: %1\r\n").arg(server).toUtf8();
     result += "\r\n";
     return result;
 }
@@ -1543,7 +1546,7 @@ void OnMyDiskLinkClient::writeInjectedRequestData(const QString &ID, const QByte
                 qInfo() << "P2P HTTP Tunnel" << ID << ": client DID" << clientDid << "is paired -> elevated to OWNER (user:" << effectiveUser << ")";
             }
 
-            tcp->write(injectCallerHeaders(head, effectiveUser, effectiveRole, targetOwner, clientDid));
+            tcp->write(injectCallerHeaders(head, effectiveUser, effectiveRole, targetOwner, clientDid, m_omdSettings.server()));
             buf = buf.mid(idx + 4);
             if (contentLen > 0) {
                 bodyLeft = contentLen;

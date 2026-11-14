@@ -248,12 +248,12 @@ PY
     echo "==> Installing OnMyChat Python dependencies..."
     run_as_user /opt/onmychat/venv/bin/pip install --quiet -r /opt/onmychat/requirements.txt
 
-    # Pre-cached OMD ChromaDB & multilingual embedding model
+    # Pre-cached Direct ChromaDB & multilingual embedding model
     UNIFIED_DIR="/opt/onmychat/memory_index/unified_index"
     if [ ! -f "$UNIFIED_DIR/chroma.sqlite3" ]; then
-        echo "==> Downloading pre-indexed OMD knowledge base..."
+        echo "==> Downloading pre-indexed Direct knowledge base..."
         run_as_user mkdir -p "$UNIFIED_DIR"
-        curl -fsSL "$REPO_BASE/OnMyChat/chroma_omd.tar.gz" | run_as_user tar -xz -C "$UNIFIED_DIR" || true
+        curl -fsSL "$REPO_BASE/OnMyChat/chroma_direct.tar.gz" | run_as_user tar -xz -C "$UNIFIED_DIR" || true
     fi
 
     HF_HUB_DIR="$RUN_HOME/.cache/huggingface/hub"

@@ -944,11 +944,13 @@ KNOWLEDGE_STRONG_DISTANCE = float(SETTINGS.get("KNOWLEDGE_STRONG_DISTANCE", "0.5
 async def search_memory_results(ctx: UserContext, query: str) -> list:
     """Raw unified memory search with relevance data (distance: lower=better)."""
     prompt_tags = _extract_hashtags(query)
+    ctx_public_tags = ctx.settings.get("_public_tags") if isinstance(ctx.settings, dict) else None
     return unified_memory.search_for_rag(
         query,
         private_mode=ctx.private_mode,
         top_k=5,
         tags_filter=prompt_tags or None,
+        public_tags=ctx_public_tags,
     )
 
 def _write_local_atomic(local_path: str, data: bytes) -> None:
@@ -6892,6 +6894,7 @@ async def inject_facts(ctx: UserContext, query: str, collection: str = "", mem_i
                     logging.warning(f"[inject_facts] chunk relevance error: {e}")
 
     # 2. Поиск по unified ChromaDB (если не пропускаем)
+    ctx_public_tags = ctx.settings.get("_public_tags") if isinstance(ctx.settings, dict) else None
     if not skip_db:
         try:
             # Хештеги из промпта переопределяют дефолтный фильтр
@@ -6902,10 +6905,11 @@ async def inject_facts(ctx: UserContext, query: str, collection: str = "", mem_i
                 top_k=rag_top_k,
                 tags_filter=prompt_tags or None,
                 document_id=focus_doc or None,
+                public_tags=ctx_public_tags,
             )
             ctx.temp_search_distance = min((r.get("distance", 1.0) for r in db_results), default=1.0)
             for r in db_results:
-                if not ctx.private_mode and not unified_memory._is_record_allowed_public(r):
+                if not ctx.private_mode and not unified_memory._is_record_allowed_public(r, public_tags=ctx_public_tags):
                     continue
                 rec_type  = r.get("type", "")
                 doc_id    = r.get("document_id", "")
@@ -6989,9 +6993,10 @@ async def inject_facts(ctx: UserContext, query: str, collection: str = "", mem_i
                     top_k=3,
                     tags_filter=None,
                     document_id=doc_filter,
+                    public_tags=ctx_public_tags,
                 )
                 for r in attach_results:
-                    if not ctx.private_mode and not unified_memory._is_record_allowed_public(r):
+                    if not ctx.private_mode and not unified_memory._is_record_allowed_public(r, public_tags=ctx_public_tags):
                         continue
                     text = r.get("text", "")
                     title = r.get("title") or adoc["title"]

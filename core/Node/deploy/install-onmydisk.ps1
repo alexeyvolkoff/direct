@@ -347,11 +347,11 @@ function Install-Ai {
     $UnifiedIndexDir = Join-Path $AiDir "memory_index\unified_index"
     $ChromaDbFile = Join-Path $UnifiedIndexDir "chroma.sqlite3"
     if (-not (Test-Path $ChromaDbFile)) {
-        Write-Host "Downloading pre-indexed OMD knowledge base ..."
+        Write-Host "Downloading pre-indexed Direct knowledge base ..."
         New-Item -ItemType Directory -Force -Path $UnifiedIndexDir | Out-Null
-        $ChromaTar = Join-Path $TmpDir "chroma_omd.tar.gz"
+        $ChromaTar = Join-Path $TmpDir "chroma_direct.tar.gz"
         try {
-            Download "https://forge.disk.direct/repo/OnMyChat/chroma_omd.tar.gz" $ChromaTar
+            Download "https://forge.disk.direct/repo/OnMyChat/chroma_direct.tar.gz" $ChromaTar
             Run-Step "tar.exe" ('-xzf "' + $ChromaTar + '" -C "' + $UnifiedIndexDir + '"') | Out-Null
             if (Test-Path $ChromaTar) { Remove-Item $ChromaTar -Force }
         } catch {

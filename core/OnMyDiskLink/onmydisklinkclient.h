@@ -164,7 +164,7 @@ private:
     // ones - the Python service must trust neither the raw request headers
     // nor a fake "X-OMD-Private-Mode".
     void writeInjectedRequestData(const QString &ID, const QByteArray &data, QTcpSocket *tcp);
-    static QByteArray injectCallerHeaders(const QByteArray &head, const QString &user, const QString &role, const QString &targetOwner, const QString &did = QString());
+    static QByteArray injectCallerHeaders(const QByteArray &head, const QString &user, const QString &role, const QString &targetOwner, const QString &did = QString(), const QString &server = QString());
     // P2P FS requests are handled by a global QThreadPool, so a tunnel must
     // never be closed while a chunk is still being processed/sent: destroying
     // the libdatachannel state concurrently with an in-flight send() can hang

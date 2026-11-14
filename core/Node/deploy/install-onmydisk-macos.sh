@@ -220,9 +220,9 @@ PY
 
     UNIFIED_DIR="$AI_DIR/memory_index/unified_index"
     if [ ! -f "$UNIFIED_DIR/chroma.sqlite3" ]; then
-        echo "==> Downloading pre-indexed OMD knowledge base..."
+        echo "==> Downloading pre-indexed Direct knowledge base..."
         mkdir -p "$UNIFIED_DIR"
-        curl -fsSL "$REPO_BASE/OnMyChat/chroma_omd.tar.gz" | tar -xz -C "$UNIFIED_DIR" || true
+        curl -fsSL "$REPO_BASE/OnMyChat/chroma_direct.tar.gz" | tar -xz -C "$UNIFIED_DIR" || true
     fi
 
     HF_HUB_DIR="$HOME/.cache/huggingface/hub"
