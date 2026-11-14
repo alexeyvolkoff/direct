@@ -5194,13 +5194,30 @@
 
     const padNum = String(sc.scene_number || idx + 1).padStart(2, "0");
     const sceneHeader = `${sc.scene_number || idx + 1}. ${sc.title || $_("krea_story_scene_num", { num: idx + 1 }, `Scene ${idx + 1}`)}`;
+
+    // Continuity reference: for scenes > 0 on Krea 2, pass the previous rendered frame (starting with Scene 1 from chat)
+    // as visual reference so outfit, lighting, and character appearance stay consistent, unless manual refs are attached.
+    let storyRefImages = null;
+    const baseModelLow = String(sliders.base_model || "realism").toLowerCase();
+    const supportsImgRef = !baseModelLow.startsWith("sdxl") && !baseModelLow.includes("pony") && !baseModelLow.includes("illustrious") && !baseModelLow.includes("anima");
+    if (idx > 0 && supportsImgRef && attachedReferences.length === 0) {
+      const prevShot = storyScenes.slice(0, idx).reverse().find((s) => s.image_name || s.image_path || s.blobUrl);
+      if (prevShot) {
+        const refDataUrl = await resolveSceneImageDataUrl(prevShot);
+        if (refDataUrl) {
+          storyRefImages = [refDataUrl];
+        }
+      }
+    }
+
     const item = await runGeneration({
       prompt: sc.visual_prompt,
       aspect: sc.aspect || sliders.aspect || "896x1152",
       subfolder: storySlug,
       filenamePrefix: `Scene_${padNum}`,
       customTitle: sceneHeader,
-      customDescription: sc.narrative || ""
+      customDescription: sc.narrative || "",
+      ...(storyRefImages ? { reference_images: storyRefImages } : {})
     });
 
     shootingSceneIdx = -1;
