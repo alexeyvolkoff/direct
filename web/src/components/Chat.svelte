@@ -3919,15 +3919,20 @@ function lastFreshTitle(messages) {
           const blobUrl = imageBlobCache[key] || resolveImageUrl(p.data);
           const directUrl = generatedDirectUrl(p.data);
 
-          const srcUrl = blobUrl
-            || (!p2pFailed && generatedDeviceShareUrl(sharePath))
-            || (directUrl ? (vs.downscaleImages ? `${directUrl}?size=${vs.scaleTo}` : directUrl) : "");
-          const thumbUrl = blobUrl
-            || (!p2pFailed && generatedDeviceShareUrl(sharePath, "thumb"))
+          const p2pViewUrl = !p2pFailed ? generatedDeviceShareUrl(sharePath) : "";
+          const p2pThumbUrl = !p2pFailed ? generatedDeviceShareUrl(sharePath, "thumb") : "";
+          const p2pDownloadUrl = !p2pFailed ? generatedDeviceShareUrl(sharePath, "download") : "";
+
+          const srcUrl = p2pViewUrl
+            || (directUrl ? (vs.downscaleImages ? `${directUrl}?size=${vs.scaleTo}` : directUrl) : "")
+            || blobUrl;
+          const thumbUrl = p2pThumbUrl
+            || blobUrl
             || (directUrl ? `${directUrl}?size=360` : srcUrl);
-          const downloadUrl = blobUrl
-            || (!p2pFailed && generatedDeviceShareUrl(sharePath, "download"))
-            || directUrl || srcUrl;
+          const downloadUrl = p2pDownloadUrl
+            || directUrl
+            || blobUrl
+            || srcUrl;
 
           images.push({
             name: path || key,
@@ -4028,7 +4033,8 @@ function lastFreshTitle(messages) {
           if (p.type === "data-image" && p.data) {
             const key = p.data.path || p.data.url;
             if (key === activePath || p.data.path === activePath || (p.data.path && p.data.path.endsWith(activePath))) {
-              if (!imageBlobCache[key]) {
+              const hasP2p = !p2pImgFailed[key] && Boolean(generatedDeviceShareUrl(generatedSharePath(p.data)));
+              if (!hasP2p && !imageBlobCache[key] && !generatedDirectUrl(p.data)) {
                 await loadImageBlob(p.data);
               }
             }

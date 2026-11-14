@@ -133,6 +133,7 @@ ai/*.imported
 ai/extensions/
 ai/vapid_keys.json
 ai/push_subscriptions.json
+ai/push_inbox.json
 ai/horde_dreamer_data.json
 ai/horde_dreamer_data.json.*
 
