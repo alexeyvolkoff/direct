@@ -39,50 +39,80 @@
     return /^(https?:\/\/|data:image\/|blob:)/i.test(clean) || /^\/(?!\/)/.test(clean);
   }
 
-  function getPreviewSrc(item) {
+  function getPreviewSrc(item, resolvedMap = resolvedImages) {
     if (!item) return "";
-    if (resolvedImages[item.id]) return resolvedImages[item.id];
+    if (resolvedMap[item.id]) return resolvedMap[item.id];
     const raw = item.image || item.data?.image || "";
-    if (isSafePreviewSrc(raw)) {
-      if (raw.startsWith("/") && fetchFn && !resolvingImages.has(item.id)) {
-        resolveRelativePreview(item, raw);
-      }
-      return raw;
+    if (/^(https?:\/\/|data:image\/|blob:)/i.test(raw.trim())) {
+      return raw.trim();
     }
-    if (item.data?.filename && fetchFn && !resolvingImages.has(item.id)) {
-      resolveRelativePreview(item, "");
+    if ((isSafePreviewSrc(raw) || item.data?.filename || item.data?.image_rel_path) && !resolvingImages.has(item.id)) {
+      resolveRelativePreview(item, raw);
     }
     return "";
+  }
+
+  async function tryFetchImageBlob(url, useNodeFetch = false) {
+    try {
+      const res = useNodeFetch && fetchFn ? await fetchFn(url) : await fetch(url);
+      if (res && res.ok) {
+        const ct = res.headers?.get?.("content-type") || "";
+        if (ct && !ct.startsWith("image/") && !ct.startsWith("application/octet-stream")) return null;
+        const blob = await res.blob();
+        if (blob && blob.size > 0) {
+          return URL.createObjectURL(blob);
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 
   async function resolveRelativePreview(item, rawUrl) {
     if (!item || resolvingImages.has(item.id)) return;
     resolvingImages.add(item.id);
-    const candidates = [];
-    if (rawUrl && rawUrl.startsWith("/")) candidates.push(rawUrl);
-    if (item.data?.filename) {
-      candidates.push(`/chat/image/${encodeURIComponent(item.data.filename)}?size=800`);
+
+    const filename = item.data?.filename || (rawUrl ? rawUrl.split("/").pop()?.split("?")[0] : "");
+    const relPath = String(item.data?.image_rel_path || "").replace(/^\/+/, "");
+    const storedDefault =
+      (typeof localStorage !== "undefined" ? localStorage.getItem("omd_default_storage") : "") ||
+      item.data?.default_storage ||
+      "";
+    const cleanStorage = storedDefault.replace(/^\/p2p\//i, "").replace(/^\/+|\/+$/g, "");
+
+    const attempts = [];
+    // 1. P2P path with full storage prefix (via Service Worker)
+    if (cleanStorage && relPath) {
+      attempts.push({ url: `/p2p/${cleanStorage}/${relPath}?resize=true&width=600&height=600`, node: false });
     }
-    for (const url of candidates) {
-      try {
-        const res = fetchFn ? await fetchFn(url) : await fetch(url);
-        if (res && res.ok) {
-          const blob = await res.blob();
-          if (blob && blob.size > 0) {
-            const objUrl = URL.createObjectURL(blob);
-            resolvedImages = { ...resolvedImages, [item.id]: objUrl };
-            return;
-          }
-        }
-      } catch (_) {}
+    if (rawUrl && rawUrl.startsWith("/p2p/")) {
+      attempts.push({ url: rawUrl, node: false });
+    }
+    // 2. AI node endpoints (/generated/, /chat/image/, or raw node path)
+    if (fetchFn && filename) {
+      attempts.push({ url: `/generated/${encodeURIComponent(filename)}?size=800`, node: true });
+      attempts.push({ url: `/chat/image/${encodeURIComponent(filename)}?size=800`, node: true });
+    }
+    if (fetchFn && rawUrl && rawUrl.startsWith("/") && !rawUrl.startsWith("/p2p/")) {
+      attempts.push({ url: rawUrl, node: true });
+    }
+
+    for (const att of attempts) {
+      const objUrl = await tryFetchImageBlob(att.url, att.node);
+      if (objUrl) {
+        resolvedImages = { ...resolvedImages, [item.id]: objUrl };
+        return;
+      }
+    }
+    if (!fetchFn) {
+      resolvingImages.delete(item.id);
     }
   }
 
-  $: if ($activeNotificationToast) {
-    getPreviewSrc($activeNotificationToast);
+  $: if ($activeNotificationToast && fetchFn !== undefined) {
+    getPreviewSrc($activeNotificationToast, resolvedImages);
   }
-  $: if ($notificationsModalOpen && $unreadNotifications.length) {
-    for (const it of $unreadNotifications) getPreviewSrc(it);
+  $: if ($notificationsModalOpen && $unreadNotifications.length && fetchFn !== undefined) {
+    for (const it of $unreadNotifications) getPreviewSrc(it, resolvedImages);
   }
 
   function hasOpenTarget(item) {
@@ -136,8 +166,8 @@
       </button>
     </div>
 
-    {#if getPreviewSrc(toast)}
-      <img class="omd-rich-toast-img" src={getPreviewSrc(toast)} alt="" loading="lazy" />
+    {#if getPreviewSrc(toast, resolvedImages)}
+      <img class="omd-rich-toast-img" src={getPreviewSrc(toast, resolvedImages)} alt="" loading="lazy" />
     {/if}
 
     {#if (toast.actions && toast.actions.length > 0) || hasOpenTarget(toast)}
@@ -239,8 +269,8 @@
               {#if item.body}
                 <div class="omd-notif-item-body">{item.body}</div>
               {/if}
-              {#if getPreviewSrc(item)}
-                <img class="omd-rich-toast-img" src={getPreviewSrc(item)} alt="" loading="lazy" />
+              {#if getPreviewSrc(item, resolvedImages)}
+                <img class="omd-rich-toast-img" src={getPreviewSrc(item, resolvedImages)} alt="" loading="lazy" />
               {/if}
               {#if (item.actions && item.actions.length > 0) || hasOpenTarget(item)}
                 <div class="omd-rich-toast-actions">
