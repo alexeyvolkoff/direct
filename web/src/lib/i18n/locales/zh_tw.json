@@ -1853,5 +1853,11 @@
   "krea_story_full_movie": "完整影片",
   "krea_story_stitch_hint": "透過 FFmpeg 將產生的場景片段拼接為一個 MP4 影片",
   "krea_story_stitching": "正在拼接...",
-  "krea_story_stitch_btn": "拼接 ({count})"
+  "krea_story_stitch_btn": "拼接 ({count})",
+  "chat_start_story": "分鏡故事",
+  "chat_start_story_hint": "在工作室中從這張圖片開始協作分鏡故事",
+  "krea_start_story_from_image_hint": "從這張圖片開始新的分鏡故事",
+  "krea_story_seed_exists_title": "分鏡中已有 {count} 個場景",
+  "krea_story_seed_append": "新增為場景 #{num}",
+  "krea_story_seed_new": "開始新故事"
 }

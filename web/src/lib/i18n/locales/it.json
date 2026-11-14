@@ -1853,5 +1853,11 @@
   "krea_story_full_movie": "Filmato completo",
   "krea_story_stitch_hint": "Unisci le clip generate in un unico filmato MP4 tramite FFmpeg",
   "krea_story_stitching": "Unione...",
-  "krea_story_stitch_btn": "Unisci ({count})"
+  "krea_story_stitch_btn": "Unisci ({count})",
+  "chat_start_story": "Storyboard",
+  "chat_start_story_hint": "Avvia uno storyboard collaborativo da questa immagine nello Studio",
+  "krea_start_story_from_image_hint": "Avvia un nuovo storyboard da questa immagine",
+  "krea_story_seed_exists_title": "Lo storyboard ha già {count} scena/e",
+  "krea_story_seed_append": "Aggiungi come scena #{num}",
+  "krea_story_seed_new": "Inizia nuova storia"
 }

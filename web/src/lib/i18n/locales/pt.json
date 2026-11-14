@@ -1853,5 +1853,11 @@
   "krea_story_full_movie": "Filme completo",
   "krea_story_stitch_hint": "Juntar os clipes gerados em um único vídeo MP4 via FFmpeg",
   "krea_story_stitching": "Juntando...",
-  "krea_story_stitch_btn": "Juntar ({count})"
+  "krea_story_stitch_btn": "Juntar ({count})",
+  "chat_start_story": "Storyboard",
+  "chat_start_story_hint": "Iniciar um storyboard colaborativo a partir desta imagem no Studio",
+  "krea_start_story_from_image_hint": "Iniciar um novo storyboard a partir desta imagem",
+  "krea_story_seed_exists_title": "O storyboard já tem {count} cena(s)",
+  "krea_story_seed_append": "Adicionar como cena #{num}",
+  "krea_story_seed_new": "Começar nova história"
 }

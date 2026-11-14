@@ -1853,5 +1853,11 @@
   "krea_story_full_movie": "Volledige film",
   "krea_story_stitch_hint": "Voeg gegenereerde scèneclips samen tot één MP4-film via FFmpeg",
   "krea_story_stitching": "Samenvoegen...",
-  "krea_story_stitch_btn": "Samenvoegen ({count})"
+  "krea_story_stitch_btn": "Samenvoegen ({count})",
+  "chat_start_story": "Storyboard",
+  "chat_start_story_hint": "Start een gezamenlijk storyboard vanaf deze afbeelding in Studio",
+  "krea_start_story_from_image_hint": "Start een nieuw storyboard vanaf deze afbeelding",
+  "krea_story_seed_exists_title": "Storyboard heeft al {count} scène(s)",
+  "krea_story_seed_append": "Toevoegen als scène #{num}",
+  "krea_story_seed_new": "Nieuw verhaal starten"
 }

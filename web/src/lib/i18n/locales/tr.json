@@ -1853,5 +1853,11 @@
   "krea_story_full_movie": "Tam Film",
   "krea_story_stitch_hint": "Oluşturulan sahne kliplerini FFmpeg ile tek bir MP4 filminde birleştir",
   "krea_story_stitching": "Birleştiriliyor...",
-  "krea_story_stitch_btn": "Birleştir ({count})"
+  "krea_story_stitch_btn": "Birleştir ({count})",
+  "chat_start_story": "Hikaye Panosu",
+  "chat_start_story_hint": "Stüdyoda bu görselden ortak bir hikaye panosu başlat",
+  "krea_start_story_from_image_hint": "Bu görselden yeni bir hikaye panosu başlat",
+  "krea_story_seed_exists_title": "Hikaye panosunda zaten {count} sahne var",
+  "krea_story_seed_append": "Sahne #{num} olarak ekle",
+  "krea_story_seed_new": "Yeni hikaye başlat"
 }

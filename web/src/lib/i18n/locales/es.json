@@ -1853,5 +1853,11 @@
   "krea_story_full_movie": "Película completa",
   "krea_story_stitch_hint": "Unir los clips de escena generados en una sola película MP4 con FFmpeg",
   "krea_story_stitching": "Uniendo...",
-  "krea_story_stitch_btn": "Unir ({count})"
+  "krea_story_stitch_btn": "Unir ({count})",
+  "chat_start_story": "Guion gráfico",
+  "chat_start_story_hint": "Iniciar un guion gráfico colaborativo desde esta imagen en Studio",
+  "krea_start_story_from_image_hint": "Iniciar un nuevo guion gráfico desde esta imagen",
+  "krea_story_seed_exists_title": "El guion gráfico ya tiene {count} escena(s)",
+  "krea_story_seed_append": "Añadir como escena #{num}",
+  "krea_story_seed_new": "Nueva historia"
 }

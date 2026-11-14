@@ -4129,6 +4129,55 @@ function lastFreshTitle(messages) {
     });
   }
 
+  function startStoryFromChatImage(imgObj, msg) {
+    if (!imgObj) return;
+    const key = imgObj.path || imgObj.url || "";
+    const rawName = (imgObj.path || imgObj.url || "scene_01.png").split("/").pop().split("?")[0] || "scene_01.png";
+    const cleanPath = (imgObj.path || "").replace(/^\/+/, "");
+    const imagePath = cleanPath
+      ? (cleanPath.includes("generated/") ? cleanPath : `generated/${cleanPath}`)
+      : `generated/${rawName}`;
+
+    const msgIdx = messages.findIndex((item) => item && msg && item.id === msg.id);
+    const sliceEnd = msgIdx >= 0 ? msgIdx + 1 : messages.length;
+    const recentMsgs = messages.slice(Math.max(0, sliceEnd - 6), sliceEnd);
+    const dialogueContext = recentMsgs
+      .map((item) => {
+        const raw = typeof item?.content === "string"
+          ? item.content
+          : (typeof item?.text === "string" ? item.text : "");
+        const cleaned = raw.replace(/```[\s\S]*?```/g, "").replace(/!\[[^\]]*\]\([^)]*\)/g, "").trim();
+        if (!cleaned) return "";
+        const speaker = item.role === "user"
+          ? (userName || "User")
+          : (activeChatPersona?.name || activeChatPersona?.title || "Assistant");
+        return `${speaker}: ${cleaned.slice(0, 280)}`;
+      })
+      .filter(Boolean)
+      .join("\n");
+
+    const seed = {
+      image_name: rawName,
+      image_path: imagePath,
+      url: imgObj.url || (rawName ? `/chat/image/${rawName}` : ""),
+      blobUrl: imageBlobCache[key] || null,
+      title: imgObj.title || currentChatTitle || "",
+      description: imgObj.description || "",
+      prompt: imgObj.prompt || "",
+      setting: dialogueContext.slice(0, 900),
+      idea: "",
+      persona: activeChatPersona
+        ? {
+            id: activeChatPersona.id,
+            name: activeChatPersona.name || "",
+            title: activeChatPersona.title || "",
+            prompt: activeChatPersona.prompt || ""
+          }
+        : null
+    };
+    dispatch("start-story-from-image", seed);
+  }
+
   async function setQuickPrompt(text) {
     input = text;
     if (textareaEl) {
@@ -5660,6 +5709,20 @@ function lastFreshTitle(messages) {
                               </svg>
                               <span>{regeneratingImages[imgKey] ? $_("regenerating", {}, "Regenerating…") : $_("regenerate", {}, "Regenerate")}</span>
                             </button>
+                            {#if !isFailed && (block.data.path || block.data.url)}
+                              <button
+                                type="button"
+                                class="image-action-btn"
+                                title={$_("chat_start_story_hint", {}, "Start a collaborative storyboard from this image in Studio")}
+                                on:click={() => startStoryFromChatImage(block.data, m)}
+                              >
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                                  <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                                  <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                                </svg>
+                                <span>{$_("chat_start_story", {}, "Start Story")}</span>
+                              </button>
+                            {/if}
                           </div>
                           {#if !isFailed && tempShownImages[imgKey] && !savedToDevice[imgKey] && !regeneratingImages[imgKey] && !isStorageOnAiNode()}
                             <div class="chat-image-warning-banner">

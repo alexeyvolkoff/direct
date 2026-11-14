@@ -1853,5 +1853,11 @@
   "krea_story_full_movie": "Цео филм",
   "krea_story_stitch_hint": "Споји генерисане клипове сцена у један MP4 филм путем FFmpeg-а",
   "krea_story_stitching": "Спајање...",
-  "krea_story_stitch_btn": "Споји ({count})"
+  "krea_story_stitch_btn": "Споји ({count})",
+  "chat_start_story": "Сториборд",
+  "chat_start_story_hint": "Започни заједничку причу у Студију са ове слике",
+  "krea_start_story_from_image_hint": "Започни нову причу са ове слике",
+  "krea_story_seed_exists_title": "Сториборд већ има {count} сцен(а)",
+  "krea_story_seed_append": "Додај као сцену #{num}",
+  "krea_story_seed_new": "Започни нову причу"
 }

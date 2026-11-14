@@ -1853,5 +1853,11 @@
   "krea_story_full_movie": "完整影片",
   "krea_story_stitch_hint": "通过 FFmpeg 将生成的场景片段拼接为一个 MP4 影片",
   "krea_story_stitching": "正在拼接...",
-  "krea_story_stitch_btn": "拼接 ({count})"
+  "krea_story_stitch_btn": "拼接 ({count})",
+  "chat_start_story": "分镜故事",
+  "chat_start_story_hint": "在工作室中从这张图片开始协作分镜故事",
+  "krea_start_story_from_image_hint": "从这张图片开始新的分镜故事",
+  "krea_story_seed_exists_title": "分镜中已有 {count} 个场景",
+  "krea_story_seed_append": "添加为场景 #{num}",
+  "krea_story_seed_new": "开始新故事"
 }

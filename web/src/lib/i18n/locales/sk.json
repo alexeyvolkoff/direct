@@ -1853,5 +1853,11 @@
   "krea_story_full_movie": "Celý film",
   "krea_story_stitch_hint": "Spojiť vygenerované klipy scén do jedného MP4 filmu cez FFmpeg",
   "krea_story_stitching": "Spájanie...",
-  "krea_story_stitch_btn": "Spojiť ({count})"
+  "krea_story_stitch_btn": "Spojiť ({count})",
+  "chat_start_story": "Storyboard",
+  "chat_start_story_hint": "Začať spoločný storyboard z tohto obrázka v Štúdiu",
+  "krea_start_story_from_image_hint": "Začať nový storyboard z tohto obrázka",
+  "krea_story_seed_exists_title": "Storyboard už má {count} scén(y)",
+  "krea_story_seed_append": "Pridať ako scénu #{num}",
+  "krea_story_seed_new": "Začať nový príbeh"
 }

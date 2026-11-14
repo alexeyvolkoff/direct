@@ -1854,5 +1854,11 @@
   "krea_story_full_movie": "Full Movie",
   "krea_story_stitch_hint": "Stitch generated scene video clips into one MP4 movie via FFmpeg",
   "krea_story_stitching": "Stitching...",
-  "krea_story_stitch_btn": "Stitch ({count})"
+  "krea_story_stitch_btn": "Stitch ({count})",
+  "chat_start_story": "Start Story",
+  "chat_start_story_hint": "Start a collaborative storyboard from this image in Studio",
+  "krea_start_story_from_image_hint": "Start a new storyboard from this image",
+  "krea_story_seed_exists_title": "Storyboard already has {count} scene(s)",
+  "krea_story_seed_append": "Add as scene #{num}",
+  "krea_story_seed_new": "Start new story"
 }

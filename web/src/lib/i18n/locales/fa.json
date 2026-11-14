@@ -1853,5 +1853,11 @@
   "krea_story_full_movie": "فیلم کامل",
   "krea_story_stitch_hint": "ادغام کلیپ‌های صحنه در یک فیلم MP4 با FFmpeg",
   "krea_story_stitching": "در حال ادغام...",
-  "krea_story_stitch_btn": "ادغام ({count})"
+  "krea_story_stitch_btn": "ادغام ({count})",
+  "chat_start_story": "استوری‌برد",
+  "chat_start_story_hint": "شروع یک استوری‌برد مشترک از این تصویر در استودیو",
+  "krea_start_story_from_image_hint": "شروع یک استوری‌برد جدید از این تصویر",
+  "krea_story_seed_exists_title": "استوری‌برد از قبل {count} صحنه دارد",
+  "krea_story_seed_append": "افزودن به عنوان صحنه #{num}",
+  "krea_story_seed_new": "شروع داستان جدید"
 }

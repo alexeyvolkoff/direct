@@ -1853,5 +1853,11 @@
   "krea_story_full_movie": "סרט מלא",
   "krea_story_stitch_hint": "חבר את קטעי הסצנות שנוצרו לסרט MP4 אחד באמצעות FFmpeg",
   "krea_story_stitching": "מחבר...",
-  "krea_story_stitch_btn": "חבר ({count})"
+  "krea_story_stitch_btn": "חבר ({count})",
+  "chat_start_story": "לוח תכנון",
+  "chat_start_story_hint": "התחל לוח תכנון משותף מתמונה זו בסטודיו",
+  "krea_start_story_from_image_hint": "התחל לוח תכנון חדש מתמונה זו",
+  "krea_story_seed_exists_title": "לוח התכנון כבר מכיל {count} סצנות",
+  "krea_story_seed_append": "הוסף כסצנה #{num}",
+  "krea_story_seed_new": "התחל סיפור חדש"
 }

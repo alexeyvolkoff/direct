@@ -1853,5 +1853,11 @@
   "krea_story_full_movie": "Gesamter Film",
   "krea_story_stitch_hint": "Generierte Szenenclips mit FFmpeg zu einem MP4-Film zusammenfügen",
   "krea_story_stitching": "Wird zusammengefügt...",
-  "krea_story_stitch_btn": "Zusammenfügen ({count})"
+  "krea_story_stitch_btn": "Zusammenfügen ({count})",
+  "chat_start_story": "Storyboard",
+  "chat_start_story_hint": "Ein gemeinsames Storyboard mit diesem Bild im Studio starten",
+  "krea_start_story_from_image_hint": "Neues Storyboard aus diesem Bild starten",
+  "krea_story_seed_exists_title": "Storyboard enthält bereits {count} Szene(n)",
+  "krea_story_seed_append": "Als Szene #{num} hinzufügen",
+  "krea_story_seed_new": "Neue Geschichte starten"
 }

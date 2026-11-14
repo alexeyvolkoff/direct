@@ -168,6 +168,7 @@
   // Image generation support (assistant capabilities)
   let imageGenSupported = false;
   let kreaSupported = false;
+  let pendingStorySeed = null;
   let kreaActive = typeof localStorage !== "undefined" ? localStorage.getItem("omd_krea_active") === "1" : false;
 
   function setKreaActive(val) {
@@ -1622,6 +1623,8 @@
           {kreaSupported}
           defaultStorage={$profileStore.defaultStorage || ""}
           userName={$profileStore.name || $profileStore.user || ""}
+          initialStorySeed={pendingStorySeed}
+          on:story-seed-consumed={() => (pendingStorySeed = null)}
           on:count-change={(e) => (creationsCount = e.detail)}
           on:personas-change={handleStudioPersonasChange}
           on:start-persona-chat={handleStartPersonaChat}
@@ -1681,6 +1684,10 @@
           on:branch-chat={handleBranchChat}
           on:select-persona={handleSelectChatPersona}
           on:open-personas={() => (activeView = "creations")}
+          on:start-story-from-image={(e) => {
+            pendingStorySeed = e.detail;
+            activeView = "creations";
+          }}
           on:open-knowledge={() => (activeView = "memory")}
           on:open-file={(e) => forwardOpenFile(e.detail)}
           on:attached-change={(e) => (attachedCards = e.detail)}

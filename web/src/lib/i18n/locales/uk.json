@@ -1853,5 +1853,11 @@
   "krea_story_full_movie": "Готовий ролик",
   "krea_story_stitch_hint": "Змонтувати готові кліпи сцен в один MP4-ролик через FFmpeg",
   "krea_story_stitching": "Склеювання...",
-  "krea_story_stitch_btn": "Змонтувати ({count})"
+  "krea_story_stitch_btn": "Змонтувати ({count})",
+  "chat_start_story": "Сториборд",
+  "chat_start_story_hint": "Почати спільну історію у Студії з цього кадру",
+  "krea_start_story_from_image_hint": "Почати нову історію з цього кадру",
+  "krea_story_seed_exists_title": "У сториборді вже є сцени ({count})",
+  "krea_story_seed_append": "Додати як сцену #{num}",
+  "krea_story_seed_new": "Почати нову історію"
 }

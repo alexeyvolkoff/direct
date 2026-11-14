@@ -1853,5 +1853,11 @@
   "krea_story_full_movie": "Pełny film",
   "krea_story_stitch_hint": "Połącz wygenerowane klipy scen w jeden film MP4 przez FFmpeg",
   "krea_story_stitching": "Łączenie...",
-  "krea_story_stitch_btn": "Połącz ({count})"
+  "krea_story_stitch_btn": "Połącz ({count})",
+  "chat_start_story": "Scenorys",
+  "chat_start_story_hint": "Rozpocznij wspólny scenorys od tego obrazu w Studio",
+  "krea_start_story_from_image_hint": "Rozpocznij nowy scenorys od tego obrazu",
+  "krea_story_seed_exists_title": "Scenorys ma już {count} scen(y)",
+  "krea_story_seed_append": "Dodaj jako scenę #{num}",
+  "krea_story_seed_new": "Rozpocznij nową historię"
 }

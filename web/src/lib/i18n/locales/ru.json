@@ -1854,5 +1854,11 @@
   "krea_story_full_movie": "Готовый ролик",
   "krea_story_stitch_hint": "Склеить готовые клипы сцен в единый MP4-ролик через FFmpeg",
   "krea_story_stitching": "Склейка...",
-  "krea_story_stitch_btn": "Склеить ({count})"
+  "krea_story_stitch_btn": "Склеить ({count})",
+  "chat_start_story": "Сториборд",
+  "chat_start_story_hint": "Начать совместную историю в Студии с этого кадра",
+  "krea_start_story_from_image_hint": "Начать новую историю с этого кадра",
+  "krea_story_seed_exists_title": "В сториборде уже есть сцены ({count})",
+  "krea_story_seed_append": "Добавить как сцену #{num}",
+  "krea_story_seed_new": "Начать новую историю"
 }

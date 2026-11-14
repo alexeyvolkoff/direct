@@ -43,6 +43,7 @@
   export let httpDrive = null;
   export let deviceDrive = null;
   export let targetDevice = null;
+  export let initialStorySeed = null;
   export let targetLinkId = "";
   export let isPrivateMode = false;
   export let omdKey = "";
@@ -4681,6 +4682,9 @@
           aspect: s.aspect,
           image_name: s.image_name || "",
           image_path: s.image_path || "",
+          video_name: s.video_name || "",
+          video_path: s.video_path || "",
+          video_duration: s.video_duration || 0,
           status: s.image_name ? "done" : "draft"
         }))
       };
@@ -5006,8 +5010,120 @@
     if (!keepSetting) storySetting = "";
     storyIdea = "";
     storyScenes = [];
+    stitchedMovieItem = null;
     isSetupCollapsed = false;
     saveActiveDraftStoryToLocal();
+  }
+
+  let draftStoryRestored = false;
+  let pendingStorySeedConflict = null;
+
+  function applySeedPersona(seed) {
+    if (seed?.persona && (seed.persona.id || seed.persona.name)) {
+      const pMatch = (personas || []).find(
+        (p) =>
+          (seed.persona.id && p.id === seed.persona.id) ||
+          (seed.persona.name && p.name && p.name.toLowerCase() === seed.persona.name.toLowerCase())
+      );
+      const chosen = pMatch || seed.persona;
+      if (chosen && (chosen.id || chosen.name)) {
+        const exists = selectedPersonas.some(
+          (sp) => (chosen.id && sp.id === chosen.id) || (chosen.name && sp.name === chosen.name)
+        );
+        if (!exists) selectedPersonas = [...selectedPersonas, chosen];
+      }
+    } else if (seed?.personaName && personas && personas.length > 0) {
+      const pMatch = personas.find(
+        (p) => p.name && p.name.toLowerCase() === String(seed.personaName).toLowerCase()
+      );
+      if (pMatch && !selectedPersonas.some((sp) => sp.id === pMatch.id)) {
+        selectedPersonas = [...selectedPersonas, pMatch];
+      }
+    }
+  }
+
+  function buildSceneFromSeed(seed, sceneNumber) {
+    const imgName = seed.image_name || (seed.image_path ? seed.image_path.split("/").pop() : "");
+    const imgPath = seed.image_path || (imgName ? `generated/${imgName}` : "");
+    return {
+      scene_number: sceneNumber,
+      title: (seed.scene_title || seed.title || "").trim() || $_("krea_story_scene_num", { num: sceneNumber }, `Scene ${sceneNumber}`),
+      narrative: (seed.description || seed.narrative || "").trim(),
+      visual_prompt: (seed.prompt || "").trim(),
+      aspect: seed.aspect || aspectRatio || "896x1152",
+      status: "done",
+      image_name: imgName,
+      image_path: imgPath,
+      blobUrl: seed.blobUrl || (imgPath && imageBlobCache[imgPath]) || (imgName && imageBlobCache[imgName]) || null,
+      showPrompt: false,
+      showRefine: false,
+      refineText: ""
+    };
+  }
+
+  function startStoryFromSeed(seed) {
+    if (!seed) return;
+    pendingStorySeedConflict = null;
+    showDirectorPanel = true;
+    directorTab = "story";
+    storySlug = "";
+    storyTitle = (seed.title || "").trim();
+    storySetting = (seed.setting || seed.description || "").trim();
+    storyIdea = (seed.idea || "").trim();
+    stitchedMovieItem = null;
+    selectedPersonas = [];
+    applySeedPersona(seed);
+
+    storyScenes = [buildSceneFromSeed(seed, 1)];
+    isSetupCollapsed = false;
+    saveActiveDraftStoryToLocal();
+  }
+
+  function appendSeedToStory(seed) {
+    if (!seed) return;
+    pendingStorySeedConflict = null;
+    showDirectorPanel = true;
+    directorTab = "story";
+    applySeedPersona(seed);
+    const nextNum = storyScenes.length + 1;
+    storyScenes = [...storyScenes, buildSceneFromSeed(seed, nextNum)];
+    if (!storySetting.trim() && seed.setting) {
+      storySetting = seed.setting.trim();
+    }
+    saveActiveDraftStoryToLocal();
+  }
+
+  function handleIncomingStorySeed(seed) {
+    if (!seed) return;
+    showDirectorPanel = true;
+    directorTab = "story";
+    if (storyScenes.length > 0) {
+      pendingStorySeedConflict = seed;
+    } else {
+      startStoryFromSeed(seed);
+    }
+  }
+
+  function startStoryFromGalleryItem(item) {
+    if (!item || item.isVideo) return;
+    const rawName = item.name || (item.path ? item.path.split("/").pop() : "");
+    const rawPath = item.path || (rawName ? `generated/${rawName}` : "");
+    handleIncomingStorySeed({
+      image_name: rawName,
+      image_path: rawPath,
+      blobUrl: item.blobUrl || (rawPath && imageBlobCache[rawPath]) || (rawName && imageBlobCache[rawName]) || null,
+      title: item.title || "",
+      description: item.description || "",
+      prompt: item.prompt || "",
+      setting: item.description || "",
+      personaName: item.persona || ""
+    });
+  }
+
+  $: if (draftStoryRestored && initialStorySeed) {
+    const seedCopy = initialStorySeed;
+    dispatch("story-seed-consumed");
+    handleIncomingStorySeed(seedCopy);
   }
 
   async function selectStorySubfolder(sub) {
@@ -5452,6 +5568,7 @@
         }
       }
     } catch (_) {}
+    draftStoryRestored = true;
 
     await refreshStudioStatusAndPresets();
 
@@ -6200,6 +6317,17 @@
                     {/if}
 
                     {#if !item.isVideo}
+                      <button
+                        type="button"
+                        class="toolbar-btn card-story-btn"
+                        title={$_("krea_start_story_from_image_hint", {}, "Start a new storyboard from this image")}
+                        on:click|stopPropagation={() => startStoryFromGalleryItem(item)}
+                      >
+                        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                        </svg>
+                      </button>
                       {#if canShowVideoTab}
                         <button
                           type="button"
@@ -7879,6 +8007,36 @@
       {:else}
         <!-- TAB 2: MULTI-SCENE STORYBOARD & COMICS -->
         <div class="storyboard-body">
+          {#if pendingStorySeedConflict}
+            <div class="story-seed-banner">
+              <div class="story-seed-banner-title">
+                📖 {$_("krea_story_seed_exists_title", { count: storyScenes.length }, `Storyboard already has ${storyScenes.length} scene(s)`)}
+              </div>
+              <div class="story-seed-banner-actions">
+                <button
+                  type="button"
+                  class="story-seed-append-btn"
+                  on:click={() => appendSeedToStory(pendingStorySeedConflict)}
+                >
+                  ➕ {$_("krea_story_seed_append", { num: storyScenes.length + 1 }, `Add as scene #${storyScenes.length + 1}`)}
+                </button>
+                <button
+                  type="button"
+                  class="story-seed-new-btn"
+                  on:click={() => startStoryFromSeed(pendingStorySeedConflict)}
+                >
+                  📖 {$_("krea_story_seed_new", {}, "Start new story")}
+                </button>
+                <button
+                  type="button"
+                  class="story-seed-cancel-btn"
+                  on:click={() => (pendingStorySeedConflict = null)}
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          {/if}
           <!-- Saved Stories & New Story Bar -->
           <div class="story-projects-bar">
             <select
@@ -14335,6 +14493,62 @@
     color: #fff;
   }
 
+  .story-seed-banner {
+    border-radius: 9px;
+    border: 1px solid rgba(139, 92, 246, 0.55);
+    background: rgba(139, 92, 246, 0.14);
+    padding: 9px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .story-seed-banner-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: #ede9fe;
+  }
+
+  .story-seed-banner-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .story-seed-append-btn {
+    flex: 1;
+    min-width: 140px;
+    padding: 6px 10px;
+    border-radius: 7px;
+    border: none;
+    background: linear-gradient(135deg, #059669, #0d9488);
+    color: #fff;
+    font-size: 11.5px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .story-seed-new-btn {
+    padding: 6px 10px;
+    border-radius: 7px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(255, 255, 255, 0.08);
+    color: #f3e8ff;
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .story-seed-cancel-btn {
+    padding: 6px 9px;
+    border-radius: 7px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: transparent;
+    color: #cbb6d9;
+    font-size: 11.5px;
+    cursor: pointer;
+  }
+
   .story-continue-inline {
     display: flex;
     gap: 6px;
@@ -14523,6 +14737,22 @@
     background: #059669;
     border-color: #059669;
     color: #ffffff;
+  }
+  .krea-studio-root.light-theme .story-seed-banner {
+    background: #f5f3ff;
+    border-color: #8b5cf6;
+  }
+  .krea-studio-root.light-theme .story-seed-banner-title {
+    color: #4c1d95;
+  }
+  .krea-studio-root.light-theme .story-seed-new-btn {
+    background: #ffffff;
+    border-color: #c4b5fd;
+    color: #5b21b6;
+  }
+  .krea-studio-root.light-theme .story-seed-cancel-btn {
+    border-color: #ddd6fe;
+    color: #6d28d9;
   }
   .krea-studio-root.light-theme .add-scene-inline-btn {
     background: #ffffff;

@@ -1853,5 +1853,11 @@
   "krea_story_full_movie": "Cijeli film",
   "krea_story_stitch_hint": "Spoji generirane videoisječke scena u jedan MP4 film putem FFmpeg-a",
   "krea_story_stitching": "Spajanje...",
-  "krea_story_stitch_btn": "Spoji ({count})"
+  "krea_story_stitch_btn": "Spoji ({count})",
+  "chat_start_story": "Scenarij",
+  "chat_start_story_hint": "Započni zajedničku priču u Studiju iz ove slike",
+  "krea_start_story_from_image_hint": "Započni novu priču iz ove slike",
+  "krea_story_seed_exists_title": "Scenarij već ima {count} scen(a)",
+  "krea_story_seed_append": "Dodaj kao scenu #{num}",
+  "krea_story_seed_new": "Započni novu priču"
 }

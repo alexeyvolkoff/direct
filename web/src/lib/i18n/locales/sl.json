@@ -1853,5 +1853,11 @@
   "krea_story_full_movie": "Celoten film",
   "krea_story_stitch_hint": "Združi ustvarjene posnetke prizorov v en MP4 film prek FFmpeg",
   "krea_story_stitching": "Združevanje...",
-  "krea_story_stitch_btn": "Združi ({count})"
+  "krea_story_stitch_btn": "Združi ({count})",
+  "chat_start_story": "Snemalna knjiga",
+  "chat_start_story_hint": "Začni skupno zgodbo v Studiu s to sliko",
+  "krea_start_story_from_image_hint": "Začni novo zgodbo s to sliko",
+  "krea_story_seed_exists_title": "Snemalna knjiga že vsebuje {count} prizor(ov)",
+  "krea_story_seed_append": "Dodaj kot prizor #{num}",
+  "krea_story_seed_new": "Začni novo zgodbo"
 }
