@@ -16,6 +16,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+import uuid
 from typing import Any, Optional
 from urllib.parse import urlparse
 
@@ -28,6 +29,8 @@ logger = logging.getLogger("push_service")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 VAPID_KEYS_PATH = os.path.join(BASE_DIR, "vapid_keys.json")
 SUBSCRIPTIONS_PATH = os.path.join(BASE_DIR, "push_subscriptions.json")
+INBOX_PATH = os.path.join(BASE_DIR, "push_inbox.json")
+MAX_INBOX_ITEMS = 50
 
 DEFAULT_NATIVE_RELAY_URL = os.environ.get("OMD_PUSH_RELAY_URL", "https://disk.direct:8765/api/push/native")
 DEFAULT_PUBLIC_ORIGIN = os.environ.get("OMD_PUBLIC_ORIGIN", "https://disk.direct").rstrip("/")
@@ -224,6 +227,128 @@ def _hash_key(omd_key: str) -> str:
     return hashlib.sha256(clean.encode("utf-8")).hexdigest()[:24]
 
 
+def _normalize_relay_url(raw_url: str) -> str:
+    url = str(raw_url or "").strip()
+    if not url or "onmydisk.net" in url.lower() or "onmydisk.com" in url.lower():
+        return DEFAULT_NATIVE_RELAY_URL
+    return url
+
+
+def _normalize_public_origin(raw_origin: str) -> str:
+    origin = str(raw_origin or "").strip().rstrip("/")
+    if not origin or "onmydisk.net" in origin.lower() or "onmydisk.com" in origin.lower():
+        return DEFAULT_PUBLIC_ORIGIN
+    return origin
+
+
+def _load_inbox_unlocked() -> list[dict[str, Any]]:
+    if not os.path.isfile(INBOX_PATH):
+        return []
+    try:
+        with open(INBOX_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, list):
+            return data
+    except Exception as e:
+        logger.warning(f"[PushInbox] Could not load inbox: {e}")
+    return []
+
+
+def _save_inbox_unlocked(items: list[dict[str, Any]]) -> None:
+    tmp_path = INBOX_PATH + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(items[-MAX_INBOX_ITEMS:], f, indent=2, ensure_ascii=False)
+    try:
+        os.chmod(tmp_path, 0o600)
+    except Exception:
+        pass
+    os.replace(tmp_path, INBOX_PATH)
+
+
+def _matches_inbox_caller(item: dict[str, Any], owner_only: bool, user_id: str, key_hash: str) -> bool:
+    if owner_only:
+        return bool(item.get("owner_only", True))
+    if user_id and item.get("user_id") == user_id:
+        return True
+    if key_hash and item.get("omd_key_hash") == key_hash:
+        return True
+    return not item.get("user_id") and not item.get("omd_key_hash")
+
+
+def record_inbox_notification(
+    payload_obj: dict[str, Any],
+    owner_only: bool = False,
+    user_id: str = "",
+    omd_key: str = "",
+) -> dict[str, Any]:
+    """Stores a notification in the node inbox so the app can surface unread items on startup."""
+    tag = str(payload_obj.get("tag") or "").strip()
+    now_ms = int(payload_obj.get("timestamp") or int(time.time() * 1000))
+    entry: dict[str, Any] = {
+        "id": f"notif_{now_ms}_{uuid.uuid4().hex[:8]}",
+        "title": str(payload_obj.get("title") or "Disk Direct"),
+        "body": str(payload_obj.get("body") or ""),
+        "image": str(payload_obj.get("image") or ""),
+        "url": str(payload_obj.get("url") or "/"),
+        "tag": tag,
+        "actions": payload_obj.get("actions") or [],
+        "data": payload_obj.get("data") or {},
+        "timestamp": now_ms,
+        "read": False,
+        "owner_only": bool(owner_only or (not user_id and not omd_key)),
+        "user_id": user_id or "",
+        "omd_key_hash": _hash_key(omd_key),
+    }
+    with _lock:
+        items = _load_inbox_unlocked()
+        if tag:
+            items = [it for it in items if not (it.get("tag") == tag and not it.get("read"))]
+        items.append(entry)
+        _save_inbox_unlocked(items)
+    return entry
+
+
+def list_unread_inbox(
+    owner_only: bool = False,
+    user_id: str = "",
+    omd_key: str = "",
+) -> list[dict[str, Any]]:
+    key_hash = _hash_key(omd_key)
+    with _lock:
+        items = _load_inbox_unlocked()
+    unread = [
+        it for it in items
+        if not it.get("read") and _matches_inbox_caller(it, owner_only, user_id, key_hash)
+    ]
+    unread.sort(key=lambda x: int(x.get("timestamp") or 0), reverse=True)
+    return unread
+
+
+def mark_inbox_read(
+    notif_id: str = "",
+    mark_all: bool = False,
+    owner_only: bool = False,
+    user_id: str = "",
+    omd_key: str = "",
+) -> int:
+    key_hash = _hash_key(omd_key)
+    clean_id = (notif_id or "").strip()
+    updated = 0
+    with _lock:
+        items = _load_inbox_unlocked()
+        for it in items:
+            if it.get("read"):
+                continue
+            if not _matches_inbox_caller(it, owner_only, user_id, key_hash):
+                continue
+            if mark_all or (clean_id and it.get("id") == clean_id):
+                it["read"] = True
+                updated += 1
+        if updated:
+            _save_inbox_unlocked(items)
+    return updated
+
+
 def normalize_storage_prefix(default_storage: str) -> str:
     """Normalizes storage path like '/Laptop/OnMyChat/' -> 'Laptop/OnMyChat' for /p2p/<storage>/... URLs."""
     s = (default_storage or "").strip()
@@ -265,8 +390,8 @@ def save_subscription(
         if platform not in ("android", "ios") or not native_token:
             raise ValueError("Native subscription requires platform ('android'|'ios') and token")
         endpoint = str(subscription.get("endpoint") or f"native://{platform}/{native_token}").strip()
-        relay_url = str(subscription.get("relay_url") or DEFAULT_NATIVE_RELAY_URL).strip()
-        public_origin = str(subscription.get("public_origin") or DEFAULT_PUBLIC_ORIGIN).strip().rstrip("/")
+        relay_url = _normalize_relay_url(subscription.get("relay_url") or "")
+        public_origin = _normalize_public_origin(subscription.get("public_origin") or "")
         with _lock:
             subs = _load_subscriptions_unlocked()
             existing = subs.get(endpoint) or {}
@@ -418,8 +543,8 @@ def _send_single_webpush_sync(sub_entry: dict[str, Any], payload_str: str, vapid
 
 def _send_single_native_push_sync(sub_entry: dict[str, Any], payload_obj: dict[str, Any]) -> tuple[bool, int, str]:
     """Forwards a native Android/iOS push payload to the OMD Push Relay (FCM HTTP v1 / APNs HTTP/2)."""
-    relay_url = str(sub_entry.get("relay_url") or DEFAULT_NATIVE_RELAY_URL).strip()
-    public_origin = str(sub_entry.get("public_origin") or DEFAULT_PUBLIC_ORIGIN).strip().rstrip("/")
+    relay_url = _normalize_relay_url(sub_entry.get("relay_url") or "")
+    public_origin = _normalize_public_origin(sub_entry.get("public_origin") or "")
     platform = str(sub_entry.get("platform") or "").strip().lower()
     token = str(sub_entry.get("token") or "").strip()
 
@@ -505,6 +630,29 @@ async def send_custom_push(
     Supports {defaultStorage} resolution per device or via image_rel_path.
     """
     vapid_keys = ensure_vapid_keys()
+    local_link_id, local_node_name = get_local_node_identity()
+    inbox_extra = dict(data or {})
+    if local_link_id and not inbox_extra.get("node_link_id"):
+        inbox_extra["node_link_id"] = local_link_id
+    if local_node_name and not inbox_extra.get("node_name"):
+        inbox_extra["node_name"] = local_node_name
+    inbox_image = image or (build_p2p_url(fallback_storage, image_rel_path) if image_rel_path else "")
+    inbox_entry = record_inbox_notification(
+        {
+            "title": title or "Disk Direct",
+            "body": body or "",
+            "image": inbox_image,
+            "url": _resolve_placeholder_storage(url or "/", fallback_storage),
+            "tag": tag or "",
+            "actions": actions or [],
+            "data": {**inbox_extra, **({"image": inbox_image} if inbox_image and not inbox_extra.get("image") else {})},
+            "timestamp": int(time.time() * 1000),
+        },
+        owner_only=owner_only,
+        user_id=user_id,
+        omd_key=omd_key,
+    )
+
     if target_endpoint:
         with _lock:
             all_map = _load_subscriptions_unlocked()
@@ -545,6 +693,7 @@ async def send_custom_push(
             extra_data["default_storage"] = dev_storage
         if resolved_image and not extra_data.get("image"):
             extra_data["image"] = resolved_image
+        extra_data["inbox_id"] = inbox_entry["id"]
 
         payload_obj: dict[str, Any] = {
             "type": "custom_push",

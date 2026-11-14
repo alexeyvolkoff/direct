@@ -76,6 +76,15 @@
   import { parseStoragePath, formatStoragePath, persistStoragePath } from "./lib/storage-path.js";
   import { getViewerSettings } from "./lib/viewer-settings.js";
   import { syncExistingWebPushSubscription, initNativePushListeners } from "./lib/push-notifications.js";
+  import NotificationCenter from "./components/NotificationCenter.svelte";
+  import {
+    unreadNotifications,
+    pushIncomingNotification,
+    fetchUnreadNotificationsFromNode,
+    markNotificationRead,
+    openNotificationsModal,
+    showNotificationToast
+  } from "./lib/notification-inbox.js";
   import lightGallery from 'lightgallery';
   import lgFullscreen from 'lightgallery/plugins/fullscreen';
   import { setupGalleryPagination, getGalleryCaption } from "./lib/gallery-pagination.js";
@@ -1268,23 +1277,39 @@
                          (typeof window !== 'undefined' && window.innerWidth <= 768 && 'ontouchstart' in window);
     }
 
+    if (typeof window !== 'undefined') {
+      window.__omdOpenNotifications = openNotificationsModal;
+    }
+    if ($unreadNotifications.length > 0) {
+      showNotificationToast($unreadNotifications[0]);
+    }
+
     if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
       ensureServiceWorkerControl();
       navigator.serviceWorker.addEventListener('message', (ev) => {
         const msg = ev && ev.data;
         if (!msg) return;
         if (msg.type === 'omd-push-click') {
-          handlePushActionDispatch(msg.action || 'open', msg.payload || {});
+          const pl = msg.payload || {};
+          const nid = pl?.data?.inbox_id || pl?.id || (pl?.tag ? `tag:${pl.tag}` : '');
+          if (nid) markNotificationRead(nid, notifFetchFn, notifOmdKey);
+          handlePushActionDispatch(msg.action || 'open', pl);
+        } else if (msg.type === 'omd-custom-push') {
+          pushIncomingNotification(msg.payload || {}, { showToast: true });
         }
       });
     }
 
     // Native Android / iOS Push Notification listeners (Capacitor)
     initNativePushListeners(
-      (action, payload) => handlePushActionDispatch(action || 'open', payload || {}),
+      (action, payload) => {
+        const pl = payload || {};
+        const nid = pl?.data?.inbox_id || pl?.id || (pl?.tag ? `tag:${pl.tag}` : '');
+        if (nid) markNotificationRead(nid, notifFetchFn, notifOmdKey);
+        handlePushActionDispatch(action || 'open', pl);
+      },
       (payload) => {
-        const msg = [payload?.title, payload?.body].filter(Boolean).join(' — ');
-        if (msg) showPushToast(msg);
+        pushIncomingNotification(payload || {}, { showToast: true });
       }
     );
 
@@ -4581,6 +4606,9 @@
     return drives;
   }
 
+  let notifFetchFn = null;
+  let notifOmdKey = "";
+
   $: if (!pushSubscriptionSyncedOnce && chatTargetDevice && chatTargetDevice.linkId) {
     const drv = getHttpDriveForDevice(chatTargetDevice);
     if (drv) {
@@ -4591,11 +4619,14 @@
         identity?.profile?.defaultStorage ||
         DEFAULT_STORAGE_PATH;
       const key = (identity && identity.profile && identity.profile.omd_key) || getStoredOmdKey() || "";
+      notifFetchFn = (p, opts) => drv.fetch(p, opts);
+      notifOmdKey = key;
       syncExistingWebPushSubscription({
-        fetchFn: (p, opts) => drv.fetch(p, opts),
+        fetchFn: notifFetchFn,
         omdKey: key,
         defaultStorage: curSt
       });
+      fetchUnreadNotificationsFromNode(notifFetchFn, key);
     }
   }
 
@@ -8013,6 +8044,12 @@ async function blobToBase64(blob) {
     {/if}
   </div>
 </main>
+
+<NotificationCenter
+  fetchFn={notifFetchFn}
+  omdKey={notifOmdKey}
+  on:action={(e) => handlePushActionDispatch(e.detail?.action || 'open', e.detail?.payload || {})}
+/>
 
 {#if toastMessage}
   <div class="omd-toast-notification">

@@ -1859,5 +1859,7 @@
   "krea_start_story_from_image_hint": "Iniciar un nuevo guion gráfico desde esta imagen",
   "krea_story_seed_exists_title": "El guion gráfico ya tiene {count} escena(s)",
   "krea_story_seed_append": "Añadir como escena #{num}",
-  "krea_story_seed_new": "Nueva historia"
+  "krea_story_seed_new": "Nueva historia",
+  "dismiss": "Descartar",
+  "no_unread_notifications": "No hay notificaciones sin leer"
 }

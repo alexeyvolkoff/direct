@@ -1859,5 +1859,7 @@
   "krea_start_story_from_image_hint": "Začať nový storyboard z tohto obrázka",
   "krea_story_seed_exists_title": "Storyboard už má {count} scén(y)",
   "krea_story_seed_append": "Pridať ako scénu #{num}",
-  "krea_story_seed_new": "Začať nový príbeh"
+  "krea_story_seed_new": "Začať nový príbeh",
+  "dismiss": "Skryť",
+  "no_unread_notifications": "Žiadne neprečítané upozornenia"
 }

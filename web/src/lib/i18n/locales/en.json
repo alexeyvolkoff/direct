@@ -1860,5 +1860,7 @@
   "krea_start_story_from_image_hint": "Start a new storyboard from this image",
   "krea_story_seed_exists_title": "Storyboard already has {count} scene(s)",
   "krea_story_seed_append": "Add as scene #{num}",
-  "krea_story_seed_new": "Start new story"
+  "krea_story_seed_new": "Start new story",
+  "dismiss": "Dismiss",
+  "no_unread_notifications": "No unread notifications"
 }

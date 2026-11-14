@@ -1859,5 +1859,7 @@
   "krea_start_story_from_image_hint": "Rozpocznij nowy scenorys od tego obrazu",
   "krea_story_seed_exists_title": "Scenorys ma już {count} scen(y)",
   "krea_story_seed_append": "Dodaj jako scenę #{num}",
-  "krea_story_seed_new": "Rozpocznij nową historię"
+  "krea_story_seed_new": "Rozpocznij nową historię",
+  "dismiss": "Odrzuć",
+  "no_unread_notifications": "Brak nieprzeczytanych powiadomień"
 }

@@ -1859,5 +1859,7 @@
   "krea_start_story_from_image_hint": "Iniciar um novo storyboard a partir desta imagem",
   "krea_story_seed_exists_title": "O storyboard já tem {count} cena(s)",
   "krea_story_seed_append": "Adicionar como cena #{num}",
-  "krea_story_seed_new": "Começar nova história"
+  "krea_story_seed_new": "Começar nova história",
+  "dismiss": "Dispensar",
+  "no_unread_notifications": "Sem notificações não lidas"
 }

@@ -1859,5 +1859,7 @@
   "krea_start_story_from_image_hint": "從這張圖片開始新的分鏡故事",
   "krea_story_seed_exists_title": "分鏡中已有 {count} 個場景",
   "krea_story_seed_append": "新增為場景 #{num}",
-  "krea_story_seed_new": "開始新故事"
+  "krea_story_seed_new": "開始新故事",
+  "dismiss": "忽略",
+  "no_unread_notifications": "沒有未讀通知"
 }

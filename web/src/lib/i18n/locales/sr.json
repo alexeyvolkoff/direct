@@ -1859,5 +1859,7 @@
   "krea_start_story_from_image_hint": "Започни нову причу са ове слике",
   "krea_story_seed_exists_title": "Сториборд већ има {count} сцен(а)",
   "krea_story_seed_append": "Додај као сцену #{num}",
-  "krea_story_seed_new": "Започни нову причу"
+  "krea_story_seed_new": "Започни нову причу",
+  "dismiss": "Одбаци",
+  "no_unread_notifications": "Нема непрочитаних обавештења"
 }

@@ -6541,6 +6541,12 @@ class PushTestInput(BaseModel):
     body: Optional[str] = ""
 
 
+class PushInboxReadInput(BaseModel):
+    id: Optional[str] = ""
+    all: bool = False
+    omd_key: Optional[str] = ""
+
+
 def _resolve_push_caller_owner(request: Request, omd_key: str = "") -> tuple[user_context.UserContext, bool]:
     eff_key = (omd_key or "").strip() or (_extract_omd_key(request) or "").strip()
     ctx = get_ctx(eff_key)
@@ -6641,6 +6647,34 @@ async def push_test_endpoint(request: Request, data: Optional[PushTestInput] = N
         require_interaction=False,
     )
     return {"status": "ok", **res}
+
+
+@app.get("/push/inbox")
+async def push_inbox_endpoint(request: Request, omd_key: str = ""):
+    import push_service
+    key = omd_key or _extract_omd_key(request) or ""
+    ctx, is_owner = _resolve_push_caller_owner(request, key)
+    items = push_service.list_unread_inbox(
+        owner_only=is_owner,
+        user_id="" if is_owner else (ctx.user_id if ctx.user_id != "guest" else ""),
+        omd_key="" if is_owner else key,
+    )
+    return {"status": "ok", "items": items}
+
+
+@app.post("/push/inbox/read")
+async def push_inbox_read_endpoint(request: Request, data: Optional[PushInboxReadInput] = None):
+    import push_service
+    key = (data.omd_key if data else "") or _extract_omd_key(request) or ""
+    ctx, is_owner = _resolve_push_caller_owner(request, key)
+    updated = push_service.mark_inbox_read(
+        notif_id=(data.id if data else "") or "",
+        mark_all=bool(data.all) if data else False,
+        owner_only=is_owner,
+        user_id="" if is_owner else (ctx.user_id if ctx.user_id != "guest" else ""),
+        omd_key="" if is_owner else key,
+    )
+    return {"status": "ok", "updated": updated}
 
 
 # --- On My Document: native Univer docs converter (odt/docx -> univer.json) ---

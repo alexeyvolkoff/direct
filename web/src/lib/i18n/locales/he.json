@@ -1859,5 +1859,7 @@
   "krea_start_story_from_image_hint": "התחל לוח תכנון חדש מתמונה זו",
   "krea_story_seed_exists_title": "לוח התכנון כבר מכיל {count} סצנות",
   "krea_story_seed_append": "הוסף כסצנה #{num}",
-  "krea_story_seed_new": "התחל סיפור חדש"
+  "krea_story_seed_new": "התחל סיפור חדש",
+  "dismiss": "הסתר",
+  "no_unread_notifications": "אין התראות שלא נקראו"
 }

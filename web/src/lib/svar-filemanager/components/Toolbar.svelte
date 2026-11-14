@@ -4,6 +4,8 @@
 	import { setID } from "@svar-ui/lib-dom";
 	import Search from "./ui/Search.svelte";
 	import Icon from "./ui/Icon.svelte";
+	import { translate } from "../../i18n/index.js";
+	import { unreadCount, openNotificationsModal } from "../../notification-inbox.js";
 
 	let { narrowMode = false, onshowtree, toolbarActions = null } = $props();
 
@@ -57,6 +59,21 @@
 	</div>
 
 	<div class="wx-right">
+		{#if $unreadCount > 0}
+			<button
+				type="button"
+				class="wx-toolbar-bell-btn"
+				title={translate("notifications", {}, "Notifications")}
+				aria-label={translate("notifications", {}, "Notifications")}
+				onclick={openNotificationsModal}
+			>
+				<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+					<path d="M13.73 21a2 2 0 0 1-3.46 0" />
+				</svg>
+				<span class="wx-toolbar-bell-badge">{$unreadCount}</span>
+			</button>
+		{/if}
 		{#if !narrowMode && $mode !== "search"}
 			<div class="wx-preview-icon">
 				<TwoState onclick={toggleInfo} value={$info}>
@@ -199,5 +216,42 @@
 		display: flex;
 		align-items: center;
 		margin-left: 6px;
+	}
+
+	.wx-toolbar-bell-btn {
+		position: relative;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 34px;
+		height: 34px;
+		margin-right: 8px;
+		border-radius: 8px;
+		border: 1px solid transparent;
+		background: transparent;
+		color: var(--wx-fm-button-font-color, var(--text-secondary));
+		cursor: pointer;
+		transition: background 0.15s ease, color 0.15s ease;
+	}
+
+	.wx-toolbar-bell-btn:hover {
+		background: var(--wx-background-hover, rgba(0, 0, 0, 0.06));
+		color: var(--wx-color-font, var(--text-primary));
+	}
+
+	.wx-toolbar-bell-badge {
+		position: absolute;
+		top: 2px;
+		right: 2px;
+		min-width: 16px;
+		height: 16px;
+		padding: 0 4px;
+		border-radius: 9999px;
+		background: var(--accent, #5863A6);
+		color: var(--accent-on-brand, #ffffff);
+		font-size: 10px;
+		font-weight: 700;
+		line-height: 16px;
+		text-align: center;
 	}
 </style>

@@ -1859,5 +1859,7 @@
   "krea_start_story_from_image_hint": "Bu görselden yeni bir hikaye panosu başlat",
   "krea_story_seed_exists_title": "Hikaye panosunda zaten {count} sahne var",
   "krea_story_seed_append": "Sahne #{num} olarak ekle",
-  "krea_story_seed_new": "Yeni hikaye başlat"
+  "krea_story_seed_new": "Yeni hikaye başlat",
+  "dismiss": "Yoksay",
+  "no_unread_notifications": "Okunmamış bildirim yok"
 }

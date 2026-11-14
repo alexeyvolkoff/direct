@@ -17,6 +17,7 @@
   import { isFileSystemAccessAvailable, addShareFromPicker, addOpfsShare } from "../lib/local-client.js";
   import { parseStoragePath } from "../lib/storage-path.js";
   import { aiNodeStore, aiOnmychatHeaders } from "../lib/ai-node.js";
+  import { unreadCount, openNotificationsModal } from "../lib/notification-inbox.js";
   import { gatewayConfig } from "../lib/gateway-config.js";
   import { resolveAppMode, APP_MODE_CHAT } from "../lib/app-mode.js";
   import {
@@ -1447,6 +1448,23 @@
               <span class="nav-count-badge">{allKnowledgeCards.length}</span>
             {/if}
           </button>
+
+          {#if $unreadCount > 0}
+            <button
+              class="nav-link-btn"
+              on:click={() => {
+                if (isOverlaySidebar || (typeof window !== "undefined" && window.innerWidth < 768)) sidebarOpen = false;
+                openNotificationsModal();
+              }}
+            >
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+              </svg>
+              <span>{$_("notifications", {}, "Notifications")}</span>
+              <span class="nav-count-badge">{$unreadCount}</span>
+            </button>
+          {/if}
 
           <button
             class="nav-link-btn"

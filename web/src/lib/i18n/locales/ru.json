@@ -1860,5 +1860,7 @@
   "krea_start_story_from_image_hint": "Начать новую историю с этого кадра",
   "krea_story_seed_exists_title": "В сториборде уже есть сцены ({count})",
   "krea_story_seed_append": "Добавить как сцену #{num}",
-  "krea_story_seed_new": "Начать новую историю"
+  "krea_story_seed_new": "Начать новую историю",
+  "dismiss": "Скрыть",
+  "no_unread_notifications": "Нет непрочитанных уведомлений"
 }

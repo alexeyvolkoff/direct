@@ -1859,5 +1859,7 @@
   "krea_start_story_from_image_hint": "Start een nieuw storyboard vanaf deze afbeelding",
   "krea_story_seed_exists_title": "Storyboard heeft al {count} scène(s)",
   "krea_story_seed_append": "Toevoegen als scène #{num}",
-  "krea_story_seed_new": "Nieuw verhaal starten"
+  "krea_story_seed_new": "Nieuw verhaal starten",
+  "dismiss": "Negeren",
+  "no_unread_notifications": "Geen ongelezen meldingen"
 }

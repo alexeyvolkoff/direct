@@ -428,6 +428,14 @@ html.skin-chat .light-theme,
   --wx-color-primary: #DB2777;
   --wx-color-primary-hover: #EC4899;
   --wx-color-primary-selected: rgba(219, 39, 119, 0.10);
+  --wx-background: var(--bg-secondary);
+  --wx-background-alt: var(--bg-primary);
+  --wx-background-hover: var(--bg-card-hover);
+  --wx-fm-background: var(--bg-primary);
+  --wx-color-font: var(--text-primary);
+  --wx-color-font-alt: var(--text-secondary);
+  --wx-color-secondary-border: var(--border-color);
+  --wx-border: 1px solid var(--border-color);
   --logo-url: url('/customtheme/logo-chat-dark.svg');
 
   --var---sds-color-background-brand-default-: var(--accent);
@@ -494,6 +502,14 @@ html.skin-chat .dark-theme,
   --wx-color-primary: #EC4899;
   --wx-color-primary-hover: #F472B6;
   --wx-color-primary-selected: rgba(236, 72, 153, 0.16);
+  --wx-background: var(--bg-secondary);
+  --wx-background-alt: var(--bg-primary);
+  --wx-background-hover: var(--bg-card-hover);
+  --wx-fm-background: var(--bg-primary);
+  --wx-color-font: var(--text-primary);
+  --wx-color-font-alt: var(--text-secondary);
+  --wx-color-secondary-border: var(--border-color);
+  --wx-border: 1px solid var(--border-color);
   --logo-url: url('/customtheme/logo-chat.svg');
 
   --var---sds-color-background-brand-default-: var(--Magenta-200);

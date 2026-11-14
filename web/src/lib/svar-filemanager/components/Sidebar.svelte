@@ -9,6 +9,7 @@
 	import UploadButton from "./UploadButton.svelte";
 	import { appVersion, otaState, applyOtaUpdateNow } from "../../ota-updater.js";
 	import { translate } from "../../i18n/index.js";
+	import { unreadCount, openNotificationsModal } from "../../notification-inbox.js";
 
 	let { readonly, menuOptions, onnavigate = null } = $props();
 
@@ -206,6 +207,24 @@
 					<path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
 				</svg>
 				<span>{translate("knowledge", {}, "Knowledge")}</span>
+			</button>
+		{/if}
+		{#if $unreadCount > 0}
+			<button
+				type="button"
+				class="wx-sidebar-nav-btn"
+				title={translate("notifications", {}, "Notifications")}
+				onclick={() => {
+					if (onnavigate) onnavigate();
+					openNotificationsModal();
+				}}
+			>
+				<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+					<path d="M13.73 21a2 2 0 0 1-3.46 0" />
+				</svg>
+				<span>{translate("notifications", {}, "Notifications")}</span>
+				<span class="wx-sidebar-notif-badge">{$unreadCount}</span>
 			</button>
 		{/if}
 		<button
@@ -494,6 +513,21 @@
 
 	.wx-sidebar-nav-btn svg {
 		flex-shrink: 0;
+	}
+
+	.wx-sidebar-notif-badge {
+		margin-left: auto;
+		background: var(--accent, #5863A6);
+		color: var(--accent-on-brand, #ffffff);
+		border-radius: 9999px;
+		font-size: 11px;
+		font-weight: 600;
+		min-width: 20px;
+		height: 20px;
+		padding: 0 6px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
 	}
 
 	.wx-sidebar-update-badge {
