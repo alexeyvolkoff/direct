@@ -4140,7 +4140,7 @@ function lastFreshTitle(messages) {
 
     const msgIdx = messages.findIndex((item) => item && msg && item.id === msg.id);
     const sliceEnd = msgIdx >= 0 ? msgIdx + 1 : messages.length;
-    const recentMsgs = messages.slice(Math.max(0, sliceEnd - 6), sliceEnd);
+    const recentMsgs = messages.slice(Math.max(0, sliceEnd - 8), sliceEnd);
     const dialogueContext = recentMsgs
       .map((item) => {
         const raw = typeof item?.content === "string"
@@ -4151,7 +4151,7 @@ function lastFreshTitle(messages) {
         const speaker = item.role === "user"
           ? (userName || "User")
           : (activeChatPersona?.name || activeChatPersona?.title || "Assistant");
-        return `${speaker}: ${cleaned.slice(0, 280)}`;
+        return `${speaker}: ${cleaned.slice(0, 600)}`;
       })
       .filter(Boolean)
       .join("\n");
@@ -4164,14 +4164,15 @@ function lastFreshTitle(messages) {
       title: imgObj.title || currentChatTitle || "",
       description: imgObj.description || "",
       prompt: imgObj.prompt || "",
-      setting: dialogueContext.slice(0, 900),
+      setting: dialogueContext.slice(0, 2200),
       idea: "",
       persona: activeChatPersona
         ? {
             id: activeChatPersona.id,
             name: activeChatPersona.name || "",
             title: activeChatPersona.title || "",
-            prompt: activeChatPersona.prompt || ""
+            prompt: activeChatPersona.prompt || "",
+            personality: activeChatPersona.personality || ""
           }
         : null
     };

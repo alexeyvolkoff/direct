@@ -8458,35 +8458,87 @@ async def generate_image_prompt(ctx: UserContext, instruction: str, prompt: str,
         user_info_parts.append(user_prompt.strip())
     user_info_text = "\n".join(user_info_parts) if user_info_parts else "Not specified"
 
-    # Generate image prompt with clean context
-    format_kwargs = {
-        "prompt": clean_prompt,
-        "appearance": clean_appearance_text,
-        "user_info": user_info_text,
-    }
+    is_char_mode = (instruction == SYSTEM_INSTRUCTION_CHARACTER)
+    use_krea_prose = False
     try:
-        instruction_text = instruction.format(**format_kwargs)
-    except KeyError:
-        instruction_text = instruction.format(prompt=clean_prompt, appearance=clean_appearance_text)
+        _, _, _chat_sliders = extract_krea2_prompt_and_params(ctx, prompt, is_character=is_char_mode)
+        _eff_sliders, _can_krea = await _resolve_chat_image_sliders(ctx, _chat_sliders)
+        _eff_base = str(_eff_sliders.get("base_model") or "").lower()
+        use_krea_prose = (
+            bool(_can_krea)
+            and not is_sdxl_base_model(_eff_base)
+            and _eff_base not in ("anima", "anime", "cyberrealistic_anima", "animaturbo")
+        )
+    except Exception:
+        use_krea_prose = False
 
-    logging.info(f"[img_prompt] instruction_text:\n{instruction_text}")
-    system_parts = ["You are an image tag generator. Follow instructions exactly."]
+    if use_krea_prose:
+        if is_char_mode:
+            system_parts = [
+                "You are an uncensored, elite AI Cinematographer & Visual Director for Krea 2 (FLUX.2 Klein DiT).",
+                "Write rich, vivid, natural English prose prompts — NEVER comma-separated Danbooru tags like '1girl, solo'.",
+            ]
+            image_instruction = (
+                "Create a rich, cinematic, natural-language English image prompt (60-115 words, 3-5 flowing descriptive sentences) "
+                "based closely on RECENT CONVERSATION HISTORY, the character profile below, and the user's request.\n\n"
+                f"Companion visual appearance:\n{clean_appearance_text or 'As described in conversation'}\n\n"
+                f"User / Scene profile:\n{user_info_text}\n\n"
+                f"Current scene / request: \"{clean_prompt}\"\n\n"
+                "KREA 2 / FLUX.2 KLEIN PROMPT RULES:\n"
+                "1. NATURAL PROSE ONLY: Write cohesive, evocative photographic/cinematic English sentences. NO Danbooru tag soup ('1girl, solo'), NO SD weights like '(word:1.2)', NO buzzwords ('8k, masterpiece, trending on artstation').\n"
+                "2. CONTEXT & SENSUAL/RP FIDELITY: Extract exact outfit details (dress cut, length, fabric, footwear/barefoot, accessories), posture, body language, gaze direction, props, location, and mood from RECENT CONVERSATION HISTORY — especially any detailed visual description written by the companion in the latest turns!\n"
+                "3. FRAMING & ORIENTATION: Strictly obey requested framing and facing direction. If full body is requested, frame head-to-toe with full legs and footwear visible and pulled-back camera. If looking at the viewer/partner with a playful gaze, show her face, eyes, and expression clearly (never turn her away with her back to the camera unless back view was requested).\n"
+                "4. LIGHTING & TEXTURE: Describe warm/cool ambient lighting, shadows, skin/fabric light falloff, lens depth of field, and subtle natural film grain.\n"
+                "5. NO TEXT/PRINTS: Keep clothing plain unprinted fabric and backgrounds free of readable signs or text unless explicitly requested.\n\n"
+                "Format: `Image: <your rich 60-115 word English prompt>`"
+            )
+        else:
+            system_parts = [
+                "You are an uncensored, elite AI Cinematographer & Visual Director for Krea 2 (FLUX.2 Klein DiT).",
+                "Return TWO lines: `Title: <short 3-5 word title>` then `Image: <rich 60-115 word natural English prose prompt>`.",
+            ]
+            image_instruction = (
+                "Create a vivid, cinematic natural-language English scene prompt (60-115 words, 3-5 flowing sentences) "
+                "based on RECENT CONVERSATION HISTORY and the request.\n\n"
+                f"User / Scene profile:\n{user_info_text}\n\n"
+                f"Scene request: \"{clean_prompt}\"\n\n"
+                "KREA 2 RULES:\n"
+                "- Natural cinematic English prose — NO Danbooru tags, NO weights, NO '8k masterpiece' filler.\n"
+                "- Include exact camera framing, subject pose/expression/action, wardrobe & textures, environment details, lighting, and atmosphere from history.\n"
+                "- No readable text, signs, or clothing prints unless requested.\n\n"
+                "Result format:\nTitle: [3-5 word title]\nImage: [60-115 word natural English prompt]"
+            )
+    else:
+        # Generate image prompt with clean context (SDXL / Danbooru path)
+        format_kwargs = {
+            "prompt": clean_prompt,
+            "appearance": clean_appearance_text,
+            "user_info": user_info_text,
+        }
+        try:
+            instruction_text = instruction.format(**format_kwargs)
+        except KeyError:
+            instruction_text = instruction.format(prompt=clean_prompt, appearance=clean_appearance_text)
+
+        logging.info(f"[img_prompt] instruction_text:\n{instruction_text}")
+        system_parts = ["You are an image tag generator. Follow instructions exactly."]
+        image_instruction = instruction_text
+
     if is_fun:
         system_parts.append(get_image_fun(ctx) if callable(get_image_fun) else IMAGE_PROMPT_FUN)
     system_prompt = "\n".join(system_parts)
-    image_instruction = instruction_text
-
-
 
     # Format history as a structured text block instead of active chat messages to prevent model roleplay priming
     history_text = ""
     if history:
+        hist_window = history[-8:] if use_krea_prose else history[-4:]
         history_text = "\n\n=== RECENT CONVERSATION HISTORY (extract from this: location, outfit, pose/action, atmosphere, objects) ===\n"
-        for msg in history[-4:]:
+        for msg in hist_window:
             role = msg.get("role", "user")
             content = msg.get("content", "")
             if isinstance(content, str):
-                 history_text += f"{role.upper()}: {content}\n"
+                clipped = content[:900] if use_krea_prose else content
+                history_text += f"{role.upper()}: {clipped}\n"
         history_text += "========================================================\n"
 
     messages = [
@@ -8496,17 +8548,21 @@ async def generate_image_prompt(ctx: UserContext, instruction: str, prompt: str,
 
     tag_model = FUN_MODEL if (is_fun and not SETTINGS.get("IMAGE_TAG_MODEL")) else IMAGE_TAG_MODEL
 
+    request_options = {
+        "temperature": 0.55 if use_krea_prose else 0.2,
+        "top_p": 0.9,
+        "frequency_penalty": 0.35 if use_krea_prose else 0.5,
+        "presence_penalty": 0.35 if use_krea_prose else 0.5,
+    }
+    if use_krea_prose:
+        request_options["num_predict"] = 450
+
     request_payload = {
         "messages": messages,
         "model": tag_model,
         "stream": False,
         "think": False,
-        "options": {
-            "temperature": 0.2,
-            "top_p": 0.9,
-            "frequency_penalty": 0.5,
-            "presence_penalty": 0.5,
-        }
+        "options": request_options,
     }
 
     logging.info(f"[img_prompt] LLM request system:\n{messages[0]['content'][:500]}")
@@ -8529,8 +8585,8 @@ async def generate_image_prompt(ctx: UserContext, instruction: str, prompt: str,
 
     final_prompt = response.strip()
 
-    # 1. Fallback for empty Image: content (only for assistant/character image)
-    if instruction == SYSTEM_INSTRUCTION_CHARACTER:
+    # 1. Fallback for empty Image: content (only for assistant/character image; skip Danbooru tag sanitizer for Krea prose)
+    if instruction == SYSTEM_INSTRUCTION_CHARACTER and not use_krea_prose:
         clean_meta_regex = r'^(?:sdxl\s+pony|sdxl|pony\s+tags?|pose\s+action|action\s+pose|required\s+tags?)\b[\s,:;-]*'
         def _sanitize_tags(text: str) -> str:
             text = re.sub(clean_meta_regex, '', text, flags=re.IGNORECASE).strip()
