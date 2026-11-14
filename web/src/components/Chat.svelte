@@ -4176,9 +4176,10 @@ function lastFreshTitle(messages) {
       ? (cleanPath.includes("generated/") ? cleanPath : `generated/${cleanPath}`)
       : `generated/${rawName}`;
 
-    const msgIdx = messages.findIndex((item) => item && msg && item.id === msg.id);
-    const sliceEnd = msgIdx >= 0 ? msgIdx + 1 : messages.length;
-    const recentMsgs = messages.slice(Math.max(0, sliceEnd - 8), sliceEnd);
+    const msgList = (chat && Array.isArray(chat.messages)) ? chat.messages : (Array.isArray(displayMessages) ? displayMessages : []);
+    const msgIdx = msgList.findIndex((item) => item && msg && item.id === msg.id);
+    const sliceEnd = msgIdx >= 0 ? msgIdx + 1 : msgList.length;
+    const recentMsgs = msgList.slice(Math.max(0, sliceEnd - 8), sliceEnd);
     const dialogueContext = recentMsgs
       .map((item) => {
         const raw = typeof item?.content === "string"
