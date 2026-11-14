@@ -1831,5 +1831,9 @@
   "persona_prompt_hello": "Selam! Bana kendinden ve şu anki ruh halinden biraz bahset.",
   "persona_prompt_show": "/show Hemen bana kendinin doğal bir fotoğrafını gönder",
   "persona_prompt_scene": "Birlikte atmosferik bir akşam sahnesi kuralım — nerede buluşuyoruz?",
-  "persona_prompt_lore": "Bana geçmişinden bir sır ya da en sevdiğin anıyı anlat."
+  "persona_prompt_lore": "Bana geçmişinden bir sır ya da en sevdiğin anıyı anlat.",
+  "rework_delete": "Sil",
+  "rework_delete_desc": "Bu mesajı ve sonrasındaki her şeyi kaldır",
+  "rework_branch": "Dallandır",
+  "rework_branch_desc": "Buraya kadarki geçmişle yeni sohbet başlat"
 }

@@ -1831,5 +1831,9 @@
   "persona_prompt_hello": "Hej! Opowiedz mi trochę o sobie i swoim nastroju teraz.",
   "persona_prompt_show": "/show Wyślij mi teraz swoje spontaniczne zdjęcie",
   "persona_prompt_scene": "Stwórzmy razem klimatyczną wieczorną scenę — gdzie się spotkamy?",
-  "persona_prompt_lore": "Opowiedz mi sekret lub ulubione wspomnienie z przeszłości."
+  "persona_prompt_lore": "Opowiedz mi sekret lub ulubione wspomnienie z przeszłości.",
+  "rework_delete": "Usuń",
+  "rework_delete_desc": "Usuń tę wiadomość i wszystko po niej",
+  "rework_branch": "Rozgałęź",
+  "rework_branch_desc": "Utwórz nowy czat z historią do tego miejsca"
 }

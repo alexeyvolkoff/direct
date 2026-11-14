@@ -1832,5 +1832,9 @@
   "persona_prompt_hello": "Hey! Tell me a little about yourself and what mood you're in right now.",
   "persona_prompt_show": "/show Send me a candid photo of yourself right now",
   "persona_prompt_scene": "Let's set up an atmospheric evening scene together — where are we meeting?",
-  "persona_prompt_lore": "Tell me a secret or a favorite memory from your past."
+  "persona_prompt_lore": "Tell me a secret or a favorite memory from your past.",
+  "rework_delete": "Delete",
+  "rework_delete_desc": "Remove this message and everything after it",
+  "rework_branch": "Branch",
+  "rework_branch_desc": "Fork into a new chat from here"
 }

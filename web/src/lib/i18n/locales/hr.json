@@ -1831,5 +1831,9 @@
   "persona_prompt_hello": "Bok! Reci mi nešto o sebi i svom raspoloženju sada.",
   "persona_prompt_show": "/show Pošalji mi sada svoju spontanu fotografiju",
   "persona_prompt_scene": "Zajedno stvorimo atmosferičnu večernju scenu — gdje se nalazimo?",
-  "persona_prompt_lore": "Ispričaj mi tajnu ili omiljenu uspomenu iz prošlosti."
+  "persona_prompt_lore": "Ispričaj mi tajnu ili omiljenu uspomenu iz prošlosti.",
+  "rework_delete": "Izbriši",
+  "rework_delete_desc": "Ukloni ovu poruku i sve nakon nje",
+  "rework_branch": "Granjaj",
+  "rework_branch_desc": "Otvori novi razgovor s poviješću do ovdje"
 }

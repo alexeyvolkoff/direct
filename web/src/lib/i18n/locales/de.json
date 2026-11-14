@@ -1831,5 +1831,9 @@
   "persona_prompt_hello": "Hey! Erzähl mir ein bisschen von dir und deiner Stimmung gerade.",
   "persona_prompt_show": "/show Schick mir jetzt ein spontanes Foto von dir",
   "persona_prompt_scene": "Lass uns gemeinsam eine stimmungsvolle Abendszene aufbauen — wo treffen wir uns?",
-  "persona_prompt_lore": "Erzähl mir ein Geheimnis oder eine Lieblingserinnerung aus deiner Vergangenheit."
+  "persona_prompt_lore": "Erzähl mir ein Geheimnis oder eine Lieblingserinnerung aus deiner Vergangenheit.",
+  "rework_delete": "Löschen",
+  "rework_delete_desc": "Diese Nachricht und alles danach entfernen",
+  "rework_branch": "Verzweigen",
+  "rework_branch_desc": "Ab hier in einem neuen Chat fortsetzen"
 }

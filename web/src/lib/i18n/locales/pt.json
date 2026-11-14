@@ -1831,5 +1831,9 @@
   "persona_prompt_hello": "Oi! Conte-me um pouco sobre você e seu humor agora.",
   "persona_prompt_show": "/show Envie-me agora uma foto espontânea sua",
   "persona_prompt_scene": "Vamos montar juntos uma cena noturna cheia de atmosfera — onde nos encontramos?",
-  "persona_prompt_lore": "Conte-me um segredo ou uma lembrança favorita do seu passado."
+  "persona_prompt_lore": "Conte-me um segredo ou uma lembrança favorita do seu passado.",
+  "rework_delete": "Excluir",
+  "rework_delete_desc": "Remover esta mensagem e tudo depois dela",
+  "rework_branch": "Ramificar",
+  "rework_branch_desc": "Criar um novo chat com o histórico até aqui"
 }

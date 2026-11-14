@@ -445,25 +445,69 @@ export class ChatStore {
     });
   }
 
-  async purgeMessagesFrom(chatId, nonce, text = "") {
-    if (!chatId || (!nonce && !text)) return;
+  async purgeMessagesFrom(chatId, nonce, text = "", options = {}) {
+    if (!chatId) return;
     await this.ready;
     const strNonce = nonce ? String(nonce) : "";
+    const targetTs = options?.timestamp ? String(options.timestamp) : "";
+    const extraRemoveIds = new Set(
+      Array.isArray(options?.removeIds) ? options.removeIds.filter(Boolean).map(String) : []
+    );
 
-    const cached = this._getCachedMessages(chatId);
-    let idx = strNonce ? cached.findIndex((m) => String(m.nonce || m.id) === strNonce) : -1;
-    if (idx === -1 && text) {
-      idx = cached.findIndex((m) => m.role === "user" && m.content === text);
-    }
-    if (idx !== -1) {
-      const toRemove = cached.slice(idx);
-      const remaining = cached.slice(0, idx);
-      this._setCachedMessages(chatId, remaining);
-
-      for (const m of toRemove) {
-        const key = String(m.nonce || m.id);
-        this.gun.get("chat_messages_" + chatId).get(key).put(null);
+    let list = this._getCachedMessages(chatId);
+    const findTargetIdx = (arr) => {
+      if (!Array.isArray(arr) || !arr.length) return -1;
+      let i = strNonce ? arr.findIndex((m) => String(m.nonce || m.id) === strNonce) : -1;
+      if (i === -1 && targetTs) {
+        i = arr.findIndex((m) => String(m.timestamp || "") === targetTs);
       }
+      if (i === -1 && text) {
+        for (let k = arr.length - 1; k >= 0; k--) {
+          if (arr[k]?.role === "user" && arr[k]?.content === text) {
+            i = k;
+            break;
+          }
+        }
+      }
+      return i;
+    };
+
+    let idx = findTargetIdx(list);
+    if (idx === -1) {
+      const loaded = await this.getMessages(chatId).catch(() => []);
+      if (Array.isArray(loaded) && loaded.length) {
+        list = loaded;
+        idx = findTargetIdx(list);
+      }
+    }
+
+    const keysToDelete = new Set(extraRemoveIds);
+    if (strNonce) keysToDelete.add(strNonce);
+
+    let remaining = list;
+    if (idx !== -1) {
+      const toRemove = list.slice(idx);
+      remaining = list.slice(0, idx);
+      for (const m of toRemove) {
+        const key = String(m.nonce || m.id || "");
+        if (key) keysToDelete.add(key);
+      }
+    } else if (keysToDelete.size > 0) {
+      remaining = list.filter((m) => !keysToDelete.has(String(m.nonce || m.id || "")));
+    }
+
+    this._setCachedMessages(chatId, remaining);
+
+    if (keysToDelete.size > 0) {
+      await Promise.all(
+        Array.from(keysToDelete).map(
+          (key) =>
+            new Promise((resolve) => {
+              this.gun.get("chat_messages_" + chatId).get(key).put(null, () => resolve(true));
+              setTimeout(() => resolve(true), 400);
+            })
+        )
+      );
     }
   }
 

@@ -1831,5 +1831,9 @@
   "persona_prompt_hello": "Ahoj! Povedz mi niečo o sebe a o svojej nálade práve teraz.",
   "persona_prompt_show": "/show Pošli mi hneď svoju spontánnu fotku",
   "persona_prompt_scene": "Vytvorme spolu atmosférickú večernú scénu — kde sa stretneme?",
-  "persona_prompt_lore": "Povedz mi tajomstvo alebo obľúbenú spomienku z minulosti."
+  "persona_prompt_lore": "Povedz mi tajomstvo alebo obľúbenú spomienku z minulosti.",
+  "rework_delete": "Odstrániť",
+  "rework_delete_desc": "Odstrániť túto správu a všetko za ňou",
+  "rework_branch": "Rozvetviť",
+  "rework_branch_desc": "Vytvoriť nový chat s históriou po toto miesto"
 }

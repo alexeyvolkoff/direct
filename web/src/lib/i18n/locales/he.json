@@ -1831,5 +1831,9 @@
   "persona_prompt_hello": "היי! ספר לי קצת על עצמך ועל מצב הרוח שלך עכשיו.",
   "persona_prompt_show": "/show שלח לי עכשיו תמונה ספונטנית שלך",
   "persona_prompt_scene": "בוא נבנה יחד סצנת ערב אטמוספרית — איפה נפגשים?",
-  "persona_prompt_lore": "ספר לי סוד או זיכרון אהוב מהעבר שלך."
+  "persona_prompt_lore": "ספר לי סוד או זיכרון אהוב מהעבר שלך.",
+  "rework_delete": "מחק",
+  "rework_delete_desc": "הסר הודעה זו ואת כל מה שאחריה",
+  "rework_branch": "פצל",
+  "rework_branch_desc": "צור צ'אט חדש עם ההיסטוריה עד כאן"
 }

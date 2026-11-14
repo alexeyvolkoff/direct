@@ -2595,6 +2595,26 @@
 
       await tick();
       scrollToBottom(false);
+
+      if (typeof localStorage !== "undefined") {
+        const draftKey = "omc_pending_draft_" + id;
+        const pendingDraft = localStorage.getItem(draftKey);
+        if (pendingDraft !== null) {
+          localStorage.removeItem(draftKey);
+          input = pendingDraft;
+          if (pendingDraft.trim().startsWith("/generate")) {
+            showImageToolpanel = true;
+            loadAvailableLoras();
+            syncTagsFromInput();
+          }
+          await tick();
+          if (textareaEl) {
+            textareaEl.value = pendingDraft;
+            textareaEl.focus();
+            resizeTextarea();
+          }
+        }
+      }
     } catch (err) {
       console.warn("[chat] initChatSession error:", err);
     } finally {
@@ -3305,6 +3325,7 @@ function lastFreshTitle(messages) {
   }
 
   let showToolsMenu = false;
+  let reworkMenuMsgId = null;
 
   function closeToolsMenu(e) {
     if (showToolsMenu && !e.target.closest(".composer-action-wrap") && !e.target.closest(".tools-popup-menu")) {
@@ -3312,6 +3333,9 @@ function lastFreshTitle(messages) {
     }
     if (showPromptsPopup && !e.target.closest(".prompts-popup") && !e.target.closest(".prompts-history-btn")) {
       showPromptsPopup = false;
+    }
+    if (reworkMenuMsgId && !e.target.closest(".rework-menu-wrap")) {
+      reworkMenuMsgId = null;
     }
   }
 
@@ -4926,12 +4950,72 @@ function lastFreshTitle(messages) {
     };
   }
 
-  async function handleRework(m) {
+  async function handleRework(m, mode = "delete") {
     if (!m || !chat) return;
+    reworkMenuMsgId = null;
     const userText = (m.parts || [])
       .filter((p) => p.type === "text")
       .map((p) => p.text)
       .join("\n") || m.content || "";
+
+    let idx = chat.messages.findIndex((item) => item.id === m.id);
+    if (idx === -1) {
+      idx = chat.messages.indexOf(m);
+    }
+
+    if (mode === "branch") {
+      if (!chatStore) return;
+      const newId = "chat_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 7);
+      const nowIso = new Date().toISOString();
+      const baseTitle = (currentChatTitle || $_("new_chat", {}, "New Chat")).trim();
+      const branchLabel = $_("rework_branch", {}, "Branch");
+      const branchTitle = baseTitle.endsWith(`(${branchLabel})`) ? baseTitle : `${baseTitle} (${branchLabel})`;
+      const existingRec = chatStore.listChats().find((c) => c._id === chatId);
+      const personaObj = existingRec?.persona || (activeChatPersona && isCustomPersona(activeChatPersona) ? compactPersonaForChat(activeChatPersona) : null);
+      const personaId = existingRec?.persona_id || (activeChatPersona && isCustomPersona(activeChatPersona) ? activeChatPersona.id : null);
+
+      await chatStore.saveChat({
+        _id: newId,
+        title: branchTitle,
+        created: nowIso,
+        updated: nowIso,
+        archived: false,
+        ...(personaObj ? { persona: personaObj } : {}),
+        ...(personaId ? { persona_id: personaId } : {}),
+      });
+
+      const attached = chatStore.getAttachedDocs(chatId);
+      if (Array.isArray(attached) && attached.length) {
+        await chatStore.setAttachedDocs(newId, attached).catch(() => {});
+      }
+
+      const prefixMsgs = idx > 0 ? chat.messages.slice(0, idx) : [];
+      for (let i = 0; i < prefixMsgs.length; i++) {
+        const pm = prefixMsgs[i];
+        const parts = pm.parts || [];
+        const msgText = parts.filter((p) => p.type === "text").map((p) => p.text).join("\n") || pm.content || "";
+        const imgPart = parts.find((p) => p.type === "data-image")?.data || null;
+        const sourceParts = parts.filter((p) => p.type === "source-url");
+        const factsPart = parts.find((p) => p.type === "data-facts")?.data?.facts || null;
+        const newFactPart = parts.find((p) => p.type === "data-new-fact")?.data?.fact || null;
+        await chatStore.addMessage(newId, {
+          nonce: "msg_" + Date.now().toString(36) + "_" + i + "_" + Math.random().toString(36).slice(2, 6),
+          timestamp: pm.timestamp || new Date(Date.now() + i).toISOString(),
+          role: pm.role === "assistant" ? "assistant" : "user",
+          content: msgText,
+          ...(imgPart ? { image: imgPart } : {}),
+          ...(sourceParts.length ? { sources: sourceParts } : {}),
+          ...(factsPart ? { facts: factsPart } : {}),
+          ...(newFactPart ? { newFact: newFactPart } : {}),
+        });
+      }
+
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem("omc_pending_draft_" + newId, userText);
+      }
+      dispatch("branch-chat", { chatId: newId, persona: activeChatPersona });
+      return;
+    }
 
     input = userText;
     if (userText.trim().startsWith("/generate")) {
@@ -4958,15 +5042,18 @@ function lastFreshTitle(messages) {
       chat.clearError();
     }
 
-    let idx = chat.messages.findIndex((item) => item.id === m.id);
-    if (idx === -1) {
-      idx = chat.messages.indexOf(m);
-    }
     if (idx !== -1) {
+      const removed = chat.messages.slice(idx);
+      const removeIds = removed.map((item) => item?.nonce || item?.id).filter(Boolean);
       chat.state.setMessages(chat.messages.slice(0, idx));
       chat = chat;
       if (chatStore && chatId) {
-        chatStore.purgeMessagesFrom(chatId, m.id, userText).catch(() => {});
+        await chatStore
+          .purgeMessagesFrom(chatId, m.nonce || m.id, userText, {
+            timestamp: m.timestamp,
+            removeIds,
+          })
+          .catch(() => {});
       }
     }
   }
@@ -5061,7 +5148,7 @@ function lastFreshTitle(messages) {
   }
 </script>
 
-<svelte:window on:click={closeToolsMenu} on:keydown={(e) => e.key === "Escape" && (showToolsMenu = false, showPromptsPopup = false)} />
+<svelte:window on:click={closeToolsMenu} on:keydown={(e) => e.key === "Escape" && (showToolsMenu = false, showPromptsPopup = false, reworkMenuMsgId = null)} />
 
 <div class="chat-container skin-chat {isDarkTheme ? 'dark-theme' : 'light-theme'}">
   <!-- Conversation Scroll View -->
@@ -5910,19 +5997,60 @@ function lastFreshTitle(messages) {
                   {/each}
                 </div>
                 <!-- User message tools (Rework / Copy) -->
-                <div class="user-tools">
-                  <button
-                    type="button"
-                    class="tool-btn user-rework-btn"
-                    title={$_("rework", {}, "Rework message")}
-                    on:click={() => handleRework(m)}
-                  >
-                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
-                      <polyline points="1 4 1 10 7 10" />
-                      <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
-                    </svg>
-                    <span>{$_("rework", {}, "Rework")}</span>
-                  </button>
+                <div class="user-tools" class:menu-open={reworkMenuMsgId === m.id}>
+                  <div class="rework-menu-wrap">
+                    <button
+                      type="button"
+                      class="tool-btn user-rework-btn"
+                      title={$_("rework", {}, "Rework message")}
+                      on:click|stopPropagation={() => {
+                        reworkMenuMsgId = reworkMenuMsgId === m.id ? null : m.id;
+                      }}
+                    >
+                      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="1 4 1 10 7 10" />
+                        <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+                      </svg>
+                      <span>{$_("rework", {}, "Rework")}</span>
+                    </button>
+                    {#if reworkMenuMsgId === m.id}
+                      <div class="rework-popup" role="menu" on:click|stopPropagation>
+                        <button
+                          type="button"
+                          class="rework-option rework-option-danger"
+                          role="menuitem"
+                          on:click={() => handleRework(m, "delete")}
+                        >
+                          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                            <path d="M10 11v6M14 11v6" />
+                          </svg>
+                          <div class="rework-option-text">
+                            <span class="rework-option-title">{$_("rework_delete", {}, "Delete")}</span>
+                            <span class="rework-option-desc">{$_("rework_delete_desc", {}, "Remove this message and everything after it")}</span>
+                          </div>
+                        </button>
+                        <button
+                          type="button"
+                          class="rework-option"
+                          role="menuitem"
+                          on:click={() => handleRework(m, "branch")}
+                        >
+                          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="6" y1="3" x2="6" y2="15" />
+                            <circle cx="18" cy="6" r="3" />
+                            <circle cx="6" cy="18" r="3" />
+                            <path d="M18 9a9 9 0 0 1-9 9" />
+                          </svg>
+                          <div class="rework-option-text">
+                            <span class="rework-option-title">{$_("rework_branch", {}, "Branch")}</span>
+                            <span class="rework-option-desc">{$_("rework_branch_desc", {}, "Fork into a new chat from here")}</span>
+                          </div>
+                        </button>
+                      </div>
+                    {/if}
+                  </div>
                   <button
                     type="button"
                     class="tool-btn user-copy-btn"
@@ -6855,8 +6983,84 @@ function lastFreshTitle(messages) {
 
   .user-bubble-wrapper:hover .user-tools,
   .user-bubble-wrapper:focus-within .user-tools,
-  .user-bubble-wrapper:active .user-tools {
+  .user-bubble-wrapper:active .user-tools,
+  .user-tools.menu-open {
     opacity: 1;
+  }
+
+  .rework-menu-wrap {
+    position: relative;
+    display: inline-flex;
+  }
+
+  .rework-popup {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    right: 0;
+    min-width: 220px;
+    max-width: 280px;
+    background: color-mix(in srgb, var(--bg-main, #16111c) 96%, var(--bg-card, #1e1826));
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 5px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.32);
+    backdrop-filter: blur(16px);
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .rework-option {
+    width: 100%;
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    padding: 8px 10px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-primary);
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+
+  .rework-option svg {
+    flex-shrink: 0;
+    margin-top: 2px;
+    color: var(--accent-blue, #38bdf8);
+  }
+
+  .rework-option:hover {
+    background: var(--bg-hover);
+  }
+
+  .rework-option-danger svg {
+    color: #ef4444;
+  }
+
+  .rework-option-danger:hover {
+    background: color-mix(in srgb, #ef4444 12%, transparent);
+  }
+
+  .rework-option-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .rework-option-title {
+    font-size: 0.82rem;
+    font-weight: 600;
+    line-height: 1.2;
+  }
+
+  .rework-option-desc {
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    line-height: 1.25;
   }
 
   @media (hover: none) {

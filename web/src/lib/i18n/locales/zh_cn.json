@@ -1831,5 +1831,9 @@
   "persona_prompt_hello": "嘿！跟我说说你自己和你现在的心情吧。",
   "persona_prompt_show": "/show 现在给我发一张你的随拍照片",
   "persona_prompt_scene": "我们一起搭建一个有氛围的夜晚场景吧——在哪里见面？",
-  "persona_prompt_lore": "告诉我一个秘密，或你过去最喜欢的回忆。"
+  "persona_prompt_lore": "告诉我一个秘密，或你过去最喜欢的回忆。",
+  "rework_delete": "删除",
+  "rework_delete_desc": "删除此消息及之后的全部内容",
+  "rework_branch": "分支",
+  "rework_branch_desc": "保留到此处的历史记录并创建新对话"
 }

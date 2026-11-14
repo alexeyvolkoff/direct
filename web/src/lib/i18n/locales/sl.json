@@ -1831,5 +1831,9 @@
   "persona_prompt_hello": "Živjo! Povej mi malo o sebi in svojem razpoloženju zdaj.",
   "persona_prompt_show": "/show Pošlji mi zdaj svojo spontano fotografijo",
   "persona_prompt_scene": "Skupaj ustvarimo vzdušno večerno sceno — kje se dobiva?",
-  "persona_prompt_lore": "Povej mi skrivnost ali najljubši spomin iz preteklosti."
+  "persona_prompt_lore": "Povej mi skrivnost ali najljubši spomin iz preteklosti.",
+  "rework_delete": "Izbriši",
+  "rework_delete_desc": "Odstrani to sporočilo in vse za njim",
+  "rework_branch": "Razveji",
+  "rework_branch_desc": "Ustvari nov klepet z zgodovino do sem"
 }

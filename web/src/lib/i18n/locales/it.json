@@ -1831,5 +1831,9 @@
   "persona_prompt_hello": "Ehi! Raccontami un po' di te e del tuo umore adesso.",
   "persona_prompt_show": "/show Mandami subito una tua foto spontanea",
   "persona_prompt_scene": "Creiamo insieme una scena serale suggestiva: dove ci incontriamo?",
-  "persona_prompt_lore": "Raccontami un segreto o un ricordo preferito del tuo passato."
+  "persona_prompt_lore": "Raccontami un segreto o un ricordo preferito del tuo passato.",
+  "rework_delete": "Elimina",
+  "rework_delete_desc": "Rimuovi questo messaggio e tutto ciò che segue",
+  "rework_branch": "Dirama",
+  "rework_branch_desc": "Crea una nuova chat con la cronologia fino a qui"
 }

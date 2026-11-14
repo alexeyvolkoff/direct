@@ -1831,5 +1831,9 @@
   "persona_prompt_hello": "Salut ! Parle-moi un peu de toi et de ton humeur du moment.",
   "persona_prompt_show": "/show Envoie-moi une photo spontanée de toi maintenant",
   "persona_prompt_scene": "Imaginons ensemble une scène de soirée pleine d'atmosphère — où se retrouve-t-on ?",
-  "persona_prompt_lore": "Raconte-moi un secret ou un souvenir préféré de ton passé."
+  "persona_prompt_lore": "Raconte-moi un secret ou un souvenir préféré de ton passé.",
+  "rework_delete": "Supprimer",
+  "rework_delete_desc": "Supprimer ce message et tout ce qui suit",
+  "rework_branch": "Créer une branche",
+  "rework_branch_desc": "Ouvrir un nouveau chat avec l'historique jusqu'ici"
 }

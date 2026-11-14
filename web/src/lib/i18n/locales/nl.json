@@ -1831,5 +1831,9 @@
   "persona_prompt_hello": "Hoi! Vertel me een beetje over jezelf en je stemming nu.",
   "persona_prompt_show": "/show Stuur me nu een spontane foto van jezelf",
   "persona_prompt_scene": "Laten we samen een sfeervolle avondscène opzetten — waar ontmoeten we elkaar?",
-  "persona_prompt_lore": "Vertel me een geheim of een favoriete herinnering uit je verleden."
+  "persona_prompt_lore": "Vertel me een geheim of een favoriete herinnering uit je verleden.",
+  "rework_delete": "Verwijderen",
+  "rework_delete_desc": "Dit bericht en alles erna verwijderen",
+  "rework_branch": "Vertakken",
+  "rework_branch_desc": "Nieuwe chat starten met geschiedenis tot hier"
 }

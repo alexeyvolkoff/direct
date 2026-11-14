@@ -526,6 +526,16 @@
     }
   }
 
+  function handleBranchChat(e) {
+    const detail = e?.detail || {};
+    const id = detail.chatId;
+    if (!id) return;
+    if (detail.persona && isCustomPersona(detail.persona)) {
+      pendingPersonasByChatId = { ...pendingPersonasByChatId, [id]: detail.persona };
+    }
+    selectChat(id);
+  }
+
   async function removeChat(id) {
     if (!chatStore) return;
     await chatStore.deleteChat(id);
@@ -1668,6 +1678,7 @@
           {activeChatPersona}
           on:title-change={handleTitleChange}
           on:new-chat={() => startNewChat()}
+          on:branch-chat={handleBranchChat}
           on:select-persona={handleSelectChatPersona}
           on:open-personas={() => (activeView = "creations")}
           on:open-knowledge={() => (activeView = "memory")}
