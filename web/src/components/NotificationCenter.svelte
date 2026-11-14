@@ -30,9 +30,59 @@
     }
   }
 
+  let resolvedImages = {};
+  const resolvingImages = new Set();
+
   function isSafePreviewSrc(url) {
     if (!url || typeof url !== "string") return false;
-    return /^(https?:\/\/|data:image\/|blob:)/i.test(url.trim());
+    const clean = url.trim();
+    return /^(https?:\/\/|data:image\/|blob:)/i.test(clean) || /^\/(?!\/)/.test(clean);
+  }
+
+  function getPreviewSrc(item) {
+    if (!item) return "";
+    if (resolvedImages[item.id]) return resolvedImages[item.id];
+    const raw = item.image || item.data?.image || "";
+    if (isSafePreviewSrc(raw)) {
+      if (raw.startsWith("/") && fetchFn && !resolvingImages.has(item.id)) {
+        resolveRelativePreview(item, raw);
+      }
+      return raw;
+    }
+    if (item.data?.filename && fetchFn && !resolvingImages.has(item.id)) {
+      resolveRelativePreview(item, "");
+    }
+    return "";
+  }
+
+  async function resolveRelativePreview(item, rawUrl) {
+    if (!item || resolvingImages.has(item.id)) return;
+    resolvingImages.add(item.id);
+    const candidates = [];
+    if (rawUrl && rawUrl.startsWith("/")) candidates.push(rawUrl);
+    if (item.data?.filename) {
+      candidates.push(`/chat/image/${encodeURIComponent(item.data.filename)}?size=800`);
+    }
+    for (const url of candidates) {
+      try {
+        const res = fetchFn ? await fetchFn(url) : await fetch(url);
+        if (res && res.ok) {
+          const blob = await res.blob();
+          if (blob && blob.size > 0) {
+            const objUrl = URL.createObjectURL(blob);
+            resolvedImages = { ...resolvedImages, [item.id]: objUrl };
+            return;
+          }
+        }
+      } catch (_) {}
+    }
+  }
+
+  $: if ($activeNotificationToast) {
+    getPreviewSrc($activeNotificationToast);
+  }
+  $: if ($notificationsModalOpen && $unreadNotifications.length) {
+    for (const it of $unreadNotifications) getPreviewSrc(it);
   }
 
   function hasOpenTarget(item) {
@@ -86,8 +136,8 @@
       </button>
     </div>
 
-    {#if isSafePreviewSrc(toast.image)}
-      <img class="omd-rich-toast-img" src={toast.image} alt="" loading="lazy" />
+    {#if getPreviewSrc(toast)}
+      <img class="omd-rich-toast-img" src={getPreviewSrc(toast)} alt="" loading="lazy" />
     {/if}
 
     {#if (toast.actions && toast.actions.length > 0) || hasOpenTarget(toast)}
@@ -189,8 +239,8 @@
               {#if item.body}
                 <div class="omd-notif-item-body">{item.body}</div>
               {/if}
-              {#if isSafePreviewSrc(item.image)}
-                <img class="omd-rich-toast-img" src={item.image} alt="" loading="lazy" />
+              {#if getPreviewSrc(item)}
+                <img class="omd-rich-toast-img" src={getPreviewSrc(item)} alt="" loading="lazy" />
               {/if}
               {#if (item.actions && item.actions.length > 0) || hasOpenTarget(item)}
                 <div class="omd-rich-toast-actions">
@@ -311,8 +361,9 @@
 
   .omd-rich-toast-img {
     width: 100%;
-    max-height: 160px;
-    object-fit: cover;
+    max-height: 220px;
+    object-fit: contain;
+    background: var(--bg-primary);
     border-radius: 8px;
     border: 1px solid var(--border-color);
   }

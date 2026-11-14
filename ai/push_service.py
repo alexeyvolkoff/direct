@@ -636,23 +636,6 @@ async def send_custom_push(
         inbox_extra["node_link_id"] = local_link_id
     if local_node_name and not inbox_extra.get("node_name"):
         inbox_extra["node_name"] = local_node_name
-    inbox_image = image or (build_p2p_url(fallback_storage, image_rel_path) if image_rel_path else "")
-    inbox_entry = record_inbox_notification(
-        {
-            "title": title or "Disk Direct",
-            "body": body or "",
-            "image": inbox_image,
-            "url": _resolve_placeholder_storage(url or "/", fallback_storage),
-            "tag": tag or "",
-            "actions": actions or [],
-            "data": {**inbox_extra, **({"image": inbox_image} if inbox_image and not inbox_extra.get("image") else {})},
-            "timestamp": int(time.time() * 1000),
-        },
-        owner_only=owner_only,
-        user_id=user_id,
-        omd_key=omd_key,
-    )
-
     if target_endpoint:
         with _lock:
             all_map = _load_subscriptions_unlocked()
@@ -665,6 +648,27 @@ async def send_custom_push(
                 all_subs = list(_load_subscriptions_unlocked().values())
             if len(all_subs) == 1:
                 targets = all_subs
+
+    effective_inbox_storage = fallback_storage or next(
+        (str(s.get("default_storage") or "").strip() for s in targets if s.get("default_storage")),
+        "",
+    )
+    inbox_image = image or (build_p2p_url(effective_inbox_storage, image_rel_path) if image_rel_path else "")
+    inbox_entry = record_inbox_notification(
+        {
+            "title": title or "Disk Direct",
+            "body": body or "",
+            "image": inbox_image,
+            "url": _resolve_placeholder_storage(url or "/", effective_inbox_storage),
+            "tag": tag or "",
+            "actions": actions or [],
+            "data": {**inbox_extra, **({"image": inbox_image} if inbox_image and not inbox_extra.get("image") else {})},
+            "timestamp": int(time.time() * 1000),
+        },
+        owner_only=owner_only,
+        user_id=user_id,
+        omd_key=omd_key,
+    )
 
     if not targets:
         return {"sent": 0, "failed": 0, "total": 0, "detail": "No subscribed devices"}
