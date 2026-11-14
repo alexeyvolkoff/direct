@@ -14492,6 +14492,8 @@
   }
   .krea-studio-root.light-theme .director-tab-btn:hover {
     color: #0F0A10;
+  }
+  .krea-studio-root.light-theme .animate-scene-btn:hover:not(:disabled),
   .krea-studio-root.light-theme .transition-scene-btn:hover:not(:disabled) {
     background: #059669;
     border-color: #059669;
