@@ -2634,9 +2634,37 @@
   $: effectiveAssistantTitle = (activeChatPersona && isCustomPersona(activeChatPersona))
     ? (activeChatPersona.title || $_("krea_persona", {}, "Persona"))
     : assistantTitle;
-  $: effectiveAssistantAvatarUrl = (activeChatPersona && isCustomPersona(activeChatPersona))
-    ? (activeChatPersona.avatarData || activeChatPersona.avatar || "")
-    : assistantAvatarUrl;
+  let personaAvatarFailed = false;
+  let effectiveAssistantAvatarUrl = "";
+  $: {
+    const isCustom = Boolean(activeChatPersona && isCustomPersona(activeChatPersona));
+    const rawPersonaAvatar = isCustom
+      ? (activeChatPersona.avatarData || activeChatPersona.avatar || "")
+      : "";
+    const personaInLoadedList = Boolean(
+      isCustom &&
+      Array.isArray(availablePersonas) &&
+      availablePersonas.some((p) => p && p.id === activeChatPersona.id)
+    );
+    const usablePersonaAvatar =
+      rawPersonaAvatar.startsWith("data:") ||
+      /^https?:\/\//i.test(rawPersonaAvatar) ||
+      (rawPersonaAvatar.startsWith("blob:") && personaInLoadedList)
+        ? rawPersonaAvatar
+        : "";
+    effectiveAssistantAvatarUrl = isCustom ? usablePersonaAvatar : assistantAvatarUrl;
+  }
+  $: if (effectiveAssistantAvatarUrl !== undefined) {
+    personaAvatarFailed = false;
+  }
+
+  function handleAvatarClick() {
+    if (activeChatPersona && isCustomPersona(activeChatPersona)) {
+      dispatch("edit-persona", { persona: activeChatPersona });
+    } else if (!activeChatPersona) {
+      showAvatarModal = true;
+    }
+  }
 
   const personaAvatarSendCache = new Map();
 
@@ -2889,6 +2917,10 @@
 
   let avatarErrorOccurred = false;
   async function handleAvatarError() {
+    if (activeChatPersona && isCustomPersona(activeChatPersona)) {
+      personaAvatarFailed = true;
+      return;
+    }
     if (avatarErrorOccurred) {
       assistantAvatarUrl = "";
       return;
@@ -5212,13 +5244,13 @@ function lastFreshTitle(messages) {
           <!-- svelte-ignore a11y-no-static-element-interactions -->
           <div
             class="hero-avatar"
-            class:clickable={!activeChatPersona}
-            on:click={() => { if (!activeChatPersona) showAvatarModal = true; }}
-            role={!activeChatPersona ? "button" : undefined}
-            tabindex={!activeChatPersona ? 0 : undefined}
-            title={!activeChatPersona ? $_("customize_appearance", {}, "Customize appearance and avatar") : effectiveAssistantName}
+            class:clickable={!activeChatPersona || isCustomPersona(activeChatPersona)}
+            on:click={handleAvatarClick}
+            role={!activeChatPersona || isCustomPersona(activeChatPersona) ? "button" : undefined}
+            tabindex={!activeChatPersona || isCustomPersona(activeChatPersona) ? 0 : undefined}
+            title={activeChatPersona ? $_("krea_edit_persona", {}, "Редактировать персону") : $_("customize_appearance", {}, "Customize appearance and avatar")}
           >
-            {#if effectiveAssistantAvatarUrl}
+            {#if effectiveAssistantAvatarUrl && !(activeChatPersona && personaAvatarFailed)}
               <img src={effectiveAssistantAvatarUrl} alt={effectiveAssistantName} class="avatar-hero-img" on:error={handleAvatarError} />
             {:else if activeChatPersona}
               <div class="avatar-hero-spark avatar-hero-initial">
@@ -5365,13 +5397,13 @@ function lastFreshTitle(messages) {
                 <!-- svelte-ignore a11y-no-static-element-interactions -->
                 <div
                   class="entry-avatar"
-                  class:clickable={!activeChatPersona}
-                  on:click={() => { if (!activeChatPersona) showAvatarModal = true; }}
-                  role={!activeChatPersona ? "button" : undefined}
-                  tabindex={!activeChatPersona ? 0 : undefined}
-                  title={!activeChatPersona ? $_("customize_appearance", {}, "Customize appearance and avatar") : effectiveAssistantName}
+                  class:clickable={!activeChatPersona || isCustomPersona(activeChatPersona)}
+                  on:click={handleAvatarClick}
+                  role={!activeChatPersona || isCustomPersona(activeChatPersona) ? "button" : undefined}
+                  tabindex={!activeChatPersona || isCustomPersona(activeChatPersona) ? 0 : undefined}
+                  title={activeChatPersona ? $_("krea_edit_persona", {}, "Редактировать персону") : $_("customize_appearance", {}, "Customize appearance and avatar")}
                 >
-                  {#if effectiveAssistantAvatarUrl}
+                  {#if effectiveAssistantAvatarUrl && !(activeChatPersona && personaAvatarFailed)}
                     <img src={effectiveAssistantAvatarUrl} alt={effectiveAssistantName} class="avatar-chat-img" on:error={handleAvatarError} />
                   {:else if activeChatPersona}
                     <div class="avatar-chat-initial">

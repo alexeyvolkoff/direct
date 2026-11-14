@@ -44,6 +44,7 @@
   export let deviceDrive = null;
   export let targetDevice = null;
   export let initialStorySeed = null;
+  export let initialEditPersona = null;
   export let targetLinkId = "";
   export let isPrivateMode = false;
   export let omdKey = "";
@@ -5124,6 +5125,13 @@
     const seedCopy = initialStorySeed;
     dispatch("story-seed-consumed");
     handleIncomingStorySeed(seedCopy);
+  }
+
+  $: if (initialEditPersona) {
+    const targetPersona = initialEditPersona;
+    dispatch("edit-persona-consumed");
+    activeTab = "personas";
+    openEditPersonaModal(targetPersona);
   }
 
   async function selectStorySubfolder(sub) {

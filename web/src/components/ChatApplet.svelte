@@ -170,6 +170,7 @@
   let imageGenSupported = false;
   let kreaSupported = false;
   let pendingStorySeed = null;
+  let pendingEditPersona = null;
   let kreaActive = typeof localStorage !== "undefined" ? localStorage.getItem("omd_krea_active") === "1" : false;
 
   function setKreaActive(val) {
@@ -1643,6 +1644,8 @@
           userName={$profileStore.name || $profileStore.user || ""}
           initialStorySeed={pendingStorySeed}
           on:story-seed-consumed={() => (pendingStorySeed = null)}
+          initialEditPersona={pendingEditPersona}
+          on:edit-persona-consumed={() => (pendingEditPersona = null)}
           on:count-change={(e) => (creationsCount = e.detail)}
           on:personas-change={handleStudioPersonasChange}
           on:start-persona-chat={handleStartPersonaChat}
@@ -1701,6 +1704,10 @@
           on:new-chat={() => startNewChat()}
           on:branch-chat={handleBranchChat}
           on:select-persona={handleSelectChatPersona}
+          on:edit-persona={(e) => {
+            pendingEditPersona = e.detail?.persona || activeChatPersona || null;
+            if (pendingEditPersona) activeView = "creations";
+          }}
           on:open-personas={() => (activeView = "creations")}
           on:start-story-from-image={(e) => {
             pendingStorySeed = e.detail;
