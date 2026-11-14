@@ -3258,6 +3258,9 @@
         archetype_strength: sliders.archetype_strength,
         steps: effectiveSteps,
         cfg: effectiveCfg,
+        ref_boost: (isOverride && typeof overrideOpts.ref_boost === "number")
+          ? overrideOpts.ref_boost
+          : (typeof sliders.ref_boost === "number" ? sliders.ref_boost : 4.0),
         ...(isVideoGen
           ? {
               video_quality: effectiveVideoQuality,
@@ -5197,13 +5200,31 @@
     const padNum = String(sc.scene_number || idx + 1).padStart(2, "0");
     const sceneHeader = `${sc.scene_number || idx + 1}. ${sc.title || $_("krea_story_scene_num", { num: idx + 1 }, `Scene ${idx + 1}`)}`;
 
+    let storyRefImages = null;
+    let storyRefBoost = null;
+    let finalPrompt = sc.visual_prompt;
+    const baseModelLow = String(sliders.base_model || "realism").toLowerCase();
+    const supportsImgRef = !baseModelLow.startsWith("sdxl") && !baseModelLow.includes("pony") && !baseModelLow.includes("illustrious") && !baseModelLow.includes("anima");
+    if (idx > 0 && sc.usePrevRef && supportsImgRef && attachedReferences.length === 0) {
+      const prevShot = storyScenes.slice(0, idx).reverse().find((s) => s.image_name || s.image_path || s.blobUrl);
+      if (prevShot) {
+        const refDataUrl = await resolveSceneImageDataUrl(prevShot);
+        if (refDataUrl) {
+          storyRefImages = [refDataUrl];
+          storyRefBoost = 1.35;
+          finalPrompt = `Keep the exact same person, outfit, and environment from the reference image, while completely changing her pose, both arms placement, and camera framing: ${sc.visual_prompt}`;
+        }
+      }
+    }
+
     const item = await runGeneration({
-      prompt: sc.visual_prompt,
+      prompt: finalPrompt,
       aspect: sc.aspect || sliders.aspect || "896x1152",
       subfolder: storySlug,
       filenamePrefix: `Scene_${padNum}`,
       customTitle: sceneHeader,
-      customDescription: sc.narrative || ""
+      customDescription: sc.narrative || "",
+      ...(storyRefImages ? { reference_images: storyRefImages, ref_boost: storyRefBoost } : {})
     });
 
     shootingSceneIdx = -1;
@@ -7695,6 +7716,34 @@
             </button>
           {/if}
         </div>
+        {#if studioEngineMode !== "video" && studioEngineMode !== "sdxl" && studioEngineMode !== "anima"}
+          <div class="sdxl-ref-controls">
+            <div class="sdxl-ref-mode-group" role="tablist" aria-label="Krea reference strength">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={(sliders.ref_boost ?? 4.0) >= 2.5}
+                class="sdxl-mode-pill"
+                class:active={(sliders.ref_boost ?? 4.0) >= 2.5}
+                title={$_("krea_ref_boost_strict_hint", {}, "Preserve exact pose, framing and composition while editing details (ref_boost 4.0)")}
+                on:click={() => { sliders = { ...sliders, ref_boost: 4.0 }; }}
+              >
+                🔒 {$_("krea_ref_boost_strict", {}, "Exact pose (4.0)")}
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={(sliders.ref_boost ?? 4.0) < 2.5}
+                class="sdxl-mode-pill"
+                class:active={(sliders.ref_boost ?? 4.0) < 2.5}
+                title={$_("krea_ref_boost_repose_hint", {}, "Keep person, outfit and location from reference, but allow a completely new pose and camera angle (ref_boost 1.4)")}
+                on:click={() => { sliders = { ...sliders, ref_boost: 1.4 }; }}
+              >
+                🎭 {$_("krea_ref_boost_repose", {}, "New pose (1.4)")}
+              </button>
+            </div>
+          </div>
+        {/if}
         {#if studioEngineMode === "video"}
           <div class="sdxl-ref-controls">
             <div class="sdxl-ref-mode-group" role="tablist" aria-label="Video reference mode">
@@ -8286,6 +8335,17 @@
                     >
                       ↗ {$_("krea_dir_to_composer", {}, "To composer")}
                     </button>
+                    {#if idx > 0 && studioEngineMode !== "sdxl" && studioEngineMode !== "anima" && studioEngineMode !== "video"}
+                      <button
+                        type="button"
+                        class="scene-sub-link"
+                        class:active-ref={!!sc.usePrevRef}
+                        title={$_("krea_story_use_prev_ref_hint", {}, "Use previous frame as outfit/setting reference with soft pose freedom (ref_boost 1.35)")}
+                        on:click={() => { sc.usePrevRef = !sc.usePrevRef; storyScenes = [...storyScenes]; }}
+                      >
+                        {sc.usePrevRef ? "🔗" : "⛓️‍💥"} {$_("krea_story_use_prev_ref", {}, "Ref #1")}
+                      </button>
+                    {/if}
                   </div>
 
                   {#if sc.showPrompt}
@@ -14120,193 +14180,6 @@
   .field-label-row {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    font-size: 11px;
-    color: #998094;
-  }
-
-  .text-link-btn {
-    background: transparent;
-    border: none;
-    color: #c4b5fd;
-    font-size: 11px;
-    cursor: pointer;
-    padding: 0;
-  }
-
-  .setting-presets-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-  }
-
-  .preset-chip-wrap {
-    display: inline-flex;
-    align-items: center;
-    background: rgba(139, 92, 246, 0.14);
-    border: 1px solid rgba(139, 92, 246, 0.3);
-    border-radius: 8px;
-    overflow: hidden;
-  }
-
-  .preset-chip {
-    background: transparent;
-    border: none;
-    color: #ddd6fe;
-    font-size: 10.5px;
-    padding: 2px 6px;
-    cursor: pointer;
-    max-width: 130px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .preset-chip-x {
-    background: transparent;
-    border: none;
-    color: #998094;
-    font-size: 10px;
-    padding: 2px 5px;
-    cursor: pointer;
-  }
-
-  .plan-controls-row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin-top: 2px;
-  }
-
-  .scene-count-label {
-    font-size: 11.5px;
-    color: #998094;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-  }
-
-  .count-select {
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    border-radius: 6px;
-    color: #fff;
-    padding: 3px 5px;
-    font-size: 11.5px;
-  }
-
-  .plan-btn {
-    border: none;
-    border-radius: 8px;
-    padding: 7px 10px;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    color: #fff;
-  }
-
-  .plan-btn.primary {
-    flex: 1;
-    background: var(--accent-gradient);
-  }
-
-  .plan-btn.secondary {
-    background: rgba(255, 255, 255, 0.08);
-    color: #E6D3DF;
-  }
-
-  .plan-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .story-scenes-list {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    padding: 4px 12px 12px 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  .scene-card {
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.09);
-    border-radius: 11px;
-    padding: 9px 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 7px;
-  }
-
-  .scene-card.shooting {
-    border-color: var(--accent);
-    box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 25%, transparent);
-  }
-
-  .scene-card.done {
-    border-color: rgba(16, 185, 129, 0.35);
-  }
-
-  .scene-card-head {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .scene-num {
-    font-size: 11px;
-    font-weight: 700;
-    color: #c4b5fd;
-    background: rgba(139, 92, 246, 0.2);
-    padding: 2px 6px;
-    border-radius: 6px;
-  }
-
-  .scene-title-input {
-    flex: 1;
-    min-width: 0;
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: 5px;
-    color: #F7ECF2;
-    font-size: 12.5px;
-    font-weight: 600;
-    padding: 2px 5px;
-  }
-
-  .scene-title-input:focus {
-    outline: none;
-    border-color: rgba(139, 92, 246, 0.5);
-    background: rgba(255, 255, 255, 0.04);
-  }
-
-  .scene-aspect-select {
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 5px;
-    color: #E6D3DF;
-    font-size: 11px;
-    padding: 2px 4px;
-  }
-
-  .scene-del-btn {
-    background: transparent;
-    border: none;
-    color: #7D6376;
-    cursor: pointer;
-    font-size: 12px;
-  }
-
-  .scene-del-btn:hover {
-    color: #f87171;
-  }
-
-  .scene-thumb-box {
-    position: relative;
-    border-radius: 8px;
-    overflow: hidden;
     max-height: 180px;
     background: var(--bg-primary, #0F0A10);
   }
@@ -14604,6 +14477,12 @@
     cursor: pointer;
   }
 
+  .scene-sub-link.active-ref {
+    background: rgba(16, 185, 129, 0.18);
+    border-color: rgba(16, 185, 129, 0.5);
+    color: #6ee7b7;
+  }
+
   .story-continue-inline {
     display: flex;
     gap: 6px;
@@ -14808,6 +14687,11 @@
   .krea-studio-root.light-theme .story-seed-cancel-btn {
     border-color: #ddd6fe;
     color: #6d28d9;
+  }
+  .krea-studio-root.light-theme .scene-sub-link.active-ref {
+    background: #ecfdf5;
+    border-color: #10b981;
+    color: #065f46;
   }
   .krea-studio-root.light-theme .add-scene-inline-btn {
     background: #ffffff;

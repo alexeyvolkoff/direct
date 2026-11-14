@@ -1861,5 +1861,11 @@
   "krea_story_seed_append": "הוסף כסצנה #{num}",
   "krea_story_seed_new": "התחל סיפור חדש",
   "dismiss": "הסתר",
-  "no_unread_notifications": "אין התראות שלא נקראו"
+  "no_unread_notifications": "אין התראות שלא נקראו",
+  "krea_ref_boost_strict": "תנוחה מדויקת (4.0)",
+  "krea_ref_boost_strict_hint": "שמור על תנוחה וקומפוזיציה מדויקת של ההתייחסות (ref_boost 4.0)",
+  "krea_ref_boost_repose": "תנוחה חדשה (1.4)",
+  "krea_ref_boost_repose_hint": "שמור על הדמות, הבגד והמיקום מההתייחסות אך אפשר תנוחה וזווית חדשות (ref_boost 1.4)",
+  "krea_story_use_prev_ref": "הפניה קודמת",
+  "krea_story_use_prev_ref_hint": "השתמש בפריים הקודם כהתייחסות לבגד/מיקום עם חופש תנוחה (ref_boost 1.35)"
 }

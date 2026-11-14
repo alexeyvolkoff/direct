@@ -1861,5 +1861,11 @@
   "krea_story_seed_append": "Dodaj jako scenę #{num}",
   "krea_story_seed_new": "Rozpocznij nową historię",
   "dismiss": "Odrzuć",
-  "no_unread_notifications": "Brak nieprzeczytanych powiadomień"
+  "no_unread_notifications": "Brak nieprzeczytanych powiadomień",
+  "krea_ref_boost_strict": "Dokładna poza (4.0)",
+  "krea_ref_boost_strict_hint": "Zachowaj dokładną pozę i kompozycję referencji (ref_boost 4.0)",
+  "krea_ref_boost_repose": "Nowa poza (1.4)",
+  "krea_ref_boost_repose_hint": "Zachowaj postać, strój i miejsce, ale pozwól na nową pozę i kadr (ref_boost 1.4)",
+  "krea_story_use_prev_ref": "Poprz. ref",
+  "krea_story_use_prev_ref_hint": "Użyj poprzedniej klatki jako referencji stroju/miejsca ze swobodą pozy (ref_boost 1.35)"
 }

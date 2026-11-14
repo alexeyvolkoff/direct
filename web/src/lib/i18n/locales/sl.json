@@ -1861,5 +1861,11 @@
   "krea_story_seed_append": "Dodaj kot prizor #{num}",
   "krea_story_seed_new": "Začni novo zgodbo",
   "dismiss": "Opusti",
-  "no_unread_notifications": "Ni neprebranih obvestil"
+  "no_unread_notifications": "Ni neprebranih obvestil",
+  "krea_ref_boost_strict": "Natančna poza (4.0)",
+  "krea_ref_boost_strict_hint": "Ohrani natančno pozo in kompozicijo reference (ref_boost 4.0)",
+  "krea_ref_boost_repose": "Nova poza (1.4)",
+  "krea_ref_boost_repose_hint": "Ohrani osebo, oblačila in lokacijo, vendar dovoli novo pozo in kot (ref_boost 1.4)",
+  "krea_story_use_prev_ref": "Prejšnji ref",
+  "krea_story_use_prev_ref_hint": "Uporabi prejšnji kader kot referenco oblačil/lokacije s svobodno pozo (ref_boost 1.35)"
 }

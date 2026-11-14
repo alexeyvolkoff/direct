@@ -1861,5 +1861,11 @@
   "krea_story_seed_append": "Pridať ako scénu #{num}",
   "krea_story_seed_new": "Začať nový príbeh",
   "dismiss": "Skryť",
-  "no_unread_notifications": "Žiadne neprečítané upozornenia"
+  "no_unread_notifications": "Žiadne neprečítané upozornenia",
+  "krea_ref_boost_strict": "Presná póza (4.0)",
+  "krea_ref_boost_strict_hint": "Zachovať presnú pózu a kompozíciu referencie (ref_boost 4.0)",
+  "krea_ref_boost_repose": "Nová póza (1.4)",
+  "krea_ref_boost_repose_hint": "Zachovať osobu, oblečenie a miesto, no umožniť novú pózu a uhol (ref_boost 1.4)",
+  "krea_story_use_prev_ref": "Predošlý ref",
+  "krea_story_use_prev_ref_hint": "Použiť predošlý záber ako referenciu oblečenia/miesta s voľnou pózou (ref_boost 1.35)"
 }

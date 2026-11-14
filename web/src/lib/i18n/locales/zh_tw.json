@@ -1861,5 +1861,11 @@
   "krea_story_seed_append": "新增為場景 #{num}",
   "krea_story_seed_new": "開始新故事",
   "dismiss": "忽略",
-  "no_unread_notifications": "沒有未讀通知"
+  "no_unread_notifications": "沒有未讀通知",
+  "krea_ref_boost_strict": "精確姿勢 (4.0)",
+  "krea_ref_boost_strict_hint": "保持參考圖的精確姿勢與構圖，僅修改細節 (ref_boost 4.0)",
+  "krea_ref_boost_repose": "新姿勢 (1.4)",
+  "krea_ref_boost_repose_hint": "保留參考圖的人物、服裝與場景，但允許全新的姿勢與鏡位 (ref_boost 1.4)",
+  "krea_story_use_prev_ref": "參考上一格",
+  "krea_story_use_prev_ref_hint": "以上一格作為服裝/場景參考並自由改變姿勢 (ref_boost 1.35)"
 }

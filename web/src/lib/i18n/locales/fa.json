@@ -1861,5 +1861,11 @@
   "krea_story_seed_append": "افزودن به عنوان صحنه #{num}",
   "krea_story_seed_new": "شروع داستان جدید",
   "dismiss": "بستن",
-  "no_unread_notifications": "اعلان خوانده‌نشده‌ای وجود ندارد"
+  "no_unread_notifications": "اعلان خوانده‌نشده‌ای وجود ندارد",
+  "krea_ref_boost_strict": "ژست دقیق (4.0)",
+  "krea_ref_boost_strict_hint": "حفظ دقیق ژست و ترکیب‌بندی مرجع هنگام ویرایش جزئیات (ref_boost 4.0)",
+  "krea_ref_boost_repose": "ژست جدید (1.4)",
+  "krea_ref_boost_repose_hint": "حفظ فرد، لباس و مکان از مرجع ولی اجازه تغییر کامل ژست و زاویه (ref_boost 1.4)",
+  "krea_story_use_prev_ref": "مرجع قبلی",
+  "krea_story_use_prev_ref_hint": "استفاده از فریم قبلی به عنوان مرجع لباس و مکان با آزادی تغییر ژست (ref_boost 1.35)"
 }

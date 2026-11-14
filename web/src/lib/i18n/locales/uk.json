@@ -1861,5 +1861,11 @@
   "krea_story_seed_append": "Додати як сцену #{num}",
   "krea_story_seed_new": "Почати нову історію",
   "dismiss": "Сховати",
-  "no_unread_notifications": "Немає непрочитаних сповіщень"
+  "no_unread_notifications": "Немає непрочитаних сповіщень",
+  "krea_ref_boost_strict": "Точна поза (4.0)",
+  "krea_ref_boost_strict_hint": "Зберегти точну позу та композицію референсу, змінюючи лише деталі (ref_boost 4.0)",
+  "krea_ref_boost_repose": "Нова поза (1.4)",
+  "krea_ref_boost_repose_hint": "Зберегти персонажа, одяг і локацію з референсу, але вільно змінити позу та ракурс (ref_boost 1.4)",
+  "krea_story_use_prev_ref": "Реф кадру",
+  "krea_story_use_prev_ref_hint": "Взяти попередній кадр як референс одягу та локації з вільною зміною пози (ref_boost 1.35)"
 }

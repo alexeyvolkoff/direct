@@ -1862,5 +1862,11 @@
   "krea_story_seed_append": "Add as scene #{num}",
   "krea_story_seed_new": "Start new story",
   "dismiss": "Dismiss",
-  "no_unread_notifications": "No unread notifications"
+  "no_unread_notifications": "No unread notifications",
+  "krea_ref_boost_strict": "Exact pose (4.0)",
+  "krea_ref_boost_strict_hint": "Preserve exact pose, framing and composition while editing details (ref_boost 4.0)",
+  "krea_ref_boost_repose": "New pose (1.4)",
+  "krea_ref_boost_repose_hint": "Keep person, outfit and location from reference, but allow a completely new pose and camera angle (ref_boost 1.4)",
+  "krea_story_use_prev_ref": "Prev ref",
+  "krea_story_use_prev_ref_hint": "Use previous frame as outfit/setting reference with soft pose freedom (ref_boost 1.35)"
 }

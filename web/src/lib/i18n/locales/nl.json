@@ -1861,5 +1861,11 @@
   "krea_story_seed_append": "Toevoegen als scène #{num}",
   "krea_story_seed_new": "Nieuw verhaal starten",
   "dismiss": "Negeren",
-  "no_unread_notifications": "Geen ongelezen meldingen"
+  "no_unread_notifications": "Geen ongelezen meldingen",
+  "krea_ref_boost_strict": "Exacte pose (4.0)",
+  "krea_ref_boost_strict_hint": "Behoud exacte pose en compositie van referentie (ref_boost 4.0)",
+  "krea_ref_boost_repose": "Nieuwe pose (1.4)",
+  "krea_ref_boost_repose_hint": "Behoud persoon, outfit en locatie, maar laat een nieuwe pose en camerahoek toe (ref_boost 1.4)",
+  "krea_story_use_prev_ref": "Vorige ref",
+  "krea_story_use_prev_ref_hint": "Gebruik vorig frame als outfit-/locatiereferentie met vrije pose (ref_boost 1.35)"
 }

@@ -1861,5 +1861,11 @@
   "krea_story_seed_append": "Dodaj kao scenu #{num}",
   "krea_story_seed_new": "Započni novu priču",
   "dismiss": "Odbaci",
-  "no_unread_notifications": "Nema nepročitanih obavijesti"
+  "no_unread_notifications": "Nema nepročitanih obavijesti",
+  "krea_ref_boost_strict": "Točna poza (4.0)",
+  "krea_ref_boost_strict_hint": "Zadrži točnu pozu i kompoziciju reference (ref_boost 4.0)",
+  "krea_ref_boost_repose": "Nova poza (1.4)",
+  "krea_ref_boost_repose_hint": "Zadrži osobu, odjeću i lokaciju, ali dopusti potpuno novu pozu i kadar (ref_boost 1.4)",
+  "krea_story_use_prev_ref": "Preth. ref",
+  "krea_story_use_prev_ref_hint": "Koristi prethodni kadar kao referencu odjeće/lokacije uz slobodnu pozu (ref_boost 1.35)"
 }

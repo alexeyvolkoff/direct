@@ -1861,5 +1861,11 @@
   "krea_story_seed_append": "Sahne #{num} olarak ekle",
   "krea_story_seed_new": "Yeni hikaye başlat",
   "dismiss": "Yoksay",
-  "no_unread_notifications": "Okunmamış bildirim yok"
+  "no_unread_notifications": "Okunmamış bildirim yok",
+  "krea_ref_boost_strict": "Tam poz (4.0)",
+  "krea_ref_boost_strict_hint": "Referansın tam pozunu ve kompozisyonunu koru (ref_boost 4.0)",
+  "krea_ref_boost_repose": "Yeni poz (1.4)",
+  "krea_ref_boost_repose_hint": "Kişiyi, kıyafeti ve mekanı koru ama yeni poz ve kamera açısına izin ver (ref_boost 1.4)",
+  "krea_story_use_prev_ref": "Önceki ref",
+  "krea_story_use_prev_ref_hint": "Önceki kareyi serbest pozlu kıyafet/mekan referansı olarak kullan (ref_boost 1.35)"
 }

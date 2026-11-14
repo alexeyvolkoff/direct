@@ -1861,5 +1861,11 @@
   "krea_story_seed_append": "Додај као сцену #{num}",
   "krea_story_seed_new": "Започни нову причу",
   "dismiss": "Одбаци",
-  "no_unread_notifications": "Нема непрочитаних обавештења"
+  "no_unread_notifications": "Нема непрочитаних обавештења",
+  "krea_ref_boost_strict": "Тачна поза (4.0)",
+  "krea_ref_boost_strict_hint": "Задржи тачну позу и композицију референце (ref_boost 4.0)",
+  "krea_ref_boost_repose": "Нова поза (1.4)",
+  "krea_ref_boost_repose_hint": "Задржи особу, одећу и локацију, али дозволи нову позу и угао (ref_boost 1.4)",
+  "krea_story_use_prev_ref": "Претх. реф",
+  "krea_story_use_prev_ref_hint": "Користи претходни кадар као референцу одеће/локације уз слободну позу (ref_boost 1.35)"
 }

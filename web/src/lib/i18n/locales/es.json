@@ -1861,5 +1861,11 @@
   "krea_story_seed_append": "Añadir como escena #{num}",
   "krea_story_seed_new": "Nueva historia",
   "dismiss": "Descartar",
-  "no_unread_notifications": "No hay notificaciones sin leer"
+  "no_unread_notifications": "No hay notificaciones sin leer",
+  "krea_ref_boost_strict": "Pose exacta (4.0)",
+  "krea_ref_boost_strict_hint": "Conservar la pose exacta y la composición de la referencia (ref_boost 4.0)",
+  "krea_ref_boost_repose": "Nueva pose (1.4)",
+  "krea_ref_boost_repose_hint": "Mantener personaje, vestuario y lugar, pero permitir nueva pose y ángulo (ref_boost 1.4)",
+  "krea_story_use_prev_ref": "Ref ant.",
+  "krea_story_use_prev_ref_hint": "Usar el fotograma anterior como referencia de ropa/lugar con pose libre (ref_boost 1.35)"
 }

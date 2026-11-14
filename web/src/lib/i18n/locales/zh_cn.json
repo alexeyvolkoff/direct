@@ -1861,5 +1861,11 @@
   "krea_story_seed_append": "添加为场景 #{num}",
   "krea_story_seed_new": "开始新故事",
   "dismiss": "忽略",
-  "no_unread_notifications": "没有未读通知"
+  "no_unread_notifications": "没有未读通知",
+  "krea_ref_boost_strict": "精确姿势 (4.0)",
+  "krea_ref_boost_strict_hint": "保持参考图的精确姿势和构图，仅修改细节 (ref_boost 4.0)",
+  "krea_ref_boost_repose": "新姿势 (1.4)",
+  "krea_ref_boost_repose_hint": "保留参考图的人物、服装和场景，但允许全新的姿势与机位 (ref_boost 1.4)",
+  "krea_story_use_prev_ref": "参考上一帧",
+  "krea_story_use_prev_ref_hint": "以上一帧作为服装/场景参考并自由改变姿势 (ref_boost 1.35)"
 }
