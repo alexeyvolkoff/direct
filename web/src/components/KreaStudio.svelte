@@ -3287,7 +3287,9 @@
             quality: effectiveVideoQuality,
             fps: 24,
             video_ref_mode: resolvedRefImages.length > 0 ? effectiveVideoRefMode : "auto",
-            extend_video: isExtendingVideo ? extendingVideoItem.videoSource : null
+            extend_video: (isOverride && overrideOpts.extend_video !== undefined)
+              ? overrideOpts.extend_video
+              : (isExtendingVideo ? extendingVideoItem.videoSource : null)
           }
         : {}),
       subfolder: targetSubfolder || null,
@@ -5289,7 +5291,15 @@
   async function animateSingleScene(idx, withNextTransition = false) {
     const sc = storyScenes[idx];
     if (!sc || isGenerating) return false;
-    if (!sc.image_name && !sc.blobUrl && !sc.image_path) {
+
+    const hasOwnFrame = !!(sc.image_name || sc.blobUrl || sc.image_path);
+    const prevSc = idx > 0 ? storyScenes[idx - 1] : null;
+    const prevClipSource = prevSc ? (prevSc.video_path || (prevSc.video_name ? `/chat/image/${prevSc.video_name}` : "")) : "";
+    const prevFrameSc = !hasOwnFrame && !prevClipSource && idx > 0
+      ? storyScenes.slice(0, idx).reverse().find((s) => s.image_name || s.blobUrl || s.image_path)
+      : null;
+
+    if (!hasOwnFrame && !prevClipSource && !prevFrameSc) {
       generationError = $_("krea_story_err_shoot_first", {}, "Shoot the keyframe image first before animating.");
       return false;
     }
@@ -5302,33 +5312,52 @@
     }
 
     animatingSceneIdx = idx;
-    const frame1 = await resolveSceneImageDataUrl(sc);
-    if (!frame1) {
-      animatingSceneIdx = -1;
-      generationError = $_("krea_story_err_load_frame", {}, "Failed to load keyframe image for video generation.");
-      return false;
-    }
+    let refs = [];
+    let extendSource = null;
 
-    const refs = [frame1];
-    const nextSc = withNextTransition ? storyScenes[idx + 1] : null;
-    if (nextSc && (nextSc.image_name || nextSc.blobUrl || nextSc.image_path)) {
-      const frame2 = await resolveSceneImageDataUrl(nextSc);
-      if (frame2) refs.push(frame2);
+    if (hasOwnFrame) {
+      const frame1 = await resolveSceneImageDataUrl(sc);
+      if (!frame1) {
+        animatingSceneIdx = -1;
+        generationError = $_("krea_story_err_load_frame", {}, "Failed to load keyframe image for video generation.");
+        return false;
+      }
+      refs = [frame1];
+      const nextSc = withNextTransition ? storyScenes[idx + 1] : null;
+      if (nextSc && (nextSc.image_name || nextSc.blobUrl || nextSc.image_path)) {
+        const frame2 = await resolveSceneImageDataUrl(nextSc);
+        if (frame2) refs.push(frame2);
+      }
+    } else if (prevClipSource) {
+      // Seamless direct continuation from the tail of the previous scene's video clip
+      extendSource = prevClipSource;
+    } else if (prevFrameSc) {
+      // Direct I2V from the previous rendered frame using THIS scene's action/prompt (no intermediate static frame needed!)
+      const frame1 = await resolveSceneImageDataUrl(prevFrameSc);
+      if (!frame1) {
+        animatingSceneIdx = -1;
+        generationError = $_("krea_story_err_load_frame", {}, "Failed to load keyframe image for video generation.");
+        return false;
+      }
+      refs = [frame1];
     }
 
     const padNum = String(sc.scene_number || idx + 1).padStart(2, "0");
     const sceneHeader = `${sc.scene_number || idx + 1}. ${sc.title || $_("krea_story_scene_num", { num: idx + 1 }, `Scene ${idx + 1}`)}`;
     const visualDesc = (sc.visual_prompt || "").trim();
     const moodDesc = (sc.narrative || "").trim();
-    const motionPrompt = refs.length >= 2
-      ? `<Picture 1> smoothly transitions into <Picture 2> with natural cinematic movement, fluid camera motion, and cohesive lighting.${visualDesc ? ` ${visualDesc}` : ""}\n${moodDesc ? `Scene mood: ${moodDesc}\n` : ""}Audio: Natural ambient environmental atmosphere and subtle realistic foley in crisp stereo.`
-      : `<Picture 1> comes alive with natural cinematic movement, subtle breathing, realistic camera micro-motion, and cohesive lighting.${visualDesc ? ` ${visualDesc}` : ""}\n${moodDesc ? `Scene mood: ${moodDesc}\n` : ""}Audio: Natural ambient environmental atmosphere and subtle realistic foley in crisp stereo.`;
+    const motionPrompt = extendSource
+      ? `Continue the action seamlessly from the end of the previous shot, keeping exact outfit, setting, lighting, and identity.${visualDesc ? ` ${visualDesc}` : ""}\n${moodDesc ? `Scene mood: ${moodDesc}\n` : ""}Audio: Natural ambient environmental atmosphere and subtle realistic foley in crisp stereo.`
+      : (refs.length >= 2
+        ? `<Picture 1> smoothly transitions into <Picture 2> with natural cinematic movement, fluid camera motion, and cohesive lighting.${visualDesc ? ` ${visualDesc}` : ""}\n${moodDesc ? `Scene mood: ${moodDesc}\n` : ""}Audio: Natural ambient environmental atmosphere and subtle realistic foley in crisp stereo.`
+        : `<Picture 1> comes alive with natural cinematic movement, subtle breathing, realistic camera micro-motion, and cohesive lighting.${visualDesc ? ` ${visualDesc}` : ""}\n${moodDesc ? `Scene mood: ${moodDesc}\n` : ""}Audio: Natural ambient environmental atmosphere and subtle realistic foley in crisp stereo.`);
 
     const item = await runGeneration({
       prompt: motionPrompt,
       base_model: "minimax_h3",
       reference_images: refs,
-      video_ref_mode: "keyframe",
+      video_ref_mode: extendSource ? "auto" : "keyframe",
+      extend_video: extendSource,
       duration: videoDuration || 5,
       quality: videoQuality || "hd",
       aspect: sc.aspect || sliders.aspect || "896x1152",
@@ -5355,8 +5384,13 @@
 
   async function animateAllRemainingScenes() {
     if (isAnimatingSeries || isGenerating) return;
+    const hasSeedFrame = storyScenes.some((s) => s.image_name || s.blobUrl || s.image_path || s.video_name || s.video_path);
+    if (!hasSeedFrame) {
+      generationError = $_("krea_story_err_shoot_first", {}, "Shoot the keyframe image first before animating.");
+      return;
+    }
     const pendingIndices = storyScenes
-      .map((s, idx) => ((s.image_name || s.blobUrl || s.image_path) && !s.video_name ? idx : -1))
+      .map((s, idx) => (!s.video_name ? idx : -1))
       .filter((idx) => idx >= 0);
     if (pendingIndices.length === 0) {
       generationError = $_("krea_story_all_animated", {}, "All shot scenes already have video clips! You can re-animate any scene individually.");
@@ -8313,7 +8347,7 @@
                         🎬 {$_("krea_story_shoot_frame_btn", {}, "Shoot frame")}
                       {/if}
                     </button>
-                    {#if canShowVideoTab && (sc.image_name || sc.blobUrl || sc.image_path)}
+                    {#if canShowVideoTab && (sc.image_name || sc.blobUrl || sc.image_path || (idx > 0 && (storyScenes[idx - 1]?.video_name || storyScenes[idx - 1]?.video_path || storyScenes[idx - 1]?.image_name || storyScenes[idx - 1]?.blobUrl || storyScenes[idx - 1]?.image_path)))}
                       <button
                         type="button"
                         class="animate-scene-btn"
@@ -8409,7 +8443,7 @@
                       on:click={animateAllRemainingScenes}
                       title={$_("krea_story_animate_all_hint", {}, "Animate all shot keyframes into MiniMax H3 video clips")}
                     >
-                      🎥 {$_("krea_story_animate_series", { count: storyScenes.filter((s) => (s.image_name || s.blobUrl || s.image_path) && !s.video_name).length || storyScenes.filter((s) => s.image_name || s.blobUrl || s.image_path).length }, `Animate (${storyScenes.filter((s) => (s.image_name || s.blobUrl || s.image_path) && !s.video_name).length || storyScenes.filter((s) => s.image_name || s.blobUrl || s.image_path).length})`)}
+                      🎥 {$_("krea_story_animate_series", { count: storyScenes.filter((s) => !s.video_name).length || storyScenes.length }, `Animate (${storyScenes.filter((s) => !s.video_name).length || storyScenes.length})`)}
                     </button>
                   {/if}
                 </div>
