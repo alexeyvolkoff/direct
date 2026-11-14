@@ -5065,8 +5065,12 @@
   function startStoryFromSeed(seed) {
     if (!seed) return;
     pendingStorySeedConflict = null;
-    showDirectorPanel = true;
-    directorTab = "story";
+    directorTab = "storyboard";
+    if (canShowDirector) {
+      showDirectorPanel = true;
+    } else {
+      pendingSavedDirectorOpen = true;
+    }
     storySlug = "";
     storyTitle = (seed.title || "").trim();
     storySetting = (seed.setting || seed.description || "").trim();
@@ -5083,8 +5087,12 @@
   function appendSeedToStory(seed) {
     if (!seed) return;
     pendingStorySeedConflict = null;
-    showDirectorPanel = true;
-    directorTab = "story";
+    directorTab = "storyboard";
+    if (canShowDirector) {
+      showDirectorPanel = true;
+    } else {
+      pendingSavedDirectorOpen = true;
+    }
     applySeedPersona(seed);
     const nextNum = storyScenes.length + 1;
     storyScenes = [...storyScenes, buildSceneFromSeed(seed, nextNum)];
@@ -5096,8 +5104,12 @@
 
   function handleIncomingStorySeed(seed) {
     if (!seed) return;
-    showDirectorPanel = true;
-    directorTab = "story";
+    directorTab = "storyboard";
+    if (canShowDirector) {
+      showDirectorPanel = true;
+    } else {
+      pendingSavedDirectorOpen = true;
+    }
     if (storyScenes.length > 0) {
       pendingStorySeedConflict = seed;
     } else {
