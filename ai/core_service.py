@@ -6539,6 +6539,169 @@ async def generate_krea_video(
     return filename, vid_title, neutral_description, video_data, cover_bytes
 
 
+async def stitch_storyboard_videos(
+    ctx: UserContext,
+    clip_refs: list[str],
+    story_slug: str = "",
+    story_title: str = "",
+    story_description: str = "",
+    crossfade_sec: float = 0.0,
+    save_local: bool = True,
+) -> tuple[str, str, str, bytes, bytes, float, int]:
+    """
+    Stitches multiple storyboard MP4 clips into a single continuous movie using ffmpeg.
+    Handles mixed resolutions and missing audio streams safely.
+    Returns (filename, title, description, video_bytes, cover_bytes, duration_sec, clips_count).
+    """
+    resolved_clips: list[tuple[bytes, dict]] = []
+    for ref in clip_refs:
+        if not ref or not str(ref).strip():
+            continue
+        raw_bytes = await resolve_reference_video_bytes(ctx, str(ref).strip())
+        if raw_bytes and len(raw_bytes) > 512:
+            meta = _probe_video_bytes_meta(raw_bytes)
+            resolved_clips.append((raw_bytes, meta))
+
+    if len(resolved_clips) < 2:
+        raise ValueError("Need at least 2 rendered video clips to stitch a movie.")
+
+    first_valid = next((m for _, m in resolved_clips if m.get("width", 0) > 0 and m.get("height", 0) > 0), {})
+    target_w = max(256, int(first_valid.get("width") or 1024)) & ~1
+    target_h = max(256, int(first_valid.get("height") or 576)) & ~1
+    xfade = max(0.0, min(1.5, float(crossfade_sec or 0.0)))
+
+    def _run_ffmpeg_stitch() -> tuple[bytes, bytes]:
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix="omc_stitch_") as tmpdir:
+            cmd = ["ffmpeg", "-y"]
+            filter_parts: list[str] = []
+            durations: list[float] = []
+
+            for idx, (clip_bytes, meta) in enumerate(resolved_clips):
+                clip_path = os.path.join(tmpdir, f"clip_{idx:03d}.mp4")
+                with open(clip_path, "wb") as cf:
+                    cf.write(clip_bytes)
+                cmd.extend(["-i", clip_path])
+                dur = max(0.5, float(meta.get("duration") or 5.0))
+                durations.append(dur)
+
+                filter_parts.append(
+                    f"[{idx}:v]scale={target_w}:{target_h}:force_original_aspect_ratio=decrease,"
+                    f"pad={target_w}:{target_h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps=24,format=yuv420p[v{idx}]"
+                )
+                if meta.get("has_audio"):
+                    filter_parts.append(
+                        f"[{idx}:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,"
+                        f"aresample=async=1:first_pts=0[a{idx}]"
+                    )
+                else:
+                    filter_parts.append(
+                        f"aevalsrc=0:channel_layout=stereo:sample_rate=44100:duration={dur:.3f}[a{idx}]"
+                    )
+
+            can_xfade = xfade >= 0.05 and all(d > xfade * 2.0 + 0.25 for d in durations)
+            if can_xfade:
+                prev_v = "v0"
+                prev_a = "a0"
+                cum_dur = durations[0]
+                for idx in range(1, len(resolved_clips)):
+                    offset = max(0.0, cum_dur - xfade)
+                    next_v = "outv" if idx == len(resolved_clips) - 1 else f"vx{idx}"
+                    next_a = "outa" if idx == len(resolved_clips) - 1 else f"ax{idx}"
+                    filter_parts.append(
+                        f"[{prev_v}][v{idx}]xfade=transition=fade:duration={xfade:.3f}:offset={offset:.3f}[{next_v}]"
+                    )
+                    filter_parts.append(
+                        f"[{prev_a}][a{idx}]acrossfade=d={xfade:.3f}:c1=tri:c2=tri[{next_a}]"
+                    )
+                    prev_v = next_v
+                    prev_a = next_a
+                    cum_dur = offset + durations[idx]
+            else:
+                concat_inputs = "".join(f"[v{i}][a{i}]" for i in range(len(resolved_clips)))
+                filter_parts.append(f"{concat_inputs}concat=n={len(resolved_clips)}:v=1:a=1[outv][outa]")
+
+            out_path = os.path.join(tmpdir, "stitched.mp4")
+            cover_path = os.path.join(tmpdir, "cover.jpg")
+            cmd.extend([
+                "-filter_complex", ";".join(filter_parts),
+                "-map", "[outv]",
+                "-map", "[outa]",
+                "-c:v", "libx264",
+                "-preset", "fast",
+                "-crf", "18",
+                "-pix_fmt", "yuv420p",
+                "-c:a", "aac",
+                "-b:a", "192k",
+                "-movflags", "+faststart",
+                out_path,
+            ])
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180, check=False)
+            if proc.returncode != 0 or not os.path.isfile(out_path):
+                err_tail = (proc.stderr or proc.stdout or "ffmpeg failed")[-600:]
+                raise RuntimeError(f"FFmpeg stitch failed: {err_tail}")
+
+            with open(out_path, "rb") as f:
+                stitched_bytes = f.read()
+
+            cover_bytes_local = b""
+            cproc = subprocess.run(
+                ["ffmpeg", "-y", "-i", out_path, "-vframes", "1", "-q:v", "2", cover_path],
+                capture_output=True,
+                timeout=15,
+                check=False,
+            )
+            if cproc.returncode == 0 and os.path.isfile(cover_path):
+                with open(cover_path, "rb") as cf:
+                    cover_bytes_local = cf.read()
+
+            return stitched_bytes, cover_bytes_local
+
+    video_data, cover_bytes = await asyncio.to_thread(_run_ffmpeg_stitch)
+    probed = _probe_video_bytes_meta(video_data)
+    actual_duration = round(float(probed.get("duration") or sum(m.get("duration") or 5.0 for _, m in resolved_clips)), 1)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe_subfolder = sanitize_story_slug(story_slug) if story_slug else ""
+    prefix = safe_subfolder[:32] if safe_subfolder else "Story"
+    filename = f"{prefix}_Movie_{timestamp}.mp4"
+
+    final_title = (story_title or "").strip() or (safe_subfolder.replace("-", " ").title() if safe_subfolder else "Storyboard Movie")
+    final_desc = (story_description or "").strip() or f"Full stitched movie ({len(resolved_clips)} clips, {actual_duration}s)."
+    readme_content = f"# {final_title}\n\n{final_desc}\n\n<!-- clips: {len(resolved_clips)}, duration: {actual_duration}s -->\n"
+
+    if save_local:
+        try:
+            rel_gen = f"generated/{safe_subfolder}" if safe_subfolder else "generated"
+            target_dir = resolve_local_target_dir(ctx, rel_gen)
+            os.makedirs(target_dir, exist_ok=True)
+            base_name = os.path.splitext(filename)[0]
+            with open(os.path.join(target_dir, filename), "wb") as f:
+                f.write(video_data)
+            with open(os.path.join(target_dir, f"{base_name}.Readme.md"), "w", encoding="utf-8") as f:
+                f.write(readme_content)
+            if cover_bytes:
+                with open(os.path.join(target_dir, f"{base_name}.cover.jpg"), "wb") as f:
+                    f.write(cover_bytes)
+            logging.info(f"[Storyboard-Stitch] Saved movie locally: {target_dir}/{filename}")
+
+            home_dir = os.path.expanduser("~")
+            omc_dir = os.path.join(home_dir, "OnMyChat", *rel_gen.split("/"))
+            if os.path.isdir(os.path.join(home_dir, "OnMyChat")) and os.path.abspath(target_dir) != os.path.abspath(omc_dir):
+                os.makedirs(omc_dir, exist_ok=True)
+                with open(os.path.join(omc_dir, filename), "wb") as f:
+                    f.write(video_data)
+                with open(os.path.join(omc_dir, f"{base_name}.Readme.md"), "w", encoding="utf-8") as f:
+                    f.write(readme_content)
+                if cover_bytes:
+                    with open(os.path.join(omc_dir, f"{base_name}.cover.jpg"), "wb") as f:
+                        f.write(cover_bytes)
+        except Exception as e:
+            logging.warning(f"[Storyboard-Stitch] Local movie save failed: {e}")
+
+    return filename, final_title, final_desc, video_data, cover_bytes, actual_duration, len(resolved_clips)
+
+
 
 # === RAG ===
 def get_file_icon(filename: str) -> str:

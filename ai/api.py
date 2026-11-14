@@ -5752,6 +5752,92 @@ async def krea_director_storyboard_endpoint(request: Request, data: DirectorStor
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class StoryStitchInput(BaseModel):
+    omd_key: Optional[str] = ""
+    clip_refs: list[str] = []
+    story_slug: Optional[str] = ""
+    story_title: Optional[str] = ""
+    story_description: Optional[str] = ""
+    crossfade_sec: Optional[float] = 0.0
+    save_local: Optional[bool] = True
+    device_push: Optional[str] = None
+    settings: Optional[dict] = None
+    mcp_keys: Optional[dict] = None
+
+
+@app.post("/krea/storyboard/stitch")
+async def krea_storyboard_stitch_endpoint(request: Request, data: StoryStitchInput):
+    """Stitches multiple storyboard video clips into a single continuous MP4 movie via FFmpeg."""
+    ctx = _build_krea_ctx(request, data)
+    is_owner = False
+    try:
+        is_owner = (
+            validated_node_owner(ctx)
+            or getattr(ctx, "trusted_owner", False)
+            or getattr(ctx, "private_mode", False)
+            or trusted_owner_access(request)
+        )
+    except Exception:
+        is_owner = getattr(ctx, "trusted_owner", False)
+    save_locally = bool(is_owner or data.save_local)
+
+    try:
+        filename, title, description, video_data, cover_bytes, actual_duration, clips_count = (
+            await core_service.stitch_storyboard_videos(
+                ctx=ctx,
+                clip_refs=data.clip_refs,
+                story_slug=data.story_slug or "",
+                story_title=data.story_title or "",
+                story_description=data.story_description or "",
+                crossfade_sec=float(data.crossfade_sec or 0.0),
+                save_local=save_locally,
+            )
+        )
+        base_no_ext = os.path.splitext(filename)[0]
+        cover_filename = f"{base_no_ext}.cover.jpg" if cover_bytes else ""
+        if video_data:
+            store_ephemeral_image(filename, video_data, ttl=1800)
+            readme_filename = f"{base_no_ext}.Readme.md"
+            readme_text = f"# {title}\n\n{description}\n"
+            store_ephemeral_image(readme_filename, readme_text.encode("utf-8"), ttl=1800)
+            if cover_bytes and cover_filename:
+                store_ephemeral_image(cover_filename, cover_bytes, ttl=1800)
+            if data.device_push:
+                schedule_generated_image_push(
+                    data.omd_key, data.device_push, filename, video_data, title, description, ctx=ctx
+                )
+                if cover_bytes and cover_filename:
+                    try:
+                        import device_push as _dp
+                        if not _dp.is_local_target(data.device_push, ctx):
+                            _dp.schedule_push(data.omd_key, data.device_push, [(cover_filename, cover_bytes)], ctx=ctx)
+                    except Exception:
+                        pass
+
+        safe_subfolder = core_service.sanitize_story_slug(data.story_slug) if data.story_slug else ""
+        return {
+            "status": "success",
+            "video": filename,
+            "image": filename,
+            "is_video": True,
+            "duration": actual_duration,
+            "clips_count": clips_count,
+            "cover": cover_filename,
+            "cover_url": f"/chat/image/{cover_filename}" if cover_filename else "",
+            "path": f"{safe_subfolder}/{filename}" if safe_subfolder else filename,
+            "subfolder": safe_subfolder,
+            "url": f"/chat/image/{filename}",
+            "title": title,
+            "description": description,
+            "saved_locally": save_locally,
+        }
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        logging.error(f"Error in /krea/storyboard/stitch: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/krea/story/save")
 async def krea_story_save_endpoint(request: Request, data: StorySaveInput):
     """Builds illustrated Readme.md + story.json and saves locally for Node Owner."""

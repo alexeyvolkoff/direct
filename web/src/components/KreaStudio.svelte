@@ -3068,22 +3068,30 @@
 
   async function runGeneration(overrideOpts = null) {
     const isOverride = overrideOpts && typeof overrideOpts === "object" && !(overrideOpts instanceof Event);
-    const isVideoGen = isVideoModel(sliders.base_model);
+    const effectiveBaseModel = (isOverride && overrideOpts.base_model) ? String(overrideOpts.base_model) : sliders.base_model;
+    const isVideoGen = isVideoModel(effectiveBaseModel);
     const isExtendingVideo = isVideoGen && Boolean(extendingVideoItem && extendingVideoItem.videoSource);
+    const overrideRefs = (isOverride && Array.isArray(overrideOpts.reference_images) && overrideOpts.reference_images.length > 0)
+      ? overrideOpts.reference_images
+      : null;
+    const effectiveVideoRefMode = (isOverride && overrideOpts.video_ref_mode) ? String(overrideOpts.video_ref_mode) : videoRefMode;
+    const effectiveVideoDuration = (isOverride && overrideOpts.duration) ? Number(overrideOpts.duration) : videoDuration;
+    const effectiveVideoQuality = (isOverride && overrideOpts.quality) ? String(overrideOpts.quality) : videoQuality;
     let cleanPrompt = isOverride && typeof overrideOpts.prompt === "string"
       ? overrideOpts.prompt.trim()
       : promptText.trim();
-    if (!cleanPrompt && isVideoGen && !isExtendingVideo && attachedReferences.length > 0) {
-      cleanPrompt = attachedReferences.length >= 2 && videoRefMode === "keyframe"
+    const refCount = overrideRefs ? overrideRefs.length : attachedReferences.length;
+    if (!cleanPrompt && isVideoGen && !isExtendingVideo && refCount > 0) {
+      cleanPrompt = refCount >= 2 && effectiveVideoRefMode === "keyframe"
         ? "<Picture 1> smoothly transitions into <Picture 2> with natural cinematic movement, fluid camera motion, and realistic lighting.\nAudio: Natural ambient environmental atmosphere and subtle realistic foley in crisp stereo."
         : "<Picture 1> comes alive with natural subtle movement, gentle breathing, realistic camera micro-motion, and cinematic lighting.\nAudio: Natural ambient room tone and subtle realistic environmental foley in crisp stereo.";
     }
-    if (!cleanPrompt && selectedPersonas.length === 0 && !isExtendingVideo) return null;
+    if (!cleanPrompt && selectedPersonas.length === 0 && !isExtendingVideo && !overrideRefs) return null;
     if (isGenerating) return null;
 
     generationError = "";
     const cloudPermitted = isVideoGen ? canShowVideoTab : canShowStudioTab;
-    if (!isSdxlModel(sliders.base_model) && (!kreaSupported || (statusLoadedOnce && !cloudPermitted))) {
+    if (!isSdxlModel(effectiveBaseModel) && (!kreaSupported || (statusLoadedOnce && !cloudPermitted))) {
       if (sdxlSupported !== false) {
         setBaseModel(lastSdxlModel || "sdxl_realistic", true);
       }
@@ -3170,7 +3178,7 @@
     generatingPrompt = cleanPrompt || selectedPersonas.map((p) => p.name).join(", ");
     generatingPersona = selectedPersonas.map((p) => p.name).join(", ");
     
-    const isLocalSdxlGen = isSdxlModel(sliders.base_model);
+    const isLocalSdxlGen = isSdxlModel(effectiveBaseModel);
     const now = Date.now();
     const warm = gpuWarmUntil > now;
     isGpuWarm = warm;
@@ -3191,9 +3199,13 @@
     const width = parseInt(wStr, 10) || 896;
     const height = parseInt(hStr, 10) || 1152;
 
-    // Собираем референсные изображения (вручную прикрепленные или Face Lock персоны, если у персоны включён use_face_ref)
+    // Собираем референсные изображения (override из сториборда, вручную прикрепленные или Face Lock персоны)
     const resolvedRefImages = [];
-    if (attachedReferences.length > 0) {
+    if (overrideRefs) {
+      for (const r of overrideRefs) {
+        if (r && typeof r === "string") resolvedRefImages.push(r);
+      }
+    } else if (attachedReferences.length > 0) {
       for (const r of attachedReferences) {
         const d = r.dataUrl || r.preview;
         if (d && typeof d === "string") resolvedRefImages.push(d);
@@ -3215,11 +3227,11 @@
     const fetchFn = getKreaFetch();
 
     const effectiveSteps = isVideoGen
-      ? (videoQuality === "fast" ? 4 : 8)
-      : (sliders.steps || (sliders.base_model === "anima" ? 25 : 12));
+      ? (effectiveVideoQuality === "fast" ? 4 : 8)
+      : (sliders.steps || (effectiveBaseModel === "anima" ? 25 : 12));
     const effectiveCfg = isVideoGen
       ? 1.0
-      : (sliders.cfg || (sliders.base_model === "realism" ? 1.5 : (sliders.base_model === "semi_realism" ? 2.0 : 3.0)));
+      : (sliders.cfg || (effectiveBaseModel === "realism" ? 1.5 : (effectiveBaseModel === "semi_realism" ? 2.0 : 3.0)));
     const endpointPath = isVideoGen ? "/generate/krea/video" : "/generate/krea2";
     const reqTimeoutMs = isVideoGen ? 540000 : 180000;
 
@@ -3232,7 +3244,7 @@
       reference_images: resolvedRefImages,
       reference_image: resolvedRefImages[0] || null,
       sliders: {
-        base_model: sliders.base_model || "realism",
+        base_model: effectiveBaseModel || "realism",
         detail: sliders.detail,
         styles: Array.isArray(sliders.styles) ? sliders.styles.filter((x) => x && x !== "none") : [],
         style: (sliders.styles && sliders.styles.length > 0) ? sliders.styles[0] : "none",
@@ -3246,9 +3258,9 @@
         cfg: effectiveCfg,
         ...(isVideoGen
           ? {
-              video_quality: videoQuality,
-              video_duration: videoDuration,
-              video_ref_mode: videoRefMode,
+              video_quality: effectiveVideoQuality,
+              video_duration: effectiveVideoDuration,
+              video_ref_mode: effectiveVideoRefMode,
               video_aspect: chosenAspect
             }
           : {}),
@@ -3269,10 +3281,10 @@
       cfg: effectiveCfg,
       ...(isVideoGen
         ? {
-            duration: videoDuration,
-            quality: videoQuality,
+            duration: effectiveVideoDuration,
+            quality: effectiveVideoQuality,
             fps: 24,
-            video_ref_mode: attachedReferences.length > 0 ? videoRefMode : "auto",
+            video_ref_mode: resolvedRefImages.length > 0 ? effectiveVideoRefMode : "auto",
             extend_video: isExtendingVideo ? extendingVideoItem.videoSource : null
           }
         : {}),
@@ -4034,7 +4046,7 @@
   async function openPublishStoryToCivitai() {
     const renderedScenes = (storyScenes || []).filter((s) => s.image_name);
     if (renderedScenes.length === 0) {
-      alert($_("civitai_err_no_scenes", {}, "Please shoot at least one story frame before publishing."));
+      generationError = $_("civitai_err_no_scenes", {}, "Please shoot at least one story frame before publishing.");
       return;
     }
     await persistCurrentStory(true).catch(() => {});
@@ -4042,17 +4054,33 @@
       name: sc.image_name,
       path: sc.image_path || (storySlug ? `${storySlug}/${sc.image_name}` : sc.image_name),
       story_slug: storySlug || "",
-      prompt: sc.prompt || "",
+      prompt: sc.visual_prompt || sc.prompt || "",
       blob: sc.imageBlob || null,
       blobUrl: sc.blobUrl || ""
     }));
-    const title = (storyTitle || "").trim();
-    const detail = renderedScenes
+    civitaiPubMode = "story";
+    civitaiPubItems = storyItems;
+    civitaiPubTitle = (storyTitle || "").trim();
+    civitaiPubDetail = renderedScenes
       .map((s) => (s.narrative ? `${s.title ? `**${s.scene_number}. ${s.title}**\n` : ""}${s.narrative}` : ""))
       .filter(Boolean)
       .join("\n\n");
-    const personaId = (selectedPersona && selectedPersona.id !== "none") ? selectedPersona.id : "";
-    await sendItemsToAutopilot(storyItems, title, detail, "", personaId);
+    civitaiPubTags = "";
+    civitaiPubPersonaId = (selectedPersona && selectedPersona.id !== "none") ? selectedPersona.id : "";
+    civitaiPubError = "";
+    civitaiPubResult = null;
+    if (!civitaiPubAccountId) {
+      let savedAcc = "";
+      try { savedAcc = window.localStorage.getItem("omc_civitai_pub_account") || ""; } catch (_) {}
+      if (savedAcc && (civitaiAccounts || []).some((a) => a.id === savedAcc)) {
+        civitaiPubAccountId = savedAcc;
+      } else if (civitaiAccounts && civitaiAccounts.length > 0) {
+        civitaiPubAccountId = civitaiAccounts[0].id;
+      } else {
+        civitaiPubAccountId = "custom";
+      }
+    }
+    showCivitaiPublishModal = true;
   }
 
   async function submitCivitaiPublish() {
@@ -5080,6 +5108,227 @@
     } finally {
       isShootingSeries = false;
       stopSeriesRequested = false;
+    }
+  }
+
+  let animatingSceneIdx = -1;
+  let isAnimatingSeries = false;
+  let stopVideoSeriesRequested = false;
+
+  async function resolveSceneImageDataUrl(sc) {
+    if (!sc) return "";
+    if (sc.imageBlob) {
+      return await blobToDataUrl(sc.imageBlob).catch(() => "");
+    }
+    if (sc.blobUrl && typeof sc.blobUrl === "string" && sc.blobUrl.startsWith("data:")) {
+      return sc.blobUrl;
+    }
+    const imgPath = sc.image_path || (storySlug && sc.image_name ? `${getTargetFolder()}/${storySlug}/${sc.image_name}` : "");
+    if (imgPath) {
+      const tmpBlobUrl = await fetchImageBlobViaWebRTC(imgPath, "").catch(() => null);
+      if (tmpBlobUrl) {
+        const dUrl = await blobToDataUrl(tmpBlobUrl).catch(() => "");
+        try {
+          if (typeof tmpBlobUrl === "string" && tmpBlobUrl.startsWith("blob:")) {
+            URL.revokeObjectURL(tmpBlobUrl);
+          }
+        } catch (_) {}
+        if (dUrl) return dUrl;
+      }
+      const httpDrive = getTargetHttpDrive();
+      if (httpDrive && typeof httpDrive.fetch === "function") {
+        try {
+          const r = await httpDrive.fetch(imgPath);
+          if (r && r.ok) {
+            const dUrl = await blobToDataUrl(await r.blob()).catch(() => "");
+            if (dUrl) return dUrl;
+          }
+        } catch (_) {}
+      }
+    }
+    return "";
+  }
+
+  async function animateSingleScene(idx, withNextTransition = false) {
+    const sc = storyScenes[idx];
+    if (!sc || isGenerating) return false;
+    if (!sc.image_name && !sc.blobUrl && !sc.image_path) {
+      generationError = $_("krea_story_err_shoot_first", {}, "Shoot the keyframe image first before animating.");
+      return false;
+    }
+
+    if (!storySlug.trim()) {
+      const saved = await persistCurrentStory(true);
+      if (!storySlug.trim()) {
+        storySlug = (saved && saved.story_slug) || `story_${Date.now()}`;
+      }
+    }
+
+    animatingSceneIdx = idx;
+    const frame1 = await resolveSceneImageDataUrl(sc);
+    if (!frame1) {
+      animatingSceneIdx = -1;
+      generationError = $_("krea_story_err_load_frame", {}, "Failed to load keyframe image for video generation.");
+      return false;
+    }
+
+    const refs = [frame1];
+    const nextSc = withNextTransition ? storyScenes[idx + 1] : null;
+    if (nextSc && (nextSc.image_name || nextSc.blobUrl || nextSc.image_path)) {
+      const frame2 = await resolveSceneImageDataUrl(nextSc);
+      if (frame2) refs.push(frame2);
+    }
+
+    const padNum = String(sc.scene_number || idx + 1).padStart(2, "0");
+    const sceneHeader = `${sc.scene_number || idx + 1}. ${sc.title || $_("krea_story_scene_num", { num: idx + 1 }, `Scene ${idx + 1}`)}`;
+    const visualDesc = (sc.visual_prompt || "").trim();
+    const moodDesc = (sc.narrative || "").trim();
+    const motionPrompt = refs.length >= 2
+      ? `<Picture 1> smoothly transitions into <Picture 2> with natural cinematic movement, fluid camera motion, and cohesive lighting.${visualDesc ? ` ${visualDesc}` : ""}\n${moodDesc ? `Scene mood: ${moodDesc}\n` : ""}Audio: Natural ambient environmental atmosphere and subtle realistic foley in crisp stereo.`
+      : `<Picture 1> comes alive with natural cinematic movement, subtle breathing, realistic camera micro-motion, and cohesive lighting.${visualDesc ? ` ${visualDesc}` : ""}\n${moodDesc ? `Scene mood: ${moodDesc}\n` : ""}Audio: Natural ambient environmental atmosphere and subtle realistic foley in crisp stereo.`;
+
+    const item = await runGeneration({
+      prompt: motionPrompt,
+      base_model: "minimax_h3",
+      reference_images: refs,
+      video_ref_mode: "keyframe",
+      duration: videoDuration || 5,
+      quality: videoQuality || "hd",
+      aspect: sc.aspect || sliders.aspect || "896x1152",
+      subfolder: storySlug,
+      filenamePrefix: `Clip_${padNum}`,
+      customTitle: `${sceneHeader} (Video)`,
+      customDescription: sc.narrative || ""
+    });
+
+    animatingSceneIdx = -1;
+    if (item && item.name) {
+      storyScenes[idx] = {
+        ...storyScenes[idx],
+        video_name: item.name,
+        video_path: item.path,
+        videoBlobUrl: item.blobUrl || null
+      };
+      storyScenes = [...storyScenes];
+      await persistCurrentStory(true).catch(() => {});
+      return true;
+    }
+    return false;
+  }
+
+  async function animateAllRemainingScenes() {
+    if (isAnimatingSeries || isGenerating) return;
+    const pendingIndices = storyScenes
+      .map((s, idx) => ((s.image_name || s.blobUrl || s.image_path) && !s.video_name ? idx : -1))
+      .filter((idx) => idx >= 0);
+    if (pendingIndices.length === 0) {
+      generationError = $_("krea_story_all_animated", {}, "All shot scenes already have video clips! You can re-animate any scene individually.");
+      return;
+    }
+
+    isAnimatingSeries = true;
+    stopVideoSeriesRequested = false;
+    try {
+      for (const idx of pendingIndices) {
+        if (stopVideoSeriesRequested) break;
+        const ok = await animateSingleScene(idx, false);
+        if (!ok || stopVideoSeriesRequested) break;
+      }
+    } finally {
+      isAnimatingSeries = false;
+      stopVideoSeriesRequested = false;
+    }
+  }
+
+  let isStitchingStory = false;
+  let stitchedMovieItem = null;
+
+  async function stitchStoryMovie(crossfadeSec = 0.0) {
+    if (isStitchingStory || isAnimatingSeries || isGenerating) return;
+    const clipScenes = storyScenes.filter((s) => s.video_name || s.video_path);
+    if (clipScenes.length < 2) {
+      generationError = $_("krea_story_need_two_clips", {}, "Generate at least 2 video clips in the storyboard first.");
+      return;
+    }
+
+    isStitchingStory = true;
+    generationError = "";
+    try {
+      const fetchFn = getKreaFetch();
+      const baseStorage = getActiveStorageRoot();
+      const mcpPayload = buildMcpKeysPayload();
+      const clipRefs = clipScenes.map((sc) => {
+        if (sc.video_path) return sc.video_path;
+        if (sc.video_name) return `/chat/image/${sc.video_name}`;
+        return "";
+      }).filter(Boolean);
+
+      const res = await fetchFn("/krea/storyboard/stitch", {
+        method: "POST",
+        headers: buildAuthHeaders(),
+        body: JSON.stringify({
+          omd_key: omdKey || (typeof window !== "undefined" && window.__omdKey) || "",
+          clip_refs: clipRefs,
+          story_slug: storySlug.trim(),
+          story_title: storyTitle.trim() || $_("krea_story_default_title", {}, "New Story"),
+          story_description: storySetting.trim() || "",
+          crossfade_sec: crossfadeSec,
+          save_local: true,
+          device_push: isTrustedNodeHost ? null : (devicePushTarget || null),
+          mcp_keys: mcpPayload,
+          settings: { defaultStorage: baseStorage, mcp_keys: mcpPayload }
+        })
+      });
+
+      if (!res || !res.ok) {
+        let errTxt = `HTTP ${res ? res.status : "network"}`;
+        try {
+          const errJson = await res.json();
+          if (errJson?.detail) errTxt = errJson.detail;
+        } catch (_) {}
+        throw new Error(errTxt);
+      }
+
+      const data = await res.json();
+      let blobUrl = "";
+      if (data.url) {
+        try {
+          const vRes = await fetchFn(data.url, { headers: buildAuthHeaders() });
+          if (vRes && vRes.ok) {
+            const vBlob = await vRes.blob();
+            if (vBlob && vBlob.size > 0) {
+              blobUrl = URL.createObjectURL(vBlob);
+            }
+          }
+        } catch (_) {}
+      }
+
+      const relPath = data.path
+        ? (data.path.startsWith("generated/") ? data.path : `generated/${data.path}`)
+        : (storySlug ? `generated/${storySlug}/${data.video}` : `generated/${data.video}`);
+
+      const movieItem = {
+        id: `movie_${Date.now()}`,
+        name: data.video || data.image,
+        path: relPath,
+        subfolder: data.subfolder || storySlug || "",
+        is_video: true,
+        duration: data.duration || 0,
+        clips_count: data.clips_count || clipScenes.length,
+        title: data.title || storyTitle || "Movie",
+        description: data.description || "",
+        cover: data.cover || "",
+        cover_url: data.cover_url || "",
+        url: data.url || "",
+        blobUrl
+      };
+
+      stitchedMovieItem = movieItem;
+      galleryItems = [movieItem, ...galleryItems];
+    } catch (err) {
+      generationError = err?.message || String(err);
+    } finally {
+      isStitchingStory = false;
     }
   }
 
@@ -7856,6 +8105,20 @@
                     </div>
                   {/if}
 
+                  {#if sc.videoBlobUrl || sc.video_path}
+                    <div class="scene-video-box">
+                      <video
+                        src={sc.videoBlobUrl || getFullImageUrl({ path: sc.video_path, name: sc.video_name })}
+                        controls
+                        muted
+                        playsinline
+                        preload="metadata"
+                        class="scene-video-player"
+                      ></video>
+                      <span class="scene-video-badge">🎥 {$_("krea_story_video_done", {}, "Clip")}</span>
+                    </div>
+                  {/if}
+
                   <div class="scene-actions-row">
                     <button
                       type="button"
@@ -7871,6 +8134,34 @@
                         🎬 {$_("krea_story_shoot_frame_btn", {}, "Shoot frame")}
                       {/if}
                     </button>
+                    {#if canShowVideoTab && (sc.image_name || sc.blobUrl || sc.image_path)}
+                      <button
+                        type="button"
+                        class="animate-scene-btn"
+                        disabled={isGenerating}
+                        on:click={() => animateSingleScene(idx, false)}
+                        title={$_("krea_story_animate_hint", {}, "Animate this keyframe into a MiniMax H3 video clip")}
+                      >
+                        {#if animatingSceneIdx === idx}
+                          ⏳ {$_("krea_story_animating_elapsed", { sec: generationElapsed }, `Video (${generationElapsed}s)...`)}
+                        {:else if sc.video_name}
+                          🔄 {$_("krea_story_revideo_btn", {}, "Re-video")}
+                        {:else}
+                          🎥 {$_("krea_story_animate_btn", {}, "Video")}
+                        {/if}
+                      </button>
+                      {#if storyScenes[idx + 1] && (storyScenes[idx + 1].image_name || storyScenes[idx + 1].blobUrl || storyScenes[idx + 1].image_path)}
+                        <button
+                          type="button"
+                          class="transition-scene-btn"
+                          disabled={isGenerating}
+                          on:click={() => animateSingleScene(idx, true)}
+                          title={$_("krea_story_transition_hint", { next: idx + 2 }, `Generate keyframe transition video to scene #${idx + 2}`)}
+                        >
+                          🎞️ → #{idx + 2}
+                        </button>
+                      {/if}
+                    {/if}
                   </div>
                 </div>
               {/each}
@@ -7892,19 +8183,57 @@
           <!-- Sticky Storyboard Footer -->
           {#if storyScenes.length > 0}
             <div class="storyboard-footer">
+              {#if stitchedMovieItem}
+                <div class="stitched-movie-box">
+                  <div class="stitched-movie-header">
+                    <span>🎬 {$_("krea_story_full_movie", {}, "Full Movie")} ({stitchedMovieItem.duration}s)</span>
+                    <a
+                      class="stitched-movie-dl"
+                      href={stitchedMovieItem.blobUrl || getFullImageUrl(stitchedMovieItem)}
+                      download={stitchedMovieItem.name || "movie.mp4"}
+                      title={$_("krea_download", {}, "Download")}
+                    >⬇ MP4</a>
+                  </div>
+                  <!-- svelte-ignore a11y-media-has-caption -->
+                  <video
+                    src={stitchedMovieItem.blobUrl || getFullImageUrl(stitchedMovieItem)}
+                    controls
+                    playsinline
+                    preload="metadata"
+                    class="stitched-movie-player"
+                  ></video>
+                </div>
+              {/if}
               {#if isShootingSeries}
                 <button type="button" class="series-stop-btn" on:click={() => (stopSeriesRequested = true)}>
                   ⏹ {$_("krea_story_stop_after_frame", {}, "Stop after current frame")}
                 </button>
-              {:else}
-                <button
-                  type="button"
-                  class="series-shoot-all-btn"
-                  disabled={isGenerating}
-                  on:click={shootAllRemainingScenes}
-                >
-                  ▶️ {$_("krea_story_shoot_series", { count: storyScenes.filter((s) => !s.image_name).length || storyScenes.length }, `Shoot series (${storyScenes.filter((s) => !s.image_name).length || storyScenes.length})`)}
+              {:else if isAnimatingSeries}
+                <button type="button" class="series-stop-btn" on:click={() => (stopVideoSeriesRequested = true)}>
+                  ⏹ {$_("krea_story_stop_after_clip", {}, "Stop after current clip")}
                 </button>
+              {:else}
+                <div class="series-primary-row">
+                  <button
+                    type="button"
+                    class="series-shoot-all-btn"
+                    disabled={isGenerating}
+                    on:click={shootAllRemainingScenes}
+                  >
+                    ▶️ {$_("krea_story_shoot_series", { count: storyScenes.filter((s) => !s.image_name).length || storyScenes.length }, `Shoot series (${storyScenes.filter((s) => !s.image_name).length || storyScenes.length})`)}
+                  </button>
+                  {#if canShowVideoTab && storyScenes.some((s) => s.image_name || s.blobUrl || s.image_path)}
+                    <button
+                      type="button"
+                      class="series-animate-btn"
+                      disabled={isGenerating}
+                      on:click={animateAllRemainingScenes}
+                      title={$_("krea_story_animate_all_hint", {}, "Animate all shot keyframes into MiniMax H3 video clips")}
+                    >
+                      🎥 {$_("krea_story_animate_series", { count: storyScenes.filter((s) => (s.image_name || s.blobUrl || s.image_path) && !s.video_name).length || storyScenes.filter((s) => s.image_name || s.blobUrl || s.image_path).length }, `Animate (${storyScenes.filter((s) => (s.image_name || s.blobUrl || s.image_path) && !s.video_name).length || storyScenes.filter((s) => s.image_name || s.blobUrl || s.image_path).length})`)}
+                    </button>
+                  {/if}
+                </div>
               {/if}
               <div class="storyboard-footer-sub">
                 <button
@@ -7926,6 +8255,21 @@
                     📁 {$_("krea_story_in_gallery", {}, "In gallery")}
                   </button>
                 {/if}
+                {#if storyScenes.filter((s) => s.video_name || s.video_path).length >= 2}
+                  <button
+                    type="button"
+                    class="story-util-btn stitch"
+                    disabled={isStitchingStory || isAnimatingSeries || isGenerating}
+                    on:click={() => stitchStoryMovie(0)}
+                    title={$_("krea_story_stitch_hint", {}, "Stitch generated scene video clips into one MP4 movie via FFmpeg")}
+                  >
+                    {#if isStitchingStory}
+                      ⏳ {$_("krea_story_stitching", {}, "Stitching...")}
+                    {:else}
+                      🎞️ {$_("krea_story_stitch_btn", { count: storyScenes.filter((s) => s.video_name || s.video_path).length }, `Stitch (${storyScenes.filter((s) => s.video_name || s.video_path).length})`)}
+                    {/if}
+                  </button>
+                {/if}
                 <button
                   type="button"
                   class="story-util-btn"
@@ -7941,7 +8285,7 @@
                     class="story-util-btn civitai"
                     disabled={isPublishingCivitai}
                     on:click={openPublishStoryToCivitai}
-                    title={$_("krea_story_civitai_hint", {}, "Send shot frames and story to Autopilot for review")}
+                    title={$_("krea_story_civitai_direct_hint", {}, "Publish shot frames and story text directly to CivitAI")}
                   >
                     🚀 {$_("krea_story_to_civitai", {}, "Publish")}
                   </button>
@@ -13847,6 +14191,150 @@
     cursor: not-allowed;
   }
 
+  .scene-video-box {
+    position: relative;
+    width: 100%;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #09060b;
+    border: 1px solid rgba(16, 185, 129, 0.35);
+    margin-top: 4px;
+  }
+
+  .scene-video-player {
+    display: block;
+    width: 100%;
+    max-height: 220px;
+    object-fit: contain;
+    background: #000;
+  }
+
+  .scene-video-badge {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(15, 10, 16, 0.78);
+    color: #6ee7b7;
+    font-size: 10.5px;
+    font-weight: 700;
+    pointer-events: none;
+    border: 1px solid rgba(16, 185, 129, 0.4);
+  }
+
+  .animate-scene-btn,
+  .transition-scene-btn {
+    border: 1px solid rgba(16, 185, 129, 0.45);
+    background: rgba(16, 185, 129, 0.14);
+    color: #a7f3d0;
+    border-radius: 7px;
+    padding: 5px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+  }
+
+  .animate-scene-btn:hover:not(:disabled),
+  .transition-scene-btn:hover:not(:disabled) {
+    background: #10b981;
+    color: #fff;
+  }
+
+  .animate-scene-btn:disabled,
+  .transition-scene-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .series-primary-row {
+    display: flex;
+    gap: 6px;
+    width: 100%;
+  }
+
+  .series-primary-row > .series-shoot-all-btn,
+  .series-primary-row > .series-animate-btn {
+    flex: 1;
+    width: auto;
+  }
+
+  .series-animate-btn {
+    border: none;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 12.5px;
+    font-weight: 700;
+    color: #fff;
+    background: linear-gradient(135deg, #059669, #0d9488);
+    cursor: pointer;
+    transition: filter 0.15s ease;
+  }
+
+  .series-animate-btn:hover:not(:disabled) {
+    filter: brightness(1.1);
+  }
+
+  .series-animate-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .stitched-movie-box {
+    border-radius: 8px;
+    border: 1px solid rgba(16, 185, 129, 0.45);
+    background: rgba(16, 185, 129, 0.08);
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .stitched-movie-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: #6ee7b7;
+  }
+
+  .stitched-movie-dl {
+    padding: 2px 7px;
+    border-radius: 6px;
+    background: rgba(16, 185, 129, 0.22);
+    color: #ecfdf5;
+    text-decoration: none;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .stitched-movie-dl:hover {
+    background: #10b981;
+    color: #fff;
+  }
+
+  .stitched-movie-player {
+    width: 100%;
+    max-height: 180px;
+    border-radius: 6px;
+    background: #000;
+    object-fit: contain;
+  }
+
+  .story-util-btn.stitch {
+    border-color: rgba(16, 185, 129, 0.45);
+    background: rgba(16, 185, 129, 0.14);
+    color: #a7f3d0;
+  }
+
+  .story-util-btn.stitch:hover:not(:disabled) {
+    background: #10b981;
+    color: #fff;
+  }
+
   .story-continue-inline {
     display: flex;
     gap: 6px;
@@ -14004,210 +14492,34 @@
   }
   .krea-studio-root.light-theme .director-tab-btn:hover {
     color: #0F0A10;
-    background: rgba(255, 255, 255, 0.55);
-  }
-  .krea-studio-root.light-theme .director-tab-btn.active {
-    background: #ffffff;
-    color: #5b21b6;
-    box-shadow: 0 1px 4px rgba(15, 10, 16, 0.12);
-  }
-  .krea-studio-root.light-theme .director-tab-badge {
-    background: #E6D3DF;
-    color: #1A121D;
-  }
-  .krea-studio-root.light-theme .director-tab-btn.active .director-tab-badge {
-    background: #ede9fe;
-    color: #5b21b6;
-  }
-
-  .krea-studio-root.light-theme .director-context-bar {
-    background: #ffffff;
-    border-color: #F2E5ED;
-  }
-  .krea-studio-root.light-theme .ctx-chip {
-    background: #ede9fe;
-    border-color: #c4b5fd;
-    color: #5b21b6;
-    font-weight: 600;
-  }
-  .krea-studio-root.light-theme .ctx-chip.persona {
-    background: #fce7f3;
-    border-color: #f9a8d4;
-    color: #9d174d;
-    font-weight: 600;
-  }
-  .krea-studio-root.light-theme .ctx-chip.muted {
-    background: #F7ECF2;
-    border-color: #E6D3DF;
-    color: #352339;
-    font-weight: 500;
-  }
-  .krea-studio-root.light-theme .ctx-undo-btn {
-    background: #fef9c3;
-    border-color: #eab308;
-    color: #854d0e;
-  }
-
-  .krea-studio-root.light-theme .director-quick-chips {
-    background: #FCF7FA;
-    border-bottom-color: #F2E5ED;
-  }
-  .krea-studio-root.light-theme .quick-chip {
-    background: #ffffff;
-    border-color: #E6D3DF;
-    color: #1A121D;
-    box-shadow: 0 1px 2px rgba(15, 10, 16, 0.04);
-  }
-  .krea-studio-root.light-theme .quick-chip:hover {
-    background: #ede9fe;
-    border-color: #8b5cf6;
-    color: #5b21b6;
-  }
-
-  .krea-studio-root.light-theme .director-empty-hint {
-    color: #352339;
-  }
-  .krea-studio-root.light-theme .director-empty-hint.compact {
-    background: #ffffff;
-    border-color: #E6D3DF;
-    color: #352339;
-  }
-
-  .krea-studio-root.light-theme .director-msg.assistant .msg-bubble,
-  .krea-studio-root.light-theme .scene-card,
-  .krea-studio-root.light-theme .story-setup-card {
-    background: #ffffff;
-    border-color: #E6D3DF;
-    color: #0F0A10;
-    box-shadow: 0 1px 3px rgba(15, 10, 16, 0.04);
-  }
-  .krea-studio-root.light-theme .director-msg.error .msg-bubble {
-    background: #fef2f2;
-    border-color: #f87171;
-    color: #b91c1c;
-    font-weight: 500;
-  }
-  .krea-studio-root.light-theme .thinking-bubble {
-    color: #5b21b6 !important;
-  }
-  .krea-studio-root.light-theme .msg-prompt-preview {
-    background: #F7ECF2;
-    border-color: #E6D3DF;
-  }
-  .krea-studio-root.light-theme .msg-prompt-text {
-    color: #1A121D;
-  }
-  .krea-studio-root.light-theme .mini-act-btn {
-    background: #ffffff;
-    border-color: #E6D3DF;
-    color: #1A121D;
-    font-weight: 500;
-  }
-  .krea-studio-root.light-theme .mini-act-btn:hover {
-    background: #ede9fe;
-    border-color: #8b5cf6;
-    color: #5b21b6;
-  }
-  .krea-studio-root.light-theme .mini-act-btn.primary {
-    background: #6d28d9;
-    border-color: #6d28d9;
+  .krea-studio-root.light-theme .transition-scene-btn:hover:not(:disabled) {
+    background: #059669;
+    border-color: #059669;
     color: #ffffff;
   }
-
-  .krea-studio-root.light-theme .director-textarea,
-  .krea-studio-root.light-theme .dir-textarea,
-  .krea-studio-root.light-theme .dir-input,
-  .krea-studio-root.light-theme .scene-narrative-box,
-  .krea-studio-root.light-theme .story-select,
-  .krea-studio-root.light-theme .count-select,
-  .krea-studio-root.light-theme .scene-aspect-select {
-    background: #ffffff;
-    border-color: #998094;
-    color: #0F0A10;
+  .krea-studio-root.light-theme .stitched-movie-box {
+    background: #ecfdf5;
+    border-color: #10b981;
   }
-  .krea-studio-root.light-theme .director-textarea::placeholder,
-  .krea-studio-root.light-theme .dir-textarea::placeholder,
-  .krea-studio-root.light-theme .dir-input::placeholder {
-    color: #7D6376;
+  .krea-studio-root.light-theme .stitched-movie-header {
+    color: #065f46;
   }
-  .krea-studio-root.light-theme .scene-vprompt-box {
-    background: #f5f3ff;
-    border-color: #a78bfa;
-    color: #1E0B36;
+  .krea-studio-root.light-theme .stitched-movie-dl {
+    background: #d1fae5;
+    color: #065f46;
   }
-  .krea-studio-root.light-theme .dir-clear-btn {
-    background: #F7ECF2;
-    border-color: #E6D3DF;
-    color: #352339;
-    font-weight: 500;
+  .krea-studio-root.light-theme .stitched-movie-dl:hover {
+    background: #059669;
+    color: #ffffff;
   }
-  .krea-studio-root.light-theme .dir-clear-btn:hover {
-    background: #F2E5ED;
-    color: #0F0A10;
+  .krea-studio-root.light-theme .story-util-btn.stitch {
+    background: #ecfdf5;
+    border-color: #10b981;
+    color: #065f46;
   }
-  .krea-studio-root.light-theme .dir-rewrite-btn:disabled,
-  .krea-studio-root.light-theme .dir-shoot-now-btn:disabled,
-  .krea-studio-root.light-theme .plan-btn:disabled {
-    background: #F2E5ED;
-    color: #7D6376;
-    border: 1px solid #E6D3DF;
-    opacity: 1;
-  }
-
-  .krea-studio-root.light-theme .story-projects-bar {
-    background: #ffffff;
-    border-bottom-color: #F2E5ED;
-  }
-  .krea-studio-root.light-theme .story-new-btn {
-    background: #ede9fe;
-    border-color: #a78bfa;
-    color: #5b21b6;
-  }
-  .krea-studio-root.light-theme .story-new-btn.subtle {
-    background: #fce7f3;
-    border-color: var(--accent-hover);
-    color: #9d174d;
-  }
-  .krea-studio-root.light-theme .slug-pill,
-  .krea-studio-root.light-theme .text-link-btn,
-  .krea-studio-root.light-theme .scene-sub-link {
-    color: #6d28d9;
-    font-weight: 600;
-  }
-  .krea-studio-root.light-theme .field-label-row,
-  .krea-studio-root.light-theme .scene-count-label {
-    color: #352339;
-    font-weight: 500;
-  }
-  .krea-studio-root.light-theme .preset-chip-wrap {
-    background: #ede9fe;
-    border-color: #c4b5fd;
-  }
-  .krea-studio-root.light-theme .preset-chip {
-    color: #5b21b6;
-    font-weight: 500;
-  }
-  .krea-studio-root.light-theme .preset-chip-x {
-    color: #664D5F;
-  }
-  .krea-studio-root.light-theme .plan-btn.secondary {
-    background: #F7ECF2;
-    border: 1px solid #E6D3DF;
-    color: #1A121D;
-  }
-  .krea-studio-root.light-theme .scene-num {
-    background: #ede9fe;
-    border: 1px solid #c4b5fd;
-    color: #5b21b6;
-  }
-  .krea-studio-root.light-theme .shoot-scene-btn {
-    background: #ede9fe;
-    border-color: #8b5cf6;
-    color: #5b21b6;
-  }
-  .krea-studio-root.light-theme .shoot-scene-btn:hover:not(:disabled) {
-    background: #6d28d9;
-    border-color: #6d28d9;
+  .krea-studio-root.light-theme .story-util-btn.stitch:hover:not(:disabled) {
+    background: #059669;
+    border-color: #059669;
     color: #ffffff;
   }
   .krea-studio-root.light-theme .add-scene-inline-btn {
