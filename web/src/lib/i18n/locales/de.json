@@ -1908,5 +1908,8 @@
   "local_vision_downloading": "Vision-Modell wird geladen: {pct}%",
   "local_vision_ready": "Fotoanalyse-Modell bereit",
   "local_vision_later_hint": "Sie können dies später unter Einstellungen → AI-Node aktivieren.",
-  "device_index_scanning_progress": "Scanne{folder}: {scanned} geprüft ({docs} Dok., {photos} Fotos)"
+  "device_index_scanning_progress": "Scanne{folder}: {scanned} geprüft ({docs} Dok., {photos} Fotos)",
+  "device_index_reindex": "Bereits indexierte Dateien neu indexieren",
+  "device_index_clean_previews": "Vorschauen aus DB löschen",
+  "device_index_previews_cleaned": "Vorschauen aus DB gelöscht: {count}"
 }

@@ -1909,5 +1909,8 @@
   "local_vision_downloading": "Downloading vision model: {pct}%",
   "local_vision_ready": "Photo analysis model ready",
   "local_vision_later_hint": "You can enable this later in Settings → AI Node.",
-  "device_index_scanning_progress": "Scanning{folder}: {scanned} checked ({docs} docs, {photos} photos)"
+  "device_index_scanning_progress": "Scanning{folder}: {scanned} checked ({docs} docs, {photos} photos)",
+  "device_index_reindex": "Re-index already indexed files",
+  "device_index_clean_previews": "Clean previews from DB",
+  "device_index_previews_cleaned": "Cleaned previews from DB: {count}"
 }

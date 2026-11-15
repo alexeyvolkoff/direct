@@ -1908,5 +1908,8 @@
   "local_vision_downloading": "Pobieranie modelu wizji: {pct}%",
   "local_vision_ready": "Model analizy zdjęć gotowy",
   "local_vision_later_hint": "Możesz to włączyć później w Ustawienia → Węzeł AI.",
-  "device_index_scanning_progress": "Skanowanie{folder}: sprawdzono {scanned} ({docs} dok., {photos} zdjęć)"
+  "device_index_scanning_progress": "Skanowanie{folder}: sprawdzono {scanned} ({docs} dok., {photos} zdjęć)",
+  "device_index_reindex": "Zaindeksuj ponownie już dodane pliki",
+  "device_index_clean_previews": "Wyczyść podglądy z bazy",
+  "device_index_previews_cleaned": "Wyczyszczono podglądy z bazy: {count}"
 }

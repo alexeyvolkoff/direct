@@ -1909,5 +1909,8 @@
   "local_vision_downloading": "Загрузка модели зрения: {pct}%",
   "local_vision_ready": "Модель для анализа фото готова",
   "local_vision_later_hint": "Можно включить позже в Настройки → AI-нода.",
-  "device_index_scanning_progress": "Сканирование{folder}: проверено {scanned} ({docs} док., {photos} фото)"
+  "device_index_scanning_progress": "Сканирование{folder}: проверено {scanned} ({docs} док., {photos} фото)",
+  "device_index_reindex": "Переиндексировать уже добавленные",
+  "device_index_clean_previews": "Очистить превью из базы",
+  "device_index_previews_cleaned": "Очищено превью из базы: {count}"
 }

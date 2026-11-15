@@ -9,6 +9,8 @@ import android.content.IntentFilter;
 import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.location.Address;
+import android.location.Geocoder;
 import android.media.MediaMetadataRetriever;
 import android.media.ThumbnailUtils;
 import android.net.Uri;
@@ -35,6 +37,10 @@ import com.getcapacitor.annotation.Permission;
 import com.google.android.gms.tasks.Task;
 import com.google.android.gms.tasks.Tasks;
 import com.google.mlkit.vision.common.InputImage;
+import com.google.mlkit.vision.face.Face;
+import com.google.mlkit.vision.face.FaceDetection;
+import com.google.mlkit.vision.face.FaceDetector;
+import com.google.mlkit.vision.face.FaceDetectorOptions;
 import com.google.mlkit.vision.label.ImageLabel;
 import com.google.mlkit.vision.label.ImageLabeler;
 import com.google.mlkit.vision.label.ImageLabeling;
@@ -43,6 +49,9 @@ import com.google.mlkit.vision.text.Text;
 import com.google.mlkit.vision.text.TextRecognition;
 import com.google.mlkit.vision.text.TextRecognizer;
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions;
+
+import java.util.Locale;
+import java.util.concurrent.ConcurrentHashMap;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -792,10 +801,75 @@ public class NativeStoragePlugin extends Plugin {
         }
     }
 
+    private final ConcurrentHashMap<String, String> geocodeCache = new ConcurrentHashMap<>();
+    private volatile ImageLabeler sharedLabeler = null;
+    private volatile TextRecognizer sharedRecognizer = null;
+    private volatile FaceDetector sharedFaceDetector = null;
+
+    private synchronized ImageLabeler getSharedLabeler() {
+        if (sharedLabeler == null) {
+            sharedLabeler = ImageLabeling.getClient(
+                    new ImageLabelerOptions.Builder().setConfidenceThreshold(0.55f).build()
+            );
+        }
+        return sharedLabeler;
+    }
+
+    private synchronized TextRecognizer getSharedRecognizer() {
+        if (sharedRecognizer == null) {
+            sharedRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
+        }
+        return sharedRecognizer;
+    }
+
+    private synchronized FaceDetector getSharedFaceDetector() {
+        if (sharedFaceDetector == null) {
+            sharedFaceDetector = FaceDetection.getClient(
+                    new FaceDetectorOptions.Builder()
+                            .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
+                            .build()
+            );
+        }
+        return sharedFaceDetector;
+    }
+
+    @SuppressWarnings("deprecation")
+    private String reverseGeocodeCached(double lat, double lon) {
+        String key = String.format(Locale.US, "%.2f,%.2f", lat, lon);
+        String cached = geocodeCache.get(key);
+        if (cached != null) return cached;
+
+        String resolved = "";
+        try {
+            if (Geocoder.isPresent()) {
+                Geocoder geocoder = new Geocoder(getContext(), Locale.getDefault());
+                List<Address> list = geocoder.getFromLocation(lat, lon, 1);
+                if (list != null && !list.isEmpty()) {
+                    Address a = list.get(0);
+                    String city = a.getLocality();
+                    if (city == null || city.isEmpty()) city = a.getSubAdminArea();
+                    if (city == null || city.isEmpty()) city = a.getAdminArea();
+                    String country = a.getCountryName();
+                    if (city != null && !city.isEmpty() && country != null && !country.isEmpty()) {
+                        resolved = city + ", " + country;
+                    } else if (city != null && !city.isEmpty()) {
+                        resolved = city;
+                    } else if (country != null && !country.isEmpty()) {
+                        resolved = country;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Log.d(TAG, "reverseGeocode failed: " + e.getMessage());
+        }
+        geocodeCache.put(key, resolved);
+        return resolved;
+    }
+
     @PluginMethod
     public void analyzeImage(PluginCall call) {
         String path = call.getString("path", "");
-        int maxDim = call.getData().optInt("maxDim", 1024);
+        int maxDim = call.getData().optInt("maxDim", 768);
         if (path.isEmpty()) {
             call.reject("Path is required");
             return;
@@ -825,25 +899,30 @@ public class NativeStoragePlugin extends Plugin {
             }
 
             int rotation = 0;
+            float[] latLong = new float[2];
+            boolean hasGps = false;
             try {
                 androidx.exifinterface.media.ExifInterface exif = new androidx.exifinterface.media.ExifInterface(target.getAbsolutePath());
                 int ori = exif.getAttributeInt(androidx.exifinterface.media.ExifInterface.TAG_ORIENTATION, androidx.exifinterface.media.ExifInterface.ORIENTATION_NORMAL);
                 if (ori == androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_90) rotation = 90;
                 else if (ori == androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_180) rotation = 180;
                 else if (ori == androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_270) rotation = 270;
+                hasGps = exif.getLatLong(latLong);
             } catch (Exception ignored) {}
 
+            final String location = hasGps ? reverseGeocodeCached(latLong[0], latLong[1]) : "";
+
             InputImage inputImage = InputImage.fromBitmap(bitmap, rotation);
-            ImageLabeler labeler = ImageLabeling.getClient(
-                    new ImageLabelerOptions.Builder().setConfidenceThreshold(0.55f).build()
-            );
-            TextRecognizer recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
+            ImageLabeler labeler = getSharedLabeler();
+            TextRecognizer recognizer = getSharedRecognizer();
+            FaceDetector faceDetector = getSharedFaceDetector();
 
             Task<List<ImageLabel>> labelTask = labeler.process(inputImage);
             Task<Text> textTask = recognizer.process(inputImage);
+            Task<List<Face>> faceTask = faceDetector.process(inputImage);
 
             final Bitmap bitmapToRecycle = bitmap;
-            Tasks.whenAllComplete(labelTask, textTask).addOnCompleteListener(done -> {
+            Tasks.whenAllComplete(labelTask, textTask, faceTask).addOnCompleteListener(done -> {
                 try {
                     JSArray labelsArr = new JSArray();
                     if (labelTask.isSuccessful() && labelTask.getResult() != null) {
@@ -859,20 +938,24 @@ public class NativeStoragePlugin extends Plugin {
                         ocrText = textTask.getResult().getText();
                         if (ocrText != null) ocrText = ocrText.trim();
                     }
+                    int faceCount = 0;
+                    if (faceTask.isSuccessful() && faceTask.getResult() != null) {
+                        faceCount = faceTask.getResult().size();
+                    }
 
                     long elapsed = System.currentTimeMillis() - t0;
-                    Log.i(TAG, "analyzeImage (" + path + ") in " + elapsed + "ms, labels=" + labelsArr.length() + ", ocrLen=" + (ocrText != null ? ocrText.length() : 0));
+                    Log.i(TAG, "analyzeImage (" + path + ") in " + elapsed + "ms, labels=" + labelsArr.length() + ", faces=" + faceCount + ", ocrLen=" + (ocrText != null ? ocrText.length() : 0) + ", loc=" + location);
 
                     JSObject ret = new JSObject();
                     ret.put("labels", labelsArr);
                     ret.put("text", ocrText != null ? ocrText : "");
+                    ret.put("faceCount", faceCount);
+                    ret.put("location", location);
                     ret.put("elapsedMs", elapsed);
                     call.resolve(ret);
                 } catch (Exception e) {
                     call.reject("analyzeImage post-process failed: " + e.getMessage());
                 } finally {
-                    try { labeler.close(); } catch (Exception ignored) {}
-                    try { recognizer.close(); } catch (Exception ignored) {}
                     try { bitmapToRecycle.recycle(); } catch (Exception ignored) {}
                 }
             });

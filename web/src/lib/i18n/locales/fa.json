@@ -1908,5 +1908,8 @@
   "local_vision_downloading": "Downloading vision model: {pct}%",
   "local_vision_ready": "Photo analysis model ready",
   "local_vision_later_hint": "You can enable this later in Settings → AI Node.",
-  "device_index_scanning_progress": "در حال اسکن{folder}: {scanned} بررسی شد ({docs} سند، {photos} عکس)"
+  "device_index_scanning_progress": "در حال اسکن{folder}: {scanned} بررسی شد ({docs} سند، {photos} عکس)",
+  "device_index_reindex": "بازنمایه کردن فایل‌های نمایه‌شده قبلی",
+  "device_index_clean_previews": "پاک کردن پیش‌نمایش‌ها از پایگاه داده",
+  "device_index_previews_cleaned": "پیش‌نمایش‌های پاک‌شده از پایگاه داده: {count}"
 }

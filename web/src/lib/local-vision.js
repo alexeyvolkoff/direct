@@ -136,21 +136,48 @@ export function initLocalVision() {
   return initPromise;
 }
 
-function buildPhotoResult({ labels = [], caption = "", ocr = "", filename = "", exif = null }) {
+function buildPhotoResult({
+  labels = [],
+  caption = "",
+  ocr = "",
+  faceCount = 0,
+  people = [],
+  location = "",
+  filename = "",
+  exif = null,
+}) {
   const parts = [];
   if (caption) parts.push(caption);
-  else if (labels.length) parts.push(`Photo: ${labels.join(", ")}`);
+  else if (labels.length) parts.push(labels.join(", "));
+  if (people.length > 0) {
+    parts.push(`People: ${people.join(", ")}`);
+  } else if (faceCount > 0) {
+    parts.push(faceCount === 1 ? "Person" : `People: ${faceCount}`);
+  }
   if (ocr) parts.push(`Text: ${ocr.slice(0, 1500)}`);
   if (exif?.takenAt) parts.push(`Date: ${exif.takenAt}`);
-  if (exif?.gpsString) parts.push(`GPS: ${exif.gpsString}`);
+  const loc = String(location || "").trim();
+  if (loc) parts.push(`Location: ${loc}`);
+  else if (exif?.gpsString) parts.push(`GPS: ${exif.gpsString}`);
 
   const tags = ["photo"];
-  for (const lbl of labels.slice(0, 5)) {
-    const clean = String(lbl || "").trim().toLowerCase();
+  const addTag = (t) => {
+    const clean = String(t || "").trim().toLowerCase();
     if (clean && !tags.includes(clean)) tags.push(clean);
+  };
+  if (people.length > 0 || faceCount > 0) {
+    addTag("person");
+    if (faceCount === 1) addTag("portrait");
+    else if (faceCount > 1) addTag("group");
+    for (const p of people) addTag(p);
   }
-  if (ocr && !tags.includes("ocr")) tags.push("ocr");
-  if (exif?.gpsString && !tags.includes("gps")) tags.push("gps");
+  for (const lbl of labels.slice(0, 5)) addTag(lbl);
+  if (loc) {
+    for (const part of loc.split(",")) addTag(part);
+  } else if (exif?.gpsString) {
+    addTag("gps");
+  }
+  if (ocr) addTag("ocr");
 
   return {
     title: filename || "Photo",
@@ -159,15 +186,50 @@ function buildPhotoResult({ labels = [], caption = "", ocr = "", filename = "", 
   };
 }
 
-export async function recognizeImageNative(drive, path, { filename = "", exif = null } = {}) {
+async function matchPeopleOnNode(httpDrive, drive, path, signal) {
+  if (!httpDrive || typeof httpDrive.fetch !== "function" || typeof drive.getThumbnail !== "function") {
+    return [];
+  }
+  try {
+    const thumbDataUrl = await drive.getThumbnail(path, 640, 640);
+    if (!thumbDataUrl) return [];
+    const res = await httpDrive.fetch("/api/faces/detect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ image_b64: thumbDataUrl }),
+      signal,
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const names = [];
+    for (const f of data?.faces || []) {
+      const name = String(f?.name || "").trim();
+      if (name && !names.includes(name)) names.push(name);
+    }
+    return names;
+  } catch (e) {
+    if (e?.name === "AbortError") throw e;
+    return [];
+  }
+}
+
+export async function recognizeImageNative(drive, path, { filename = "", exif = null, httpDrive = null, signal = null } = {}) {
   if (!isLocalVisionEnabled()) {
     throw new Error("Local vision disabled");
   }
-  const res = await drive.analyzeImage(path, 1024);
+  const res = await drive.analyzeImage(path, 768);
   const labels = Array.isArray(res?.labels) ? res.labels : [];
   const ocr = typeof res?.text === "string" ? res.text.trim() : "";
-  console.log(`[local-vision] native analyzed ${filename} in ${res?.elapsedMs ?? "?"}ms: labels=${labels.length}, ocrLen=${ocr.length}`);
-  return buildPhotoResult({ labels, ocr, filename, exif });
+  const faceCount = Number(res?.faceCount || 0);
+  const location = typeof res?.location === "string" ? res.location.trim() : "";
+  let people = [];
+  if (faceCount > 0 && httpDrive) {
+    people = await matchPeopleOnNode(httpDrive, drive, path, signal);
+  }
+  console.log(
+    `[local-vision] native analyzed ${filename} in ${res?.elapsedMs ?? "?"}ms: labels=${labels.length}, faces=${faceCount}, people=${people.length}, ocrLen=${ocr.length}, loc=${location || "-"}`
+  );
+  return buildPhotoResult({ labels, ocr, faceCount, people, location, filename, exif });
 }
 
 export async function recognizeImageLocal(jpegBytes, { filename = "", exif = null, signal = null } = {}) {

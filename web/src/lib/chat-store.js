@@ -799,8 +799,13 @@ export class ChatStore {
       timestamp: String(memo.timestamp || Date.now()),
       updated: new Date().toISOString(),
     };
+    if (memo.hasPreview) {
+      entry.hasPreview = true;
+    }
     if (memo.imagePreview) {
       entry.imagePreview = memo.imagePreview;
+    } else if (memo.hasPreview) {
+      entry.imagePreview = null;
     }
     if (memo.content_hash) {
       entry.content_hash = String(memo.content_hash);
@@ -831,6 +836,27 @@ export class ChatStore {
       this.gun.get("knowledge_" + this.tokenHash).get(memoryId).put(serialized, () => finish());
       setTimeout(finish, 1200);
     });
+  }
+
+  async stripKnowledgePreviews() {
+    await this.ready;
+    let cleaned = 0;
+    for (const [memoryId, cached] of this.knowledgeCache.entries()) {
+      if (!cached || cached.isChunk) continue;
+      const docId = cached.document_id || "";
+      if (!docId || docId.startsWith("user:note:")) continue;
+      if (!cached.imagePreview && !cached.image_preview) continue;
+      const updated = { ...cached, hasPreview: true };
+      delete updated.imagePreview;
+      delete updated.image_preview;
+      this.knowledgeCache.set(memoryId, updated);
+      await idbPut("cards", { key: `${this.tokenHash}:${memoryId}`, tokenHash: this.tokenHash, memoryId, card: updated });
+      this.gun.get("knowledge_" + this.tokenHash).get(memoryId).put({ imagePreview: null, hasPreview: true });
+      cleaned++;
+      if (cleaned % 20 === 0) await new Promise((r) => setTimeout(r, 10));
+    }
+    if (cleaned > 0) this._notifyKnowledge();
+    return { cleaned };
   }
 
   static cosineSimilarity(a, b) {

@@ -1908,5 +1908,8 @@
   "local_vision_downloading": "Descargando modelo de visión: {pct}%",
   "local_vision_ready": "Modelo de análisis de fotos listo",
   "local_vision_later_hint": "Puedes activarlo más tarde en Ajustes → Nodo de IA.",
-  "device_index_scanning_progress": "Escaneando{folder}: {scanned} revisados ({docs} docs, {photos} fotos)"
+  "device_index_scanning_progress": "Escaneando{folder}: {scanned} revisados ({docs} docs, {photos} fotos)",
+  "device_index_reindex": "Reindexar archivos ya indexados",
+  "device_index_clean_previews": "Limpiar vistas previas de la BD",
+  "device_index_previews_cleaned": "Vistas previas limpiadas de la BD: {count}"
 }

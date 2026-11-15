@@ -1908,5 +1908,8 @@
   "local_vision_downloading": "Download modello vision: {pct}%",
   "local_vision_ready": "Modello per analisi foto pronto",
   "local_vision_later_hint": "Puoi attivarlo più tardi in Impostazioni → Nodo IA.",
-  "device_index_scanning_progress": "Scansione{folder}: {scanned} controllati ({docs} doc, {photos} foto)"
+  "device_index_scanning_progress": "Scansione{folder}: {scanned} controllati ({docs} doc, {photos} foto)",
+  "device_index_reindex": "Reindicizza i file già indicizzati",
+  "device_index_clean_previews": "Pulisci anteprime dal DB",
+  "device_index_previews_cleaned": "Anteprime rimosse dal DB: {count}"
 }

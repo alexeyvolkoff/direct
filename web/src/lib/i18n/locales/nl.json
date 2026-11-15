@@ -1908,5 +1908,8 @@
   "local_vision_downloading": "Vision-model downloaden: {pct}%",
   "local_vision_ready": "Fotoanalysemodel gereed",
   "local_vision_later_hint": "Je kunt dit later inschakelen in Instellingen → AI-node.",
-  "device_index_scanning_progress": "Scannen{folder}: {scanned} gecontroleerd ({docs} doc., {photos} foto’s)"
+  "device_index_scanning_progress": "Scannen{folder}: {scanned} gecontroleerd ({docs} doc., {photos} foto’s)",
+  "device_index_reindex": "Reeds geïndexeerde bestanden opnieuw indexeren",
+  "device_index_clean_previews": "Voorbeelden uit DB wissen",
+  "device_index_previews_cleaned": "Voorbeelden gewist uit DB: {count}"
 }

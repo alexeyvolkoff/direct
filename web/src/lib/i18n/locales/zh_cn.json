@@ -1908,5 +1908,8 @@
   "local_vision_downloading": "Downloading vision model: {pct}%",
   "local_vision_ready": "Photo analysis model ready",
   "local_vision_later_hint": "You can enable this later in Settings → AI Node.",
-  "device_index_scanning_progress": "正在扫描{folder}：已检查 {scanned}（{docs} 个文档，{photos} 张照片）"
+  "device_index_scanning_progress": "正在扫描{folder}：已检查 {scanned}（{docs} 个文档，{photos} 张照片）",
+  "device_index_reindex": "重新索引已索引的文件",
+  "device_index_clean_previews": "从数据库清除预览图",
+  "device_index_previews_cleaned": "已从数据库清除预览图：{count}"
 }

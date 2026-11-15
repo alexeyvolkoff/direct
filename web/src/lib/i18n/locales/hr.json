@@ -1908,5 +1908,8 @@
   "local_vision_downloading": "Downloading vision model: {pct}%",
   "local_vision_ready": "Photo analysis model ready",
   "local_vision_later_hint": "You can enable this later in Settings → AI Node.",
-  "device_index_scanning_progress": "Skeniranje{folder}: provjereno {scanned} ({docs} dok., {photos} fotografija)"
+  "device_index_scanning_progress": "Skeniranje{folder}: provjereno {scanned} ({docs} dok., {photos} fotografija)",
+  "device_index_reindex": "Ponovno indeksiraj već indeksirane datoteke",
+  "device_index_clean_previews": "Očisti preglede iz baze",
+  "device_index_previews_cleaned": "Očišćeni pregledi iz baze: {count}"
 }

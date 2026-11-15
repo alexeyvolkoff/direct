@@ -1908,5 +1908,8 @@
   "local_vision_downloading": "מוריד מודל ראייה: {pct}%",
   "local_vision_ready": "מודל ניתוח התמונות מוכן",
   "local_vision_later_hint": "ניתן להפעיל זאת מאוחר יותר בהגדרות ← צומת AI.",
-  "device_index_scanning_progress": "סורק{folder}: נבדקו {scanned} ({docs} מסמכים, {photos} תמונות)"
+  "device_index_scanning_progress": "סורק{folder}: נבדקו {scanned} ({docs} מסמכים, {photos} תמונות)",
+  "device_index_reindex": "אנדקס מחדש קבצים שכבר אונדקסו",
+  "device_index_clean_previews": "נקה תצוגות מקדימות ממסד הנתונים",
+  "device_index_previews_cleaned": "תצוגות מקדימות שנוקו ממסד הנתונים: {count}"
 }

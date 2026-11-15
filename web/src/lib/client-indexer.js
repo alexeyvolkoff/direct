@@ -241,6 +241,7 @@ export async function scanDeviceForIndexable(drive, {
   chatStore = null,
   extraCards = [],
   maxScanFiles = 1500,
+  reindexExisting = false,
   onProgress = null,
 } = {}) {
   if (!drive || typeof drive.getFiles !== "function") {
@@ -339,7 +340,7 @@ export async function scanDeviceForIndexable(drive, {
         prev.size === size &&
         prev.mtime === mtimeMs &&
         (prev.empty || existingDocs.has(docId) || (prev.hash && existingHashes.has(prev.hash)));
-      if (manifestStillExists || existingDocs.has(docId)) {
+      if (!reindexExisting && (manifestStillExists || existingDocs.has(docId))) {
         skippedCount++;
         continue;
       }
@@ -419,6 +420,7 @@ class ClientIndexerRunner {
     includeDocs = true,
     includePhotos = true,
     timelineDays = 30,
+    reindexExisting = false,
   }) {
     if (!drive || !httpDrive || !chatStore) {
       indexerStore.set({ ...initialState, status: "error", error: "Drive, AI node, or ChatStore unavailable" });
@@ -437,6 +439,7 @@ class ClientIndexerRunner {
       timelineDays,
       chatStore,
       extraCards,
+      reindexExisting,
     });
 
     const queue = [...docs, ...photos].sort((a, b) => (b.mtimeMs || 0) - (a.mtimeMs || 0));
@@ -484,7 +487,7 @@ class ClientIndexerRunner {
         if (item.kind === "doc") {
           const bytes = await readDriveFileBytes(drive, item.path, item.size);
           const contentHash = await computeContentHash(bytes, item.size || bytes.length);
-          if (existingHashes.has(contentHash)) {
+          if (!reindexExisting && existingHashes.has(contentHash)) {
             manifest[item.docId] = { size: item.size, mtime: item.mtimeMs, hash: contentHash, at: Date.now() };
             saveManifest(manifest);
             skipped++;
@@ -555,13 +558,12 @@ class ClientIndexerRunner {
             contentHash = await computeContentHash(rawBytes, item.size || rawBytes.length);
           }
 
-          if (contentHash && existingHashes.has(contentHash)) {
+          if (!reindexExisting && contentHash && existingHashes.has(contentHash)) {
             manifest[item.docId] = { size: item.size, mtime: item.mtimeMs, hash: contentHash, at: Date.now() };
             saveManifest(manifest);
             skipped++;
           } else {
             let uploadBytes = null;
-            let previewDataUrl = "";
             let data = null;
 
             if (isLocalVisionEnabled() && typeof drive.analyzeImage === "function") {
@@ -569,10 +571,9 @@ class ClientIndexerRunner {
                 const localRes = await recognizeImageNative(drive, item.path, {
                   filename: item.name,
                   exif,
+                  httpDrive,
+                  signal,
                 });
-                if (typeof drive.getThumbnail === "function") {
-                  previewDataUrl = (await drive.getThumbnail(item.path, 320, 320)) || "";
-                }
                 const [emb] = await embedTexts(httpDrive, [localRes.annotation], 1, signal);
                 data = {
                   title: localRes.title,
@@ -592,8 +593,6 @@ class ClientIndexerRunner {
                 const bigUrl = await drive.getThumbnail(item.path, 1024, 1024);
                 if (bigUrl) {
                   uploadBytes = await dataUrlToBytes(bigUrl);
-                  const smallUrl = await drive.getThumbnail(item.path, 320, 320);
-                  previewDataUrl = smallUrl || bigUrl;
                 }
               }
               if (!uploadBytes) {
@@ -602,8 +601,6 @@ class ClientIndexerRunner {
                 const blob = new Blob([rawBytes]);
                 const resized = await resizeBlobToJpeg(blob, 1024, 0.78);
                 uploadBytes = new Uint8Array(await resized.blob.arrayBuffer());
-                const thumb = await resizeBlobToJpeg(blob, 320, 0.72);
-                previewDataUrl = thumb.dataUrl;
               }
 
               if (isLocalVisionEnabled()) {
@@ -659,14 +656,14 @@ class ClientIndexerRunner {
               tags: Array.isArray(data.tags) ? data.tags : ["photo"],
               collection: "user",
               content_hash: contentHash || data.content_hash || "",
-              imagePreview: previewDataUrl || data.imagePreview || "",
+              hasPreview: true,
               annotation_embedding: Array.isArray(data.annotation_embedding) ? data.annotation_embedding : null,
               chunks: Array.isArray(data.chunks) ? data.chunks : [],
               timestamp: item.mtimeMs || Date.now(),
             });
             if (contentHash) existingHashes.add(contentHash);
             manifest[item.docId] = { size: item.size, mtime: item.mtimeMs, hash: contentHash, at: Date.now() };
-            saveManifest(manifest);
+            if (processed % 10 === 0) saveManifest(manifest);
             indexed++;
           }
         }
@@ -693,7 +690,10 @@ class ClientIndexerRunner {
         avgMsPerItem: Math.round(avgMs),
         etaSeconds,
       }));
+      await new Promise((r) => setTimeout(r, 35));
     }
+
+    saveManifest(manifest);
 
     if (!signal.aborted) {
       indexerStore.update((s) => ({

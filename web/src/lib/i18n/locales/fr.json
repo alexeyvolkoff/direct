@@ -1908,5 +1908,8 @@
   "local_vision_downloading": "Téléchargement du modèle vision : {pct}%",
   "local_vision_ready": "Modèle d'analyse photo prêt",
   "local_vision_later_hint": "Vous pourrez l'activer plus tard dans Paramètres → Nœud IA.",
-  "device_index_scanning_progress": "Analyse{folder} : {scanned} vérifiés ({docs} docs, {photos} photos)"
+  "device_index_scanning_progress": "Analyse{folder} : {scanned} vérifiés ({docs} docs, {photos} photos)",
+  "device_index_reindex": "Réindexer les fichiers déjà indexés",
+  "device_index_clean_previews": "Supprimer les aperçus de la BD",
+  "device_index_previews_cleaned": "Aperçus supprimés de la BD : {count}"
 }

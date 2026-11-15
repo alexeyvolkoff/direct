@@ -1908,5 +1908,8 @@
   "local_vision_downloading": "Görüş modeli indiriliyor: {pct}%",
   "local_vision_ready": "Fotoğraf analizi modeli hazır",
   "local_vision_later_hint": "Bunu daha sonra Ayarlar → AI Düğümü bölümünden etkinleştirebilirsiniz.",
-  "device_index_scanning_progress": "Taranıyor{folder}: {scanned} kontrol edildi ({docs} belge, {photos} fotoğraf)"
+  "device_index_scanning_progress": "Taranıyor{folder}: {scanned} kontrol edildi ({docs} belge, {photos} fotoğraf)",
+  "device_index_reindex": "Zaten dizine eklenmiş dosyaları yeniden dizinle",
+  "device_index_clean_previews": "Önizlemeleri VT’den temizle",
+  "device_index_previews_cleaned": "VT’den temizlenen önizlemeler: {count}"
 }
