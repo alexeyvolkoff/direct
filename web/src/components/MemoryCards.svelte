@@ -222,8 +222,11 @@
   }
 
   let cardImgFailed = {};
+  function cardKey(item) {
+    return item?.id || item?._id || item?.memory_id || item?.document_id || item?.path || "";
+  }
   function markCardImageFailed(item) {
-    const key = item?.id || item?.document_id || item?.imagePreview;
+    const key = cardKey(item);
     if (!key) return;
     if (!cardImgFailed[key]) {
       cardImgFailed[key] = true;
@@ -276,19 +279,23 @@
     };
   }
 
-  function cardPreview(item, size = 480) {
+  function cardPreview(item, size = 480, failedMap = cardImgFailed, thumbsMap = thumbUrls) {
     if (!item || !hasCardImage(item)) return "";
     const docId = item.document_id || item.path || "";
-    const key = item.id || docId;
-    if (cardImgFailed[key]) {
-      return thumbUrls[docId] || item.imagePreview || item.image_preview || "";
+    const key = cardKey(item);
+    const cachedPreview = thumbsMap[docId] || item.imagePreview || item.image_preview || "";
+    if (cachedPreview) {
+      return cachedPreview;
+    }
+    if (failedMap[key]) {
+      return "";
     }
     if (isFolderCard(item)) {
       if (docId.startsWith("/")) {
         const { seg, path } = previewSegAndPath(docId);
         return `/p2p/${seg}${encodeURI(path)}?cover=${size}`;
       }
-      return thumbUrls[docId] || item.imagePreview || item.image_preview || "";
+      return "";
     }
     if (docId.startsWith("http://") || docId.startsWith("https://")) {
       return docId;
@@ -297,7 +304,7 @@
       const { seg, path } = previewSegAndPath(docId);
       return `/p2p/${seg}${encodeURI(path)}?resize=true&width=${size}&height=${size}`;
     }
-    return thumbUrls[docId] || item.imagePreview || item.image_preview || "";
+    return "";
   }
 
   function hasCardImage(item) {
@@ -1172,7 +1179,7 @@
                   <div class="card-image-preview-wrap card-folder-cover-wrap">
                     <img
                       class="card-image-preview"
-                      src={cardPreview(item, 360)}
+                      src={cardPreview(item, 360, cardImgFailed, thumbUrls)}
                       alt={item.title || item.document_id || "Folder cover"}
                       loading="lazy"
                       on:error={() => markCardImageFailed(item)}
@@ -1186,7 +1193,7 @@
                   </div>
                 {/if}
               {:else if hasCardImage(item)}
-                {#if cardImgFailed[item.id || item.document_id] && !thumbUrls[item?.document_id] && !item.imagePreview && !item.image_preview}
+                {#if cardImgFailed[cardKey(item)] && !thumbUrls[item?.document_id] && !item.imagePreview && !item.image_preview}
                   <div class="card-image-preview-wrap image-on-another-device">
                     <span class="another-device-hint">{$_("on_another_device", {}, "(on another device)")}</span>
                   </div>
@@ -1194,7 +1201,7 @@
                   <div class="card-image-preview-wrap">
                     <img
                       class="card-image-preview"
-                      src={cardPreview(item, 480)}
+                      src={cardPreview(item, 480, cardImgFailed, thumbUrls)}
                       alt={item.title || item.document_id || "Image"}
                       loading="lazy"
                       on:error={() => markCardImageFailed(item)}
