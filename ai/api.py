@@ -2488,6 +2488,7 @@ class ChatStreamInput(BaseModel):
     attached_docs: list | None = None
     device_push: dict | None = None
     mcp_keys: dict | None = None
+    auto_intent: bool | None = None
 
 class ImportInput(BaseModel):
     omd_key: str
@@ -4113,7 +4114,8 @@ async def chat_stream_post(request: Request, data: ChatStreamInput):
         rag_focus=data.rag_focus,
         attached_docs=data.attached_docs,
         device_push=data.device_push,
-        mcp_keys=data.mcp_keys
+        mcp_keys=data.mcp_keys,
+        auto_intent=data.auto_intent,
     )
 
 @app.get("/chat/stream")
@@ -4129,7 +4131,8 @@ async def chat_stream(request: Request, prompt: str, omd_key: str | None = Depen
                       rag_focus: dict|None = None,
                       attached_docs: list|None = None,
                       device_push: dict|None = None,
-                      mcp_keys: dict|None = None):
+                      mcp_keys: dict|None = None,
+                      auto_intent: bool|None = None):
     agentic_tunnel.note_request(request, omd_key=omd_key, settings_payload=provided_settings)
     logging.info(f"Chat stream request: omd_key={omd_key[:10] if omd_key else 'None'}..., device_push={device_push}")
     chat = chat or "default"
@@ -4285,13 +4288,18 @@ async def chat_stream(request: Request, prompt: str, omd_key: str | None = Depen
                     raw_intent = f"Focused /learn follow-up: {focus_doc_id}"
                     logging.info(f"[chat] focused question: intent forced to explain, no classification ({focus_doc_id})")
                 else:
-                    raw_auto_intent = data.get("auto_intent") if "auto_intent" in data else ctx.settings.get("auto_intent", True)
+                    if auto_intent is not None:
+                        raw_auto_intent = auto_intent
+                    elif isinstance(provided_settings, dict) and "auto_intent" in provided_settings:
+                        raw_auto_intent = provided_settings.get("auto_intent")
+                    else:
+                        raw_auto_intent = ctx.settings.get("auto_intent", True)
                     auto_intent_enabled = str(raw_auto_intent).strip().lower() not in ("false", "0", "off", "no")
                     if not auto_intent_enabled:
                         intent = "chat"
                         search_query = ""
                         raw_intent = "Auto-intent disabled (per-chat): chat"
-                        logging.info("[chat] auto_intent=False for this chat — skipping LLM intent classification, using 'chat'")
+                        logging.info("[chat] auto_intent=False for this chat, skipping LLM intent classification, using 'chat'")
                     else:
                         raw_intent = await core_service.classify_user_intent(ctx, prompt, chat, provided_history=provided_history)
                         intent, search_query = core_service.parse_intent_and_query(raw_intent, default_prompt=prompt)
