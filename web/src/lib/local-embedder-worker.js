@@ -4,7 +4,7 @@
  * SentenceTransformer vector space, cached in the browser's Cache API.
  */
 import { pipeline, env } from "@huggingface/transformers";
-import { configureLocalOrtWasm } from "./ort-wasm-env.js";
+import { configureLocalOrtWasm, createModelProgressEmitter } from "./ort-wasm-env.js";
 
 configureLocalOrtWasm(env);
 
@@ -13,23 +13,7 @@ let extractorPromise = null;
 
 async function getExtractor() {
   if (!extractorPromise) {
-    const fileProgress = new Map();
-    const emitProgress = (info) => {
-      if (!info) return;
-      if (info.status === "progress" && info.file) {
-        const pct = typeof info.progress === "number" ? info.progress : 0;
-        fileProgress.set(info.file, pct);
-        const vals = Array.from(fileProgress.values());
-        const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : pct;
-        self.postMessage({
-          type: "progress",
-          file: info.file.split("/").pop() || info.file,
-          progress: Math.min(99, Math.round(avg)),
-        });
-      } else if (info.status === "done" && info.file) {
-        fileProgress.set(info.file, 100);
-      }
-    };
+    const emitProgress = createModelProgressEmitter((msg) => self.postMessage(msg));
 
     extractorPromise = pipeline("feature-extraction", MODEL_ID, {
       dtype: "q8",

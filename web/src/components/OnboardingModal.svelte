@@ -1344,7 +1344,7 @@
                   checked={$localEmbedderStore.enabled}
                   on:change={(e) => setLocalEmbeddingsEnabled(e.currentTarget.checked)}
                 />
-                <span>{$_("local_embeddings_toggle", {}, "Локальное извлечение данных (WASM / в браузере)")}</span>
+                <span>{$_("local_embeddings_toggle", {}, "Локальное извлечение данных (~120 МБ)")}</span>
               </label>
               {#if $localEmbedderStore.enabled}
                 {#if $localEmbedderStore.status === "downloading"}
@@ -1358,7 +1358,7 @@
                     <div class="local-embed-bar"><div class="local-embed-fill" style="width: {$localEmbedderStore.progress}%"></div></div>
                   </div>
                 {:else if $localEmbedderStore.status === "ready"}
-                  <div class="local-embed-ready">✓ {$_("local_embeddings_ready", {}, "Модель Xenova/paraphrase-multilingual-MiniLM-L12-v2 готова")}</div>
+                  <div class="local-embed-ready">✓ {$_("local_embeddings_ready", {}, "Модель для документов готова")}</div>
                 {:else if $localEmbedderStore.status === "error"}
                   <div class="local-embed-err">{$localEmbedderStore.error}</div>
                 {/if}
@@ -1374,7 +1374,7 @@
                   checked={$localVisionStore.enabled}
                   on:change={(e) => setLocalVisionEnabled(e.currentTarget.checked)}
                 />
-                <span>{$_("local_vision_toggle", {}, "Локальный анализ фото и OCR (Florence-2, ~250 МБ)")}</span>
+                <span>{$_("local_vision_toggle", {}, "Локальный анализ фото (~250 МБ)")}</span>
               </label>
               {#if $localVisionStore.enabled}
                 {#if $localVisionStore.status === "downloading"}
@@ -1388,7 +1388,7 @@
                     <div class="local-embed-bar"><div class="local-embed-fill" style="width: {$localVisionStore.progress}%"></div></div>
                   </div>
                 {:else if $localVisionStore.status === "ready"}
-                  <div class="local-embed-ready">✓ {$_("local_vision_ready", {}, "Модель Florence-2-base-ft готова")}</div>
+                  <div class="local-embed-ready">✓ {$_("local_vision_ready", {}, "Модель для анализа фото готова")}</div>
                 {:else if $localVisionStore.status === "error"}
                   <div class="local-embed-err">{$localVisionStore.error}</div>
                 {/if}
@@ -1415,7 +1415,7 @@
               <button class="btn-primary" on:click={goToDoneStep}>
                 {#if $indexerStore.status === "running" || $indexerStore.status === "paused"}
                   <span>{$_("onboarding_index_bg_next", {}, "Продолжить в фоне")}</span>
-                {:else if $indexerStore.status === "done"}
+                {:else if $indexerStore.status === "done" || $indexerStore.status === "scanning" || $localEmbedderStore.enabled || $localVisionStore.enabled}
                   <span>{$_("onboarding_btn_next", {}, "Далее")}</span>
                 {:else}
                   <span>{$_("onboarding_btn_skip", {}, "Пропустить")}</span>

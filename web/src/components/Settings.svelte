@@ -3380,10 +3380,10 @@
                     checked={$localEmbedderStore.enabled}
                     on:change={(e) => setLocalEmbeddingsEnabled(e.currentTarget.checked)}
                   />
-                  <span>{$_("local_embeddings_toggle", {}, "Local data extraction (WASM / in-browser)")}</span>
+                  <span>{$_("local_embeddings_toggle", {}, "Local data extraction (~120 MB)")}</span>
                 </label>
                 <p class="card-subtext">
-                  {$_("local_embeddings_desc", {}, "Vectorize documents locally using Xenova/paraphrase-multilingual-MiniLM-L12-v2 without sending text to /embed.")}
+                  {$_("local_embeddings_desc", {}, "Process documents and search queries directly on this device without sending text to the server.")}
                 </p>
                 {#if $localEmbedderStore.enabled}
                   {#if $localEmbedderStore.status === "downloading"}
@@ -3397,7 +3397,7 @@
                       <div class="local-embed-bar"><div class="local-embed-fill" style="width: {$localEmbedderStore.progress}%"></div></div>
                     </div>
                   {:else if $localEmbedderStore.status === "ready"}
-                    <div class="local-embed-ready">✓ {$_("local_embeddings_ready", {}, "Model Xenova/paraphrase-multilingual-MiniLM-L12-v2 ready")}</div>
+                    <div class="local-embed-ready">✓ {$_("local_embeddings_ready", {}, "Document indexing model ready")}</div>
                   {:else if $localEmbedderStore.status === "error"}
                     <div class="local-embed-err">{$localEmbedderStore.error}</div>
                   {/if}
@@ -3411,10 +3411,10 @@
                     checked={$localVisionStore.enabled}
                     on:change={(e) => setLocalVisionEnabled(e.currentTarget.checked)}
                   />
-                  <span>{$_("local_vision_toggle", {}, "Local photo analysis & OCR (Florence-2, ~250 MB)")}</span>
+                  <span>{$_("local_vision_toggle", {}, "Local photo analysis (~250 MB)")}</span>
                 </label>
                 <p class="card-subtext">
-                  {$_("local_vision_desc", {}, "Describe photos and extract OCR text locally using onnx-community/Florence-2-base-ft without sending images to the AI node.")}
+                  {$_("local_vision_desc", {}, "Describe photos and recognize text in them directly on this device without sending images to the server.")}
                 </p>
                 {#if $localVisionStore.enabled}
                   {#if $localVisionStore.status === "downloading"}
@@ -3428,7 +3428,7 @@
                       <div class="local-embed-bar"><div class="local-embed-fill" style="width: {$localVisionStore.progress}%"></div></div>
                     </div>
                   {:else if $localVisionStore.status === "ready"}
-                    <div class="local-embed-ready">✓ {$_("local_vision_ready", {}, "Model Florence-2-base-ft ready")}</div>
+                    <div class="local-embed-ready">✓ {$_("local_vision_ready", {}, "Photo analysis model ready")}</div>
                   {:else if $localVisionStore.status === "error"}
                     <div class="local-embed-err">{$localVisionStore.error}</div>
                   {/if}

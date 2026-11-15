@@ -270,7 +270,18 @@ export async function scanDeviceForIndexable(drive, {
     }
     if (!Array.isArray(entries)) return;
 
-    for (const item of entries) {
+    // Sort directories first, then files newest-first so large camera folders
+    // (10k+ old files) never hit maxScanFiles before reaching recent photos.
+    const sorted = [...entries].sort((a, b) => {
+      const aDir = !!(a.isDir || a.type === "folder");
+      const bDir = !!(b.isDir || b.type === "folder");
+      if (aDir !== bDir) return aDir ? -1 : 1;
+      const aMs = a.date ? new Date(a.date).getTime() : 0;
+      const bMs = b.date ? new Date(b.date).getTime() : 0;
+      return bMs - aMs;
+    });
+
+    for (const item of sorted) {
       if (visited >= maxScanFiles) break;
       const name = item.name || item.value || "";
       if (!name || name.startsWith(".")) continue;
@@ -281,6 +292,7 @@ export async function scanDeviceForIndexable(drive, {
         const lower = name.toLowerCase();
         let nextBucket = bucket;
         if (depth === 0) {
+          visited = 0; // Give each root (DCIM, Pictures, Documents, Downloads) its own budget
           if (lower === "documents" || lower === "downloads") nextBucket = "docs";
           else if (lower === "camera" || lower === "pictures" || lower === "dcim") nextBucket = "photos";
           else if (drive.isNative) continue; // On mobile, focus on Documents/Downloads/Camera/Pictures
@@ -292,6 +304,9 @@ export async function scanDeviceForIndexable(drive, {
       visited++;
       const docId = `/${deviceName}/${itemPath.replace(/^\/+/, "")}`;
       const mtimeMs = item.date ? new Date(item.date).getTime() : 0;
+      if (bucket === "photos" && cutoffMs > 0 && mtimeMs > 0 && mtimeMs < cutoffMs) {
+        break; // Remaining files in this directory are older than timelineDays
+      }
       const size = Number(item.size || 0);
       const prev = manifest[docId];
       const manifestStillExists =

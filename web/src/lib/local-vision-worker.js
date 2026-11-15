@@ -9,7 +9,7 @@ import {
   RawImage,
   env,
 } from "@huggingface/transformers";
-import { configureLocalOrtWasm } from "./ort-wasm-env.js";
+import { configureLocalOrtWasm, createModelProgressEmitter } from "./ort-wasm-env.js";
 
 configureLocalOrtWasm(env);
 
@@ -42,23 +42,7 @@ async function loadModelWithFallback(progressCallback) {
 
 async function getBundle() {
   if (!bundlePromise) {
-    const fileProgress = new Map();
-    const emitProgress = (info) => {
-      if (!info) return;
-      if (info.status === "progress" && info.file) {
-        const pct = typeof info.progress === "number" ? info.progress : 0;
-        fileProgress.set(info.file, pct);
-        const vals = Array.from(fileProgress.values());
-        const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : pct;
-        self.postMessage({
-          type: "progress",
-          file: info.file.split("/").pop() || info.file,
-          progress: Math.min(99, Math.round(avg)),
-        });
-      } else if (info.status === "done" && info.file) {
-        fileProgress.set(info.file, 100);
-      }
-    };
+    const emitProgress = createModelProgressEmitter((msg) => self.postMessage(msg));
 
     bundlePromise = Promise.all([
       AutoProcessor.from_pretrained(MODEL_ID, { progress_callback: emitProgress }),
