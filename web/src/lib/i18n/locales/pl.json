@@ -1897,5 +1897,10 @@
   "onboarding_step_index": "4. Indeksowanie",
   "onboarding_index_bg_next": "Kontynuuj w tle",
   "onboarding_btn_skip": "Pomiń",
-  "onboarding_btn_next": "Dalej"
+  "onboarding_btn_next": "Dalej",
+  "local_embeddings_toggle": "Lokalna ekstrakcja danych (WASM / w przeglądarce)",
+  "local_embeddings_desc": "Wektoryzuj dokumenty lokalnie modelem Xenova/paraphrase-multilingual-MiniLM-L12-v2 bez wysyłania tekstu do /embed.",
+  "local_embeddings_downloading": "Pobieranie modelu: {pct}%",
+  "local_embeddings_ready": "Model Xenova/paraphrase-multilingual-MiniLM-L12-v2 gotowy",
+  "local_embeddings_later_hint": "Możesz to włączyć później w Ustawienia → Węzeł AI."
 }

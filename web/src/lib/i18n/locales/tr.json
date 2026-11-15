@@ -1897,5 +1897,10 @@
   "onboarding_step_index": "4. Dizinleme",
   "onboarding_index_bg_next": "Arka planda devam et",
   "onboarding_btn_skip": "Atla",
-  "onboarding_btn_next": "İleri"
+  "onboarding_btn_next": "İleri",
+  "local_embeddings_toggle": "Yerel veri çıkarma (WASM / tarayıcıda)",
+  "local_embeddings_desc": "Belgeleri /embed'e metin göndermeden Xenova/paraphrase-multilingual-MiniLM-L12-v2 ile yerel olarak vektörleştirin.",
+  "local_embeddings_downloading": "Model indiriliyor: {pct}%",
+  "local_embeddings_ready": "Model Xenova/paraphrase-multilingual-MiniLM-L12-v2 hazır",
+  "local_embeddings_later_hint": "Bunu daha sonra Ayarlar → AI Düğümü bölümünden etkinleştirebilirsiniz."
 }

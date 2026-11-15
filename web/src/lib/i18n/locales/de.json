@@ -1897,5 +1897,10 @@
   "onboarding_step_index": "4. Indizierung",
   "onboarding_index_bg_next": "Im Hintergrund fortsetzen",
   "onboarding_btn_skip": "Überspringen",
-  "onboarding_btn_next": "Weiter"
+  "onboarding_btn_next": "Weiter",
+  "local_embeddings_toggle": "Lokale Datenextraktion (WASM / im Browser)",
+  "local_embeddings_desc": "Dokumente lokal mit Xenova/paraphrase-multilingual-MiniLM-L12-v2 vektorisieren, ohne Text an /embed zu senden.",
+  "local_embeddings_downloading": "Modell wird geladen: {pct}%",
+  "local_embeddings_ready": "Modell Xenova/paraphrase-multilingual-MiniLM-L12-v2 bereit",
+  "local_embeddings_later_hint": "Kann später unter Einstellungen → KI-Node aktiviert werden."
 }

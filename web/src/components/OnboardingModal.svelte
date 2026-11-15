@@ -6,6 +6,7 @@
   import { persistStoragePath, parseStoragePath, cleanStoragePath, DEFAULT_STORAGE_PATH } from "../lib/storage-path.js";
   import { isNativeStorageAvailable, NativeStorageDrive } from "../lib/native-drive.js";
   import { indexerStore } from "../lib/client-indexer.js";
+  import { localEmbedderStore, setLocalEmbeddingsEnabled } from "../lib/local-embedder.js";
   import DeviceIndexModal from "./DeviceIndexModal.svelte";
   import { fetchNearbyDevices } from "../lib/local-discovery.js";
   import { getStoredOmdKey, omdKeyStore } from "../lib/omd-key.js";
@@ -1334,6 +1335,38 @@
             <p class="subtitle">
               {$_("device_index_subtitle", {}, "Make documents & photos on this device searchable in AI chat.")}
             </p>
+
+            <div class="local-embed-box">
+              <label class="local-embed-toggle">
+                <input
+                  type="checkbox"
+                  checked={$localEmbedderStore.enabled}
+                  on:change={(e) => setLocalEmbeddingsEnabled(e.currentTarget.checked)}
+                />
+                <span>{$_("local_embeddings_toggle", {}, "Локальное извлечение данных (WASM / в браузере)")}</span>
+              </label>
+              {#if $localEmbedderStore.enabled}
+                {#if $localEmbedderStore.status === "downloading"}
+                  <div class="local-embed-prog">
+                    <div class="local-embed-prog-head">
+                      <span>{$_("local_embeddings_downloading", { pct: $localEmbedderStore.progress }, `Загрузка модели: ${$localEmbedderStore.progress}%`)}</span>
+                      {#if $localEmbedderStore.currentFile}
+                        <span class="local-embed-file">{$localEmbedderStore.currentFile}</span>
+                      {/if}
+                    </div>
+                    <div class="local-embed-bar"><div class="local-embed-fill" style="width: {$localEmbedderStore.progress}%"></div></div>
+                  </div>
+                {:else if $localEmbedderStore.status === "ready"}
+                  <div class="local-embed-ready">✓ {$_("local_embeddings_ready", {}, "Модель Xenova/paraphrase-multilingual-MiniLM-L12-v2 готова")}</div>
+                {:else if $localEmbedderStore.status === "error"}
+                  <div class="local-embed-err">{$localEmbedderStore.error}</div>
+                {/if}
+              {:else}
+                <p class="local-embed-hint">
+                  {$_("local_embeddings_later_hint", {}, "Можно включить позже в Настройки → AI-нода.")}
+                </p>
+              {/if}
+            </div>
 
             <DeviceIndexModal
               embedded={true}
@@ -2805,5 +2838,64 @@
       align-self: stretch;
       justify-content: center;
     }
+  }
+  .local-embed-box {
+    margin: 0 0 12px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--border-color, rgba(128, 128, 128, 0.25));
+    background: var(--bg-secondary, rgba(128, 128, 128, 0.08));
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .local-embed-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13.5px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .local-embed-hint {
+    margin: 0;
+    font-size: 12px;
+    opacity: 0.75;
+  }
+  .local-embed-prog {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+  }
+  .local-embed-prog-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .local-embed-file {
+    opacity: 0.7;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .local-embed-bar {
+    height: 6px;
+    border-radius: 999px;
+    background: rgba(128, 128, 128, 0.25);
+    overflow: hidden;
+  }
+  .local-embed-fill {
+    height: 100%;
+    background: #5b8def;
+    transition: width 0.2s ease;
+  }
+  .local-embed-ready {
+    font-size: 12px;
+    color: #22c55e;
+  }
+  .local-embed-err {
+    font-size: 12px;
+    color: #ef4444;
   }
 </style>

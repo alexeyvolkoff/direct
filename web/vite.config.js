@@ -95,6 +95,49 @@ function webVersionManifestPlugin() {
   };
 }
 
+/**
+ * Bundles onnxruntime-web WASM/MJS runtime files into /ort-wasm/ so
+ * @huggingface/transformers never fetches executable .wasm/.mjs binaries
+ * from external CDNs (required for offline/Capacitor and App Store 2.5.2).
+ */
+function ortWasmPlugin() {
+  const ortFiles = [
+    'ort-wasm-simd-threaded.mjs',
+    'ort-wasm-simd-threaded.wasm',
+    'ort-wasm-simd-threaded.asyncify.mjs',
+    'ort-wasm-simd-threaded.asyncify.wasm',
+  ];
+  const srcDir = path.resolve(process.cwd(), 'node_modules/onnxruntime-web/dist');
+
+  return {
+    name: 'ort-wasm-bundle',
+    configureServer(server) {
+      server.middlewares.use('/ort-wasm', (req, res, next) => {
+        const name = path.basename((req.url || '').split('?')[0]);
+        if (!ortFiles.includes(name)) return next();
+        const filePath = path.join(srcDir, name);
+        if (!fs.existsSync(filePath)) return next();
+        res.setHeader(
+          'Content-Type',
+          name.endsWith('.wasm') ? 'application/wasm' : 'application/javascript; charset=utf-8'
+        );
+        fs.createReadStream(filePath).pipe(res);
+      });
+    },
+    writeBundle(options) {
+      const outDir = options?.dir || path.resolve(process.cwd(), 'dist');
+      const destDir = path.join(outDir, 'ort-wasm');
+      fs.mkdirSync(destDir, { recursive: true });
+      for (const name of ortFiles) {
+        const src = path.join(srcDir, name);
+        if (fs.existsSync(src)) {
+          fs.copyFileSync(src, path.join(destDir, name));
+        }
+      }
+    }
+  };
+}
+
 // "chat" | "files" | "" (auto). Used as the default for static/Capacitor
 // bundles and as the Vite dev default; the production gateway overrides it
 // per request from the Host header.
@@ -226,6 +269,7 @@ export default defineConfig({
   plugins: [
     templateParserPlugin(),
     webVersionManifestPlugin(),
+    ortWasmPlugin(),
     svelte(),
     monacoEditorPlugin.default({
       languageWorkers: ['editorWorkerService', 'css', 'html', 'json']

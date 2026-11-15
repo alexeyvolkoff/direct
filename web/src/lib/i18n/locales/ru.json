@@ -1898,5 +1898,10 @@
   "onboarding_step_index": "4. Индексация",
   "onboarding_index_bg_next": "Продолжить в фоне",
   "onboarding_btn_skip": "Пропустить",
-  "onboarding_btn_next": "Далее"
+  "onboarding_btn_next": "Далее",
+  "local_embeddings_toggle": "Локальное извлечение данных (WASM / в браузере)",
+  "local_embeddings_desc": "Локальная векторизация документов моделью Xenova/paraphrase-multilingual-MiniLM-L12-v2 без отправки текста на /embed.",
+  "local_embeddings_downloading": "Загрузка модели: {pct}%",
+  "local_embeddings_ready": "Модель Xenova/paraphrase-multilingual-MiniLM-L12-v2 готова",
+  "local_embeddings_later_hint": "Можно включить позже в Настройки → AI-нода."
 }

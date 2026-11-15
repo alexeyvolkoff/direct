@@ -17,6 +17,7 @@
     "@capacitor/core": "^6.2.1",
     "@capacitor/push-notifications": "^6.0.5",
     "@capgo/capacitor-updater": "^6.50.2",
+    "@huggingface/transformers": "^4.3.2",
     "@svar-ui/filemanager-locales": "^2.6.0",
     "@svar-ui/lib-dom": "^0.13.1",
     "@svar-ui/lib-state": "^1.9.7",

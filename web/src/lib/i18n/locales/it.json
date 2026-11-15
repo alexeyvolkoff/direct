@@ -1897,5 +1897,10 @@
   "onboarding_step_index": "4. Indicizzazione",
   "onboarding_index_bg_next": "Continua in background",
   "onboarding_btn_skip": "Salta",
-  "onboarding_btn_next": "Avanti"
+  "onboarding_btn_next": "Avanti",
+  "local_embeddings_toggle": "Estrazione dati locale (WASM / nel browser)",
+  "local_embeddings_desc": "Vettorizza i documenti localmente con Xenova/paraphrase-multilingual-MiniLM-L12-v2 senza inviare testo a /embed.",
+  "local_embeddings_downloading": "Download del modello: {pct}%",
+  "local_embeddings_ready": "Modello Xenova/paraphrase-multilingual-MiniLM-L12-v2 pronto",
+  "local_embeddings_later_hint": "Puoi attivarlo più tardi in Impostazioni → Nodo IA."
 }

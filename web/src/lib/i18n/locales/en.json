@@ -1898,5 +1898,10 @@
   "onboarding_step_index": "4. Indexing",
   "onboarding_index_bg_next": "Continue in background",
   "onboarding_btn_skip": "Skip",
-  "onboarding_btn_next": "Next"
+  "onboarding_btn_next": "Next",
+  "local_embeddings_toggle": "Local data extraction (WASM / in-browser)",
+  "local_embeddings_desc": "Vectorize documents locally using Xenova/paraphrase-multilingual-MiniLM-L12-v2 without sending text to /embed.",
+  "local_embeddings_downloading": "Downloading model: {pct}%",
+  "local_embeddings_ready": "Model Xenova/paraphrase-multilingual-MiniLM-L12-v2 ready",
+  "local_embeddings_later_hint": "You can enable this later in Settings → AI Node."
 }

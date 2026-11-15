@@ -1897,5 +1897,10 @@
   "onboarding_step_index": "4. Indexação",
   "onboarding_index_bg_next": "Continuar em segundo plano",
   "onboarding_btn_skip": "Pular",
-  "onboarding_btn_next": "Próximo"
+  "onboarding_btn_next": "Próximo",
+  "local_embeddings_toggle": "Extração local de dados (WASM / no navegador)",
+  "local_embeddings_desc": "Vetorize documentos localmente usando Xenova/paraphrase-multilingual-MiniLM-L12-v2 sem enviar texto para /embed.",
+  "local_embeddings_downloading": "Baixando modelo: {pct}%",
+  "local_embeddings_ready": "Modelo Xenova/paraphrase-multilingual-MiniLM-L12-v2 pronto",
+  "local_embeddings_later_hint": "Você pode ativar isso depois em Configurações → Nó IA."
 }

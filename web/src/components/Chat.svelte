@@ -28,7 +28,8 @@
   import { gatewayConfig } from "../lib/gateway-config.js";
   import { resolveAppMode, APP_MODE_CHAT } from "../lib/app-mode.js";
   import { compactPersonaForChat, isCustomPersona } from "../lib/personas-loader.js";
-  import { searchClientKnowledgeChunks } from "../lib/client-rag.js";
+  import { searchClientKnowledgeChunks, embedTexts } from "../lib/client-rag.js";
+  import { isLocalEmbeddingsEnabled } from "../lib/local-embedder.js";
 
   marked.use(markedKatex({ throwOnError: false, nonStandard: true }));
   marked.setOptions({ breaks: true, gfm: true });
@@ -706,18 +707,14 @@
     return await chatStore.addKnowledge(card);
   }
 
-  // Эмбеддинг текста через /embed endpoint
+  // Эмбеддинг текста: локально (WASM) при включённой опции, либо через /embed ноды
   async function embedQuery(text) {
-    if (!httpDrive || !text || !text.trim()) return null;
+    const q = (text || "").trim();
+    if (!q) return null;
+    if (!httpDrive && !isLocalEmbeddingsEnabled()) return null;
     try {
-      const res = await httpDrive.fetch("/embed", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ text: text.trim() }),
-      });
-      if (!res.ok) return null;
-      const data = await res.json();
-      return Array.isArray(data.embedding) ? data.embedding : null;
+      const res = await embedTexts(httpDrive, [q], 1);
+      return Array.isArray(res?.[0]) ? res[0] : null;
     } catch (e) {
       console.warn("[chat] embedQuery error:", e);
       return null;

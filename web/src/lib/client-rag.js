@@ -2,9 +2,10 @@
  * Client-side RAG primitives:
  * - Pure JS/WebAPI text extraction for TXT/MD/HTML/PDF/DOCX/ODT/EPUB
  * - Sliding-window text chunking
- * - Batch embedding via AI node /embed (with single-item fallback for older nodes)
+ * - Local WASM/WebGPU embeddings (@huggingface/transformers) or AI node /embed fallback
  * - Chunk-level cosine similarity search over GunDB knowledge cards + chunks
  */
+import { isLocalEmbeddingsEnabled, embedTextsLocal } from "./local-embedder.js";
 
 const PLAIN_TEXT_EXTS = new Set([
   "txt", "md", "markdown", "csv", "tsv", "json", "log", "rst", "ini", "conf",
@@ -259,15 +260,31 @@ export function chunkText(text, maxChars = 900, overlap = 150) {
 }
 
 /**
- * Embed an array of texts via AI node /embed (batched, with single-text fallback).
+ * Embed an array of texts: uses local WASM/WebGPU model when enabled,
+ * falling back to AI node /embed (batched, with single-text fallback).
  */
 export async function embedTexts(httpDrive, texts, batchSize = 24, signal = null) {
-  if (!httpDrive || !Array.isArray(texts) || texts.length === 0) return [];
-  const results = new Array(texts.length).fill(null);
+  if (!Array.isArray(texts) || texts.length === 0) return [];
+  const cleaned = texts.map((t) => String(t || "").trim() || " ");
 
-  for (let i = 0; i < texts.length; i += batchSize) {
+  if (isLocalEmbeddingsEnabled()) {
+    try {
+      const localRes = await embedTextsLocal(cleaned, signal);
+      if (Array.isArray(localRes) && localRes.length === cleaned.length) {
+        return localRes;
+      }
+    } catch (e) {
+      if (e?.name === "AbortError") throw e;
+      console.warn("[client-rag] local embed failed, falling back to AI node /embed:", e);
+    }
+  }
+
+  if (!httpDrive) return [];
+  const results = new Array(cleaned.length).fill(null);
+
+  for (let i = 0; i < cleaned.length; i += batchSize) {
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-    const batch = texts.slice(i, i + batchSize).map((t) => String(t || "").trim() || " ");
+    const batch = cleaned.slice(i, i + batchSize);
 
     let batchOk = false;
     try {

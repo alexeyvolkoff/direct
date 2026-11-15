@@ -1897,5 +1897,10 @@
   "onboarding_step_index": "4. Indexeren",
   "onboarding_index_bg_next": "Doorgaan op achtergrond",
   "onboarding_btn_skip": "Overslaan",
-  "onboarding_btn_next": "Volgende"
+  "onboarding_btn_next": "Volgende",
+  "local_embeddings_toggle": "Lokale gegevensextractie (WASM / in browser)",
+  "local_embeddings_desc": "Vectoriseer documenten lokaal met Xenova/paraphrase-multilingual-MiniLM-L12-v2 zonder tekst naar /embed te sturen.",
+  "local_embeddings_downloading": "Model downloaden: {pct}%",
+  "local_embeddings_ready": "Model Xenova/paraphrase-multilingual-MiniLM-L12-v2 gereed",
+  "local_embeddings_later_hint": "Je kunt dit later inschakelen bij Instellingen → AI-node."
 }

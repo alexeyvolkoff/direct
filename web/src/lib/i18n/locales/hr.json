@@ -1897,5 +1897,10 @@
   "onboarding_step_index": "4. Indeksiranje",
   "onboarding_index_bg_next": "Nastavi u pozadini",
   "onboarding_btn_skip": "Preskoči",
-  "onboarding_btn_next": "Dalje"
+  "onboarding_btn_next": "Dalje",
+  "local_embeddings_toggle": "Lokalna ekstrakcija podataka (WASM / u pregledniku)",
+  "local_embeddings_desc": "Vektorizirajte dokumente lokalno pomoću Xenova/paraphrase-multilingual-MiniLM-L12-v2 bez slanja teksta na /embed.",
+  "local_embeddings_downloading": "Preuzimanje modela: {pct}%",
+  "local_embeddings_ready": "Model Xenova/paraphrase-multilingual-MiniLM-L12-v2 spreman",
+  "local_embeddings_later_hint": "Možete uključiti kasnije u Postavke → AI čvor."
 }

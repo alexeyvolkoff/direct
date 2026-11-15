@@ -1897,5 +1897,10 @@
   "onboarding_step_index": "4. نمایه‌سازی",
   "onboarding_index_bg_next": "ادامه در پس‌زمینه",
   "onboarding_btn_skip": "رد کردن",
-  "onboarding_btn_next": "بعدی"
+  "onboarding_btn_next": "بعدی",
+  "local_embeddings_toggle": "استخراج محلی داده‌ها (WASM / در مرورگر)",
+  "local_embeddings_desc": "بردارسازی محلی اسناد با مدل Xenova/paraphrase-multilingual-MiniLM-L12-v2 بدون ارسال متن به /embed.",
+  "local_embeddings_downloading": "در حال دانلود مدل: {pct}%",
+  "local_embeddings_ready": "مدل Xenova/paraphrase-multilingual-MiniLM-L12-v2 آماده است",
+  "local_embeddings_later_hint": "می‌توانید بعداً در تنظیمات ← نود هوش مصنوعی فعال کنید."
 }

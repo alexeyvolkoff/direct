@@ -1897,5 +1897,10 @@
   "onboarding_step_index": "4. Indexovanie",
   "onboarding_index_bg_next": "Pokračovať na pozadí",
   "onboarding_btn_skip": "Preskočiť",
-  "onboarding_btn_next": "Ďalej"
+  "onboarding_btn_next": "Ďalej",
+  "local_embeddings_toggle": "Lokálna extrakcia dát (WASM / v prehliadači)",
+  "local_embeddings_desc": "Vektorizujte dokumenty lokálne pomocou Xenova/paraphrase-multilingual-MiniLM-L12-v2 bez odosielania textu na /embed.",
+  "local_embeddings_downloading": "Sťahovanie modelu: {pct}%",
+  "local_embeddings_ready": "Model Xenova/paraphrase-multilingual-MiniLM-L12-v2 pripravený",
+  "local_embeddings_later_hint": "Môžete zapnúť neskôr v Nastavenia → AI uzol."
 }

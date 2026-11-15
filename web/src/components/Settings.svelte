@@ -19,6 +19,7 @@
   import { gatewayConfig, getGatewayTosUrl, resetGatewayToDefault } from "../lib/gateway-config.js";
   import { resolveAppMode, APP_MODE_CHAT } from "../lib/app-mode.js";
   import { getChatStore } from "../lib/chat-store.js";
+  import { localEmbedderStore, setLocalEmbeddingsEnabled } from "../lib/local-embedder.js";
   import { HttpDrive } from "../lib/http-drive.js";
   import { aiNodeStore, refreshPublicAiNode, setAiNodeChoice, acceptPublicAiAgreement, applyRemotePublicAiAck, publicAiAckPayload, AI_NODE_MODE_AUTO, AI_NODE_MODE_PUBLIC, AI_NODE_MODE_CUSTOM, AI_MODE_LOCAL, AI_MODE_HYBRID, AI_MODE_AGENTIC, setAiMode, setInferenceNode, addCustomAiNode, removeCustomAiNode, mergeCustomAiNodes, connectGuestAiNode } from "../lib/ai-node.js";
   import { get as getStoreValue } from "svelte/store";
@@ -3370,6 +3371,37 @@
               {#if aiNodeChoice === "public" && !$aiNodeStore.info}
                 <p class="card-subtext">{$_("ai_node_public_unavailable", {}, "The public AI node is currently offline or unreachable.")}</p>
               {/if}
+
+              <div class="local-embed-setting">
+                <label class="local-embed-setting-row">
+                  <input
+                    type="checkbox"
+                    checked={$localEmbedderStore.enabled}
+                    on:change={(e) => setLocalEmbeddingsEnabled(e.currentTarget.checked)}
+                  />
+                  <span>{$_("local_embeddings_toggle", {}, "Local data extraction (WASM / in-browser)")}</span>
+                </label>
+                <p class="card-subtext">
+                  {$_("local_embeddings_desc", {}, "Vectorize documents locally using Xenova/paraphrase-multilingual-MiniLM-L12-v2 without sending text to /embed.")}
+                </p>
+                {#if $localEmbedderStore.enabled}
+                  {#if $localEmbedderStore.status === "downloading"}
+                    <div class="local-embed-prog">
+                      <div class="local-embed-prog-head">
+                        <span>{$_("local_embeddings_downloading", { pct: $localEmbedderStore.progress }, `Downloading model: ${$localEmbedderStore.progress}%`)}</span>
+                        {#if $localEmbedderStore.currentFile}
+                          <span>{$localEmbedderStore.currentFile}</span>
+                        {/if}
+                      </div>
+                      <div class="local-embed-bar"><div class="local-embed-fill" style="width: {$localEmbedderStore.progress}%"></div></div>
+                    </div>
+                  {:else if $localEmbedderStore.status === "ready"}
+                    <div class="local-embed-ready">✓ {$_("local_embeddings_ready", {}, "Model Xenova/paraphrase-multilingual-MiniLM-L12-v2 ready")}</div>
+                  {:else if $localEmbedderStore.status === "error"}
+                    <div class="local-embed-err">{$localEmbedderStore.error}</div>
+                  {/if}
+                {/if}
+              </div>
             </div>
           </div>
 
@@ -7203,5 +7235,51 @@
 
   .source-cancel:hover {
     background: var(--bg-hover, rgba(255, 255, 255, 0.05));
+  }
+  .local-embed-setting {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color, rgba(128, 128, 128, 0.2));
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .local-embed-setting-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13.5px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .local-embed-prog {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+  }
+  .local-embed-prog-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .local-embed-bar {
+    height: 6px;
+    border-radius: 999px;
+    background: rgba(128, 128, 128, 0.25);
+    overflow: hidden;
+  }
+  .local-embed-fill {
+    height: 100%;
+    background: #5b8def;
+    transition: width 0.2s ease;
+  }
+  .local-embed-ready {
+    font-size: 12px;
+    color: #22c55e;
+  }
+  .local-embed-err {
+    font-size: 12px;
+    color: #ef4444;
   }
 </style>
