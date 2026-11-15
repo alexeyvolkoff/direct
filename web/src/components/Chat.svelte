@@ -28,6 +28,7 @@
   import { gatewayConfig } from "../lib/gateway-config.js";
   import { resolveAppMode, APP_MODE_CHAT } from "../lib/app-mode.js";
   import { compactPersonaForChat, isCustomPersona } from "../lib/personas-loader.js";
+  import { searchClientKnowledgeChunks } from "../lib/client-rag.js";
 
   marked.use(markedKatex({ throwOnError: false, nonStandard: true }));
   marked.setOptions({ breaks: true, gfm: true });
@@ -775,28 +776,18 @@
       console.warn("[rag] selectRelevant: embedQuery failed");
       return [];
     }
-    const scored = cardsWithEmb.map((m) => ({
-      card: m,
-      score: cosineSimilarity(queryEmb, m.annotation_embedding),
-    }));
-    scored.sort((a, b) => b.score - a.score);
-    const best = scored.length ? scored[0].score : 0;
-    const cutoff = Math.max(KNOWLEDGE_RELEVANCE_THRESHOLD, best * KNOWLEDGE_RELATIVE_RATIO);
-    const topN = scored
-      .filter(({ score }) => score >= cutoff)
-      .slice(0, KNOWLEDGE_MAX_CARDS);
+    const topN = await searchClientKnowledgeChunks(chatStore, queryEmb, {
+      threshold: KNOWLEDGE_RELEVANCE_THRESHOLD,
+      relativeRatio: KNOWLEDGE_RELATIVE_RATIO,
+      maxCards: KNOWLEDGE_MAX_CARDS,
+      maxChunksPerCard: 2,
+      maxTotal: 5,
+    });
     console.info(
-      `[rag] selectRelevant: total=${allCards.length} withEmb=${cardsWithEmb.length} best=${best.toFixed(3)} cutoff=${cutoff.toFixed(3)} -> ${topN.length}`,
-      topN.map((s) => `${s.card.title}:${s.score.toFixed(3)}`).join(", ")
+      `[rag] selectRelevant: total=${allCards.length} withEmb=${cardsWithEmb.length} -> ${topN.length}`,
+      topN.map((s) => `${s.title}:${s.score.toFixed(3)}`).join(", ")
     );
-    return topN.map(({ card: m, score }) => ({
-      id: m._id || m.memory_id || m.id || "",
-      title: m.title || "",
-      text: m.text || "",
-      document_id: m.document_id || "",
-      tags: Array.isArray(m.tags) ? m.tags : [],
-      score,
-    }));
+    return topN;
   }
 
   function cosineSimilarity(a, b) {

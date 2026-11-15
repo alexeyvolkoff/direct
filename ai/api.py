@@ -648,13 +648,45 @@ def _image_preview_data_url(img_bytes: bytes, max_side: int = 480) -> str:
         return ""
 
 
-async def _rag_recognize_payload(ctx, img_bytes: bytes, doc_id: str, title: str, tags: list, owner: str, prompt: str = ""):
+async def _rag_recognize_payload(
+    ctx,
+    img_bytes: bytes,
+    doc_id: str,
+    title: str,
+    tags: list,
+    owner: str,
+    prompt: str = "",
+    gps_coords: str = "",
+    taken_at: str = "",
+    skip_preview: bool = False,
+):
     """Общая stateless-логика /recognize: vision-аннотация + теги + эмбеддинги + чанки. Без ChromaDB."""
     if not img_bytes:
         raise HTTPException(status_code=422, detail="image bytes are empty")
 
+    geo_place = ""
+    geo_tags = []
+    if gps_coords:
+        try:
+            geo_place = core_service.gps_to_location(gps_coords) or ""
+            if geo_place:
+                geo_tags = [p.strip() for p in geo_place.split(",") if p.strip()]
+                geo_tags.extend(core_service.geo_place_localized(geo_place) or [])
+        except Exception as e:
+            logging.warning(f"[rag/recognize] geo lookup error: {e}")
+
+    effective_prompt = (prompt or "").strip()
+    extra_ctx = []
+    if geo_place:
+        extra_ctx.append(f"Location (reverse geocoded from GPS): {geo_place}.")
+    if taken_at:
+        extra_ctx.append(f"Taken at: {taken_at}.")
+    if extra_ctx:
+        ctx_line = " ".join(extra_ctx)
+        effective_prompt = f"{effective_prompt}\n{ctx_line}".strip() if effective_prompt else ctx_line
+
     try:
-        annotation = await core_service.recognize_image_annotation(ctx, img_bytes, prompt)
+        annotation = await core_service.recognize_image_annotation(ctx, img_bytes, effective_prompt)
         ai_tags = await core_service.extract_tags_from_text(ctx, annotation) if annotation else []
     except Exception as e:
         logging.error(f"[rag/recognize] vision error: {e}")
@@ -664,7 +696,7 @@ async def _rag_recognize_payload(ctx, img_bytes: bytes, doc_id: str, title: str,
     if not annotation or not annotation.strip():
         raise HTTPException(status_code=422, detail="could not recognize the image (vision returned empty annotation)")
 
-    all_tags = sorted(set(tags) | set(ai_tags or []))
+    all_tags = sorted(set(tags) | set(ai_tags or []) | set(geo_tags))
 
     # Аннотационный эмбеддинг (теги активно участвуют)
     annotation_text = annotation + " " + " ".join(all_tags)
@@ -692,7 +724,7 @@ async def _rag_recognize_payload(ctx, img_bytes: bytes, doc_id: str, title: str,
         "chunks":               chunks,
         "chunkCount":           len(chunks),
         "isImage":              True,
-        "imagePreview":         _image_preview_data_url(img_bytes),
+        "imagePreview":         "" if skip_preview else _image_preview_data_url(img_bytes),
     }
 
 
@@ -1018,19 +1050,49 @@ async def rag_recognize_raw_endpoint(request: Request):
         doc_id = _norm_doc_path(source) if source else f"image:{filename}"
     title = filename.split("/")[-1].split("?")[0].lstrip("/") or doc_id
     tags = _rag_scope_tags(tags_in, scope)
+    gps_coords = (_decode_hdr(request, "X-OMD-GPS") or "").strip()
+    taken_at = (_decode_hdr(request, "X-OMD-Taken-At") or "").strip()
+    skip_preview = (request.headers.get("X-OMD-Skip-Preview") or "").strip() in ("1", "true", "yes")
 
-    return await _rag_recognize_payload(ctx, data, doc_id, title, tags, owner, prompt)
+    return await _rag_recognize_payload(
+        ctx,
+        data,
+        doc_id,
+        title,
+        tags,
+        owner,
+        prompt,
+        gps_coords=gps_coords,
+        taken_at=taken_at,
+        skip_preview=skip_preview,
+    )
 
 
 @app.post("/embed")
 async def embed_endpoint(request: Request):
     """
-    Stateless embedding: {text: ""} → {embedding: []}.
-    Для фронта: эмбеддит вопрос при отправке (cosine vs annotation_embedding карточек).
+    Stateless embedding:
+      - {text: "..."} → {embedding: [...]}
+      - {texts: ["...", ...]} → {embeddings: [[...], ...]}
+    Для фронта: эмбеддит вопрос и клиентские чанки документов.
     """
     if not_authorized(request):
         raise HTTPException(status_code=401, detail="Unauthorized")
     body = await request.json()
+    texts = body.get("texts")
+    if isinstance(texts, list):
+        cleaned = [str(t).strip() for t in texts if str(t or "").strip()]
+        if not cleaned:
+            raise HTTPException(status_code=422, detail="texts must contain non-empty strings")
+        if len(cleaned) > 64:
+            raise HTTPException(status_code=422, detail="max 64 texts per batch")
+        try:
+            embeddings = unified_memory.get_model().encode(cleaned, show_progress_bar=False).tolist()
+        except Exception as e:
+            logging.error(f"[embed] batch error: {e}")
+            raise HTTPException(status_code=500, detail=f"Embedding failed: {e}")
+        return {"embeddings": embeddings}
+
     text = (body.get("text") or "").strip()
     if not text:
         raise HTTPException(status_code=422, detail="text is required")

@@ -1665,6 +1665,9 @@
           loading={deviceMemoryLoading}
           thumbFetcher={fetchDeviceThumb}
           httpDrive={drive}
+          deviceDrive={effectiveDeviceDrive}
+          storageDevice={userStorageDevice}
+          {chatStore}
           {targetDevice}
           targetLinkId={targetLinkId || targetDevice?.linkId || ""}
           on:create={openCreateMemoryCard}

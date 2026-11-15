@@ -4,6 +4,7 @@
   import { _ } from "../lib/i18n/index.js";
   import { deviceRegistry } from "../lib/device-registry.js";
   import { gatewayConfig, getGatewayDocsUrl } from "../lib/gateway-config.js";
+  import DeviceIndexModal from "./DeviceIndexModal.svelte";
 
   let innerWidth = typeof window !== "undefined" ? window.innerWidth : 1024;
   $: isMobile = innerWidth < 768;
@@ -17,8 +18,13 @@
   export let loading = false; // on-device knowledge still loading
   export let thumbFetcher = null; // async (document_id, size) => objectURL|"" for onDevice previews
   export let httpDrive = null;
+  export let deviceDrive = null;
+  export let storageDevice = null;
+  export let chatStore = null;
   export let targetDevice = null;
   export let targetLinkId = "";
+
+  let showDeviceIndexModal = false;
 
   $: docsNodeInstallUrl = ($gatewayConfig, getGatewayDocsUrl("/advanced/"));
   let nodeBannerDismissed = false;
@@ -660,6 +666,12 @@
               </svg>
               {$_("menu_import_doc", {}, "Import & Vectorize doc")}
             </button>
+            {#if deviceDrive}
+              <button type="button" class="menu-item" on:click={() => { showNewMenu = false; showDeviceIndexModal = true; }}>
+                <span class="menu-icon">📱</span>
+                {$_("menu_index_device", {}, "Index this device")}
+              </button>
+            {/if}
             {#if isOwner}
               <div class="menu-separator"></div>
               <button type="button" class="menu-item" on:click={() => { showNewMenu = false; openIndexFolder(); }}>
@@ -981,6 +993,12 @@
             </svg>
             <span>{$_("menu_import_doc", {}, "Import & Vectorize doc")}</span>
           </button>
+          {#if deviceDrive}
+            <button class="empty-action-btn secondary" on:click={() => { showDeviceIndexModal = true; }}>
+              <span class="btn-emoji">📱</span>
+              <span>{$_("menu_index_device", {}, "Index this device")}</span>
+            </button>
+          {/if}
           {#if isOwner}
             <button class="empty-action-btn secondary" on:click={() => openIndexFolder()}>
               <svg class="btn-svg" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
@@ -1258,6 +1276,17 @@
     </div>
   {/if}
 </div>
+
+<DeviceIndexModal
+  show={showDeviceIndexModal}
+  {isDarkTheme}
+  {deviceDrive}
+  {httpDrive}
+  {chatStore}
+  deviceName={storageDevice?.name || storageDevice?.shareName || "Mobile"}
+  on:close={() => { showDeviceIndexModal = false; }}
+  on:indexed={() => dispatch("refresh")}
+/>
 
 <style>
   .memory-app {
