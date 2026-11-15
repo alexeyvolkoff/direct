@@ -391,6 +391,8 @@
   .dim-card {
     width: 100%;
     max-width: 460px;
+    max-height: 90vh;
+    overflow-y: auto;
     background: var(--dim-bg);
     color: var(--dim-text);
     border: 1px solid var(--dim-border);
@@ -477,11 +479,17 @@
     color: var(--dim-muted);
   }
   .dim-select {
-    background: var(--dim-surface);
+    appearance: none;
+    -webkit-appearance: none;
+    background-color: var(--dim-surface);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='none' stroke='%239aa0ae' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' d='M3 4.5L6 7.5L9 4.5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    background-size: 12px;
     color: var(--dim-text);
     border: 1px solid var(--dim-border);
     border-radius: 8px;
-    padding: 6px 10px;
+    padding: 6px 28px 6px 10px;
     font-size: 13px;
   }
   .dim-preview, .dim-notice {

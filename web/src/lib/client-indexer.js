@@ -404,7 +404,7 @@ class ClientIndexerRunner {
       extraCards,
     });
 
-    const queue = [...docs, ...photos];
+    const queue = [...docs, ...photos].sort((a, b) => (b.mtimeMs || 0) - (a.mtimeMs || 0));
     if (queue.length === 0) {
       indexerStore.set({
         ...initialState,
@@ -456,7 +456,8 @@ class ClientIndexerRunner {
           } else {
             const text = await extractTextFromBytes(bytes, item.name);
             if (text && text.length >= 20) {
-              const chunksTexts = chunkText(text, 900, 150);
+              // Cap per-document text/chunks on-device so huge dumps (.sql/.log) don't stall WASM
+              const chunksTexts = chunkText(text.slice(0, 60000), 900, 150).slice(0, 64);
               const annotation = text.slice(0, 600).trim();
               const textsToEmbed = [annotation, ...chunksTexts];
               const embeddings = await embedTexts(httpDrive, textsToEmbed, 24, signal);
@@ -616,9 +617,11 @@ class ClientIndexerRunner {
 
       processed++;
       const dt = performance.now() - t0;
-      avgMs = avgMs ? avgMs * 0.7 + dt * 0.3 : dt;
+      if (processed > 1) {
+        avgMs = avgMs ? avgMs * 0.7 + dt * 0.3 : dt;
+      }
       const remaining = Math.max(0, queue.length - processed);
-      const etaSeconds = Math.round((remaining * avgMs) / 1000);
+      const etaSeconds = avgMs > 0 ? Math.round((remaining * avgMs) / 1000) : 0;
 
       indexerStore.update((s) => ({
         ...s,
