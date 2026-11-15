@@ -4771,7 +4771,8 @@
         blobUrl: null,
         showPrompt: false,
         showRefine: false,
-        refineText: ""
+        refineText: "",
+        usePrevRef: (mode === "continue" && storyScenes.length > 0) || i > 0
       }));
 
       if (mode === "continue" && storyScenes.length > 0) {
@@ -4866,7 +4867,8 @@
         blobUrl: null,
         showPrompt: true,
         showRefine: false,
-        refineText: ""
+        refineText: "",
+        usePrevRef: storyScenes.length > 0
       }
     ];
     saveActiveDraftStoryToLocal();
@@ -5211,8 +5213,7 @@
         const refDataUrl = await resolveSceneImageDataUrl(prevShot);
         if (refDataUrl) {
           storyRefImages = [refDataUrl];
-          storyRefBoost = 1.35;
-          finalPrompt = `Keep the exact same person, outfit, and environment from the reference image, while completely changing her pose, both arms placement, and camera framing: ${sc.visual_prompt}`;
+          storyRefBoost = typeof sliders.ref_boost === "number" ? sliders.ref_boost : 4.0;
         }
       }
     }
@@ -8343,7 +8344,7 @@
                         type="button"
                         class="scene-sub-link"
                         class:active-ref={!!sc.usePrevRef}
-                        title={$_("krea_story_use_prev_ref_hint", {}, "Use previous frame as outfit/setting reference with soft pose freedom (ref_boost 1.35)")}
+                        title={$_("krea_story_use_prev_ref_hint", {}, "Use previous frame as outfit/setting reference (follows Studio ref_boost)")}
                         on:click={() => { sc.usePrevRef = !sc.usePrevRef; storyScenes = [...storyScenes]; }}
                       >
                         {sc.usePrevRef ? "🔗" : "⛓️‍💥"} {$_("krea_story_use_prev_ref", {}, "Ref #1")}

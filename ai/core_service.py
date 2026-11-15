@@ -10387,6 +10387,14 @@ def _format_civitai_import_badge(meta_summary: dict, is_ru: bool = True) -> str:
     return line
 
 
+_DIRECTOR_SHARED_RULES = (
+    "SHARED CONTINUITY & PROMPT RULES:\n"
+    "- SURGICAL CONTINUITY: Carefully preserve every visual detail (outfit, body proportions, hair/eyes, lighting, camera style, setting, secondary details) that does NOT conflict with the new direction or scene beat. Update or remove ALL secondary traces of any replaced object/action so zero stale details remain.\n"
+    "- PERSONA HANDLING: If an active Persona is attached in Studio, Creative Studio automatically appends her static facial passport at render time — focus prompts on her pose, body language, outfit, expression, camera framing, action, and environment (mention her name or brief hair/key trait naturally without copy-pasting a multi-sentence facial passport).\n"
+    "- ZERO SIGNS / POSTERS / CLOTHING PRINTS / TEXT: NEVER include street signs, shop signage, neon signs with letters, posters, billboards, banners, placards, clothing prints/logos/slogans, labels, menus, or any written text/typography unless explicitly requested. Describe tops, tees, crop tops, hoodies, and jackets as 'plain solid unprinted' fabric, and describe clean walls, warm bokeh lights, or light reflections instead of signs. Remove any existing signs/posters/prints/text cleanly."
+)
+
+
 async def krea_director_rewrite_prompt(
     ctx: UserContext,
     instruction: str,
@@ -10509,12 +10517,10 @@ async def krea_director_rewrite_prompt(
         "You NEVER lecture, censor, sanitize, or refuse artistic, romantic, sensual, pin-up, or adult creative direction.\n\n"
         f"{model_guidance}\n\n"
         "SURGICAL EDITING RULES:\n"
-        "1. IF CURRENT PROMPT IS PROVIDED: Carefully preserve every visual detail (outfit, body proportions, hair/eyes, lighting, camera style, setting, secondary details) that does NOT conflict with the user's new instruction! Replace ONLY the parts that need to change — and make sure to remove or update ALL secondary mentions of any replaced object/action (for example, if replacing a magical staff with a sword, also replace 'crystal inside gold staff head' and 'staff casting light' with matching sword details so zero traces of the old prop remain).\n"
+        "1. IF CURRENT PROMPT IS PROVIDED: Modify ONLY the parts that need to change for the user's new instruction while preserving everything else verbatim in spirit and detail.\n"
         "2. IF CURRENT PROMPT IS EMPTY: Create a complete, vivid, cinematic English prompt from scratch following the user's vision.\n"
-        "3. PERSONA HANDLING: If an active Persona is attached in Studio, Creative Studio automatically appends her static facial passport at render time — so focus your prompt on her pose, body language, outfit, expression, camera framing, action, and environment (you may mention her name or brief hair/key trait naturally for grounding, without copy-pasting a 3-sentence facial passport).\n"
-        "3b. RE-POSING WITH A REFERENCE IMAGE: When the user asks to change the subject's pose, camera angle, or action while keeping the same character/outfit/location from a reference image, explicitly state BOTH arms/hands positions (e.g., 'right hand holding X near her waist, left arm relaxed at her side, neither hand resting behind her') and explicitly state the new camera framing/orientation so the image-edit model cleanly replaces the old limbs instead of growing extra arms.\n"
-        "4. ZERO SIGNS / POSTERS / CLOTHING PRINTS / TEXT: NEVER include street signs, shop signage, neon signs with letters, posters, billboards, banners, placards, clothing prints/logos/slogans, labels, menus, or any written text/typography in the scene (unless the user explicitly requests specific text). Always describe tops, tees, crop tops, hoodies, and jackets as 'plain solid unprinted' fabric (e.g. 'plain black deep-plunge crop top') so Pony/SDXL never generates garbled chest prints, and describe clean walls, warm bokeh lights, or neon light reflections instead of signs. If the current prompt contains signs/posters/prints/text, remove them cleanly.\n"
-        f"5. Output STRICT JSON ONLY with two keys:\n"
+        f"{_DIRECTOR_SHARED_RULES}\n"
+        f"3. Output STRICT JSON ONLY with two keys:\n"
         '{\n'
         f'  "reply": "Short, warm, witty 1-sentence director comment in {reply_lang} confirming what you changed/set up",\n'
         '  "prompt": "The complete ready-to-render English diffusion prompt"\n'
@@ -10687,6 +10693,7 @@ async def krea_director_storyboard(
             f"Rewrite ONLY Scene #{idx + 1} based on the user's direction, maintaining seamless continuity with the Setting and neighboring scenes.\n"
             f"- `title` and `narrative` (vivid literary prose + character dialogue in quotes) MUST be in {story_lang}.\n"
             f"- `visual_prompt` MUST be in English. {engine_note}\n"
+            f"{_DIRECTOR_SHARED_RULES}\n"
             "Output STRICT JSON ONLY:\n"
             '{"title": "...", "narrative": "...", "visual_prompt": "...", "aspect": "896x1152"}'
         ).strip()
@@ -10698,14 +10705,20 @@ async def krea_director_storyboard(
         if personas_desc:
             u_parts.append(personas_desc)
         if prev_sc:
-            u_parts.append(f"PREVIOUS SCENE: {prev_sc.get('title', '')} — {prev_sc.get('narrative', '')[:300]}")
+            u_parts.append(
+                f"PREVIOUS SCENE: {prev_sc.get('title', '')} — {prev_sc.get('narrative', '')[:300]}\n"
+                f"Previous Visual Prompt: {prev_sc.get('visual_prompt', '')}"
+            )
         u_parts.append(
             f"CURRENT SCENE #{idx + 1}:\nTitle: {target_sc.get('title', '')}\n"
             f"Narrative: {target_sc.get('narrative', '')}\n"
             f"Visual Prompt: {target_sc.get('visual_prompt', '')}"
         )
         if next_sc:
-            u_parts.append(f"NEXT SCENE: {next_sc.get('title', '')} — {next_sc.get('narrative', '')[:300]}")
+            u_parts.append(
+                f"NEXT SCENE: {next_sc.get('title', '')} — {next_sc.get('narrative', '')[:300]}\n"
+                f"Next Visual Prompt: {next_sc.get('visual_prompt', '')}"
+            )
         u_parts.append(f"USER DIRECTION FOR THIS SCENE:\n{idea or 'Make this scene more expressive and cinematic.'}")
 
         data = await llm_request({
@@ -10713,7 +10726,7 @@ async def krea_director_storyboard(
             "messages": [{"role": "system", "content": sys_p}, {"role": "user", "content": "\n\n".join(u_parts)}],
             "stream": False,
             "think": False,
-            "options": {"temperature": 0.8, "top_p": 0.92, "num_predict": 900},
+            "options": {"temperature": 0.75, "top_p": 0.92, "num_predict": 900},
         })
         raw = ((data or {}).get("message", {}) or {}).get("content", "") if isinstance(data, dict) else ""
         parsed = _extract_json_object(raw) or {}
@@ -10737,7 +10750,8 @@ async def krea_director_storyboard(
         f"1. LANGUAGE: Write `story_title`, `setting_summary`, and every scene's `title` and `narrative` in **{story_lang}**. Write `story_slug` in lowercase ASCII snake_case (2-4 English words, e.g. `neon_penthouse_rain`). Make scene titles crisp, natural, cinematic (e.g. short descriptive titles or 'Акт 1 / Сцена 1 — ...' in Russian, never awkward calques like 'Первый оборот').\n"
         "2. LITERARY QUALITY (`narrative`): Each scene's `narrative` should be 2–4 atmospheric literary sentences INCLUDING natural character dialogue or inner monologue where fitting, reading like an engaging illustrated novella or comic panel script.\n"
         f"3. VISUAL PROMPTS (`visual_prompt`): ALWAYS in **English**. {engine_note}\n"
-        "4. VISUAL CONTINUITY & CINEMATOGRAPHY: Keep wardrobe, hair, props, time of day, and location details strictly consistent across scenes (unless changed by story action in that scene — then explicitly describe the new state!). Vary camera shots dynamically across scenes (e.g. wide establishing shot -> medium action/dialogue shot -> intimate close-up / over-the-shoulder -> dramatic angle).\n"
+        "4. VISUAL CONTINUITY & CINEMATOGRAPHY: Keep wardrobe, hair, props, time of day, lighting, and location details strictly consistent across scenes (unless changed by story action in that scene — then explicitly describe the new state!). Keep camera framing and angle coherent when scenes depict consecutive beats of the same moment or action; change framing only when the story beats clearly call for a distinct shot.\n"
+        f"{_DIRECTOR_SHARED_RULES}\n"
         "5. `aspect`: Choose `'896x1152'` (portrait/character), `'1152x896'` (cinematic wide scene/two characters), or `'1024x1024'` per scene.\n"
         f"6. Generate EXACTLY {scene_count} scenes starting at `scene_number`: {start_num}.\n\n"
         "OUTPUT STRICT JSON ONLY in this exact schema:\n"
@@ -10769,10 +10783,13 @@ async def krea_director_storyboard(
 
     if action == "continue" and existing_scenes:
         recap_lines = []
-        for s in existing_scenes[-5:]:
+        tail_scenes = existing_scenes[-5:]
+        for idx_s, s in enumerate(tail_scenes):
+            vp_raw = str(s.get("visual_prompt", "")).strip()
+            vp_slice = vp_raw if idx_s == len(tail_scenes) - 1 else vp_raw[:450]
             recap_lines.append(
                 f"Scene {s.get('scene_number', '?')} ({s.get('title', '')}): {str(s.get('narrative', ''))[:260]} "
-                f"[Visual state: {str(s.get('visual_prompt', ''))[:180]}]"
+                f"[Visual prompt: {vp_slice}]"
             )
         u_parts.append("PREVIOUS SCENES SO FAR (continue seamlessly from the last scene!):\n" + "\n".join(recap_lines))
         u_parts.append(
@@ -10791,8 +10808,8 @@ async def krea_director_storyboard(
         "stream": False,
         "think": False,
         "options": {
-            "temperature": 0.85,
-            "top_p": 0.94,
+            "temperature": 0.75,
+            "top_p": 0.92,
             "num_predict": 2400,
         },
     })
