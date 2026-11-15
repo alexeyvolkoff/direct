@@ -997,19 +997,19 @@
   let aiNodeStatusMsg = "";
 
   const POPULAR_HORDE_MODELS = [
-    { id: "aphrodite/TheDrummer/Behemoth-X-123B-v2.1", label: "Behemoth-X-123B-v2.1 (Top RP / 123B)" },
+    { id: "auto", label: "⚡ Auto (Best Online Streaming Model)" },
+    { id: "Nimbz/Gemma-4-Dark-Orthia-31B", label: "⚡ Gemma-4-Dark-Orthia-31B (31B / 256k)" },
+    { id: "koboldcpp/G4-MeroMero-26B-A4B-it-uncensored-heretic", label: "⚡ G4-MeroMero-26B-A4B (26B MoE / 128k)" },
+    { id: "koboldcpp/Cydonia-24B-v4zg-Q4_K_M", label: "⚡ Cydonia-24B-v4zg (Creative RP / 24B)" },
+    { id: "koboldcpp/L3-8B-Stheno-v3.2", label: "⚡ L3-8B-Stheno-v3.2 (Fast 8B RP)" },
+    { id: "koboldcpp/mini-magnum-12b-v1.1", label: "⚡ Mini-Magnum-12B-v1.1 (12B RP)" },
     { id: "aphrodite/TheDrummer/Skyfall-31B-v4.2", label: "Skyfall-31B-v4.2 (Creative RP / 31B)" },
-    { id: "koboldcpp/L3-8B-Stheno-v3.2", label: "L3-8B-Stheno-v3.2 (Fast 8B RP)" },
-    { id: "koboldcpp/Magidonia-24B-v4.3", label: "Magidonia-24B-v4.3 (Creative RP / 24B)" },
-    { id: "koboldcpp/mini-magnum-12b-v1.1", label: "Mini-Magnum-12B-v1.1 (12B RP)" },
-    { id: "koboldcpp/Rocinante-X-12B", label: "Rocinante-X-12B (12B RP)" },
-    { id: "aphrodite/TheDrummer/Behemoth-128B-v3-NVFP4", label: "Behemoth-128B-v3-NVFP4 (128B)" },
   ];
 
   let hordeModels = [...POPULAR_HORDE_MODELS];
   let loadingHordeModels = false;
   let hordeApiKey = (typeof localStorage !== "undefined" && localStorage.getItem("omd_horde_api_key")) || "0000000000";
-  let hordeModel = (typeof localStorage !== "undefined" && localStorage.getItem("omd_horde_model")) || "aphrodite/TheDrummer/Behemoth-X-123B-v2.1";
+  let hordeModel = (typeof localStorage !== "undefined" && localStorage.getItem("omd_horde_model")) || "auto";
   let selectedHordeModel = hordeModel;
   let isCustomHordeModel = false;
   let hordeKeyRevealed = false;
@@ -1297,23 +1297,31 @@
       if (Array.isArray(rawList) && rawList.length > 0) {
         const active = rawList
           .filter(m => m.type === "text" && ((m.count || 0) > 0 || (m.queued || 0) > 0))
-          .sort((a, b) => (b.count || 0) - (a.count || 0));
+          .sort((a, b) => {
+            const oaiDiff = Number(Boolean(b.oai_supported)) - Number(Boolean(a.oai_supported));
+            if (oaiDiff !== 0) return oaiDiff;
+            return (b.count || 0) - (a.count || 0);
+          });
 
         const activeList = active.map(m => {
           const countStr = (m.count || 0) === 1 ? "1 worker" : `${m.count || 0} workers`;
+          const ctxStr = m.context_length ? `, ${Math.round(m.context_length / 1024)}k ctx` : "";
           const etaStr = (m.eta && m.eta > 0) ? `, ~${m.eta}s ETA` : ", no queue";
           const shortName = m.name.replace(/^aphrodite\//, "").replace(/^koboldcpp\//, "");
+          const streamBadge = m.oai_supported ? "⚡ " : "";
           return {
             id: m.name,
-            label: `${shortName} (${countStr}${etaStr})`
+            label: `${streamBadge}${shortName} (${countStr}${ctxStr}${etaStr})`
           };
         });
 
-        const seen = new Set();
-        const combined = [];
+        const seen = new Set(["auto"]);
+        const combined = [{ id: "auto", label: "⚡ Auto (Best Online Streaming Model)" }];
         for (const item of activeList) {
-          seen.add(item.id);
-          combined.push(item);
+          if (!seen.has(item.id)) {
+            seen.add(item.id);
+            combined.push(item);
+          }
         }
         for (const item of POPULAR_HORDE_MODELS) {
           if (!seen.has(item.id)) {

@@ -3529,7 +3529,9 @@ function lastFreshTitle(messages) {
       if ($ttsState.voiceStreamEnabled) {
         sendBody.voice_mode = true;
       }
-      const relevantKnowledge = await selectRelevantForMessage(text);
+      const hasActiveAttached = Array.isArray(attachedDocs) && attachedDocs.some((d) => d && d.active !== false);
+      const shouldSearchKnowledge = contentMode !== "fun" || text.trim().startsWith("/") || hasActiveAttached;
+      const relevantKnowledge = shouldSearchKnowledge ? await selectRelevantForMessage(text) : [];
       if (relevantKnowledge.length > 0) {
         sendBody.knowledge = relevantKnowledge;
       }

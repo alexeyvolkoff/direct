@@ -4406,7 +4406,11 @@ async def chat_stream(request: Request, prompt: str, omd_key: str | None = Depen
             # Check primary intent or prefixed intent (e.g. import:url)
             check_intent = intent.split(":")[0] if ":" in intent else intent
 
-            if ctx.settings.get("content_mode", "work") == "fun" and check_intent in ["explain", "think"]:
+            is_explicit_slash = prompt.lstrip().startswith("/")
+            if ctx.settings.get("content_mode", "work") == "fun" and (
+                check_intent in ["explain", "think"]
+                or (not is_explicit_slash and check_intent in ["explore", "search"])
+            ):
                 logging.info(f"Fun mode: intent '{check_intent}' downgraded to 'chat' (no DB search, RP preserved).")
                 intent = "chat"
                 check_intent = "chat"

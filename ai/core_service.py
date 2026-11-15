@@ -66,7 +66,36 @@ MCP_MODEL = DEFAULT_MODEL
 # AI Provider: 'local' (Ollama only), 'hybrid' (Ollama for Work/RAG, Horde for Fun/RP), 'horde' (always Horde)
 AI_PROVIDER = SETTINGS.get("AI_PROVIDER", "local").lower()
 HORDE_API_KEY = SETTINGS.get("HORDE_API_KEY", horde_client.ANONYMOUS_API_KEY)
-HORDE_MODEL = SETTINGS.get("HORDE_MODEL", "aphrodite/TheDrummer/Behemoth-X-123B-v2.1")
+HORDE_WORKER_API_KEY = SETTINGS.get("HORDE_WORKER_API_KEY", "")
+HORDE_MODEL = SETTINGS.get("HORDE_MODEL", "auto")
+
+
+def _resolve_horde_api_key(ctx) -> str:
+    """Resolve effective AI Horde API key: explicit client key -> owner/node key -> anonymous."""
+    settings = getattr(ctx, "settings", None) or {}
+    client_key = str(settings.get("horde_api_key") or "").strip()
+    if client_key and client_key != horde_client.ANONYMOUS_API_KEY:
+        return client_key
+    is_owner = bool(getattr(ctx, "trusted_owner", False) or getattr(ctx, "private_mode", False))
+    if is_owner:
+        if HORDE_API_KEY and HORDE_API_KEY != horde_client.ANONYMOUS_API_KEY:
+            return HORDE_API_KEY
+        if HORDE_WORKER_API_KEY and HORDE_WORKER_API_KEY != horde_client.ANONYMOUS_API_KEY:
+            return HORDE_WORKER_API_KEY
+    return HORDE_API_KEY or horde_client.ANONYMOUS_API_KEY
+
+
+def _is_horde_chat_request(ctx, fun_mode: bool) -> bool:
+    """Determine whether chat generation should route to AI Horde."""
+    settings = getattr(ctx, "settings", None) or {}
+    client_provider = str(settings.get("ai_provider") or settings.get("ai_mode") or "").strip().lower()
+    if client_provider == "horde":
+        return True
+    if client_provider == "hybrid":
+        return bool(fun_mode)
+    if client_provider in ("local", "agentic"):
+        return False
+    return (AI_PROVIDER == "horde") or (AI_PROVIDER == "hybrid" and bool(fun_mode))
 LLM_NUM_CTX = int(SETTINGS.get("LLM_NUM_CTX", "32768"))
 # Protection: max output tokens (prevents runaway generation that hangs the system)
 LLM_NUM_PREDICT = int(SETTINGS.get("LLM_NUM_PREDICT", "2048"))
@@ -7348,6 +7377,16 @@ async def _perform_prompt_gen(ctx: UserContext,
     import time as _time
     _t0 = _time.time()
     # === Facts injection ===
+    # Fun mode & AI Horde privacy guard: never inject unrequested local storage/photo
+    # cards into roleplay or external AI Horde requests unless explicitly focused/attached.
+    if (fun_mode or _is_horde_chat_request(ctx, fun_mode)) and not rag_focus and not attached_docs and intent in ("chat", "view", "show", "generate"):
+        if provided_knowledge:
+            logging.info(
+                f"[inject_facts] Suppressing {len(provided_knowledge)} unrequested provided_knowledge cards "
+                f"(fun_mode={fun_mode}, horde={_is_horde_chat_request(ctx, fun_mode)})"
+            )
+        provided_knowledge = None
+
     if intent == "chat":
         # Для простого чата не ищем в базе — инжектим только то, что явно передано в контексте
         if provided_knowledge:
@@ -7843,17 +7882,13 @@ async def _perform_prompt_gen(ctx: UserContext,
             parser = StreamParser()
 
             # AI Inference Provider routing
-            is_horde_request = (AI_PROVIDER == "horde") or (AI_PROVIDER == "hybrid" and fun_mode)
-            client_provider = ctx.settings.get("ai_provider")
-            if client_provider == "horde":
-                is_horde_request = True
-            elif client_provider == "local":
-                is_horde_request = False
+            is_horde_request = _is_horde_chat_request(ctx, fun_mode)
+            accumulated_tool_calls = []
 
             if is_horde_request:
                 h_model = ctx.settings.get("horde_model", HORDE_MODEL)
-                h_key = ctx.settings.get("horde_api_key", HORDE_API_KEY)
-                logging.info(f"Requesting AI Horde stream: model={h_model}")
+                h_key = _resolve_horde_api_key(ctx)
+                logging.info(f"Requesting AI Horde OAI stream: model={h_model}, priority={h_key != horde_client.ANONYMOUS_API_KEY}")
                 stream_source = horde_client.horde_generate_stream(
                     main_payload,
                     api_key=h_key,
@@ -7867,6 +7902,10 @@ async def _perform_prompt_gen(ctx: UserContext,
                 if data.get("status"):
                     yield {"status": data["status"]}
                     continue
+                if data.get("error"):
+                    logging.warning(f"{data['error']}")
+                    yield {"error": data["error"], "done": True, "event": event}
+                    break
                 if data.get("done"):  
                     done_reason = data.get("done_reason", "unknown")
                     eval_count = data.get("eval_count", "?")
@@ -7898,6 +7937,10 @@ async def _perform_prompt_gen(ctx: UserContext,
                     response = await process_response(full_data)
                     response["done"] = True
                     response["event"] = event
+                    if data.get("worker_info"):
+                        response["worker_info"] = data["worker_info"]
+                    if data.get("tool_calls") or accumulated_tool_calls:
+                        response["tool_calls"] = data.get("tool_calls") or accumulated_tool_calls
                     yield response
                 elif data.get("message"):   
                     if data["message"].get("thinking"):
@@ -7905,6 +7948,13 @@ async def _perform_prompt_gen(ctx: UserContext,
                         accumulated_thinking += delta
                         if allow_thinking:
                             yield {"thought_delta": delta, "done": False}
+                        continue
+
+                    if data["message"].get("tool_calls"):
+                        tcs = data["message"]["tool_calls"]
+                        if isinstance(tcs, list):
+                            accumulated_tool_calls.extend(tcs)
+                        yield {"tool_call_delta": tcs, "done": False}
                         continue
 
                     delta = data["message"].get("content", "")
@@ -7948,34 +7998,44 @@ async def _perform_prompt_gen(ctx: UserContext,
             yield item
         return    
     else:
-        is_horde_request = (AI_PROVIDER == "horde") or (AI_PROVIDER == "hybrid" and fun_mode)
-        client_provider = ctx.settings.get("ai_provider")
-        if client_provider == "horde":
-            is_horde_request = True
-        elif client_provider == "local":
-            is_horde_request = False
+        is_horde_request = _is_horde_chat_request(ctx, fun_mode)
 
         if is_horde_request:
             h_model = ctx.settings.get("horde_model", HORDE_MODEL)
-            h_key = ctx.settings.get("horde_api_key", HORDE_API_KEY)
-            logging.info(f"Requesting AI Horde (blocking): model={h_model}")
+            h_key = _resolve_horde_api_key(ctx)
+            logging.info(f"Requesting AI Horde OAI (blocking): model={h_model}, priority={h_key != horde_client.ANONYMOUS_API_KEY}")
             full_content = ""
+            full_thinking = ""
+            worker_info = None
             async for chunk in horde_client.horde_generate_stream(
                 main_payload,
                 api_key=h_key,
                 preferred_model=h_model
             ):
-                if chunk.get("message", {}).get("content"):
-                    full_content += chunk["message"]["content"]
+                if chunk.get("error"):
+                    yield {"error": chunk["error"], "done": True}
+                    return
+                msg = chunk.get("message") or {}
+                if msg.get("thinking"):
+                    full_thinking += msg["thinking"]
+                if msg.get("content"):
+                    full_content += msg["content"]
+                if chunk.get("worker_info"):
+                    worker_info = chunk["worker_info"]
             data = {"message": {"role": "assistant", "content": full_content}}
+            if full_thinking and allow_thinking:
+                data["message"]["thinking"] = full_thinking
         else:
             logging.info(f"Requesting LLM {model}")
+            worker_info = None
             data = await llm_request(main_payload)
 
         if not data:
             yield {"error": "⚠️ Request to LLM failed.", "done": True}
             return
         response = await process_response(data)
+        if worker_info:
+            response["worker_info"] = worker_info
         yield response
         return
 
