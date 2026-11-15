@@ -4,7 +4,8 @@
   import { _ } from "../lib/i18n/index.js";
   import { deviceRegistry } from "../lib/device-registry.js";
   import { gatewayConfig, getGatewayDocsUrl } from "../lib/gateway-config.js";
-  import { getDefaultWebDeviceName } from "../lib/local-client.js";
+  import { getDefaultWebDeviceName, LocalDrive } from "../lib/local-client.js";
+  import { isNativeStorageAvailable, NativeStorageDrive } from "../lib/native-drive.js";
   import { indexerStore, clientIndexer } from "../lib/client-indexer.js";
   import DeviceIndexModal from "./DeviceIndexModal.svelte";
 
@@ -27,6 +28,10 @@
   export let targetLinkId = "";
 
   let showDeviceIndexModal = false;
+  let localDeviceDrive = null;
+  $: if (showDeviceIndexModal && !localDeviceDrive && typeof window !== "undefined") {
+    localDeviceDrive = isNativeStorageAvailable() ? new NativeStorageDrive() : new LocalDrive();
+  }
 
   $: docsNodeInstallUrl = ($gatewayConfig, getGatewayDocsUrl("/advanced/"));
   let nodeBannerDismissed = false;
@@ -1330,7 +1335,7 @@
 <DeviceIndexModal
   show={showDeviceIndexModal}
   {isDarkTheme}
-  {deviceDrive}
+  deviceDrive={localDeviceDrive}
   {httpDrive}
   {chatStore}
   extraCards={knowledgeList}
