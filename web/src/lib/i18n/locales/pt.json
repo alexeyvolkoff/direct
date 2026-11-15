@@ -911,7 +911,7 @@
   "onboarding_step_ainode": "3. Nó de IA",
   "onboarding_step_auth": "1. Conta",
   "onboarding_step_auth_done": "Autorização concluída",
-  "onboarding_step_done": "4. Concluído",
+  "onboarding_step_done": "5. Concluído",
   "onboarding_step_storage": "2. Armazenamento",
   "onboarding_storage_local_desc": "Trabalhe diretamente em uma pasta do seu computador (ex. «Documentos» ou «Projetos»). Clique para escolher.",
   "onboarding_storage_local_note": "Disponível no Chrome, Edge e navegadores baseados em Chromium",
@@ -1870,7 +1870,7 @@
   "krea_story_use_prev_ref_hint": "Usar quadro anterior como referência de roupa/local com pose livre (ref_boost 1.35)",
   "menu_index_device": "Indexar este dispositivo",
   "device_index_title": "Indexar este dispositivo",
-  "device_index_subtitle": "Torne documentos e fotos pesquisáveis no chat IA sem nó de desktop.",
+  "device_index_subtitle": "Torne documentos e fotos neste dispositivo pesquisáveis no chat IA.",
   "device_index_no_drive": "Armazenamento local indisponível nesta sessão.",
   "device_index_no_ai": "Conecte a um nó IA (ou nó IA público) para vetorizar e reconhecer arquivos.",
   "device_index_docs": "Documentos e Downloads (PDF, DOCX, TXT, MD)",
@@ -1890,5 +1890,12 @@
   "device_index_skipped": "ignorados",
   "device_index_failed": "falhos",
   "device_index_start": "Iniciar indexação",
-  "resume": "Retomar"
+  "resume": "Retomar",
+  "device_index_stop": "Parar",
+  "device_index_background": "Em segundo plano",
+  "device_index_bg_status": "Indexando: {processed}/{total}",
+  "onboarding_step_index": "4. Indexação",
+  "onboarding_index_bg_next": "Continuar em segundo plano",
+  "onboarding_btn_skip": "Pular",
+  "onboarding_btn_next": "Próximo"
 }

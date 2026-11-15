@@ -25,6 +25,27 @@ export function getFileExt(filename = "") {
   return dot >= 0 ? clean.slice(dot + 1).toLowerCase() : "";
 }
 
+/**
+ * Fast content fingerprint: SHA-256(size + ":" + first64KB + last64KB).
+ * Matches backend _compute_content_hash() so mobile & node backup folders
+ * produce identical hashes without reading multi-MB files twice.
+ */
+export async function computeContentHash(bytes, totalSize = null) {
+  const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || 0);
+  const size = totalSize != null ? Number(totalSize) : u8.length;
+  const head = u8.length > 65536 ? u8.subarray(0, 65536) : u8;
+  const tail = u8.length > 131072 ? u8.subarray(u8.length - 65536) : (u8.length > 65536 ? u8.subarray(65536) : new Uint8Array(0));
+  const prefix = new TextEncoder().encode(`${size}:`);
+  const buf = new Uint8Array(prefix.length + head.length + tail.length);
+  buf.set(prefix, 0);
+  buf.set(head, prefix.length);
+  if (tail.length) buf.set(tail, prefix.length + head.length);
+  const digest = await crypto.subtle.digest("SHA-256", buf);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 export function isSupportedDocumentExt(filename = "") {
   return SUPPORTED_DOC_EXTS.has(getFileExt(filename));
 }
@@ -370,6 +391,7 @@ export async function searchClientKnowledgeChunks(chatStore, queryEmb, opts = {}
       id: mid,
       title: card.title || "",
       document_id: card.document_id || "",
+      content_hash: card.content_hash || "",
       tags: Array.isArray(card.tags) ? card.tags : [],
     };
 
@@ -399,6 +421,18 @@ export async function searchClientKnowledgeChunks(chatStore, queryEmb, opts = {}
   chunkHits.sort((a, b) => b.score - a.score);
   const best = chunkHits[0]?.score || 0;
   const cutoff = Math.max(threshold, best * relativeRatio);
-  return chunkHits.filter((h) => h.score >= cutoff).slice(0, maxTotal);
+  const seenKeys = new Set();
+  const deduped = [];
+  for (const h of chunkHits) {
+    if (h.score < cutoff) continue;
+    const dedupKey = h.content_hash || h.document_id || h.id;
+    // Allow up to 2 chunks from the same doc, but skip duplicate docs across mobile/backup
+    const chunkKey = `${dedupKey}::${h.text.slice(0, 80)}`;
+    if (seenKeys.has(chunkKey)) continue;
+    seenKeys.add(chunkKey);
+    deduped.push(h);
+    if (deduped.length >= maxTotal) break;
+  }
+  return deduped;
 }
 

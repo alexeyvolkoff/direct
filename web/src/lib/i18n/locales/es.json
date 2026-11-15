@@ -916,7 +916,7 @@
   "onboarding_step_ainode": "3. Nodo IA",
   "onboarding_step_auth": "1. Cuenta",
   "onboarding_step_auth_done": "Autorización completada",
-  "onboarding_step_done": "4. Listo",
+  "onboarding_step_done": "5. Listo",
   "onboarding_step_storage": "2. Almacenamiento",
   "onboarding_storage_local_desc": "Trabaje directamente en una carpeta de su equipo (p. ej. «Documentos» o «Proyectos»). Haga clic para seleccionarla.",
   "onboarding_storage_local_note": "Disponible en Chrome, Edge y navegadores Chromium",
@@ -1870,7 +1870,7 @@
   "krea_story_use_prev_ref_hint": "Usar el fotograma anterior como referencia de ropa/lugar con pose libre (ref_boost 1.35)",
   "menu_index_device": "Indexar este dispositivo",
   "device_index_title": "Indexar este dispositivo",
-  "device_index_subtitle": "Haz que tus documentos y fotos se puedan buscar en el chat IA sin nodo de escritorio.",
+  "device_index_subtitle": "Haz que los documentos y fotos de este dispositivo se puedan buscar en el chat IA.",
   "device_index_no_drive": "El almacenamiento local no está disponible en esta sesión.",
   "device_index_no_ai": "Conecta un nodo IA (o el nodo IA público) para vectorizar y reconocer archivos.",
   "device_index_docs": "Documentos y Descargas (PDF, DOCX, TXT, MD)",
@@ -1890,5 +1890,12 @@
   "device_index_skipped": "omitidos",
   "device_index_failed": "fallidos",
   "device_index_start": "Iniciar indexación",
-  "resume": "Reanudar"
+  "resume": "Reanudar",
+  "device_index_stop": "Detener",
+  "device_index_background": "En segundo plano",
+  "device_index_bg_status": "Indexando: {processed}/{total}",
+  "onboarding_step_index": "4. Indexación",
+  "onboarding_index_bg_next": "Continuar en segundo plano",
+  "onboarding_btn_skip": "Omitir",
+  "onboarding_btn_next": "Siguiente"
 }

@@ -911,7 +911,7 @@
   "onboarding_step_ainode": "3. Vozlišče AI",
   "onboarding_step_auth": "1. Račun",
   "onboarding_step_auth_done": "Avtorizacija končana",
-  "onboarding_step_done": "4. Končano",
+  "onboarding_step_done": "5. Končano",
   "onboarding_step_storage": "2. Shramba",
   "onboarding_storage_local_desc": "Delajte neposredno v mapi računalnika (npr. «Dokumenti» ali «Projekti»). Kliknite za izbiro.",
   "onboarding_storage_local_note": "Na voljo v brskalnikih Chrome, Edge in Chromium",
@@ -1870,7 +1870,7 @@
   "krea_story_use_prev_ref_hint": "Uporabi prejšnji kader kot referenco oblačil/lokacije s svobodno pozo (ref_boost 1.35)",
   "menu_index_device": "Indeksiraj to napravo",
   "device_index_title": "Indeksiraj to napravo",
-  "device_index_subtitle": "Omogočite iskanje po dokumentih in fotografijah v AI klepetu brez namiznega vozlišča.",
+  "device_index_subtitle": "Omogočite iskanje po dokumentih in fotografijah v tej napravi v AI klepetu.",
   "device_index_no_drive": "Lokalni pomnilnik naprave v tej seji ni na voljo.",
   "device_index_no_ai": "Povežite AI vozlišče (ali javno AI vozlišče) za vektorizacijo in prepoznavo.",
   "device_index_docs": "Dokumenti in Prenosi (PDF, DOCX, TXT, MD)",
@@ -1890,5 +1890,12 @@
   "device_index_skipped": "preskočeno",
   "device_index_failed": "spodletelo",
   "device_index_start": "Začni indeksiranje",
-  "resume": "Nadaljuj"
+  "resume": "Nadaljuj",
+  "device_index_stop": "Ustavi",
+  "device_index_background": "V ozadju",
+  "device_index_bg_status": "Indeksiranje: {processed}/{total}",
+  "onboarding_step_index": "4. Indeksiranje",
+  "onboarding_index_bg_next": "Nadaljuj v ozadju",
+  "onboarding_btn_skip": "Preskoči",
+  "onboarding_btn_next": "Naprej"
 }

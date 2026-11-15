@@ -911,7 +911,7 @@
   "onboarding_step_ainode": "3. Węzeł AI",
   "onboarding_step_auth": "1. Konto",
   "onboarding_step_auth_done": "Autoryzacja zakończona",
-  "onboarding_step_done": "4. Gotowe",
+  "onboarding_step_done": "5. Gotowe",
   "onboarding_step_storage": "2. Pamięć",
   "onboarding_storage_local_desc": "Pracuj bezpośrednio w folderze komputera (np. „Dokumenty” lub „Projekty”). Kliknij, aby wybrać folder.",
   "onboarding_storage_local_note": "Dostępne w przeglądarkach Chrome, Edge i Chromium",
@@ -1870,7 +1870,7 @@
   "krea_story_use_prev_ref_hint": "Użyj poprzedniej klatki jako referencji stroju/miejsca ze swobodą pozy (ref_boost 1.35)",
   "menu_index_device": "Indeksuj to urządzenie",
   "device_index_title": "Indeksuj to urządzenie",
-  "device_index_subtitle": "Przeszukuj dokumenty i zdjęcia w czacie AI bez węzła stacjonarnego.",
+  "device_index_subtitle": "Przeszukuj dokumenty i zdjęcia na tym urządzeniu w czacie AI.",
   "device_index_no_drive": "Lokalna pamięć urządzenia jest niedostępna w tej sesji.",
   "device_index_no_ai": "Połącz się z węzłem AI (lub publicznym węzłem AI), aby wektoryzować pliki.",
   "device_index_docs": "Dokumenty i Pobrane (PDF, DOCX, TXT, MD)",
@@ -1890,5 +1890,12 @@
   "device_index_skipped": "pominięto",
   "device_index_failed": "błędów",
   "device_index_start": "Rozpocznij indeksowanie",
-  "resume": "Wznów"
+  "resume": "Wznów",
+  "device_index_stop": "Zatrzymaj",
+  "device_index_background": "W tle",
+  "device_index_bg_status": "Indeksowanie: {processed}/{total}",
+  "onboarding_step_index": "4. Indeksowanie",
+  "onboarding_index_bg_next": "Kontynuuj w tle",
+  "onboarding_btn_skip": "Pomiń",
+  "onboarding_btn_next": "Dalej"
 }

@@ -911,7 +911,7 @@
   "onboarding_step_ainode": "3. AI 节点",
   "onboarding_step_auth": "1. 账户",
   "onboarding_step_auth_done": "授权完成",
-  "onboarding_step_done": "4. 完成",
+  "onboarding_step_done": "5. 完成",
   "onboarding_step_storage": "2. 存储",
   "onboarding_storage_local_desc": "直接在电脑文件夹（如“文档”或“项目”）中工作。点击选择文件夹。",
   "onboarding_storage_local_note": "适用于 Chrome、Edge 及基于 Chromium 的浏览器",
@@ -1870,7 +1870,7 @@
   "krea_story_use_prev_ref_hint": "以上一帧作为服装/场景参考并自由改变姿势 (ref_boost 1.35)",
   "menu_index_device": "索引此设备",
   "device_index_title": "索引此设备",
-  "device_index_subtitle": "无需桌面节点，即可在 AI 聊天中搜索文档和照片。",
+  "device_index_subtitle": "让此设备上的文档和照片可在 AI 聊天中搜索。",
   "device_index_no_drive": "当前浏览器会话中无法访问本地设备存储。",
   "device_index_no_ai": "请连接 AI 节点（或启用公共 AI 节点）以进行向量化和识别。",
   "device_index_docs": "文档与下载 (PDF, DOCX, TXT, MD)",
@@ -1890,5 +1890,12 @@
   "device_index_skipped": "已跳过",
   "device_index_failed": "失败",
   "device_index_start": "开始索引",
-  "resume": "继续"
+  "resume": "继续",
+  "device_index_stop": "停止",
+  "device_index_background": "后台运行",
+  "device_index_bg_status": "索引中: {processed}/{total}",
+  "onboarding_step_index": "4. 索引",
+  "onboarding_index_bg_next": "在后台继续",
+  "onboarding_btn_skip": "跳过",
+  "onboarding_btn_next": "下一步"
 }

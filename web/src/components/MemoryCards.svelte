@@ -4,6 +4,8 @@
   import { _ } from "../lib/i18n/index.js";
   import { deviceRegistry } from "../lib/device-registry.js";
   import { gatewayConfig, getGatewayDocsUrl } from "../lib/gateway-config.js";
+  import { getDefaultWebDeviceName } from "../lib/local-client.js";
+  import { indexerStore, clientIndexer } from "../lib/client-indexer.js";
   import DeviceIndexModal from "./DeviceIndexModal.svelte";
 
   let innerWidth = typeof window !== "undefined" ? window.innerWidth : 1024;
@@ -410,14 +412,36 @@
     return !!(item.imagePreview || item.image_preview);
   }
 
-  $: notesCount = knowledgeList.filter((k) => !k.document_id || k.document_id.startsWith("user:note:")).length;
-  $: foldersCount = knowledgeList.filter(isFolderCard).length;
-  $: imagesCount = knowledgeList.filter(isImageCard).length;
-  $: docsCount = knowledgeList.filter((k) => k.document_id && !k.document_id.startsWith("user:note:") && !k.document_id.startsWith("http") && !isFolderCard(k) && !isImageCard(k)).length;
-  $: linksCount = knowledgeList.filter((k) => k.document_id && (k.document_id.startsWith("http://") || k.document_id.startsWith("https://"))).length;
-  $: onDeviceCount = knowledgeList.filter((k) => k.onDevice).length;
+  $: dedupedKnowledge = (() => {
+    const byHash = new Map();
+    const out = [];
+    for (const k of knowledgeList) {
+      const h = k?.content_hash;
+      if (!h) {
+        out.push(k);
+        continue;
+      }
+      const prev = byHash.get(h);
+      if (!prev) {
+        byHash.set(h, k);
+        out.push(k);
+      } else if (isDeviceCard(k) && !isDeviceCard(prev)) {
+        const idx = out.indexOf(prev);
+        if (idx >= 0) out[idx] = k;
+        byHash.set(h, k);
+      }
+    }
+    return out;
+  })();
 
-  $: filteredKnowledge = knowledgeList
+  $: notesCount = dedupedKnowledge.filter((k) => !k.document_id || k.document_id.startsWith("user:note:")).length;
+  $: foldersCount = dedupedKnowledge.filter(isFolderCard).length;
+  $: imagesCount = dedupedKnowledge.filter(isImageCard).length;
+  $: docsCount = dedupedKnowledge.filter((k) => k.document_id && !k.document_id.startsWith("user:note:") && !k.document_id.startsWith("http") && !isFolderCard(k) && !isImageCard(k)).length;
+  $: linksCount = dedupedKnowledge.filter((k) => k.document_id && (k.document_id.startsWith("http://") || k.document_id.startsWith("https://"))).length;
+  $: onDeviceCount = dedupedKnowledge.filter((k) => k.onDevice).length;
+
+  $: filteredKnowledge = dedupedKnowledge
     .filter((k) => {
       const isOnDevice = isDeviceCard(k);
       const isFolder = isFolderCard(k);
@@ -703,6 +727,32 @@
     </div>
     </div>
   </header>
+
+  {#if ($indexerStore.status === "running" || $indexerStore.status === "paused") && !showDeviceIndexModal}
+    {@const bgPct = $indexerStore.total > 0 ? Math.min(100, Math.round(($indexerStore.processed / $indexerStore.total) * 100)) : 0}
+    <div class="bg-index-bar" role="status">
+      <div class="bg-index-info" on:click={() => { showDeviceIndexModal = true; }}>
+        <span class="bg-index-dot" class:paused={$indexerStore.status === "paused"}></span>
+        <span class="bg-index-text">
+          {$_("device_index_bg_status", { processed: $indexerStore.processed, total: $indexerStore.total }, `Indexing: ${$indexerStore.processed}/${$indexerStore.total}`)}
+          ({bgPct}%)
+          {#if $indexerStore.etaSeconds > 0 && $indexerStore.status === "running"}
+            · ~{$indexerStore.etaSeconds < 60 ? `${$indexerStore.etaSeconds}s` : `${Math.ceil($indexerStore.etaSeconds / 60)}m`}
+          {/if}
+        </span>
+      </div>
+      <div class="bg-index-actions">
+        {#if $indexerStore.status === "running"}
+          <button type="button" class="bg-index-btn" on:click={() => clientIndexer.pause()}>{$_("pause", {}, "Pause")}</button>
+        {:else}
+          <button type="button" class="bg-index-btn" on:click={() => clientIndexer.resume()}>{$_("resume", {}, "Resume")}</button>
+        {/if}
+        <button type="button" class="bg-index-btn" on:click={() => { showDeviceIndexModal = true; }}>
+          {$_("details", {}, "Details")}
+        </button>
+      </div>
+    </div>
+  {/if}
 
   <!-- Filter zone above the cards: category pills & tags -->
   <div class="memory-toolbar">
@@ -1283,7 +1333,8 @@
   {deviceDrive}
   {httpDrive}
   {chatStore}
-  deviceName={storageDevice?.name || storageDevice?.shareName || "Mobile"}
+  extraCards={knowledgeList}
+  deviceName={getDefaultWebDeviceName()}
   on:close={() => { showDeviceIndexModal = false; }}
   on:indexed={() => dispatch("refresh")}
 />
@@ -2914,5 +2965,53 @@
       flex: 1;
       justify-content: center;
     }
+  }
+  .bg-index-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 14px;
+    background: var(--bg-tertiary, rgba(91, 141, 239, 0.12));
+    border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+    font-size: 12.5px;
+    flex-shrink: 0;
+  }
+  .bg-index-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    min-width: 0;
+  }
+  .bg-index-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #5b8def;
+    flex-shrink: 0;
+  }
+  .bg-index-dot.paused {
+    background: #f59e0b;
+  }
+  .bg-index-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-primary, #f1f3f7);
+  }
+  .bg-index-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .bg-index-btn {
+    background: transparent;
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.18));
+    color: var(--text-primary, #f1f3f7);
+    border-radius: 8px;
+    padding: 4px 10px;
+    font-size: 12px;
+    cursor: pointer;
   }
 </style>

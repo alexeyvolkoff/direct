@@ -1,14 +1,16 @@
 <script>
-  import { createEventDispatcher, onMount } from "svelte";
+  import { createEventDispatcher } from "svelte";
   import { fade, scale } from "svelte/transition";
   import { _ } from "../lib/i18n/index.js";
   import { clientIndexer, indexerStore, scanDeviceForIndexable } from "../lib/client-indexer.js";
 
   export let show = false;
+  export let embedded = false;
   export let isDarkTheme = true;
   export let deviceDrive = null;
   export let httpDrive = null;
   export let chatStore = null;
+  export let extraCards = [];
   export let deviceName = "Mobile";
   export let owner = "anonymous";
 
@@ -44,6 +46,7 @@
         includePhotos,
         timelineDays,
         chatStore,
+        extraCards,
       });
       previewCounts = {
         docs: res.docs.length,
@@ -57,7 +60,7 @@
     }
   }
 
-  $: if (show && deviceDrive && state.status === "idle") {
+  $: if ((show || embedded) && deviceDrive && state.status === "idle") {
     includeDocs;
     includePhotos;
     timelineDays;
@@ -70,6 +73,7 @@
       drive: deviceDrive,
       httpDrive,
       chatStore,
+      extraCards,
       deviceName,
       owner,
       includeDocs,
@@ -79,12 +83,133 @@
     dispatch("indexed");
   }
 
+  function runInBackground() {
+    dispatch("background");
+    dispatch("close");
+  }
+
   function closeModal() {
     dispatch("close");
   }
 </script>
 
-{#if show}
+{#if embedded}
+  <div class="dim-embedded" class:light-theme={!isDarkTheme} class:dark-theme={isDarkTheme}>
+    <div class="dim-body dim-body-embedded">
+      {#if !deviceDrive}
+        <div class="dim-notice">
+          {$_("device_index_no_drive", {}, "Local device storage is not available in this browser session.")}
+        </div>
+      {:else if !httpDrive}
+        <div class="dim-notice">
+          {$_("device_index_no_ai", {}, "Connect to an AI node (or enable Public AI Node) to vectorize and recognize files.")}
+        </div>
+      {:else}
+        <div class="dim-options" class:disabled={isBusy}>
+          <label class="dim-check">
+            <input type="checkbox" bind:checked={includeDocs} disabled={isBusy} />
+            <span>{$_("device_index_docs", {}, "Documents & Downloads (PDF, DOCX, TXT, MD)")}</span>
+          </label>
+          <label class="dim-check">
+            <input type="checkbox" bind:checked={includePhotos} disabled={isBusy} />
+            <span>{$_("device_index_photos", {}, "Photos (Camera & Pictures via Vision AI)")}</span>
+          </label>
+
+          {#if includePhotos}
+            <div class="dim-row">
+              <label class="dim-label" for="dim-timeline-emb">{$_("device_index_timeline", {}, "Photo timeline depth")}</label>
+              <select id="dim-timeline-emb" class="dim-select" bind:value={timelineDays} disabled={isBusy}>
+                <option value={7}>{$_("timeline_7d", {}, "Last 7 days")}</option>
+                <option value={30}>{$_("timeline_30d", {}, "Last 30 days")}</option>
+                <option value={90}>{$_("timeline_90d", {}, "Last 3 months")}</option>
+                <option value={365}>{$_("timeline_365d", {}, "Last year")}</option>
+                <option value={0}>{$_("timeline_all", {}, "All photos")}</option>
+              </select>
+            </div>
+          {/if}
+        </div>
+
+        {#if state.status === "idle" || state.status === "done" || state.status === "error"}
+          {#if scanningPreview}
+            <div class="dim-preview">{$_("device_index_scanning", {}, "Scanning device folders…")}</div>
+          {:else if previewCounts}
+            <div class="dim-preview">
+              {$_("device_index_found", { docs: previewCounts.docs, photos: previewCounts.photos, skipped: previewCounts.skipped }, `Found ${previewCounts.docs} new docs, ${previewCounts.photos} new photos (${previewCounts.skipped} already indexed).`)}
+            </div>
+          {/if}
+        {/if}
+
+        {#if isBusy || state.status === "done"}
+          <div class="dim-progress-box">
+            <div class="dim-progress-top">
+              <span class="dim-status-label">
+                {#if state.status === "scanning"}
+                  {$_("device_index_scanning", {}, "Scanning device folders…")}
+                {:else if state.status === "paused"}
+                  {$_("device_index_paused", {}, "Paused")} ({state.processed}/{state.total})
+                {:else if state.status === "done"}
+                  {$_("device_index_done", {}, "Indexing complete")}
+                {:else}
+                  {state.processed} / {state.total} ({pct}%)
+                {/if}
+              </span>
+              {#if state.etaSeconds > 0 && state.status === "running"}
+                <span class="dim-eta">{$_("device_index_eta", { eta: formatEta(state.etaSeconds) }, `ETA ${formatEta(state.etaSeconds)}`)}</span>
+              {/if}
+            </div>
+
+            <div class="dim-bar-track">
+              <div class="dim-bar-fill" style="width: {state.status === 'done' ? 100 : pct}%"></div>
+            </div>
+
+            {#if state.currentFile}
+              <div class="dim-current" title={state.currentFile}>{state.currentFile}</div>
+            {/if}
+
+            <div class="dim-stats">
+              <span>✓ {state.indexed} {$_("device_index_indexed", {}, "indexed")}</span>
+              <span>• {state.skipped} {$_("device_index_skipped", {}, "skipped")}</span>
+              {#if state.failed > 0}
+                <span class="dim-err">! {state.failed} {$_("device_index_failed", {}, "failed")}</span>
+              {/if}
+            </div>
+          </div>
+        {/if}
+
+        {#if state.status === "error" && state.error}
+          <div class="dim-notice dim-err">{state.error}</div>
+        {/if}
+
+        <div class="dim-inline-actions">
+          {#if state.status === "running"}
+            <button type="button" class="dim-btn secondary" on:click={() => clientIndexer.pause()}>
+              {$_("pause", {}, "Pause")}
+            </button>
+            <button type="button" class="dim-btn danger" on:click={() => clientIndexer.stop()}>
+              {$_("device_index_stop", {}, "Stop")}
+            </button>
+          {:else if state.status === "paused"}
+            <button type="button" class="dim-btn primary" on:click={() => clientIndexer.resume()}>
+              {$_("resume", {}, "Resume")}
+            </button>
+            <button type="button" class="dim-btn danger" on:click={() => clientIndexer.stop()}>
+              {$_("device_index_stop", {}, "Stop")}
+            </button>
+          {:else if state.status !== "done"}
+            <button
+              type="button"
+              class="dim-btn primary"
+              disabled={!deviceDrive || !httpDrive || (!includeDocs && !includePhotos) || scanningPreview}
+              on:click={startIndexing}
+            >
+              {$_("device_index_start", {}, "Start Indexing")}
+            </button>
+          {/if}
+        </div>
+      {/if}
+    </div>
+  </div>
+{:else if show}
   <div
     class="dim-backdrop"
     class:light-theme={!isDarkTheme}
@@ -100,7 +225,7 @@
           <span class="dim-icon">📱</span>
           <div>
             <h3 class="dim-title">{$_("device_index_title", {}, "Index This Device")}</h3>
-            <p class="dim-sub">{$_("device_index_subtitle", {}, "Make documents & photos searchable in AI chat without a desktop node.")}</p>
+            <p class="dim-sub">{$_("device_index_subtitle", {}, "Make documents & photos on this device searchable in AI chat.")}</p>
           </div>
         </div>
         <button type="button" class="dim-close" on:click={closeModal} aria-label="Close">×</button>
@@ -195,18 +320,24 @@
 
       <div class="dim-footer">
         {#if state.status === "running"}
+          <button type="button" class="dim-btn secondary" on:click={runInBackground}>
+            {$_("device_index_background", {}, "Run in background")}
+          </button>
           <button type="button" class="dim-btn secondary" on:click={() => clientIndexer.pause()}>
             {$_("pause", {}, "Pause")}
           </button>
           <button type="button" class="dim-btn danger" on:click={() => clientIndexer.stop()}>
-            {$_("stop", {}, "Stop")}
+            {$_("device_index_stop", {}, "Stop")}
           </button>
         {:else if state.status === "paused"}
+          <button type="button" class="dim-btn secondary" on:click={runInBackground}>
+            {$_("device_index_background", {}, "Run in background")}
+          </button>
           <button type="button" class="dim-btn primary" on:click={() => clientIndexer.resume()}>
             {$_("resume", {}, "Resume")}
           </button>
           <button type="button" class="dim-btn danger" on:click={() => clientIndexer.stop()}>
-            {$_("stop", {}, "Stop")}
+            {$_("device_index_stop", {}, "Stop")}
           </button>
         {:else}
           <button type="button" class="dim-btn secondary" on:click={closeModal}>
@@ -227,6 +358,25 @@
 {/if}
 
 <style>
+  .dim-backdrop, .dim-embedded {
+    --dim-bg: #1e2028;
+    --dim-surface: #272a35;
+    --dim-border: rgba(255, 255, 255, 0.12);
+    --dim-text: #f1f3f7;
+    --dim-muted: #9aa0ae;
+    --dim-accent: #5b8def;
+    --dim-danger: #e55353;
+    color: var(--dim-text);
+  }
+  .dim-backdrop.light-theme, .dim-embedded.light-theme {
+    --dim-bg: #ffffff;
+    --dim-surface: #f4f6f9;
+    --dim-border: rgba(15, 23, 42, 0.12);
+    --dim-text: #111827;
+    --dim-muted: #6b7280;
+    --dim-accent: #2563eb;
+    --dim-danger: #dc2626;
+  }
   .dim-backdrop {
     position: fixed;
     inset: 0;
@@ -237,22 +387,6 @@
     align-items: center;
     justify-content: center;
     padding: 16px;
-    --dim-bg: #1e2028;
-    --dim-surface: #272a35;
-    --dim-border: rgba(255, 255, 255, 0.12);
-    --dim-text: #f1f3f7;
-    --dim-muted: #9aa0ae;
-    --dim-accent: #5b8def;
-    --dim-danger: #e55353;
-  }
-  .dim-backdrop.light-theme {
-    --dim-bg: #ffffff;
-    --dim-surface: #f4f6f9;
-    --dim-border: rgba(15, 23, 42, 0.12);
-    --dim-text: #111827;
-    --dim-muted: #6b7280;
-    --dim-accent: #2563eb;
-    --dim-danger: #dc2626;
   }
   .dim-card {
     width: 100%;
@@ -306,6 +440,15 @@
     display: flex;
     flex-direction: column;
     gap: 14px;
+  }
+  .dim-body-embedded {
+    padding: 4px 0 8px;
+  }
+  .dim-inline-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-start;
+    flex-wrap: wrap;
   }
   .dim-options {
     display: flex;
@@ -400,13 +543,14 @@
   .dim-footer {
     display: flex;
     justify-content: flex-end;
+    flex-wrap: wrap;
     gap: 10px;
     padding: 12px 20px 18px;
     border-top: 1px solid var(--dim-border);
   }
   .dim-btn {
     border-radius: 10px;
-    padding: 8px 16px;
+    padding: 8px 14px;
     font-size: 13.5px;
     font-weight: 500;
     cursor: pointer;
@@ -430,4 +574,3 @@
     color: #fff;
   }
 </style>
-

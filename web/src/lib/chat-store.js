@@ -78,6 +78,96 @@ function getWithTimeout(gunChain, ms = GUN_GET_TIMEOUT) {
   return Promise.race([read, timeout]).finally(() => clearTimeout(timer));
 }
 
+// Local IndexedDB persistence for knowledge cards & chunk embeddings
+// (avoids 5MB localStorage limits and ensures cards survive WebView restarts
+// even if GunDB relay is slow or drops large payloads).
+let _idbPromise = null;
+function openKnowledgeIdb() {
+  if (typeof indexedDB === "undefined") return Promise.resolve(null);
+  if (_idbPromise) return _idbPromise;
+  _idbPromise = new Promise((resolve) => {
+    try {
+      const req = indexedDB.open("omd_knowledge_v1", 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains("cards")) {
+          const s = db.createObjectStore("cards", { keyPath: "key" });
+          s.createIndex("tokenHash", "tokenHash", { unique: false });
+        }
+        if (!db.objectStoreNames.contains("chunks")) {
+          db.createObjectStore("chunks", { keyPath: "key" });
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+    } catch (_) {
+      resolve(null);
+    }
+  });
+  return _idbPromise;
+}
+
+async function idbPut(storeName, value) {
+  const db = await openKnowledgeIdb();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(storeName, "readwrite");
+      tx.objectStore(storeName).put(value);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    } catch (_) {
+      resolve();
+    }
+  });
+}
+
+async function idbDelete(storeName, key) {
+  const db = await openKnowledgeIdb();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(storeName, "readwrite");
+      tx.objectStore(storeName).delete(key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    } catch (_) {
+      resolve();
+    }
+  });
+}
+
+async function idbGet(storeName, key) {
+  const db = await openKnowledgeIdb();
+  if (!db) return null;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(storeName, "readonly");
+      const req = tx.objectStore(storeName).get(key);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    } catch (_) {
+      resolve(null);
+    }
+  });
+}
+
+async function idbGetAllCardsForToken(tokenHash) {
+  const db = await openKnowledgeIdb();
+  if (!db) return [];
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("cards", "readonly");
+      const idx = tx.objectStore("cards").index("tokenHash");
+      const req = idx.getAll(tokenHash);
+      req.onsuccess = () => resolve(Array.isArray(req.result) ? req.result : []);
+      req.onerror = () => resolve([]);
+    } catch (_) {
+      resolve([]);
+    }
+  });
+}
+
 export class ChatStore {
   constructor(token) {
     if (!token) throw new Error("ChatStore requires omd_key");
@@ -528,6 +618,7 @@ export class ChatStore {
   }
 
   _subscribeKnowledge() {
+    this._loadKnowledgeFromIdb();
     this._knowledgeListener = this.gun.get("knowledge_" + this.tokenHash).map().on(async (val, key) => {
       if (!val || val.deleted) {
         if (this.knowledgeCache.get(key)) {
@@ -564,11 +655,28 @@ export class ChatStore {
         }
 
         this.knowledgeCache.set(key, clean);
+        idbPut("cards", { key: `${this.tokenHash}:${key}`, tokenHash: this.tokenHash, memoryId: key, card: clean });
         this._notifyKnowledge();
       } catch (e) {
         console.warn("[chat-store] knowledge parse failed:", key, e);
       }
     });
+  }
+
+  async _loadKnowledgeFromIdb() {
+    if (this._idbLoaded) return;
+    this._idbLoaded = true;
+    try {
+      const rows = await idbGetAllCardsForToken(this.tokenHash);
+      let added = false;
+      for (const row of rows) {
+        if (row?.memoryId && row?.card && !this.knowledgeCache.has(row.memoryId)) {
+          this.knowledgeCache.set(row.memoryId, row.card);
+          added = true;
+        }
+      }
+      if (added) this._notifyKnowledge();
+    } catch (_) {}
   }
 
   listKnowledge() {
@@ -586,12 +694,14 @@ export class ChatStore {
     await this.ready;
     this.gun.get("knowledge_" + this.tokenHash).get(memoryId).put(null);
     this.knowledgeCache.delete(memoryId);
+    await idbDelete("cards", `${this.tokenHash}:${memoryId}`);
     await this.deleteChunks(memoryId);
     this._notifyKnowledge();
   }
 
   async saveChunks(memoryId, chunks) {
     if (!Array.isArray(chunks) || chunks.length === 0) return;
+    await idbPut("chunks", { key: `${this.tokenHash}:${memoryId}`, tokenHash: this.tokenHash, chunks });
     const node = this.gun.get("chunks_" + this.tokenHash).get(memoryId);
     const serialized = serializeForGun({ chunks, updated: new Date().toISOString() });
     return new Promise((resolve) => {
@@ -602,16 +712,32 @@ export class ChatStore {
 
   async getChunks(memoryId) {
     await this.ready;
+    const localRow = await idbGet("chunks", `${this.tokenHash}:${memoryId}`);
+    if (localRow && Array.isArray(localRow.chunks) && localRow.chunks.length > 0) {
+      return localRow.chunks;
+    }
     const data = await getWithTimeout(this.gun.get("chunks_" + this.tokenHash).get(memoryId), 2000);
     if (!data || !data.chunks) return [];
     if (typeof data.chunks === "string") {
-      try { return JSON.parse(data.chunks); } catch { return []; }
+      try {
+        const parsed = JSON.parse(data.chunks);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          idbPut("chunks", { key: `${this.tokenHash}:${memoryId}`, tokenHash: this.tokenHash, chunks: parsed });
+        }
+        return parsed;
+      } catch { return []; }
     }
-    if (Array.isArray(data.chunks)) return data.chunks;
+    if (Array.isArray(data.chunks)) {
+      if (data.chunks.length > 0) {
+        idbPut("chunks", { key: `${this.tokenHash}:${memoryId}`, tokenHash: this.tokenHash, chunks: data.chunks });
+      }
+      return data.chunks;
+    }
     return [];
   }
 
   async deleteChunks(memoryId) {
+    await idbDelete("chunks", `${this.tokenHash}:${memoryId}`);
     this.gun.get("chunks_" + this.tokenHash).get(memoryId).put(null);
   }
 
@@ -676,6 +802,9 @@ export class ChatStore {
     if (memo.imagePreview) {
       entry.imagePreview = memo.imagePreview;
     }
+    if (memo.content_hash) {
+      entry.content_hash = String(memo.content_hash);
+    }
     if (Array.isArray(memo.annotation_embedding) && memo.annotation_embedding.length > 0) {
       entry.annotation_embedding = JSON.stringify(memo.annotation_embedding);
     }
@@ -683,20 +812,24 @@ export class ChatStore {
       entry.chunk_count = memo.chunks.length;
       await this.saveChunks(memoryId, memo.chunks);
     }
+    const cacheEntry = { ...entry, text: memo.text, tags };
+    if (entry.annotation_embedding) {
+      cacheEntry.annotation_embedding = memo.annotation_embedding;
+    }
+    this.knowledgeCache.set(memoryId, cacheEntry);
+    await idbPut("cards", { key: `${this.tokenHash}:${memoryId}`, tokenHash: this.tokenHash, memoryId, card: cacheEntry });
+    this._notifyKnowledge();
+
     const serialized = serializeForGun(entry);
-    return new Promise((resolve, reject) => {
-      this.gun.get("knowledge_" + this.tokenHash).get(memoryId).put(serialized, (ack) => {
-        if (ack && ack.err) reject(new Error(ack.err));
-        else {
-          const cacheEntry = { ...entry, text: memo.text, tags };
-          if (entry.annotation_embedding) {
-            cacheEntry.annotation_embedding = memo.annotation_embedding;
-          }
-          this.knowledgeCache.set(memoryId, cacheEntry);
-          this._notifyKnowledge();
-          resolve(cacheEntry);
-        }
-      });
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        resolve(cacheEntry);
+      };
+      this.gun.get("knowledge_" + this.tokenHash).get(memoryId).put(serialized, () => finish());
+      setTimeout(finish, 1200);
     });
   }
 

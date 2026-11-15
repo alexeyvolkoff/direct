@@ -911,7 +911,7 @@
   "onboarding_step_ainode": "3. AI-вузол",
   "onboarding_step_auth": "1. Акаунт",
   "onboarding_step_auth_done": "Авторизація виконана",
-  "onboarding_step_done": "4. Готово",
+  "onboarding_step_done": "5. Готово",
   "onboarding_step_storage": "2. Сховище",
   "onboarding_storage_local_desc": "Працюйте з файлами безпосередньо в папці вашого комп'ютера (наприклад, «Документи» чи «Проєкти»). Натисніть для вибору.",
   "onboarding_storage_local_note": "Доступно в Chrome, Edge та Chromium-браузерах",
@@ -1870,7 +1870,7 @@
   "krea_story_use_prev_ref_hint": "Взяти попередній кадр як референс одягу та локації з вільною зміною пози (ref_boost 1.35)",
   "menu_index_device": "Проіндексувати пристрій",
   "device_index_title": "Індексація пристрою",
-  "device_index_subtitle": "Пошук за документами та фото в AI-чаті без десктопної ноди.",
+  "device_index_subtitle": "Пошук за документами та фото на цьому пристрої в AI-чаті.",
   "device_index_no_drive": "Локальне сховище пристрою недоступне в цій сесії.",
   "device_index_no_ai": "Підключіть AI-ноду (або публічну AI-ноду) для векторизації та розпізнавання.",
   "device_index_docs": "Документи та Завантаження (PDF, DOCX, TXT, MD)",
@@ -1890,5 +1890,12 @@
   "device_index_skipped": "пропущено",
   "device_index_failed": "помилок",
   "device_index_start": "Почати індексацію",
-  "resume": "Продовжити"
+  "resume": "Продовжити",
+  "device_index_stop": "Зупинити",
+  "device_index_background": "У фоні",
+  "device_index_bg_status": "Індексація: {processed}/{total}",
+  "onboarding_step_index": "4. Індексація",
+  "onboarding_index_bg_next": "Продовжити у фоні",
+  "onboarding_btn_skip": "Пропустити",
+  "onboarding_btn_next": "Далі"
 }

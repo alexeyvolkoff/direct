@@ -916,7 +916,7 @@
   "onboarding_step_ainode": "3. KI-Knoten",
   "onboarding_step_auth": "1. Konto",
   "onboarding_step_auth_done": "Autorisierung abgeschlossen",
-  "onboarding_step_done": "4. Fertig",
+  "onboarding_step_done": "5. Fertig",
   "onboarding_step_storage": "2. Speicher",
   "onboarding_storage_local_desc": "Arbeiten Sie direkt in einem Ordner auf Ihrem PC (z. B. „Dokumente“ oder „Projekte“). Klicken Sie zur Auswahl.",
   "onboarding_storage_local_note": "Verfügbar in Chrome, Edge und Chromium-Browsern",
@@ -1870,7 +1870,7 @@
   "krea_story_use_prev_ref_hint": "Vorherigen Frame als Outfit-/Ortsreferenz mit freier Pose verwenden (ref_boost 1.35)",
   "menu_index_device": "Dieses Gerät indizieren",
   "device_index_title": "Gerät indizieren",
-  "device_index_subtitle": "Dokumente & Fotos im KI-Chat ohne Desktop-Node durchsuchbar machen.",
+  "device_index_subtitle": "Dokumente & Fotos auf diesem Gerät im KI-Chat durchsuchbar machen.",
   "device_index_no_drive": "Lokaler Gerätespeicher ist in dieser Sitzung nicht verfügbar.",
   "device_index_no_ai": "Verbinde einen KI-Node (oder öffentlichen KI-Node) zur Vektorisierung.",
   "device_index_docs": "Dokumente & Downloads (PDF, DOCX, TXT, MD)",
@@ -1890,5 +1890,12 @@
   "device_index_skipped": "übersprungen",
   "device_index_failed": "fehlgeschlagen",
   "device_index_start": "Indizierung starten",
-  "resume": "Fortsetzen"
+  "resume": "Fortsetzen",
+  "device_index_stop": "Stoppen",
+  "device_index_background": "Im Hintergrund",
+  "device_index_bg_status": "Indizierung: {processed}/{total}",
+  "onboarding_step_index": "4. Indizierung",
+  "onboarding_index_bg_next": "Im Hintergrund fortsetzen",
+  "onboarding_btn_skip": "Überspringen",
+  "onboarding_btn_next": "Weiter"
 }

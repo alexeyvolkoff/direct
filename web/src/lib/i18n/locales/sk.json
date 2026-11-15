@@ -911,7 +911,7 @@
   "onboarding_step_ainode": "3. AI uzol",
   "onboarding_step_auth": "1. Účet",
   "onboarding_step_auth_done": "Autorizácia dokončená",
-  "onboarding_step_done": "4. Hotovo",
+  "onboarding_step_done": "5. Hotovo",
   "onboarding_step_storage": "2. Úložisko",
   "onboarding_storage_local_desc": "Pracujte priamo v priečinku počítača (napr. «Dokumenty» alebo «Projekty»). Kliknite pre výber.",
   "onboarding_storage_local_note": "K dispozícii v prehliadačoch Chrome, Edge a Chromium",
@@ -1870,7 +1870,7 @@
   "krea_story_use_prev_ref_hint": "Použiť predošlý záber ako referenciu oblečenia/miesta s voľnou pózou (ref_boost 1.35)",
   "menu_index_device": "Indexovať toto zariadenie",
   "device_index_title": "Indexovať toto zariadenie",
-  "device_index_subtitle": "Sprístupnite dokumenty a fotky na vyhľadávanie v AI chate bez desktop uzla.",
+  "device_index_subtitle": "Sprístupnite dokumenty a fotky na tomto zariadení na vyhľadávanie v AI chate.",
   "device_index_no_drive": "Lokálne úložisko zariadenia nie je v tejto relácii dostupné.",
   "device_index_no_ai": "Pripojte AI uzol (alebo verejný AI uzol) na vektorizáciu a rozpoznávanie.",
   "device_index_docs": "Dokumenty a Stiahnuté (PDF, DOCX, TXT, MD)",
@@ -1890,5 +1890,12 @@
   "device_index_skipped": "preskočených",
   "device_index_failed": "zlyhaných",
   "device_index_start": "Spustiť indexovanie",
-  "resume": "Pokračovať"
+  "resume": "Pokračovať",
+  "device_index_stop": "Zastaviť",
+  "device_index_background": "Na pozadí",
+  "device_index_bg_status": "Indexovanie: {processed}/{total}",
+  "onboarding_step_index": "4. Indexovanie",
+  "onboarding_index_bg_next": "Pokračovať na pozadí",
+  "onboarding_btn_skip": "Preskočiť",
+  "onboarding_btn_next": "Ďalej"
 }

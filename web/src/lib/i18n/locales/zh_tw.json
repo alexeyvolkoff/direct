@@ -911,7 +911,7 @@
   "onboarding_step_ainode": "3. AI 節點",
   "onboarding_step_auth": "1. 帳戶",
   "onboarding_step_auth_done": "授權完成",
-  "onboarding_step_done": "4. 完成",
+  "onboarding_step_done": "5. 完成",
   "onboarding_step_storage": "2. 儲存空間",
   "onboarding_storage_local_desc": "直接於電腦資料夾（如「文件」或「專案」）中工作。點擊即可選取資料夾。",
   "onboarding_storage_local_note": "適用於 Chrome、Edge 及基於 Chromium 的瀏覽器",
@@ -1870,7 +1870,7 @@
   "krea_story_use_prev_ref_hint": "以上一格作為服裝/場景參考並自由改變姿勢 (ref_boost 1.35)",
   "menu_index_device": "索引此裝置",
   "device_index_title": "索引此裝置",
-  "device_index_subtitle": "無需桌面節點，即可在 AI 聊天中搜尋文件與照片。",
+  "device_index_subtitle": "讓此裝置上的文件與照片可在 AI 聊天中搜尋。",
   "device_index_no_drive": "目前瀏覽器工作階段無法存取本機裝置儲存空間。",
   "device_index_no_ai": "請連線 AI 節點（或啟用公共 AI 節點）以進行向量化與辨識。",
   "device_index_docs": "文件與下載 (PDF, DOCX, TXT, MD)",
@@ -1890,5 +1890,12 @@
   "device_index_skipped": "已略過",
   "device_index_failed": "失敗",
   "device_index_start": "開始索引",
-  "resume": "繼續"
+  "resume": "繼續",
+  "device_index_stop": "停止",
+  "device_index_background": "背景執行",
+  "device_index_bg_status": "索引中: {processed}/{total}",
+  "onboarding_step_index": "4. 索引",
+  "onboarding_index_bg_next": "在背景繼續",
+  "onboarding_btn_skip": "略過",
+  "onboarding_btn_next": "下一步"
 }

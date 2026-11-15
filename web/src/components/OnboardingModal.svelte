@@ -2,9 +2,11 @@
   import { onMount, onDestroy, createEventDispatcher } from "svelte";
   import { Capacitor } from "@capacitor/core";
   import { _, locale, setLocale, SUPPORTED_LANGUAGES } from "../lib/i18n/index.js";
-  import { isFileSystemAccessAvailable, addShareFromPicker, getOrCreateLocalLinkId, getDefaultWebDeviceName } from "../lib/local-client.js";
+  import { isFileSystemAccessAvailable, addShareFromPicker, getOrCreateLocalLinkId, getDefaultWebDeviceName, LocalDrive } from "../lib/local-client.js";
   import { persistStoragePath, parseStoragePath, cleanStoragePath, DEFAULT_STORAGE_PATH } from "../lib/storage-path.js";
-  import { isNativeStorageAvailable } from "../lib/native-drive.js";
+  import { isNativeStorageAvailable, NativeStorageDrive } from "../lib/native-drive.js";
+  import { indexerStore } from "../lib/client-indexer.js";
+  import DeviceIndexModal from "./DeviceIndexModal.svelte";
   import { fetchNearbyDevices } from "../lib/local-discovery.js";
   import { getStoredOmdKey, omdKeyStore } from "../lib/omd-key.js";
   import {
@@ -35,8 +37,13 @@
   // Step 1: Auth (already done before opening, marked as completed)
   // Step 2: Storage folder
   // Step 3: AI Node selection
-  // Step 4: Congrats with special effects
+  // Step 4: Device Indexing
+  // Step 5: Congrats with special effects
   let currentStep = 2;
+  let onboardingDeviceDrive = null;
+  let onboardingHttpDrive = null;
+  let onboardingChatStore = null;
+  let onboardingDeviceName = "Mobile";
 
   let wasOpen = false;
 
@@ -650,21 +657,28 @@
         ]);
       } catch (_) {}
 
-      // Move to Congrats step!
+      // Prepare Step 4 (Device Indexing)
+      onboardingHttpDrive = resolveSelectedAiDrive(effectiveNodeChoice);
+      onboardingDeviceDrive = isNativeStorageAvailable() ? new NativeStorageDrive() : new LocalDrive();
+      onboardingChatStore = getChatStore(getSettingsKey());
+      onboardingDeviceName = getDefaultWebDeviceName();
+
+      // Move to Device Indexing step!
       currentStep = 4;
       if (!assistantSummary.avatarUrl) {
         fetchAssistantSummary(effectiveNodeChoice).catch(() => {});
       }
-      setTimeout(() => {
-        startConfetti();
-      }, 50);
     } catch (err) {
       console.error("[Onboarding] Error during save:", err);
-      currentStep = 4;
-      setTimeout(() => startConfetti(), 50);
+      goToDoneStep();
     } finally {
       savingNode = false;
     }
+  }
+
+  function goToDoneStep() {
+    currentStep = 5;
+    setTimeout(() => startConfetti(), 50);
   }
 
   // --- Confetti Engine (zero external dependencies, 60fps) ---
@@ -785,9 +799,14 @@
               <span class="step-label">{$_("onboarding_step_ainode", {}, "3. AI-нода")}</span>
             </div>
             <div class="step-line {currentStep >= 4 ? 'active' : ''}"></div>
-            <div class="step-badge {currentStep === 4 ? 'active done' : ''}">
+            <div class="step-badge {currentStep === 4 ? 'active' : currentStep > 4 ? 'done' : ''}">
+              <span class="step-icon">{currentStep > 4 ? '✓' : '4'}</span>
+              <span class="step-label">{$_("onboarding_step_index", {}, "4. Индексация")}</span>
+            </div>
+            <div class="step-line {currentStep >= 5 ? 'active' : ''}"></div>
+            <div class="step-badge {currentStep === 5 ? 'active done' : ''}">
               <span class="step-icon">🎉</span>
-              <span class="step-label">{$_("onboarding_step_done", {}, "4. Готово")}</span>
+              <span class="step-label">{$_("onboarding_step_done", {}, "5. Готово")}</span>
             </div>
           </div>
 
@@ -1308,8 +1327,43 @@
           </div>
         {/if}
 
-        <!-- STEP 4: Congrats & Special Effects -->
+        <!-- STEP 4: Device Indexing -->
         {#if currentStep === 4}
+          <div class="step-content">
+            <h2>{$_("device_index_title", {}, "Index This Device")}</h2>
+            <p class="subtitle">
+              {$_("device_index_subtitle", {}, "Make documents & photos on this device searchable in AI chat.")}
+            </p>
+
+            <DeviceIndexModal
+              embedded={true}
+              {isDarkTheme}
+              deviceDrive={onboardingDeviceDrive}
+              httpDrive={onboardingHttpDrive}
+              chatStore={onboardingChatStore}
+              deviceName={onboardingDeviceName}
+            />
+
+            <div class="modal-footer">
+              <button class="btn-secondary" on:click={() => { currentStep = 3; }}>
+                <span>{$_("onboarding_btn_back", {}, "Назад")}</span>
+              </button>
+              <button class="btn-primary" on:click={goToDoneStep}>
+                {#if $indexerStore.status === "running" || $indexerStore.status === "paused"}
+                  <span>{$_("onboarding_index_bg_next", {}, "Продолжить в фоне")}</span>
+                {:else if $indexerStore.status === "done"}
+                  <span>{$_("onboarding_btn_next", {}, "Далее")}</span>
+                {:else}
+                  <span>{$_("onboarding_btn_skip", {}, "Пропустить")}</span>
+                {/if}
+                <span class="btn-arrow">→</span>
+              </button>
+            </div>
+          </div>
+        {/if}
+
+        <!-- STEP 5: Congrats & Special Effects -->
+        {#if currentStep === 5}
           <div class="step-content congrats-step">
             <canvas bind:this={canvasEl} class="confetti-canvas"></canvas>
 

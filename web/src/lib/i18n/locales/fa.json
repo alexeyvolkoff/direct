@@ -1870,7 +1870,7 @@
   "krea_story_use_prev_ref_hint": "استفاده از فریم قبلی به عنوان مرجع لباس و مکان با آزادی تغییر ژست (ref_boost 1.35)",
   "menu_index_device": "نمایه‌سازی این دستگاه",
   "device_index_title": "نمایه‌سازی این دستگاه",
-  "device_index_subtitle": "اسناد و عکس‌ها را بدون نود دسکتاپ در چت هوش مصنوعی قابل جستجو کنید.",
+  "device_index_subtitle": "اسناد و عکس‌های این دستگاه را در چت هوش مصنوعی قابل جستجو کنید.",
   "device_index_no_drive": "حافظه محلی دستگاه در این نشست در دسترس نیست.",
   "device_index_no_ai": "برای بردارسازی و تشخیص، به یک نود هوش مصنوعی (یا نود عمومی) متصل شوید.",
   "device_index_docs": "اسناد و دانلودها (PDF, DOCX, TXT, MD)",
@@ -1890,5 +1890,12 @@
   "device_index_skipped": "رد شد",
   "device_index_failed": "ناموفق",
   "device_index_start": "شروع نمایه‌سازی",
-  "resume": "ادامه"
+  "resume": "ادامه",
+  "device_index_stop": "توقف",
+  "device_index_background": "در پس‌زمینه",
+  "device_index_bg_status": "نمایه‌سازی: {processed}/{total}",
+  "onboarding_step_index": "4. نمایه‌سازی",
+  "onboarding_index_bg_next": "ادامه در پس‌زمینه",
+  "onboarding_btn_skip": "رد کردن",
+  "onboarding_btn_next": "بعدی"
 }

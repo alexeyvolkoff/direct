@@ -648,6 +648,72 @@ def _image_preview_data_url(img_bytes: bytes, max_side: int = 480) -> str:
         return ""
 
 
+_CONTENT_HASH_LOCK = threading.Lock()
+_CONTENT_HASH_CACHE_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "memory_index", "content_hash_cache.json"
+)
+_CONTENT_HASH_CACHE: dict | None = None
+
+
+def _compute_content_hash(data: bytes) -> str:
+    """Fast SHA-256(size + ':' + first64KB + last64KB), matching client computeContentHash."""
+    if not data:
+        return ""
+    size = len(data)
+    head = data[:65536]
+    tail = data[-65536:] if size > 131072 else (data[65536:] if size > 65536 else b"")
+    h = hashlib.sha256()
+    h.update(f"{size}:".encode("ascii"))
+    h.update(head)
+    if tail:
+        h.update(tail)
+    return h.hexdigest()
+
+
+def _load_content_hash_cache() -> dict:
+    global _CONTENT_HASH_CACHE
+    if _CONTENT_HASH_CACHE is not None:
+        return _CONTENT_HASH_CACHE
+    try:
+        if os.path.isfile(_CONTENT_HASH_CACHE_PATH):
+            with open(_CONTENT_HASH_CACHE_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    _CONTENT_HASH_CACHE = data
+                    return _CONTENT_HASH_CACHE
+    except Exception as e:
+        logging.warning(f"[content_hash_cache] load error: {e}")
+    _CONTENT_HASH_CACHE = {}
+    return _CONTENT_HASH_CACHE
+
+
+def _get_cached_annotation(content_hash: str) -> dict | None:
+    if not content_hash:
+        return None
+    with _CONTENT_HASH_LOCK:
+        cache = _load_content_hash_cache()
+        entry = cache.get(content_hash)
+        return dict(entry) if isinstance(entry, dict) else None
+
+
+def _save_cached_annotation(content_hash: str, annotation: str, tags: list) -> None:
+    if not content_hash or not annotation:
+        return
+    with _CONTENT_HASH_LOCK:
+        cache = _load_content_hash_cache()
+        cache[content_hash] = {
+            "annotation": annotation,
+            "tags": list(tags or []),
+            "updated": datetime.datetime.utcnow().isoformat(timespec="seconds"),
+        }
+        try:
+            os.makedirs(os.path.dirname(_CONTENT_HASH_CACHE_PATH), exist_ok=True)
+            with open(_CONTENT_HASH_CACHE_PATH, "w", encoding="utf-8") as f:
+                json.dump(cache, f, ensure_ascii=False)
+        except Exception as e:
+            logging.warning(f"[content_hash_cache] save error: {e}")
+
+
 async def _rag_recognize_payload(
     ctx,
     img_bytes: bytes,
@@ -659,6 +725,7 @@ async def _rag_recognize_payload(
     gps_coords: str = "",
     taken_at: str = "",
     skip_preview: bool = False,
+    content_hash: str = "",
 ):
     """Общая stateless-логика /recognize: vision-аннотация + теги + эмбеддинги + чанки. Без ChromaDB."""
     if not img_bytes:
@@ -685,13 +752,20 @@ async def _rag_recognize_payload(
         ctx_line = " ".join(extra_ctx)
         effective_prompt = f"{effective_prompt}\n{ctx_line}".strip() if effective_prompt else ctx_line
 
-    try:
-        annotation = await core_service.recognize_image_annotation(ctx, img_bytes, effective_prompt)
-        ai_tags = await core_service.extract_tags_from_text(ctx, annotation) if annotation else []
-    except Exception as e:
-        logging.error(f"[rag/recognize] vision error: {e}")
-        annotation = ""
-        ai_tags = []
+    cached = _get_cached_annotation(content_hash) if content_hash else None
+    if cached and cached.get("annotation"):
+        annotation = cached["annotation"]
+        ai_tags = cached.get("tags") or []
+    else:
+        try:
+            annotation = await core_service.recognize_image_annotation(ctx, img_bytes, effective_prompt)
+            ai_tags = await core_service.extract_tags_from_text(ctx, annotation) if annotation else []
+        except Exception as e:
+            logging.error(f"[rag/recognize] vision error: {e}")
+            annotation = ""
+            ai_tags = []
+        if annotation and annotation.strip() and content_hash:
+            _save_cached_annotation(content_hash, annotation, sorted(set(ai_tags or []) | set(geo_tags)))
 
     if not annotation or not annotation.strip():
         raise HTTPException(status_code=422, detail="could not recognize the image (vision returned empty annotation)")
@@ -720,6 +794,7 @@ async def _rag_recognize_payload(
         "title":                title,
         "annotation":           annotation,
         "tags":                 all_tags,
+        "content_hash":         content_hash,
         "annotation_embedding": annotation_embedding,
         "chunks":               chunks,
         "chunkCount":           len(chunks),
@@ -1053,6 +1128,7 @@ async def rag_recognize_raw_endpoint(request: Request):
     gps_coords = (_decode_hdr(request, "X-OMD-GPS") or "").strip()
     taken_at = (_decode_hdr(request, "X-OMD-Taken-At") or "").strip()
     skip_preview = (request.headers.get("X-OMD-Skip-Preview") or "").strip() in ("1", "true", "yes")
+    content_hash = (_decode_hdr(request, "X-OMD-Content-Hash") or "").strip()
 
     return await _rag_recognize_payload(
         ctx,
@@ -1065,6 +1141,7 @@ async def rag_recognize_raw_endpoint(request: Request):
         gps_coords=gps_coords,
         taken_at=taken_at,
         skip_preview=skip_preview,
+        content_hash=content_hash,
     )
 
 
@@ -1462,25 +1539,33 @@ async def rag_index_endpoint(request: Request, background_tasks: BackgroundTasks
                 return {"action": "error", "doc_id": _doc_id_of(full, rel), "error": f"{fn}: {e}"}
             if not img_bytes:
                 return None
-            folder_name = os.path.basename(os.path.dirname(full))
-            annotation, geo_place, recognized_people = await core_service.recognize_image_readme(
-                ctx, img_bytes, title=fn, folder_name=folder_name
-            )
-            if not annotation:
-                # Распознать не вышло (пустой ответ/heic/svg) — ведём себя как раньше
-                return None
-            ai_tags = []
-            try:
-                ai_tags = await core_service.extract_tags_from_text(ctx, annotation)
-            except Exception as e:
-                logging.warning(f"[rag/index] recognise tags error {fn}: {e}")
-            if recognized_people:
-                ai_tags = sorted(set(ai_tags) | set(recognized_people))
-            if geo_place:
-                place_tokens = [t.strip() for t in re.split(r"[,/]", geo_place)]
-                place_tokens = [t for t in place_tokens if len(t) >= 3 and t.replace(" ", "").isalpha()]
-                place_tokens += core_service.geo_place_localized(geo_place)
-                ai_tags = sorted(set(ai_tags) | set(place_tokens))
+            content_hash = _compute_content_hash(img_bytes)
+            cached = _get_cached_annotation(content_hash)
+            if cached and cached.get("annotation"):
+                annotation = cached["annotation"]
+                ai_tags = cached.get("tags") or []
+                logging.info(f"[rag/index] content_hash cache hit for {fn}, skipping Gemma 4")
+            else:
+                folder_name = os.path.basename(os.path.dirname(full))
+                annotation, geo_place, recognized_people = await core_service.recognize_image_readme(
+                    ctx, img_bytes, title=fn, folder_name=folder_name
+                )
+                if not annotation:
+                    # Распознать не вышло (пустой ответ/heic/svg) — ведём себя как раньше
+                    return None
+                ai_tags = []
+                try:
+                    ai_tags = await core_service.extract_tags_from_text(ctx, annotation)
+                except Exception as e:
+                    logging.warning(f"[rag/index] recognise tags error {fn}: {e}")
+                if recognized_people:
+                    ai_tags = sorted(set(ai_tags) | set(recognized_people))
+                if geo_place:
+                    place_tokens = [t.strip() for t in re.split(r"[,/]", geo_place)]
+                    place_tokens = [t for t in place_tokens if len(t) >= 3 and t.replace(" ", "").isalpha()]
+                    place_tokens += core_service.geo_place_localized(geo_place)
+                    ai_tags = sorted(set(ai_tags) | set(place_tokens))
+                _save_cached_annotation(content_hash, annotation, ai_tags)
             try:
                 readme_path = base_full + ".Readme.md"
                 with open(readme_path, "w", encoding="utf-8") as f:

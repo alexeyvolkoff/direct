@@ -937,7 +937,7 @@
   "onboarding_step_ainode": "3. AI Node",
   "onboarding_step_auth": "1. Account",
   "onboarding_step_auth_done": "Authorization completed",
-  "onboarding_step_done": "4. Done",
+  "onboarding_step_done": "5. Done",
   "onboarding_step_storage": "2. Storage",
   "onboarding_storage_local_desc": "Work with files directly in a folder on your computer (e.g. \"Documents\" or \"Projects\"). Click to select a folder.",
   "onboarding_storage_local_note": "Available in Chrome, Edge, and Chromium-based browsers",
@@ -1871,7 +1871,7 @@
   "krea_story_use_prev_ref_hint": "Use previous frame as outfit/setting reference with soft pose freedom (ref_boost 1.35)",
   "menu_index_device": "Index this device",
   "device_index_title": "Index This Device",
-  "device_index_subtitle": "Make documents & photos searchable in AI chat without a desktop node.",
+  "device_index_subtitle": "Make documents & photos on this device searchable in AI chat.",
   "device_index_no_drive": "Local device storage is not available in this browser session.",
   "device_index_no_ai": "Connect to an AI node (or enable Public AI Node) to vectorize and recognize files.",
   "device_index_docs": "Documents & Downloads (PDF, DOCX, TXT, MD)",
@@ -1891,5 +1891,12 @@
   "device_index_skipped": "skipped",
   "device_index_failed": "failed",
   "device_index_start": "Start Indexing",
-  "resume": "Resume"
+  "resume": "Resume",
+  "device_index_stop": "Stop",
+  "device_index_background": "Run in background",
+  "device_index_bg_status": "Indexing: {processed}/{total}",
+  "onboarding_step_index": "4. Indexing",
+  "onboarding_index_bg_next": "Continue in background",
+  "onboarding_btn_skip": "Skip",
+  "onboarding_btn_next": "Next"
 }

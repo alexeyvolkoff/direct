@@ -911,7 +911,7 @@
   "onboarding_step_ainode": "3. AI Čvor",
   "onboarding_step_auth": "1. Račun",
   "onboarding_step_auth_done": "Autorizacija dovršena",
-  "onboarding_step_done": "4. Gotovo",
+  "onboarding_step_done": "5. Gotovo",
   "onboarding_step_storage": "2. Pohrana",
   "onboarding_storage_local_desc": "Radite s datotekama izravno u mapi vašeg računala (npr. «Dokumenti» ili «Projekti»). Kliknite za odabir mape.",
   "onboarding_storage_local_note": "Dostupno u preglednicima Chrome, Edge i Chromium",
@@ -1870,7 +1870,7 @@
   "krea_story_use_prev_ref_hint": "Koristi prethodni kadar kao referencu odjeće/lokacije uz slobodnu pozu (ref_boost 1.35)",
   "menu_index_device": "Indeksiraj ovaj uređaj",
   "device_index_title": "Indeksiraj ovaj uređaj",
-  "device_index_subtitle": "Omogućite pretragu dokumenata i fotografija u AI chatu bez desktop čvora.",
+  "device_index_subtitle": "Omogućite pretragu dokumenata i fotografija na ovom uređaju u AI chatu.",
   "device_index_no_drive": "Lokalna pohrana uređaja nije dostupna u ovoj sesiji.",
   "device_index_no_ai": "Povežite AI čvor (ili javni AI čvor) za vektorizaciju i prepoznavanje.",
   "device_index_docs": "Dokumenti i Preuzimanja (PDF, DOCX, TXT, MD)",
@@ -1890,5 +1890,12 @@
   "device_index_skipped": "preskočeno",
   "device_index_failed": "neuspjelo",
   "device_index_start": "Pokreni indeksiranje",
-  "resume": "Nastavi"
+  "resume": "Nastavi",
+  "device_index_stop": "Zaustavi",
+  "device_index_background": "U pozadini",
+  "device_index_bg_status": "Indeksiranje: {processed}/{total}",
+  "onboarding_step_index": "4. Indeksiranje",
+  "onboarding_index_bg_next": "Nastavi u pozadini",
+  "onboarding_btn_skip": "Preskoči",
+  "onboarding_btn_next": "Dalje"
 }

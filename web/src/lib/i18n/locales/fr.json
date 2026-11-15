@@ -916,7 +916,7 @@
   "onboarding_step_ainode": "3. Nœud IA",
   "onboarding_step_auth": "1. Compte",
   "onboarding_step_auth_done": "Autorisation terminée",
-  "onboarding_step_done": "4. Terminé",
+  "onboarding_step_done": "5. Terminé",
   "onboarding_step_storage": "2. Stockage",
   "onboarding_storage_local_desc": "Travaillez directement dans un dossier de votre ordinateur (ex. « Documents » ou « Projets »). Cliquez pour choisir.",
   "onboarding_storage_local_note": "Disponible sur Chrome, Edge et les navigateurs Chromium",
@@ -1870,7 +1870,7 @@
   "krea_story_use_prev_ref_hint": "Utiliser l'image précédente comme référence de tenue/lieu avec pose libre (ref_boost 1.35)",
   "menu_index_device": "Indexer cet appareil",
   "device_index_title": "Indexer cet appareil",
-  "device_index_subtitle": "Rendez vos documents et photos consultables dans le chat IA sans nœud de bureau.",
+  "device_index_subtitle": "Rendez les documents et photos de cet appareil consultables dans le chat IA.",
   "device_index_no_drive": "Le stockage local n'est pas disponible dans cette session.",
   "device_index_no_ai": "Connectez un nœud IA (ou le nœud IA public) pour vectoriser et analyser.",
   "device_index_docs": "Documents et Téléchargements (PDF, DOCX, TXT, MD)",
@@ -1890,5 +1890,12 @@
   "device_index_skipped": "ignorés",
   "device_index_failed": "échoués",
   "device_index_start": "Démarrer l'indexation",
-  "resume": "Reprendre"
+  "resume": "Reprendre",
+  "device_index_stop": "Arrêter",
+  "device_index_background": "En arrière-plan",
+  "device_index_bg_status": "Indexation : {processed}/{total}",
+  "onboarding_step_index": "4. Indexation",
+  "onboarding_index_bg_next": "Continuer en arrière-plan",
+  "onboarding_btn_skip": "Ignorer",
+  "onboarding_btn_next": "Suivant"
 }

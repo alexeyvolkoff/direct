@@ -15,6 +15,7 @@ import {
   extractTextFromBytes,
   chunkText,
   embedTexts,
+  computeContentHash,
 } from "./client-rag.js";
 
 const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "webp"]);
@@ -237,6 +238,7 @@ export async function scanDeviceForIndexable(drive, {
   includePhotos = true,
   timelineDays = 30,
   chatStore = null,
+  extraCards = [],
   maxScanFiles = 1500,
 } = {}) {
   if (!drive || typeof drive.getFiles !== "function") {
@@ -244,11 +246,12 @@ export async function scanDeviceForIndexable(drive, {
   }
 
   const manifest = loadManifest();
-  const existingDocs = new Set(
-    (chatStore ? chatStore.listKnowledge() : [])
-      .map((c) => c.document_id)
-      .filter(Boolean)
-  );
+  const knownCards = [
+    ...(chatStore ? chatStore.listKnowledge() : []),
+    ...(Array.isArray(extraCards) ? extraCards : []),
+  ];
+  const existingDocs = new Set(knownCards.map((c) => c?.document_id).filter(Boolean));
+  const existingHashes = new Set(knownCards.map((c) => c?.content_hash).filter(Boolean));
 
   const cutoffMs = timelineDays > 0 ? Date.now() - timelineDays * 86400 * 1000 : 0;
   const docs = [];
@@ -290,7 +293,12 @@ export async function scanDeviceForIndexable(drive, {
       const mtimeMs = item.date ? new Date(item.date).getTime() : 0;
       const size = Number(item.size || 0);
       const prev = manifest[docId];
-      if ((prev && prev.size === size && prev.mtime === mtimeMs) || existingDocs.has(docId)) {
+      const manifestStillExists =
+        prev &&
+        prev.size === size &&
+        prev.mtime === mtimeMs &&
+        (prev.empty || existingDocs.has(docId) || (prev.hash && existingHashes.has(prev.hash)));
+      if (manifestStillExists || existingDocs.has(docId)) {
         skippedCount++;
         continue;
       }
@@ -354,6 +362,7 @@ class ClientIndexerRunner {
     drive,
     httpDrive,
     chatStore,
+    extraCards = [],
     deviceName = "Mobile",
     owner = "anonymous",
     includeDocs = true,
@@ -376,6 +385,7 @@ class ClientIndexerRunner {
       includePhotos,
       timelineDays,
       chatStore,
+      extraCards,
     });
 
     const queue = [...docs, ...photos];
@@ -400,8 +410,14 @@ class ClientIndexerRunner {
     });
 
     const manifest = loadManifest();
+    const existingHashes = new Set(
+      [...(chatStore ? chatStore.listKnowledge() : []), ...(Array.isArray(extraCards) ? extraCards : [])]
+        .map((c) => c?.content_hash)
+        .filter(Boolean)
+    );
     let processed = 0;
     let indexed = 0;
+    let skipped = skippedCount;
     let failed = 0;
     let avgMs = 0;
 
@@ -416,99 +432,141 @@ class ClientIndexerRunner {
       try {
         if (item.kind === "doc") {
           const bytes = await readDriveFileBytes(drive, item.path, item.size);
-          const text = await extractTextFromBytes(bytes, item.name);
-          if (text && text.length >= 20) {
-            const chunksTexts = chunkText(text, 900, 150);
-            const annotation = text.slice(0, 600).trim();
-            const textsToEmbed = [annotation, ...chunksTexts];
-            const embeddings = await embedTexts(httpDrive, textsToEmbed, 24, signal);
-            const annotationEmbedding = embeddings[0] || null;
-            const chunks = chunksTexts
-              .map((ct, idx) => ({ text: ct, embedding: embeddings[idx + 1] }))
-              .filter((c) => Array.isArray(c.embedding) && c.embedding.length > 0);
-
-            await chatStore.addKnowledge({
-              document_id: item.docId,
-              title: item.name,
-              text: annotation,
-              tags: ["document", deviceName.toLowerCase()],
-              collection: "user",
-              annotation_embedding: annotationEmbedding,
-              chunks,
-              timestamp: item.mtimeMs || Date.now(),
-            });
-            manifest[item.docId] = { size: item.size, mtime: item.mtimeMs, at: Date.now() };
+          const contentHash = await computeContentHash(bytes, item.size || bytes.length);
+          if (existingHashes.has(contentHash)) {
+            manifest[item.docId] = { size: item.size, mtime: item.mtimeMs, hash: contentHash, at: Date.now() };
             saveManifest(manifest);
-            indexed++;
+            skipped++;
           } else {
-            manifest[item.docId] = { size: item.size, mtime: item.mtimeMs, empty: true, at: Date.now() };
-            saveManifest(manifest);
+            const text = await extractTextFromBytes(bytes, item.name);
+            if (text && text.length >= 20) {
+              const chunksTexts = chunkText(text, 900, 150);
+              const annotation = text.slice(0, 600).trim();
+              const textsToEmbed = [annotation, ...chunksTexts];
+              const embeddings = await embedTexts(httpDrive, textsToEmbed, 24, signal);
+              const annotationEmbedding = embeddings[0] || null;
+              const chunks = chunksTexts
+                .map((ct, idx) => ({ text: ct, embedding: embeddings[idx + 1] }))
+                .filter((c) => Array.isArray(c.embedding) && c.embedding.length > 0);
+
+              await chatStore.addKnowledge({
+                document_id: item.docId,
+                title: item.name,
+                text: annotation,
+                tags: ["document", deviceName.toLowerCase()],
+                collection: "user",
+                content_hash: contentHash,
+                annotation_embedding: annotationEmbedding,
+                chunks,
+                timestamp: item.mtimeMs || Date.now(),
+              });
+              existingHashes.add(contentHash);
+              manifest[item.docId] = { size: item.size, mtime: item.mtimeMs, hash: contentHash, at: Date.now() };
+              saveManifest(manifest);
+              indexed++;
+            } else {
+              manifest[item.docId] = { size: item.size, mtime: item.mtimeMs, empty: true, at: Date.now() };
+              saveManifest(manifest);
+            }
           }
         } else {
-          // Photo pipeline: EXIF + <=1024px JPEG + local 320px thumbnail + /rag/recognize/raw
+          // Photo pipeline: EXIF + contentHash + <=1024px JPEG + local 320px thumbnail + /rag/recognize/raw
           let exif = { takenAt: "", gpsString: "" };
+          let headBytes = null;
+          let tailBytes = null;
+          let rawBytes = null;
           if (typeof drive.readRange === "function") {
             try {
-              const { bytes: headBytes } = await drive.readRange(item.path, 0, 131072);
-              exif = extractJpegExif(headBytes);
+              const headRes = await drive.readRange(item.path, 0, 131072);
+              headBytes = headRes?.bytes || null;
+              if (headBytes) exif = extractJpegExif(headBytes);
+              const totalSz = Number(headRes?.totalSize || item.size || 0);
+              if (totalSz > 65536) {
+                const tailOff = Math.max(0, totalSz - 65536);
+                const tailRes = await drive.readRange(item.path, tailOff, 65536);
+                tailBytes = tailRes?.bytes || null;
+              }
             } catch (_) {}
           }
 
-          let uploadBytes = null;
-          let previewDataUrl = "";
-          if (drive.isNative && typeof drive.getThumbnail === "function") {
-            const bigUrl = await drive.getThumbnail(item.path, 1024, 1024);
-            if (bigUrl) {
-              uploadBytes = await dataUrlToBytes(bigUrl);
-              const smallUrl = await drive.getThumbnail(item.path, 320, 320);
-              previewDataUrl = smallUrl || bigUrl;
+          let contentHash = "";
+          if (headBytes) {
+            const totalSz = Number(item.size || headBytes.length);
+            const h64 = headBytes.length > 65536 ? headBytes.subarray(0, 65536) : headBytes;
+            const t64 = tailBytes && totalSz > 65536 ? tailBytes : new Uint8Array(0);
+            const combined = new Uint8Array(h64.length + t64.length);
+            combined.set(h64, 0);
+            if (t64.length) combined.set(t64, h64.length);
+            contentHash = await computeContentHash(combined, totalSz);
+          } else {
+            rawBytes = await readDriveFileBytes(drive, item.path, item.size);
+            contentHash = await computeContentHash(rawBytes, item.size || rawBytes.length);
+          }
+
+          if (contentHash && existingHashes.has(contentHash)) {
+            manifest[item.docId] = { size: item.size, mtime: item.mtimeMs, hash: contentHash, at: Date.now() };
+            saveManifest(manifest);
+            skipped++;
+          } else {
+            let uploadBytes = null;
+            let previewDataUrl = "";
+            if (drive.isNative && typeof drive.getThumbnail === "function") {
+              const bigUrl = await drive.getThumbnail(item.path, 1024, 1024);
+              if (bigUrl) {
+                uploadBytes = await dataUrlToBytes(bigUrl);
+                const smallUrl = await drive.getThumbnail(item.path, 320, 320);
+                previewDataUrl = smallUrl || bigUrl;
+              }
             }
+            if (!uploadBytes) {
+              if (!rawBytes) rawBytes = await readDriveFileBytes(drive, item.path, item.size);
+              if (!exif.gpsString && !exif.takenAt) exif = extractJpegExif(rawBytes);
+              const blob = new Blob([rawBytes]);
+              const resized = await resizeBlobToJpeg(blob, 1024, 0.78);
+              uploadBytes = new Uint8Array(await resized.blob.arrayBuffer());
+              const thumb = await resizeBlobToJpeg(blob, 320, 0.72);
+              previewDataUrl = thumb.dataUrl;
+            }
+
+            const headers = {
+              Accept: "application/json",
+              "X-OMD-Filename": encodeURIComponent(item.name),
+              "X-OMD-Source": encodeURIComponent(item.path),
+              "X-OMD-Doc-Path": encodeURIComponent(item.docId),
+              "X-OMD-RAG-Scope": "private",
+              "X-OMD-Owner": owner,
+              "X-OMD-Skip-Preview": "1",
+            };
+            if (contentHash) headers["X-OMD-Content-Hash"] = contentHash;
+            if (exif.gpsString) headers["X-OMD-GPS"] = exif.gpsString;
+            if (exif.takenAt) headers["X-OMD-Taken-At"] = exif.takenAt;
+
+            const res = await httpDrive.fetch("/rag/recognize/raw", {
+              method: "POST",
+              headers,
+              body: uploadBytes,
+              signal,
+            });
+            if (!res.ok) throw new Error(`recognize HTTP ${res.status}`);
+            const data = await res.json();
+
+            await chatStore.addKnowledge({
+              document_id: item.docId,
+              title: data.title || item.name,
+              text: data.annotation || "",
+              tags: Array.isArray(data.tags) ? data.tags : ["photo"],
+              collection: "user",
+              content_hash: contentHash || data.content_hash || "",
+              imagePreview: previewDataUrl || data.imagePreview || "",
+              annotation_embedding: Array.isArray(data.annotation_embedding) ? data.annotation_embedding : null,
+              chunks: Array.isArray(data.chunks) ? data.chunks : [],
+              timestamp: item.mtimeMs || Date.now(),
+            });
+            if (contentHash) existingHashes.add(contentHash);
+            manifest[item.docId] = { size: item.size, mtime: item.mtimeMs, hash: contentHash, at: Date.now() };
+            saveManifest(manifest);
+            indexed++;
           }
-          if (!uploadBytes) {
-            const rawBytes = await readDriveFileBytes(drive, item.path, item.size);
-            if (!exif.gpsString && !exif.takenAt) exif = extractJpegExif(rawBytes);
-            const blob = new Blob([rawBytes]);
-            const resized = await resizeBlobToJpeg(blob, 1024, 0.78);
-            uploadBytes = new Uint8Array(await resized.blob.arrayBuffer());
-            const thumb = await resizeBlobToJpeg(blob, 320, 0.72);
-            previewDataUrl = thumb.dataUrl;
-          }
-
-          const headers = {
-            Accept: "application/json",
-            "X-OMD-Filename": encodeURIComponent(item.name),
-            "X-OMD-Source": encodeURIComponent(item.path),
-            "X-OMD-Doc-Path": encodeURIComponent(item.docId),
-            "X-OMD-RAG-Scope": "private",
-            "X-OMD-Owner": owner,
-            "X-OMD-Skip-Preview": "1",
-          };
-          if (exif.gpsString) headers["X-OMD-GPS"] = exif.gpsString;
-          if (exif.takenAt) headers["X-OMD-Taken-At"] = exif.takenAt;
-
-          const res = await httpDrive.fetch("/rag/recognize/raw", {
-            method: "POST",
-            headers,
-            body: uploadBytes,
-            signal,
-          });
-          if (!res.ok) throw new Error(`recognize HTTP ${res.status}`);
-          const data = await res.json();
-
-          await chatStore.addKnowledge({
-            document_id: item.docId,
-            title: data.title || item.name,
-            text: data.annotation || "",
-            tags: Array.isArray(data.tags) ? data.tags : ["photo"],
-            collection: "user",
-            imagePreview: previewDataUrl || data.imagePreview || "",
-            annotation_embedding: Array.isArray(data.annotation_embedding) ? data.annotation_embedding : null,
-            chunks: Array.isArray(data.chunks) ? data.chunks : [],
-            timestamp: item.mtimeMs || Date.now(),
-          });
-          manifest[item.docId] = { size: item.size, mtime: item.mtimeMs, at: Date.now() };
-          saveManifest(manifest);
-          indexed++;
         }
       } catch (e) {
         if (e?.name === "AbortError") break;
@@ -526,6 +584,7 @@ class ClientIndexerRunner {
         ...s,
         processed,
         indexed,
+        skipped,
         failed,
         avgMsPerItem: Math.round(avgMs),
         etaSeconds,

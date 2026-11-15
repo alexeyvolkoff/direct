@@ -911,7 +911,7 @@
   "onboarding_step_ainode": "3. AI-node",
   "onboarding_step_auth": "1. Account",
   "onboarding_step_auth_done": "Autorisatie voltooid",
-  "onboarding_step_done": "4. Klaar",
+  "onboarding_step_done": "5. Klaar",
   "onboarding_step_storage": "2. Opslag",
   "onboarding_storage_local_desc": "Werk direct in een map op uw pc (bijv. «Documenten» of «Projecten»). Klik om een map te kiezen.",
   "onboarding_storage_local_note": "Beschikbaar in Chrome, Edge en Chromium-browsers",
@@ -1870,7 +1870,7 @@
   "krea_story_use_prev_ref_hint": "Gebruik vorig frame als outfit-/locatiereferentie met vrije pose (ref_boost 1.35)",
   "menu_index_device": "Dit apparaat indexeren",
   "device_index_title": "Dit apparaat indexeren",
-  "device_index_subtitle": "Maak documenten en foto's doorzoekbaar in AI-chat zonder desktopnode.",
+  "device_index_subtitle": "Maak documenten en foto's op dit apparaat doorzoekbaar in AI-chat.",
   "device_index_no_drive": "Lokale apparaatopslag is niet beschikbaar in deze sessie.",
   "device_index_no_ai": "Verbind met een AI-node (of publieke AI-node) om te vectoriseren.",
   "device_index_docs": "Documenten & Downloads (PDF, DOCX, TXT, MD)",
@@ -1890,5 +1890,12 @@
   "device_index_skipped": "overgeslagen",
   "device_index_failed": "mislukt",
   "device_index_start": "Indexeren starten",
-  "resume": "Hervatten"
+  "resume": "Hervatten",
+  "device_index_stop": "Stoppen",
+  "device_index_background": "Op achtergrond",
+  "device_index_bg_status": "Indexeren: {processed}/{total}",
+  "onboarding_step_index": "4. Indexeren",
+  "onboarding_index_bg_next": "Doorgaan op achtergrond",
+  "onboarding_btn_skip": "Overslaan",
+  "onboarding_btn_next": "Volgende"
 }

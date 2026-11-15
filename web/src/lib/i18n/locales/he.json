@@ -911,7 +911,7 @@
   "onboarding_step_ainode": "3. צומת AI",
   "onboarding_step_auth": "1. חשבון",
   "onboarding_step_auth_done": "האימות הושלם",
-  "onboarding_step_done": "4. הושלם",
+  "onboarding_step_done": "5. הושלם",
   "onboarding_step_storage": "2. אחסון",
   "onboarding_storage_local_desc": "עבוד ישירות בתיקייה במחשב שלך (למשל «מסמכים» או «פרויקטים»). לחץ לבחירה.",
   "onboarding_storage_local_note": "זמין בדפדפני Chrome, Edge ודפדפני Chromium",
@@ -1870,7 +1870,7 @@
   "krea_story_use_prev_ref_hint": "השתמש בפריים הקודם כהתייחסות לבגד/מיקום עם חופש תנוחה (ref_boost 1.35)",
   "menu_index_device": "הוסף מכשיר לאינדקס",
   "device_index_title": "הוספת מכשיר לאינדקס",
-  "device_index_subtitle": "הפוך מסמכים ותמונות לזמינים לחיפוש בצ'אט AI ללא צומת שולחני.",
+  "device_index_subtitle": "הפוך מסמכים ותמונות במכשיר זה לזמינים לחיפוש בצ'אט AI.",
   "device_index_no_drive": "אחסון מקומי של המכשיר אינו זמין בהפעלה זו.",
   "device_index_no_ai": "התחבר לצומת AI (או לצומת הציבורי) כדי לבצע וקטוריזציה וזיהוי.",
   "device_index_docs": "מסמכים והורדות (PDF, DOCX, TXT, MD)",
@@ -1890,5 +1890,12 @@
   "device_index_skipped": "דולגו",
   "device_index_failed": "נכשלו",
   "device_index_start": "התחל אינדוקס",
-  "resume": "המשך"
+  "resume": "המשך",
+  "device_index_stop": "עצור",
+  "device_index_background": "ברקע",
+  "device_index_bg_status": "אינדוקס: {processed}/{total}",
+  "onboarding_step_index": "4. אינדוקס",
+  "onboarding_index_bg_next": "המשך ברקע",
+  "onboarding_btn_skip": "דלג",
+  "onboarding_btn_next": "הבא"
 }

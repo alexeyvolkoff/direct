@@ -911,7 +911,7 @@
   "onboarding_step_ainode": "3. Yapay Zekâ Düğümü",
   "onboarding_step_auth": "1. Hesap",
   "onboarding_step_auth_done": "Yetkilendirme tamamlandı",
-  "onboarding_step_done": "4. Tamamlandı",
+  "onboarding_step_done": "5. Tamamlandı",
   "onboarding_step_storage": "2. Depolama",
   "onboarding_storage_local_desc": "Doğrudan bilgisayarınızdaki bir klasörde (örn. «Belgeler» veya «Projeler») çalışın. Seçmek için tıklayın.",
   "onboarding_storage_local_note": "Chrome, Edge ve Chromium tarayıcılarında kullanılabilir",
@@ -1870,7 +1870,7 @@
   "krea_story_use_prev_ref_hint": "Önceki kareyi serbest pozlu kıyafet/mekan referansı olarak kullan (ref_boost 1.35)",
   "menu_index_device": "Bu cihazı dizine ekle",
   "device_index_title": "Bu Cihazı Dizine Ekle",
-  "device_index_subtitle": "Masaüstü düğümü olmadan belgeleri ve fotoğrafları AI sohbetinde aranabilir yapın.",
+  "device_index_subtitle": "Bu cihazdaki belgeleri ve fotoğrafları AI sohbetinde aranabilir yapın.",
   "device_index_no_drive": "Bu tarayıcı oturumunda yerel cihaz depolaması kullanılamıyor.",
   "device_index_no_ai": "Vektörleştirme ve tanıma için bir AI düğümüne (veya Genel AI Düğümüne) bağlanın.",
   "device_index_docs": "Belgeler ve İndirilenler (PDF, DOCX, TXT, MD)",
@@ -1890,5 +1890,12 @@
   "device_index_skipped": "atlandı",
   "device_index_failed": "başarısız",
   "device_index_start": "Dizinlemeyi Başlat",
-  "resume": "Devam Et"
+  "resume": "Devam Et",
+  "device_index_stop": "Durdur",
+  "device_index_background": "Arka planda",
+  "device_index_bg_status": "Dizinleniyor: {processed}/{total}",
+  "onboarding_step_index": "4. Dizinleme",
+  "onboarding_index_bg_next": "Arka planda devam et",
+  "onboarding_btn_skip": "Atla",
+  "onboarding_btn_next": "İleri"
 }
