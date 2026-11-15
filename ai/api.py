@@ -15,6 +15,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="multiprocessing.popen_fork")
 import logging
+import threading
 
 # Suppress logging of DuplicateIDError and telemetry warnings from chromadb
 class DuplicateIDFilter(logging.Filter):
