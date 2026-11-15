@@ -1907,5 +1907,6 @@
   "local_vision_desc": "Fotoğrafları açıklayın ve içindeki metni görüntüleri sunucuya göndermeden doğrudan bu cihazda tanıyın.",
   "local_vision_downloading": "Görüş modeli indiriliyor: {pct}%",
   "local_vision_ready": "Fotoğraf analizi modeli hazır",
-  "local_vision_later_hint": "Bunu daha sonra Ayarlar → AI Düğümü bölümünden etkinleştirebilirsiniz."
+  "local_vision_later_hint": "Bunu daha sonra Ayarlar → AI Düğümü bölümünden etkinleştirebilirsiniz.",
+  "device_index_scanning_progress": "Taranıyor{folder}: {scanned} kontrol edildi ({docs} belge, {photos} fotoğraf)"
 }

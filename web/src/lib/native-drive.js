@@ -220,6 +220,11 @@ export class NativeStorageDrive {
     };
   }
 
+  async analyzeImage(virtualPath, maxDim = 1024) {
+    if (!isNativeStorageAvailable()) throw new Error("Native storage unavailable");
+    return await NativeStorage.analyzeImage({ path: virtualPath, maxDim });
+  }
+
   async readRange(virtualPath, offset = 0, size = 0, query = "") {
     if (!isNativeStorageAvailable()) throw new Error("Native storage unavailable");
     const isThumb = query && (query.includes("resize=true") || query.includes("thumbnail=true") || query.includes("cover=") || query.includes("poster"));

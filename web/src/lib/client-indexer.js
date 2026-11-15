@@ -17,7 +17,7 @@ import {
   embedTexts,
   computeContentHash,
 } from "./client-rag.js";
-import { isLocalVisionEnabled, recognizeImageLocal } from "./local-vision.js";
+import { isLocalVisionEnabled, recognizeImageLocal, recognizeImageNative } from "./local-vision.js";
 
 const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "webp"]);
 const MANIFEST_KEY = "omd_indexed_manifest_v1";
@@ -241,6 +241,7 @@ export async function scanDeviceForIndexable(drive, {
   chatStore = null,
   extraCards = [],
   maxScanFiles = 1500,
+  onProgress = null,
 } = {}) {
   if (!drive || typeof drive.getFiles !== "function") {
     return { docs: [], photos: [], skippedCount: 0 };
@@ -259,9 +260,28 @@ export async function scanDeviceForIndexable(drive, {
   const photos = [];
   let skippedCount = 0;
   let visited = 0;
+  let totalVisited = 0;
+  let lastProgressAt = 0;
+
+  const emitProgress = (folder, force = false) => {
+    if (typeof onProgress !== "function") return;
+    const now = performance.now();
+    if (!force && now - lastProgressAt < 80) return;
+    lastProgressAt = now;
+    try {
+      onProgress({
+        folder: folder || "/",
+        scanned: totalVisited,
+        docs: docs.length,
+        photos: photos.length,
+        skipped: skippedCount,
+      });
+    } catch (_) {}
+  };
 
   const walk = async (folderPath, depth = 0, bucket = "") => {
     if (depth > 5 || visited >= maxScanFiles) return;
+    emitProgress(folderPath, true);
     let entries = [];
     try {
       entries = await drive.getFiles(folderPath);
@@ -302,6 +322,11 @@ export async function scanDeviceForIndexable(drive, {
       }
 
       visited++;
+      totalVisited++;
+      if (totalVisited % 25 === 0) {
+        emitProgress(folderPath, false);
+        await new Promise((r) => setTimeout(r, 0));
+      }
       const docId = `/${deviceName}/${itemPath.replace(/^\/+/, "")}`;
       const mtimeMs = item.date ? new Date(item.date).getTime() : 0;
       if (bucket === "photos" && cutoffMs > 0 && mtimeMs > 0 && mtimeMs < cutoffMs) {
@@ -334,6 +359,7 @@ export async function scanDeviceForIndexable(drive, {
   await walk("/", 0, "");
   // Newest photos first
   photos.sort((a, b) => (b.mtimeMs || 0) - (a.mtimeMs || 0));
+  emitProgress("", true);
 
   return { docs, photos, skippedCount };
 }
@@ -343,6 +369,15 @@ class ClientIndexerRunner {
     this._abort = null;
     this._paused = false;
     this._pauseResolvers = [];
+  }
+
+  reset() {
+    if (this._abort) {
+      try { this._abort.abort(); } catch (_) {}
+    }
+    this._paused = false;
+    this._pauseResolvers.splice(0);
+    indexerStore.set({ ...initialState });
   }
 
   pause() {
@@ -527,32 +562,17 @@ class ClientIndexerRunner {
           } else {
             let uploadBytes = null;
             let previewDataUrl = "";
-            if (drive.isNative && typeof drive.getThumbnail === "function") {
-              const bigUrl = await drive.getThumbnail(item.path, 1024, 1024);
-              if (bigUrl) {
-                uploadBytes = await dataUrlToBytes(bigUrl);
-                const smallUrl = await drive.getThumbnail(item.path, 320, 320);
-                previewDataUrl = smallUrl || bigUrl;
-              }
-            }
-            if (!uploadBytes) {
-              if (!rawBytes) rawBytes = await readDriveFileBytes(drive, item.path, item.size);
-              if (!exif.gpsString && !exif.takenAt) exif = extractJpegExif(rawBytes);
-              const blob = new Blob([rawBytes]);
-              const resized = await resizeBlobToJpeg(blob, 1024, 0.78);
-              uploadBytes = new Uint8Array(await resized.blob.arrayBuffer());
-              const thumb = await resizeBlobToJpeg(blob, 320, 0.72);
-              previewDataUrl = thumb.dataUrl;
-            }
-
             let data = null;
-            if (isLocalVisionEnabled()) {
+
+            if (isLocalVisionEnabled() && typeof drive.analyzeImage === "function") {
               try {
-                const localRes = await recognizeImageLocal(uploadBytes, {
+                const localRes = await recognizeImageNative(drive, item.path, {
                   filename: item.name,
                   exif,
-                  signal,
                 });
+                if (typeof drive.getThumbnail === "function") {
+                  previewDataUrl = (await drive.getThumbnail(item.path, 320, 320)) || "";
+                }
                 const [emb] = await embedTexts(httpDrive, [localRes.annotation], 1, signal);
                 data = {
                   title: localRes.title,
@@ -561,9 +581,50 @@ class ClientIndexerRunner {
                   annotation_embedding: Array.isArray(emb) ? emb : null,
                   chunks: [{ text: localRes.annotation, embedding: Array.isArray(emb) ? emb : null }],
                 };
-              } catch (localErr) {
-                if (localErr?.name === "AbortError") throw localErr;
-                console.warn(`[client-indexer] local vision fallback to node for ${item.name}:`, localErr);
+              } catch (nativeErr) {
+                if (nativeErr?.name === "AbortError") throw nativeErr;
+                console.warn(`[client-indexer] native vision fallback for ${item.name}:`, nativeErr);
+              }
+            }
+
+            if (!data) {
+              if (drive.isNative && typeof drive.getThumbnail === "function") {
+                const bigUrl = await drive.getThumbnail(item.path, 1024, 1024);
+                if (bigUrl) {
+                  uploadBytes = await dataUrlToBytes(bigUrl);
+                  const smallUrl = await drive.getThumbnail(item.path, 320, 320);
+                  previewDataUrl = smallUrl || bigUrl;
+                }
+              }
+              if (!uploadBytes) {
+                if (!rawBytes) rawBytes = await readDriveFileBytes(drive, item.path, item.size);
+                if (!exif.gpsString && !exif.takenAt) exif = extractJpegExif(rawBytes);
+                const blob = new Blob([rawBytes]);
+                const resized = await resizeBlobToJpeg(blob, 1024, 0.78);
+                uploadBytes = new Uint8Array(await resized.blob.arrayBuffer());
+                const thumb = await resizeBlobToJpeg(blob, 320, 0.72);
+                previewDataUrl = thumb.dataUrl;
+              }
+
+              if (isLocalVisionEnabled()) {
+                try {
+                  const localRes = await recognizeImageLocal(uploadBytes, {
+                    filename: item.name,
+                    exif,
+                    signal,
+                  });
+                  const [emb] = await embedTexts(httpDrive, [localRes.annotation], 1, signal);
+                  data = {
+                    title: localRes.title,
+                    annotation: localRes.annotation,
+                    tags: localRes.tags,
+                    annotation_embedding: Array.isArray(emb) ? emb : null,
+                    chunks: [{ text: localRes.annotation, embedding: Array.isArray(emb) ? emb : null }],
+                  };
+                } catch (localErr) {
+                  if (localErr?.name === "AbortError") throw localErr;
+                  console.warn(`[client-indexer] local vision fallback to node for ${item.name}:`, localErr);
+                }
               }
             }
 

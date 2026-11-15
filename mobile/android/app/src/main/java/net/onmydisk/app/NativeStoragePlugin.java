@@ -32,6 +32,17 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
+import com.google.android.gms.tasks.Task;
+import com.google.android.gms.tasks.Tasks;
+import com.google.mlkit.vision.common.InputImage;
+import com.google.mlkit.vision.label.ImageLabel;
+import com.google.mlkit.vision.label.ImageLabeler;
+import com.google.mlkit.vision.label.ImageLabeling;
+import com.google.mlkit.vision.label.defaults.ImageLabelerOptions;
+import com.google.mlkit.vision.text.Text;
+import com.google.mlkit.vision.text.TextRecognition;
+import com.google.mlkit.vision.text.TextRecognizer;
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -778,6 +789,96 @@ public class NativeStoragePlugin extends Plugin {
         } catch (Exception e) {
             Log.w(TAG, "getThumbnail error: ", e);
             call.reject("Failed to generate thumbnail: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void analyzeImage(PluginCall call) {
+        String path = call.getString("path", "");
+        int maxDim = call.getData().optInt("maxDim", 1024);
+        if (path.isEmpty()) {
+            call.reject("Path is required");
+            return;
+        }
+        try {
+            File target = resolveVirtualPath(path);
+            if (!target.exists() || !target.isFile()) {
+                call.reject("File not found: " + path);
+                return;
+            }
+
+            long t0 = System.currentTimeMillis();
+            BitmapFactory.Options opts = new BitmapFactory.Options();
+            opts.inJustDecodeBounds = true;
+            BitmapFactory.decodeFile(target.getAbsolutePath(), opts);
+            int sample = 1;
+            while ((opts.outWidth / (sample * 2) >= maxDim) || (opts.outHeight / (sample * 2) >= maxDim)) {
+                sample *= 2;
+            }
+            opts.inJustDecodeBounds = false;
+            opts.inSampleSize = sample;
+            opts.inPreferredConfig = Bitmap.Config.ARGB_8888;
+            Bitmap bitmap = BitmapFactory.decodeFile(target.getAbsolutePath(), opts);
+            if (bitmap == null) {
+                call.reject("Failed to decode image: " + path);
+                return;
+            }
+
+            int rotation = 0;
+            try {
+                androidx.exifinterface.media.ExifInterface exif = new androidx.exifinterface.media.ExifInterface(target.getAbsolutePath());
+                int ori = exif.getAttributeInt(androidx.exifinterface.media.ExifInterface.TAG_ORIENTATION, androidx.exifinterface.media.ExifInterface.ORIENTATION_NORMAL);
+                if (ori == androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_90) rotation = 90;
+                else if (ori == androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_180) rotation = 180;
+                else if (ori == androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_270) rotation = 270;
+            } catch (Exception ignored) {}
+
+            InputImage inputImage = InputImage.fromBitmap(bitmap, rotation);
+            ImageLabeler labeler = ImageLabeling.getClient(
+                    new ImageLabelerOptions.Builder().setConfidenceThreshold(0.55f).build()
+            );
+            TextRecognizer recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
+
+            Task<List<ImageLabel>> labelTask = labeler.process(inputImage);
+            Task<Text> textTask = recognizer.process(inputImage);
+
+            final Bitmap bitmapToRecycle = bitmap;
+            Tasks.whenAllComplete(labelTask, textTask).addOnCompleteListener(done -> {
+                try {
+                    JSArray labelsArr = new JSArray();
+                    if (labelTask.isSuccessful() && labelTask.getResult() != null) {
+                        for (ImageLabel lbl : labelTask.getResult()) {
+                            String txt = lbl.getText();
+                            if (txt != null && !txt.isEmpty()) {
+                                labelsArr.put(txt);
+                            }
+                        }
+                    }
+                    String ocrText = "";
+                    if (textTask.isSuccessful() && textTask.getResult() != null) {
+                        ocrText = textTask.getResult().getText();
+                        if (ocrText != null) ocrText = ocrText.trim();
+                    }
+
+                    long elapsed = System.currentTimeMillis() - t0;
+                    Log.i(TAG, "analyzeImage (" + path + ") in " + elapsed + "ms, labels=" + labelsArr.length() + ", ocrLen=" + (ocrText != null ? ocrText.length() : 0));
+
+                    JSObject ret = new JSObject();
+                    ret.put("labels", labelsArr);
+                    ret.put("text", ocrText != null ? ocrText : "");
+                    ret.put("elapsedMs", elapsed);
+                    call.resolve(ret);
+                } catch (Exception e) {
+                    call.reject("analyzeImage post-process failed: " + e.getMessage());
+                } finally {
+                    try { labeler.close(); } catch (Exception ignored) {}
+                    try { recognizer.close(); } catch (Exception ignored) {}
+                    try { bitmapToRecycle.recycle(); } catch (Exception ignored) {}
+                }
+            });
+        } catch (Exception e) {
+            Log.w(TAG, "analyzeImage error: ", e);
+            call.reject("analyzeImage failed: " + e.getMessage());
         }
     }
 

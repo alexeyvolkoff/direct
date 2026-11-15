@@ -1,11 +1,17 @@
 /**
- * Client-side photo captioning & OCR via Web Worker (Florence-2-base-ft).
- * Produces caption + OCR text on-device so photos can be indexed end-to-end
- * without sending pixels to the AI node.
+ * Client-side photo captioning & OCR:
+ * - On native mobile (Capacitor Android/iOS), uses NativeStorage.analyzeImage
+ *   (ML Kit Image Labeling + Text Recognition / Apple Vision) in ~50-150ms.
+ * - On desktop web/PWA, falls back to Florence-2-base-ft in a Web Worker.
  */
 import { writable } from "svelte/store";
+import { isNativeStorageAvailable } from "./native-drive.js";
 
 const STORAGE_KEY = "omd_local_vision_enabled";
+
+export function isNativeVisionSupported() {
+  return isNativeStorageAvailable();
+}
 
 export function isLocalVisionEnabled() {
   try {
@@ -17,8 +23,8 @@ export function isLocalVisionEnabled() {
 
 export const localVisionStore = writable({
   enabled: isLocalVisionEnabled(),
-  status: "idle", // "idle" | "downloading" | "ready" | "error"
-  progress: 0,
+  status: isNativeVisionSupported() && isLocalVisionEnabled() ? "ready" : "idle", // "idle" | "downloading" | "ready" | "error"
+  progress: isNativeVisionSupported() && isLocalVisionEnabled() ? 100 : 0,
   currentFile: "",
   error: "",
 });
@@ -106,6 +112,16 @@ export function setLocalVisionEnabled(enabled) {
 }
 
 export function initLocalVision() {
+  if (isNativeVisionSupported()) {
+    localVisionStore.update((s) => ({
+      ...s,
+      status: "ready",
+      progress: 100,
+      currentFile: "",
+      error: "",
+    }));
+    return Promise.resolve(true);
+  }
   if (initPromise) return initPromise;
   localVisionStore.update((s) => ({
     ...s,
@@ -118,6 +134,40 @@ export function initLocalVision() {
     w.postMessage({ type: "init" });
   });
   return initPromise;
+}
+
+function buildPhotoResult({ labels = [], caption = "", ocr = "", filename = "", exif = null }) {
+  const parts = [];
+  if (caption) parts.push(caption);
+  else if (labels.length) parts.push(`Photo: ${labels.join(", ")}`);
+  if (ocr) parts.push(`Text: ${ocr.slice(0, 1500)}`);
+  if (exif?.takenAt) parts.push(`Date: ${exif.takenAt}`);
+  if (exif?.gpsString) parts.push(`GPS: ${exif.gpsString}`);
+
+  const tags = ["photo"];
+  for (const lbl of labels.slice(0, 5)) {
+    const clean = String(lbl || "").trim().toLowerCase();
+    if (clean && !tags.includes(clean)) tags.push(clean);
+  }
+  if (ocr && !tags.includes("ocr")) tags.push("ocr");
+  if (exif?.gpsString && !tags.includes("gps")) tags.push("gps");
+
+  return {
+    title: filename || "Photo",
+    annotation: parts.join("\n").trim() || filename || "Photo",
+    tags,
+  };
+}
+
+export async function recognizeImageNative(drive, path, { filename = "", exif = null } = {}) {
+  if (!isLocalVisionEnabled()) {
+    throw new Error("Local vision disabled");
+  }
+  const res = await drive.analyzeImage(path, 1024);
+  const labels = Array.isArray(res?.labels) ? res.labels : [];
+  const ocr = typeof res?.text === "string" ? res.text.trim() : "";
+  console.log(`[local-vision] native analyzed ${filename} in ${res?.elapsedMs ?? "?"}ms: labels=${labels.length}, ocrLen=${ocr.length}`);
+  return buildPhotoResult({ labels, ocr, filename, exif });
 }
 
 export async function recognizeImageLocal(jpegBytes, { filename = "", exif = null, signal = null } = {}) {
@@ -139,20 +189,6 @@ export async function recognizeImageLocal(jpegBytes, { filename = "", exif = nul
     w.postMessage({ type: "recognize", id, jpegBytes: copy }, [copy.buffer]);
   });
 
-  const parts = [];
-  if (caption) parts.push(caption);
-  if (ocr) parts.push(`Text: ${ocr}`);
-  if (exif?.takenAt) parts.push(`Date: ${exif.takenAt}`);
-  if (exif?.gpsString) parts.push(`GPS: ${exif.gpsString}`);
-
-  const tags = ["photo"];
-  if (ocr) tags.push("ocr");
-  if (exif?.gpsString) tags.push("gps");
-
-  return {
-    title: filename || "Photo",
-    annotation: parts.join("\n").trim() || filename || "Photo",
-    tags,
-  };
+  return buildPhotoResult({ caption, ocr, filename, exif });
 }
 

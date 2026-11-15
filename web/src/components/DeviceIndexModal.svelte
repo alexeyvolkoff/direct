@@ -21,6 +21,10 @@
   let timelineDays = 30;
   let previewCounts = null;
   let scanningPreview = false;
+  let scanProgress = null;
+  let previewReqId = 0;
+  let lastPreviewTrigger = "";
+  let lastOptionsKey = "";
 
   $: state = $indexerStore;
   $: isBusy = state.status === "scanning" || state.status === "running" || state.status === "paused";
@@ -38,7 +42,9 @@
 
   async function refreshPreview() {
     if (!deviceDrive || isBusy) return;
+    const reqId = ++previewReqId;
     scanningPreview = true;
+    scanProgress = { folder: "", scanned: 0, docs: 0, photos: 0, skipped: 0 };
     try {
       const res = await scanDeviceForIndexable(deviceDrive, {
         deviceName,
@@ -47,24 +53,36 @@
         timelineDays,
         chatStore,
         extraCards,
+        onProgress: (p) => {
+          if (reqId === previewReqId) scanProgress = p;
+        },
       });
+      if (reqId !== previewReqId) return;
       previewCounts = {
         docs: res.docs.length,
         photos: res.photos.length,
         skipped: res.skippedCount,
       };
     } catch (_) {
-      previewCounts = null;
+      if (reqId === previewReqId) previewCounts = null;
     } finally {
-      scanningPreview = false;
+      if (reqId === previewReqId) scanningPreview = false;
     }
   }
 
-  $: if ((show || embedded) && deviceDrive && state.status === "idle") {
-    includeDocs;
-    includePhotos;
-    timelineDays;
-    refreshPreview();
+  $: optionsKey = `${includeDocs}|${includePhotos}|${timelineDays}`;
+  $: if ((show || embedded) && deviceDrive && !isBusy) {
+    if (lastOptionsKey && lastOptionsKey !== optionsKey && (state.status === "done" || state.status === "error")) {
+      clientIndexer.reset();
+    }
+    lastOptionsKey = optionsKey;
+    const triggerKey = `${show}|${embedded}|${deviceName}|${optionsKey}`;
+    if (triggerKey !== lastPreviewTrigger) {
+      lastPreviewTrigger = triggerKey;
+      refreshPreview();
+    }
+  } else if (isBusy) {
+    lastPreviewTrigger = "";
   }
 
   async function startIndexing() {
@@ -131,7 +149,21 @@
 
         {#if state.status === "idle" || state.status === "done" || state.status === "error"}
           {#if scanningPreview}
-            <div class="dim-preview">{$_("device_index_scanning", {}, "Scanning device folders…")}</div>
+            <div class="dim-preview dim-preview-scanning">
+              <div class="dim-preview-row">
+                {#if scanProgress && scanProgress.scanned > 0}
+                  {$_("device_index_scanning_progress", {
+                    folder: scanProgress.folder && scanProgress.folder !== "/" ? ` (${scanProgress.folder})` : "",
+                    scanned: scanProgress.scanned,
+                    docs: scanProgress.docs,
+                    photos: scanProgress.photos,
+                  }, `Scanning${scanProgress.folder && scanProgress.folder !== "/" ? ` (${scanProgress.folder})` : ""}: ${scanProgress.scanned} checked (${scanProgress.docs} docs, ${scanProgress.photos} photos)`)}
+                {:else}
+                  {$_("device_index_scanning", {}, "Scanning device folders…")}
+                {/if}
+              </div>
+              <div class="dim-preview-bar"><div class="dim-preview-bar-fill"></div></div>
+            </div>
           {:else if previewCounts}
             <div class="dim-preview">
               {$_("device_index_found", { docs: previewCounts.docs, photos: previewCounts.photos, skipped: previewCounts.skipped }, `Found ${previewCounts.docs} new docs, ${previewCounts.photos} new photos (${previewCounts.skipped} already indexed).`)}
@@ -267,7 +299,21 @@
 
           {#if state.status === "idle" || state.status === "done" || state.status === "error"}
             {#if scanningPreview}
-              <div class="dim-preview">{$_("device_index_scanning", {}, "Scanning device folders…")}</div>
+              <div class="dim-preview dim-preview-scanning">
+                <div class="dim-preview-row">
+                  {#if scanProgress && scanProgress.scanned > 0}
+                    {$_("device_index_scanning_progress", {
+                      folder: scanProgress.folder && scanProgress.folder !== "/" ? ` (${scanProgress.folder})` : "",
+                      scanned: scanProgress.scanned,
+                      docs: scanProgress.docs,
+                      photos: scanProgress.photos,
+                    }, `Scanning${scanProgress.folder && scanProgress.folder !== "/" ? ` (${scanProgress.folder})` : ""}: ${scanProgress.scanned} checked (${scanProgress.docs} docs, ${scanProgress.photos} photos)`)}
+                  {:else}
+                    {$_("device_index_scanning", {}, "Scanning device folders…")}
+                  {/if}
+                </div>
+                <div class="dim-preview-bar"><div class="dim-preview-bar-fill"></div></div>
+              </div>
             {:else if previewCounts}
               <div class="dim-preview">
                 {$_("device_index_found", { docs: previewCounts.docs, photos: previewCounts.photos, skipped: previewCounts.skipped }, `Found ${previewCounts.docs} new docs, ${previewCounts.photos} new photos (${previewCounts.skipped} already indexed).`)}
@@ -499,6 +545,36 @@
     padding: 10px 12px;
     font-size: 12.5px;
     color: var(--dim-muted);
+  }
+  .dim-preview-scanning {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .dim-preview-row {
+    word-break: break-word;
+    font-variant-numeric: tabular-nums;
+  }
+  .dim-preview-bar {
+    height: 4px;
+    background: var(--dim-border);
+    border-radius: 999px;
+    overflow: hidden;
+    position: relative;
+  }
+  .dim-preview-bar-fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 38%;
+    background: var(--dim-accent);
+    border-radius: 999px;
+    animation: dim-indeterminate 1.15s ease-in-out infinite;
+  }
+  @keyframes dim-indeterminate {
+    0% { transform: translateX(-110%); }
+    100% { transform: translateX(300%); }
   }
   .dim-progress-box {
     background: var(--dim-surface);

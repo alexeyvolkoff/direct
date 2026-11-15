@@ -1907,5 +1907,6 @@
   "local_vision_desc": "Описувати фотографії та розпізнавати текст на них прямо на цьому пристрої, не надсилаючи знімки на сервер.",
   "local_vision_downloading": "Завантаження моделі зору: {pct}%",
   "local_vision_ready": "Модель для аналізу фото готова",
-  "local_vision_later_hint": "Можна ввімкнути пізніше в Налаштування → AI-нода."
+  "local_vision_later_hint": "Можна ввімкнути пізніше в Налаштування → AI-нода.",
+  "device_index_scanning_progress": "Сканування{folder}: перевірено {scanned} ({docs} док., {photos} фото)"
 }

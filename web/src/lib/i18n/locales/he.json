@@ -1907,5 +1907,6 @@
   "local_vision_desc": "תאר תמונות וזהה טקסט בהן ישירות במכשיר זה מבלי לשלוח תמונות לשרת.",
   "local_vision_downloading": "מוריד מודל ראייה: {pct}%",
   "local_vision_ready": "מודל ניתוח התמונות מוכן",
-  "local_vision_later_hint": "ניתן להפעיל זאת מאוחר יותר בהגדרות ← צומת AI."
+  "local_vision_later_hint": "ניתן להפעיל זאת מאוחר יותר בהגדרות ← צומת AI.",
+  "device_index_scanning_progress": "סורק{folder}: נבדקו {scanned} ({docs} מסמכים, {photos} תמונות)"
 }

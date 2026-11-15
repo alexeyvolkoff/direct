@@ -1907,5 +1907,6 @@
   "local_vision_desc": "Opišite fotografije i prepoznajte tekst na njima direktno na ovom uređaju bez slanja slika na server.",
   "local_vision_downloading": "Preuzimanje modela za vid: {pct}%",
   "local_vision_ready": "Model za analizu fotografija je spreman",
-  "local_vision_later_hint": "Ovo možete uključiti kasnije u Podešavanja → AI čvor."
+  "local_vision_later_hint": "Ovo možete uključiti kasnije u Podešavanja → AI čvor.",
+  "device_index_scanning_progress": "Скенирање{folder}: проверено {scanned} ({docs} док., {photos} фото)"
 }

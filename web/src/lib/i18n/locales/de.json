@@ -1907,5 +1907,6 @@
   "local_vision_desc": "Fotos beschreiben und Text darin direkt auf diesem Gerät erkennen, ohne Bilder an den Server zu senden.",
   "local_vision_downloading": "Vision-Modell wird geladen: {pct}%",
   "local_vision_ready": "Fotoanalyse-Modell bereit",
-  "local_vision_later_hint": "Sie können dies später unter Einstellungen → AI-Node aktivieren."
+  "local_vision_later_hint": "Sie können dies später unter Einstellungen → AI-Node aktivieren.",
+  "device_index_scanning_progress": "Scanne{folder}: {scanned} geprüft ({docs} Dok., {photos} Fotos)"
 }

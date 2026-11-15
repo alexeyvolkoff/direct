@@ -17,22 +17,29 @@ const MODEL_ID = "onnx-community/Florence-2-base-ft";
 let bundlePromise = null;
 
 async function loadModelWithFallback(progressCallback) {
+  // Always use WASM on mobile/WebView: Adreno Vulkan WebGPU compute shader
+  // compiler (libllvm-qgl.so) can SIGSEGV in vkCreateComputePipelines.
   const attempts = [
     {
-      embed_tokens: "q8",
-      vision_encoder: "q8",
-      encoder_model: "q4",
-      decoder_model_merged: "q4",
+      dtype: {
+        embed_tokens: "q8",
+        vision_encoder: "q8",
+        encoder_model: "q4",
+        decoder_model_merged: "q4",
+      },
     },
-    "q4",
-    "q8",
-    undefined,
+    { dtype: "q4" },
+    { dtype: "q8" },
+    {},
   ];
+
   let lastErr = null;
-  for (const dtype of attempts) {
+  for (const cfg of attempts) {
     try {
-      const opts = dtype ? { dtype, progress_callback: progressCallback } : { progress_callback: progressCallback };
-      return await Florence2ForConditionalGeneration.from_pretrained(MODEL_ID, opts);
+      return await Florence2ForConditionalGeneration.from_pretrained(MODEL_ID, {
+        ...cfg,
+        progress_callback: progressCallback,
+      });
     } catch (e) {
       lastErr = e;
     }
@@ -91,10 +98,11 @@ self.onmessage = async (event) => {
       const blob = new Blob([jpegBytes], { type: "image/jpeg" });
       const image = await RawImage.fromBlob(blob);
 
-      const caption = await runTask(bundle, image, "<DETAILED_CAPTION>", 96);
-      const ocr = await runTask(bundle, image, "<OCR>", 96);
+      const t0 = performance.now();
+      const caption = await runTask(bundle, image, "<CAPTION>", 36);
+      console.log(`[local-vision] captioned in ${Math.round(performance.now() - t0)}ms:`, caption);
 
-      self.postMessage({ type: "recognize-result", id, caption, ocr });
+      self.postMessage({ type: "recognize-result", id, caption, ocr: "" });
     } catch (e) {
       self.postMessage({ type: "recognize-error", id, error: e?.message || String(e) });
     }

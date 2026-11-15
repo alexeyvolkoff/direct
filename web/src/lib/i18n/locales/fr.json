@@ -1907,5 +1907,6 @@
   "local_vision_desc": "Décrire les photos et reconnaître leur texte directement sur cet appareil sans envoyer d'images au serveur.",
   "local_vision_downloading": "Téléchargement du modèle vision : {pct}%",
   "local_vision_ready": "Modèle d'analyse photo prêt",
-  "local_vision_later_hint": "Vous pourrez l'activer plus tard dans Paramètres → Nœud IA."
+  "local_vision_later_hint": "Vous pourrez l'activer plus tard dans Paramètres → Nœud IA.",
+  "device_index_scanning_progress": "Analyse{folder} : {scanned} vérifiés ({docs} docs, {photos} photos)"
 }

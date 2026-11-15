@@ -1907,5 +1907,6 @@
   "local_vision_desc": "Descrever fotos e reconhecer texto diretamente neste dispositivo sem enviar imagens ao servidor.",
   "local_vision_downloading": "Baixando modelo de visão: {pct}%",
   "local_vision_ready": "Modelo de análise de fotos pronto",
-  "local_vision_later_hint": "Você pode ativar isso depois em Configurações → Nó de IA."
+  "local_vision_later_hint": "Você pode ativar isso depois em Configurações → Nó de IA.",
+  "device_index_scanning_progress": "Verificando{folder}: {scanned} analisados ({docs} docs, {photos} fotos)"
 }

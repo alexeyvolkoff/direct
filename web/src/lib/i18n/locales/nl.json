@@ -1907,5 +1907,6 @@
   "local_vision_desc": "Beschrijf foto's en herken tekst rechtstreeks op dit apparaat zonder afbeeldingen naar de server te sturen.",
   "local_vision_downloading": "Vision-model downloaden: {pct}%",
   "local_vision_ready": "Fotoanalysemodel gereed",
-  "local_vision_later_hint": "Je kunt dit later inschakelen in Instellingen → AI-node."
+  "local_vision_later_hint": "Je kunt dit later inschakelen in Instellingen → AI-node.",
+  "device_index_scanning_progress": "Scannen{folder}: {scanned} gecontroleerd ({docs} doc., {photos} foto’s)"
 }

@@ -1907,5 +1907,6 @@
   "local_vision_desc": "Describe photos and recognize text in them directly on this device without sending images to the server.",
   "local_vision_downloading": "Downloading vision model: {pct}%",
   "local_vision_ready": "Photo analysis model ready",
-  "local_vision_later_hint": "You can enable this later in Settings → AI Node."
+  "local_vision_later_hint": "You can enable this later in Settings → AI Node.",
+  "device_index_scanning_progress": "Pregledovanje{folder}: preverjenih {scanned} ({docs} dok., {photos} fotografij)"
 }
