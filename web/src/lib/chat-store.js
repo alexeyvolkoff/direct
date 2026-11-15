@@ -799,13 +799,8 @@ export class ChatStore {
       timestamp: String(memo.timestamp || Date.now()),
       updated: new Date().toISOString(),
     };
-    if (memo.hasPreview) {
-      entry.hasPreview = true;
-    }
     if (memo.imagePreview) {
       entry.imagePreview = memo.imagePreview;
-    } else if (memo.hasPreview) {
-      entry.imagePreview = null;
     }
     if (memo.content_hash) {
       entry.content_hash = String(memo.content_hash);

@@ -20,8 +20,6 @@
   let includePhotos = true;
   let timelineDays = 30;
   let reindexExisting = false;
-  let cleaningPreviews = false;
-  let cleanResultCount = null;
   let previewCounts = null;
   let scanningPreview = false;
   let scanProgress = null;
@@ -113,18 +111,6 @@
 
   function closeModal() {
     dispatch("close");
-  }
-
-  async function cleanPreviews() {
-    if (!chatStore || typeof chatStore.stripKnowledgePreviews !== "function" || cleaningPreviews) return;
-    cleaningPreviews = true;
-    cleanResultCount = null;
-    try {
-      const res = await chatStore.stripKnowledgePreviews();
-      cleanResultCount = res?.cleaned ?? 0;
-    } finally {
-      cleaningPreviews = false;
-    }
   }
 </script>
 
@@ -234,12 +220,6 @@
           <div class="dim-notice dim-err">{state.error}</div>
         {/if}
 
-        {#if cleanResultCount !== null}
-          <div class="dim-notice">
-            {$_("device_index_previews_cleaned", { count: cleanResultCount }, `Cleaned previews from DB: ${cleanResultCount}`)}
-          </div>
-        {/if}
-
         <div class="dim-inline-actions">
           {#if state.status === "running"}
             <button type="button" class="dim-btn secondary" on:click={() => clientIndexer.pause()}>
@@ -255,27 +235,15 @@
             <button type="button" class="dim-btn danger" on:click={() => clientIndexer.stop()}>
               {$_("device_index_stop", {}, "Stop")}
             </button>
-          {:else}
-            {#if chatStore}
-              <button
-                type="button"
-                class="dim-btn secondary"
-                disabled={cleaningPreviews}
-                on:click={cleanPreviews}
-              >
-                {$_("device_index_clean_previews", {}, "Clean previews from DB")}
-              </button>
-            {/if}
-            {#if state.status !== "done"}
-              <button
-                type="button"
-                class="dim-btn primary"
-                disabled={!deviceDrive || !httpDrive || (!includeDocs && !includePhotos) || scanningPreview}
-                on:click={startIndexing}
-              >
-                {$_("device_index_start", {}, "Start Indexing")}
-              </button>
-            {/if}
+          {:else if state.status !== "done"}
+            <button
+              type="button"
+              class="dim-btn primary"
+              disabled={!deviceDrive || !httpDrive || (!includeDocs && !includePhotos) || scanningPreview}
+              on:click={startIndexing}
+            >
+              {$_("device_index_start", {}, "Start Indexing")}
+            </button>
           {/if}
         </div>
       {/if}
@@ -406,11 +374,6 @@
           {#if state.status === "error" && state.error}
             <div class="dim-notice dim-err">{state.error}</div>
           {/if}
-          {#if cleanResultCount !== null}
-            <div class="dim-notice">
-              {$_("device_index_previews_cleaned", { count: cleanResultCount }, `Cleaned previews from DB: ${cleanResultCount}`)}
-            </div>
-          {/if}
         {/if}
       </div>
 
@@ -436,11 +399,6 @@
             {$_("device_index_stop", {}, "Stop")}
           </button>
         {:else}
-          {#if chatStore}
-            <button type="button" class="dim-btn secondary" disabled={cleaningPreviews} on:click={cleanPreviews}>
-              {$_("device_index_clean_previews", {}, "Clean previews from DB")}
-            </button>
-          {/if}
           <button type="button" class="dim-btn secondary" on:click={closeModal}>
             {$_("close", {}, "Close")}
           </button>

@@ -564,6 +564,7 @@ class ClientIndexerRunner {
             skipped++;
           } else {
             let uploadBytes = null;
+            let previewDataUrl = "";
             let data = null;
 
             if (isLocalVisionEnabled() && typeof drive.analyzeImage === "function") {
@@ -574,6 +575,9 @@ class ClientIndexerRunner {
                   httpDrive,
                   signal,
                 });
+                if (typeof drive.getThumbnail === "function") {
+                  previewDataUrl = (await drive.getThumbnail(item.path, 240, 240)) || "";
+                }
                 const [emb] = await embedTexts(httpDrive, [localRes.annotation], 1, signal);
                 data = {
                   title: localRes.title,
@@ -593,6 +597,8 @@ class ClientIndexerRunner {
                 const bigUrl = await drive.getThumbnail(item.path, 1024, 1024);
                 if (bigUrl) {
                   uploadBytes = await dataUrlToBytes(bigUrl);
+                  const smallUrl = await drive.getThumbnail(item.path, 240, 240);
+                  previewDataUrl = smallUrl || bigUrl;
                 }
               }
               if (!uploadBytes) {
@@ -601,6 +607,8 @@ class ClientIndexerRunner {
                 const blob = new Blob([rawBytes]);
                 const resized = await resizeBlobToJpeg(blob, 1024, 0.78);
                 uploadBytes = new Uint8Array(await resized.blob.arrayBuffer());
+                const thumb = await resizeBlobToJpeg(blob, 240, 0.62);
+                previewDataUrl = thumb.dataUrl;
               }
 
               if (isLocalVisionEnabled()) {
@@ -656,7 +664,7 @@ class ClientIndexerRunner {
               tags: Array.isArray(data.tags) ? data.tags : ["photo"],
               collection: "user",
               content_hash: contentHash || data.content_hash || "",
-              hasPreview: true,
+              imagePreview: previewDataUrl || data.imagePreview || "",
               annotation_embedding: Array.isArray(data.annotation_embedding) ? data.annotation_embedding : null,
               chunks: Array.isArray(data.chunks) ? data.chunks : [],
               timestamp: item.mtimeMs || Date.now(),
