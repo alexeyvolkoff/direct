@@ -383,6 +383,7 @@ export class OnmyChatTransport {
                 settings: Object.assign(
                     { platform: getClientPlatform() },
                     body.content_mode ? { content_mode: body.content_mode } : {},
+                    contextBody.auto_intent !== undefined ? { auto_intent: contextBody.auto_intent } : {},
                     body.settings || {},
                     body.mcp_keys ? { mcp_keys: body.mcp_keys } : {}
                 ),

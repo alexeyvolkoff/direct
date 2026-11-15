@@ -1911,5 +1911,7 @@
   "device_index_scanning_progress": "Skanowanie{folder}: sprawdzono {scanned} ({docs} dok., {photos} zdjęć)",
   "device_index_reindex": "Zaindeksuj ponownie już dodane pliki",
   "device_index_clean_previews": "Wyczyść podglądy z bazy",
-  "device_index_previews_cleaned": "Wyczyszczono podglądy z bazy: {count}"
+  "device_index_previews_cleaned": "Wyczyszczono podglądy z bazy: {count}",
+  "auto_intent": "Automatyczne wykrywanie intencji",
+  "auto_intent_hint": "Automatycznie uruchamiaj obrazy i narzędzia"
 }

@@ -1911,5 +1911,7 @@
   "device_index_scanning_progress": "Scansione{folder}: {scanned} controllati ({docs} doc, {photos} foto)",
   "device_index_reindex": "Reindicizza i file già indicizzati",
   "device_index_clean_previews": "Pulisci anteprime dal DB",
-  "device_index_previews_cleaned": "Anteprime rimosse dal DB: {count}"
+  "device_index_previews_cleaned": "Anteprime rimosse dal DB: {count}",
+  "auto_intent": "Rilevamento auto intento",
+  "auto_intent_hint": "Avvia automaticamente immagini e strumenti"
 }

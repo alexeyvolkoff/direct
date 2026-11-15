@@ -1911,5 +1911,7 @@
   "device_index_scanning_progress": "正在扫描{folder}：已检查 {scanned}（{docs} 个文档，{photos} 张照片）",
   "device_index_reindex": "重新索引已索引的文件",
   "device_index_clean_previews": "从数据库清除预览图",
-  "device_index_previews_cleaned": "已从数据库清除预览图：{count}"
+  "device_index_previews_cleaned": "已从数据库清除预览图：{count}",
+  "auto_intent": "自动识别意图",
+  "auto_intent_hint": "自动触发图像生成与工具"
 }

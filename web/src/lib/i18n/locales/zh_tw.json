@@ -1911,5 +1911,7 @@
   "device_index_scanning_progress": "正在掃描{folder}：已檢查 {scanned}（{docs} 個文件，{photos} 張相片）",
   "device_index_reindex": "重新索引已索引的檔案",
   "device_index_clean_previews": "從資料庫清除預覽圖",
-  "device_index_previews_cleaned": "已從資料庫清除預覽圖：{count}"
+  "device_index_previews_cleaned": "已從資料庫清除預覽圖：{count}",
+  "auto_intent": "自動識別意圖",
+  "auto_intent_hint": "自動觸發圖像生成與工具"
 }

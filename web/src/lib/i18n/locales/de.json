@@ -1911,5 +1911,7 @@
   "device_index_scanning_progress": "Scanne{folder}: {scanned} geprüft ({docs} Dok., {photos} Fotos)",
   "device_index_reindex": "Bereits indexierte Dateien neu indexieren",
   "device_index_clean_previews": "Vorschauen aus DB löschen",
-  "device_index_previews_cleaned": "Vorschauen aus DB gelöscht: {count}"
+  "device_index_previews_cleaned": "Vorschauen aus DB gelöscht: {count}",
+  "auto_intent": "Intent automatisch erkennen",
+  "auto_intent_hint": "Bilder & Tools automatisch auslösen"
 }

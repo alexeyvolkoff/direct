@@ -4284,29 +4284,37 @@ async def chat_stream(request: Request, prompt: str, omd_key: str | None = Depen
                     raw_intent = f"Focused /learn follow-up: {focus_doc_id}"
                     logging.info(f"[chat] focused question: intent forced to explain, no classification ({focus_doc_id})")
                 else:
-                    raw_intent = await core_service.classify_user_intent(ctx, prompt, chat, provided_history=provided_history)
-                    intent, search_query = core_service.parse_intent_and_query(raw_intent, default_prompt=prompt)
-                    if not prompt.lstrip().startswith("/") and intent in ("show", "view", "generate"):
-                        _p_norm = prompt.strip()
-                        _cap_en = re.match(
-                            r"^(?:(?:so|wait|oh|well|wow|hey|really|and)\b[\s,]*)*(?:(?:can|could|do|are|will)\s+you|you\s+(?:can|could|also)?)(?:\s+(?:really|actually|also|even|able\s+to))?\s+(?:create|generate|make|draw|render|paint|produce|send|show)(?:\s+me)?(?:\s+(?:any|new|ai|some))?(?:\s+(?:images?|pictures?|photos?|art|artwork|illustrations?|visuals?|drawings?|selfies?))?\s*\?+\s*$",
-                            _p_norm,
-                            flags=re.IGNORECASE,
-                        )
-                        _how_en = re.match(
-                            r"^(?:how\s+(?:do|can)\s+you|what\s+kind\s+of\s+(?:images?|pictures?)\s+(?:can|do)\s+you)\s+(?:create|generate|make|draw|render)\b[^.]*\?*\s*$",
-                            _p_norm,
-                            flags=re.IGNORECASE,
-                        )
-                        _cap_ru = re.match(
-                            r"^(?:(?:а|и|о|ого|ну|так|то\s+есть|получается)\b[\s,]*)*(?:ты\s+|вы\s+)?(?:правда\s+|тоже\s+|реально\s+)?(?:умеешь|умеете|можешь|можете|способна|способен)?\s*(?:создавать|генерировать|рисовать|делать|сделать|нарисовать|присылать|генерить)(?:\s+(?:мне|нам))?(?:\s+(?:любые|разные|новые|свои))?(?:\s+(?:картинки|изображения|фотки|фото|фотографии|рисунки|арты|селфи))?\s*\?+\s*$",
-                            _p_norm,
-                            flags=re.IGNORECASE,
-                        )
-                        if _cap_en or _how_en or _cap_ru:
-                            logging.info(f"[IntentGuard] Downgrading meta capability question from '{intent}' to 'chat': {_p_norm}")
-                            intent = "chat"
-                            search_query = ""
+                    raw_auto_intent = data.get("auto_intent") if "auto_intent" in data else ctx.settings.get("auto_intent", True)
+                    auto_intent_enabled = str(raw_auto_intent).strip().lower() not in ("false", "0", "off", "no")
+                    if not auto_intent_enabled:
+                        intent = "chat"
+                        search_query = ""
+                        raw_intent = "Auto-intent disabled (per-chat): chat"
+                        logging.info("[chat] auto_intent=False for this chat — skipping LLM intent classification, using 'chat'")
+                    else:
+                        raw_intent = await core_service.classify_user_intent(ctx, prompt, chat, provided_history=provided_history)
+                        intent, search_query = core_service.parse_intent_and_query(raw_intent, default_prompt=prompt)
+                        if not prompt.lstrip().startswith("/") and intent in ("show", "view", "generate"):
+                            _p_norm = prompt.strip()
+                            _cap_en = re.match(
+                                r"^(?:(?:so|wait|oh|well|wow|hey|really|and)\b[\s,]*)*(?:(?:can|could|do|are|will)\s+you|you\s+(?:can|could|also)?)(?:\s+(?:really|actually|also|even|able\s+to))?\s+(?:create|generate|make|draw|render|paint|produce|send|show)(?:\s+me)?(?:\s+(?:any|new|ai|some))?(?:\s+(?:images?|pictures?|photos?|art|artwork|illustrations?|visuals?|drawings?|selfies?))?\s*\?+\s*$",
+                                _p_norm,
+                                flags=re.IGNORECASE,
+                            )
+                            _how_en = re.match(
+                                r"^(?:how\s+(?:do|can)\s+you|what\s+kind\s+of\s+(?:images?|pictures?)\s+(?:can|do)\s+you)\s+(?:create|generate|make|draw|render)\b[^.]*\?*\s*$",
+                                _p_norm,
+                                flags=re.IGNORECASE,
+                            )
+                            _cap_ru = re.match(
+                                r"^(?:(?:а|и|о|ого|ну|так|то\s+есть|получается)\b[\s,]*)*(?:ты\s+|вы\s+)?(?:правда\s+|тоже\s+|реально\s+)?(?:умеешь|умеете|можешь|можете|способна|способен)?\s*(?:создавать|генерировать|рисовать|делать|сделать|нарисовать|присылать|генерить)(?:\s+(?:мне|нам))?(?:\s+(?:любые|разные|новые|свои))?(?:\s+(?:картинки|изображения|фотки|фото|фотографии|рисунки|арты|селфи))?\s*\?+\s*$",
+                                _p_norm,
+                                flags=re.IGNORECASE,
+                            )
+                            if _cap_en or _how_en or _cap_ru:
+                                logging.info(f"[IntentGuard] Downgrading meta capability question from '{intent}' to 'chat': {_p_norm}")
+                                intent = "chat"
+                                search_query = ""
             
             # Ensure chat existence for all intent types (crucial for 'show' intent which bypasses perform_prompt)
             # This ensures chat is in the index and has a title

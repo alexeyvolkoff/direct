@@ -1912,5 +1912,7 @@
   "device_index_scanning_progress": "Scanning{folder}: {scanned} checked ({docs} docs, {photos} photos)",
   "device_index_reindex": "Re-index already indexed files",
   "device_index_clean_previews": "Clean previews from DB",
-  "device_index_previews_cleaned": "Cleaned previews from DB: {count}"
+  "device_index_previews_cleaned": "Cleaned previews from DB: {count}",
+  "auto_intent": "Auto-detect intent",
+  "auto_intent_hint": "Automatically trigger images & tools"
 }

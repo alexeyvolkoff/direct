@@ -1911,5 +1911,7 @@
   "device_index_scanning_progress": "Scannen{folder}: {scanned} gecontroleerd ({docs} doc., {photos} foto’s)",
   "device_index_reindex": "Reeds geïndexeerde bestanden opnieuw indexeren",
   "device_index_clean_previews": "Voorbeelden uit DB wissen",
-  "device_index_previews_cleaned": "Voorbeelden gewist uit DB: {count}"
+  "device_index_previews_cleaned": "Voorbeelden gewist uit DB: {count}",
+  "auto_intent": "Intentie automatisch herkennen",
+  "auto_intent_hint": "Afbeeldingen en tools automatisch starten"
 }

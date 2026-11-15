@@ -1911,5 +1911,7 @@
   "device_index_scanning_progress": "Verificando{folder}: {scanned} analisados ({docs} docs, {photos} fotos)",
   "device_index_reindex": "Reindexar arquivos já indexados",
   "device_index_clean_previews": "Limpar miniaturas do BD",
-  "device_index_previews_cleaned": "Miniaturas removidas do BD: {count}"
+  "device_index_previews_cleaned": "Miniaturas removidas do BD: {count}",
+  "auto_intent": "Auto-detectar intenção",
+  "auto_intent_hint": "Acionar imagens e ferramentas automaticamente"
 }

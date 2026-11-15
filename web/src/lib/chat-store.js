@@ -185,6 +185,7 @@ export class ChatStore {
     this._promptsCallbacks = new Set();
     this._promptsListener = null;
     this._promptsNotifyTimer = null;
+    this._autoIntentCache = new Map();
   }
 
   get ready() {
@@ -235,6 +236,13 @@ export class ChatStore {
         clean.archived = true;
       } else {
         clean.archived = false;
+      }
+      if (clean.auto_intent === "false" || clean.auto_intent === false) {
+        clean.auto_intent = false;
+        this._setLocalAutoIntent(key, false);
+      } else if (clean.auto_intent === "true" || clean.auto_intent === true) {
+        clean.auto_intent = true;
+        this._setLocalAutoIntent(key, true);
       }
       if (clean.title || clean.name || clean.updated || clean.persona_id) {
         this.chatsCache.set(key, clean);
@@ -300,6 +308,70 @@ export class ChatStore {
     return this.saveChat({ _id: chatId, attached_docs: Array.isArray(docs) ? docs : [] });
   }
 
+  _getLocalAutoIntent(chatId) {
+    if (!chatId) return undefined;
+    if (this._autoIntentCache && this._autoIntentCache.has(chatId)) {
+      return this._autoIntentCache.get(chatId);
+    }
+    if (typeof window !== "undefined" && window.localStorage) {
+      try {
+        const raw = localStorage.getItem("omd_chat_auto_intent:" + chatId);
+        if (raw === "0" || raw === "false") return false;
+        if (raw === "1" || raw === "true") return true;
+      } catch (_) {}
+    }
+    return undefined;
+  }
+
+  _setLocalAutoIntent(chatId, enabled) {
+    if (!chatId) return;
+    const val = !!enabled;
+    if (!this._autoIntentCache) this._autoIntentCache = new Map();
+    this._autoIntentCache.set(chatId, val);
+    if (typeof window !== "undefined" && window.localStorage) {
+      try {
+        localStorage.setItem("omd_chat_auto_intent:" + chatId, val ? "1" : "0");
+      } catch (_) {}
+    }
+  }
+
+  _clearLocalAutoIntent(chatId) {
+    if (!chatId) return;
+    if (this._autoIntentCache) this._autoIntentCache.delete(chatId);
+    if (typeof window !== "undefined" && window.localStorage) {
+      try {
+        localStorage.removeItem("omd_chat_auto_intent:" + chatId);
+      } catch (_) {}
+    }
+  }
+
+  getAutoIntent(chatId) {
+    if (!chatId) return true;
+    const rec = this.chatsCache.get(chatId);
+    if (rec && rec.auto_intent !== undefined) {
+      return rec.auto_intent !== false && rec.auto_intent !== "false";
+    }
+    const localVal = this._getLocalAutoIntent(chatId);
+    if (localVal !== undefined) return localVal;
+    return true;
+  }
+
+  async setAutoIntent(chatId, enabled) {
+    if (!chatId) return null;
+    const val = !!enabled;
+    this._setLocalAutoIntent(chatId, val);
+    await this.ready;
+    const existing = this.chatsCache.get(chatId);
+    if (existing) {
+      return this.saveChat({
+        _id: chatId,
+        auto_intent: val,
+        updated: existing.updated || new Date().toISOString(),
+      });
+    }
+    return null;
+  }
+
   async saveChat(chatInfo) {
     await this.ready;
     const existing = this.chatsCache.get(chatInfo._id) || {};
@@ -309,6 +381,13 @@ export class ChatStore {
       chatInfo.persona !== undefined
         ? (chatInfo.persona && chatInfo.persona.id ? chatInfo.persona.id : "")
         : (chatInfo.persona_id !== undefined ? (chatInfo.persona_id || "") : (existing.persona_id || ""));
+    const resolvedAutoIntent =
+      chatInfo.auto_intent !== undefined
+        ? !!chatInfo.auto_intent
+        : existing.auto_intent !== undefined
+          ? existing.auto_intent !== false && existing.auto_intent !== "false"
+          : (this._getLocalAutoIntent(chatInfo._id) ?? true);
+    this._setLocalAutoIntent(chatInfo._id, resolvedAutoIntent);
     const record = {
       ...existing,
       _id: chatInfo._id,
@@ -316,6 +395,7 @@ export class ChatStore {
       title: chatInfo.title || existing.title || "",
       file: chatInfo.file || existing.file || "",
       archived: chatInfo.archived !== undefined ? !!chatInfo.archived : !!existing.archived,
+      auto_intent: resolvedAutoIntent,
       summary: typeof chatInfo.summary === "string" && chatInfo.summary
           ? chatInfo.summary
           : (existing.summary || ""),
@@ -393,6 +473,7 @@ export class ChatStore {
     this.gun.get("chat_messages_" + chatId).put(null);
     this.chatsCache.delete(chatId);
     this._clearCachedMessages(chatId);
+    this._clearLocalAutoIntent(chatId);
     this._notify(true);
   }
 

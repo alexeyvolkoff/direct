@@ -1911,5 +1911,7 @@
   "device_index_scanning_progress": "סורק{folder}: נבדקו {scanned} ({docs} מסמכים, {photos} תמונות)",
   "device_index_reindex": "אנדקס מחדש קבצים שכבר אונדקסו",
   "device_index_clean_previews": "נקה תצוגות מקדימות ממסד הנתונים",
-  "device_index_previews_cleaned": "תצוגות מקדימות שנוקו ממסד הנתונים: {count}"
+  "device_index_previews_cleaned": "תצוגות מקדימות שנוקו ממסד הנתונים: {count}",
+  "auto_intent": "זיהוי כוונה אוטומטי",
+  "auto_intent_hint": "הפעלה אוטומטית של תמונות וכלים"
 }

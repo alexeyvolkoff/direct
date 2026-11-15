@@ -1912,5 +1912,7 @@
   "device_index_scanning_progress": "Сканирование{folder}: проверено {scanned} ({docs} док., {photos} фото)",
   "device_index_reindex": "Переиндексировать уже добавленные",
   "device_index_clean_previews": "Очистить превью из базы",
-  "device_index_previews_cleaned": "Очищено превью из базы: {count}"
+  "device_index_previews_cleaned": "Очищено превью из базы: {count}",
+  "auto_intent": "Автоопределение интента",
+  "auto_intent_hint": "Автозапуск генерации картинок и команд"
 }

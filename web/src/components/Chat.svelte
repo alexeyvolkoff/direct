@@ -890,6 +890,28 @@
     await chatStore.setAttachedDocs(chatId, attachedDocs);
   }
 
+  let autoIntent = true;
+
+  async function loadAutoIntent(id) {
+    if (!chatStore || !id) {
+      autoIntent = true;
+      return;
+    }
+    await chatStore.ready;
+    autoIntent = chatStore.getAutoIntent(id);
+  }
+
+  async function toggleAutoIntent() {
+    autoIntent = !autoIntent;
+    if (chatStore && chatId) {
+      try {
+        await chatStore.setAutoIntent(chatId, autoIntent);
+      } catch (e) {
+        console.warn("[chat] setAutoIntent error:", e);
+      }
+    }
+  }
+
   // Восстанавливает карточки приаттаченных документов в чате (при загрузке сессии).
   // Каждая карточка вставляется НАД юзер-промптом с /learn, который её породил
   // (иначе все карточки сваливаются в конец чата). Если промпт не найден — в конец.
@@ -1861,6 +1883,7 @@
   let historyPromptIndex = -1;
   let unsubPrompts = null;
   let unsubKnowledge = null;
+  let unsubChatMeta = null;
 
   async function loadImageBlob(data) {
     const key = data?.path || data?.url;
@@ -2400,14 +2423,23 @@
       isStreaming = false;
       activePhaseStatus = "";
 
-      // Загружаем приаттаченные документы (персистятся в записи чата)
+      // Загружаем приаттаченные документы и настройку автоопределения интента (персистятся в записи чата)
       await loadAttachedDocs(id);
+      await loadAutoIntent(id);
       if (sessionLoadId !== currentSessionLoadId) return;
 
       const history = await chatStore.getMessages(id);
       if (sessionLoadId !== currentSessionLoadId) return;
 
       if (chatStore) {
+        if (unsubChatMeta) unsubChatMeta();
+        if (typeof chatStore.onChatsChanged === "function") {
+          unsubChatMeta = chatStore.onChatsChanged(() => {
+            if (chatId === id && chatStore) {
+              autoIntent = chatStore.getAutoIntent(id);
+            }
+          });
+        }
         if (unsubPrompts) unsubPrompts();
         if (typeof chatStore.onPromptsChanged === "function") {
           unsubPrompts = chatStore.onPromptsChanged((list) => {
@@ -2444,7 +2476,11 @@
             const total = chat.messages ? chat.messages.length : 0;
             const serverName = rec && typeof rec.server_name === "string" ? rec.server_name : "";
             const hasTitle = rec && !!rec.title;
-            const out = { chat_summary: summary || null, total_message_count: total || null };
+            const out = {
+              chat_summary: summary || null,
+              total_message_count: total || null,
+              auto_intent: autoIntent,
+            };
             if ($ttsState.voiceStreamEnabled) {
               out.voice_mode = true;
             }
@@ -2998,6 +3034,10 @@
       unsubPrompts();
       unsubPrompts = null;
     }
+    if (unsubChatMeta) {
+      unsubChatMeta();
+      unsubChatMeta = null;
+    }
     if (mutationObserver) {
       mutationObserver.disconnect();
       mutationObserver = null;
@@ -3522,6 +3562,7 @@ function lastFreshTitle(messages) {
         settings: Object.assign(
           {},
           loadedSettings || {},
+          { auto_intent: autoIntent },
           effectiveStorage ? { defaultStorage: effectiveStorage } : {},
           $ttsState.voiceStreamEnabled ? { voice_mode: true, voice_stream: true } : {}
         ),
@@ -5059,6 +5100,7 @@ function lastFreshTitle(messages) {
         created: nowIso,
         updated: nowIso,
         archived: false,
+        auto_intent: chatStore.getAutoIntent(chatId),
         ...(personaObj ? { persona: personaObj } : {}),
         ...(personaId ? { persona_id: personaId } : {}),
       });
@@ -6491,6 +6533,31 @@ function lastFreshTitle(messages) {
                   </div>
                 </button>
               {/if}
+
+              <div class="tools-popup-divider"></div>
+
+              <button
+                type="button"
+                class="tools-menu-item toggle-item"
+                role="menuitemcheckbox"
+                aria-checked={autoIntent}
+                on:click|stopPropagation={toggleAutoIntent}
+              >
+                <div class="tool-icon-circle auto-intent" class:off={!autoIntent}>
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z" />
+                  </svg>
+                </div>
+                <div class="tool-meta">
+                  <div class="tool-title-row">
+                    <span class="tool-name">{$_("auto_intent", {}, "Auto-detect intent")}</span>
+                    <span class="tool-toggle-switch" class:checked={autoIntent} aria-hidden="true">
+                      <span class="tool-toggle-thumb"></span>
+                    </span>
+                  </div>
+                  <span class="tool-hint">{$_("auto_intent_hint", {}, "Automatically trigger images & tools")}</span>
+                </div>
+              </button>
             </div>
           </div>
         {/if}
@@ -8514,6 +8581,57 @@ function lastFreshTitle(messages) {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .tools-popup-divider {
+    height: 1px;
+    margin: 4px 6px;
+    background: var(--border-subtle, rgba(255, 255, 255, 0.08));
+  }
+
+  .tool-icon-circle.auto-intent {
+    background: rgba(56, 189, 248, 0.16);
+    color: #38bdf8;
+    transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+  }
+
+  .tool-icon-circle.auto-intent.off {
+    background: rgba(148, 163, 184, 0.12);
+    color: var(--text-muted);
+  }
+
+  .tool-toggle-switch {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    width: 34px;
+    height: 19px;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.28);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 2px;
+    box-sizing: border-box;
+    flex-shrink: 0;
+    transition: background 0.18s ease, border-color 0.18s ease;
+  }
+
+  .tool-toggle-switch.checked {
+    background: var(--accent, #ec4899);
+    border-color: transparent;
+  }
+
+  .tool-toggle-thumb {
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+    transform: translateX(0);
+    transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .tool-toggle-switch.checked .tool-toggle-thumb {
+    transform: translateX(15px);
   }
 
   .composer-textarea {

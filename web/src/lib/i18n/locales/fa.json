@@ -1911,5 +1911,7 @@
   "device_index_scanning_progress": "در حال اسکن{folder}: {scanned} بررسی شد ({docs} سند، {photos} عکس)",
   "device_index_reindex": "بازنمایه کردن فایل‌های نمایه‌شده قبلی",
   "device_index_clean_previews": "پاک کردن پیش‌نمایش‌ها از پایگاه داده",
-  "device_index_previews_cleaned": "پیش‌نمایش‌های پاک‌شده از پایگاه داده: {count}"
+  "device_index_previews_cleaned": "پیش‌نمایش‌های پاک‌شده از پایگاه داده: {count}",
+  "auto_intent": "تشخیص خودکار هدف",
+  "auto_intent_hint": "اجرای خودکار ساخت تصویر و ابزارها"
 }

@@ -1911,5 +1911,7 @@
   "device_index_scanning_progress": "Analyse{folder} : {scanned} vérifiés ({docs} docs, {photos} photos)",
   "device_index_reindex": "Réindexer les fichiers déjà indexés",
   "device_index_clean_previews": "Supprimer les aperçus de la BD",
-  "device_index_previews_cleaned": "Aperçus supprimés de la BD : {count}"
+  "device_index_previews_cleaned": "Aperçus supprimés de la BD : {count}",
+  "auto_intent": "Détection auto d'intention",
+  "auto_intent_hint": "Lancer automatiquement images et outils"
 }
