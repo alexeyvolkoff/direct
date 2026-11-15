@@ -4,26 +4,9 @@
  * SentenceTransformer vector space, cached in the browser's Cache API.
  */
 import { pipeline, env } from "@huggingface/transformers";
+import { configureLocalOrtWasm } from "./ort-wasm-env.js";
 
-env.allowLocalModels = false;
-env.useBrowserCache = true;
-
-// Route onnxruntime-web WASM/MJS binaries to the app's bundled /ort-wasm/ directory
-// instead of jsdelivr CDN (required for App Store 2.5.2 compliance & offline use).
-if (env.backends?.onnx?.wasm) {
-  const base = new URL("/ort-wasm/", self.location.origin).href;
-  const current = env.backends.onnx.wasm.wasmPaths;
-  if (current && typeof current === "object") {
-    const mjsFile = (current.mjs || "ort-wasm-simd-threaded.mjs").split("/").pop();
-    const wasmFile = (current.wasm || "ort-wasm-simd-threaded.wasm").split("/").pop();
-    env.backends.onnx.wasm.wasmPaths = {
-      mjs: `${base}${mjsFile}`,
-      wasm: `${base}${wasmFile}`,
-    };
-  } else {
-    env.backends.onnx.wasm.wasmPaths = base;
-  }
-}
+configureLocalOrtWasm(env);
 
 const MODEL_ID = "Xenova/paraphrase-multilingual-MiniLM-L12-v2";
 let extractorPromise = null;

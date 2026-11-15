@@ -20,6 +20,7 @@
   import { resolveAppMode, APP_MODE_CHAT } from "../lib/app-mode.js";
   import { getChatStore } from "../lib/chat-store.js";
   import { localEmbedderStore, setLocalEmbeddingsEnabled } from "../lib/local-embedder.js";
+  import { localVisionStore, setLocalVisionEnabled } from "../lib/local-vision.js";
   import { HttpDrive } from "../lib/http-drive.js";
   import { aiNodeStore, refreshPublicAiNode, setAiNodeChoice, acceptPublicAiAgreement, applyRemotePublicAiAck, publicAiAckPayload, AI_NODE_MODE_AUTO, AI_NODE_MODE_PUBLIC, AI_NODE_MODE_CUSTOM, AI_MODE_LOCAL, AI_MODE_HYBRID, AI_MODE_AGENTIC, setAiMode, setInferenceNode, addCustomAiNode, removeCustomAiNode, mergeCustomAiNodes, connectGuestAiNode } from "../lib/ai-node.js";
   import { get as getStoreValue } from "svelte/store";
@@ -3399,6 +3400,37 @@
                     <div class="local-embed-ready">✓ {$_("local_embeddings_ready", {}, "Model Xenova/paraphrase-multilingual-MiniLM-L12-v2 ready")}</div>
                   {:else if $localEmbedderStore.status === "error"}
                     <div class="local-embed-err">{$localEmbedderStore.error}</div>
+                  {/if}
+                {/if}
+              </div>
+
+              <div class="local-embed-setting">
+                <label class="local-embed-setting-row">
+                  <input
+                    type="checkbox"
+                    checked={$localVisionStore.enabled}
+                    on:change={(e) => setLocalVisionEnabled(e.currentTarget.checked)}
+                  />
+                  <span>{$_("local_vision_toggle", {}, "Local photo analysis & OCR (Florence-2, ~250 MB)")}</span>
+                </label>
+                <p class="card-subtext">
+                  {$_("local_vision_desc", {}, "Describe photos and extract OCR text locally using onnx-community/Florence-2-base-ft without sending images to the AI node.")}
+                </p>
+                {#if $localVisionStore.enabled}
+                  {#if $localVisionStore.status === "downloading"}
+                    <div class="local-embed-prog">
+                      <div class="local-embed-prog-head">
+                        <span>{$_("local_vision_downloading", { pct: $localVisionStore.progress }, `Downloading vision model: ${$localVisionStore.progress}%`)}</span>
+                        {#if $localVisionStore.currentFile}
+                          <span>{$localVisionStore.currentFile}</span>
+                        {/if}
+                      </div>
+                      <div class="local-embed-bar"><div class="local-embed-fill" style="width: {$localVisionStore.progress}%"></div></div>
+                    </div>
+                  {:else if $localVisionStore.status === "ready"}
+                    <div class="local-embed-ready">✓ {$_("local_vision_ready", {}, "Model Florence-2-base-ft ready")}</div>
+                  {:else if $localVisionStore.status === "error"}
+                    <div class="local-embed-err">{$localVisionStore.error}</div>
                   {/if}
                 {/if}
               </div>

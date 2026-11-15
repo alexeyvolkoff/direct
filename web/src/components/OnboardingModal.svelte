@@ -7,6 +7,7 @@
   import { isNativeStorageAvailable, NativeStorageDrive } from "../lib/native-drive.js";
   import { indexerStore } from "../lib/client-indexer.js";
   import { localEmbedderStore, setLocalEmbeddingsEnabled } from "../lib/local-embedder.js";
+  import { localVisionStore, setLocalVisionEnabled } from "../lib/local-vision.js";
   import DeviceIndexModal from "./DeviceIndexModal.svelte";
   import { fetchNearbyDevices } from "../lib/local-discovery.js";
   import { getStoredOmdKey, omdKeyStore } from "../lib/omd-key.js";
@@ -1364,6 +1365,36 @@
               {:else}
                 <p class="local-embed-hint">
                   {$_("local_embeddings_later_hint", {}, "Можно включить позже в Настройки → AI-нода.")}
+                </p>
+              {/if}
+
+              <label class="local-embed-toggle" style="margin-top: 10px;">
+                <input
+                  type="checkbox"
+                  checked={$localVisionStore.enabled}
+                  on:change={(e) => setLocalVisionEnabled(e.currentTarget.checked)}
+                />
+                <span>{$_("local_vision_toggle", {}, "Локальный анализ фото и OCR (Florence-2, ~250 МБ)")}</span>
+              </label>
+              {#if $localVisionStore.enabled}
+                {#if $localVisionStore.status === "downloading"}
+                  <div class="local-embed-prog">
+                    <div class="local-embed-prog-head">
+                      <span>{$_("local_vision_downloading", { pct: $localVisionStore.progress }, `Загрузка модели зрения: ${$localVisionStore.progress}%`)}</span>
+                      {#if $localVisionStore.currentFile}
+                        <span class="local-embed-file">{$localVisionStore.currentFile}</span>
+                      {/if}
+                    </div>
+                    <div class="local-embed-bar"><div class="local-embed-fill" style="width: {$localVisionStore.progress}%"></div></div>
+                  </div>
+                {:else if $localVisionStore.status === "ready"}
+                  <div class="local-embed-ready">✓ {$_("local_vision_ready", {}, "Модель Florence-2-base-ft готова")}</div>
+                {:else if $localVisionStore.status === "error"}
+                  <div class="local-embed-err">{$localVisionStore.error}</div>
+                {/if}
+              {:else}
+                <p class="local-embed-hint">
+                  {$_("local_vision_later_hint", {}, "Можно включить позже в Настройки → AI-нода.")}
                 </p>
               {/if}
             </div>

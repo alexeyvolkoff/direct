@@ -1902,5 +1902,10 @@
   "local_embeddings_desc": "使用 Xenova/paraphrase-multilingual-MiniLM-L12-v2 在本機將文件向量化，無需將文字傳送至 /embed。",
   "local_embeddings_downloading": "正在下載模型: {pct}%",
   "local_embeddings_ready": "模型 Xenova/paraphrase-multilingual-MiniLM-L12-v2 已就緒",
-  "local_embeddings_later_hint": "您稍後可在 設定 → AI 節點 中啟用。"
+  "local_embeddings_later_hint": "您稍後可在 設定 → AI 節點 中啟用。",
+  "local_vision_toggle": "Local photo analysis & OCR (Florence-2, ~250 MB)",
+  "local_vision_desc": "Describe photos and extract OCR text locally using onnx-community/Florence-2-base-ft without sending images to the AI node.",
+  "local_vision_downloading": "Downloading vision model: {pct}%",
+  "local_vision_ready": "Model Florence-2-base-ft ready",
+  "local_vision_later_hint": "You can enable this later in Settings → AI Node."
 }

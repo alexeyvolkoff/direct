@@ -1902,5 +1902,10 @@
   "local_embeddings_desc": "Belgeleri /embed'e metin göndermeden Xenova/paraphrase-multilingual-MiniLM-L12-v2 ile yerel olarak vektörleştirin.",
   "local_embeddings_downloading": "Model indiriliyor: {pct}%",
   "local_embeddings_ready": "Model Xenova/paraphrase-multilingual-MiniLM-L12-v2 hazır",
-  "local_embeddings_later_hint": "Bunu daha sonra Ayarlar → AI Düğümü bölümünden etkinleştirebilirsiniz."
+  "local_embeddings_later_hint": "Bunu daha sonra Ayarlar → AI Düğümü bölümünden etkinleştirebilirsiniz.",
+  "local_vision_toggle": "Yerel fotoğraf analizi ve OCR (Florence-2, ~250 MB)",
+  "local_vision_desc": "Görüntüleri AI düğümüne göndermeden onnx-community/Florence-2-base-ft ile fotoğrafları yerel olarak açıklayın ve OCR metni çıkarın.",
+  "local_vision_downloading": "Görüş modeli indiriliyor: {pct}%",
+  "local_vision_ready": "Florence-2-base-ft modeli hazır",
+  "local_vision_later_hint": "Bunu daha sonra Ayarlar → AI Düğümü bölümünden etkinleştirebilirsiniz."
 }

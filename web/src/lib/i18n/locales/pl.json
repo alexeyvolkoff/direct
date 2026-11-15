@@ -1902,5 +1902,10 @@
   "local_embeddings_desc": "Wektoryzuj dokumenty lokalnie modelem Xenova/paraphrase-multilingual-MiniLM-L12-v2 bez wysyłania tekstu do /embed.",
   "local_embeddings_downloading": "Pobieranie modelu: {pct}%",
   "local_embeddings_ready": "Model Xenova/paraphrase-multilingual-MiniLM-L12-v2 gotowy",
-  "local_embeddings_later_hint": "Możesz to włączyć później w Ustawienia → Węzeł AI."
+  "local_embeddings_later_hint": "Możesz to włączyć później w Ustawienia → Węzeł AI.",
+  "local_vision_toggle": "Lokalna analiza zdjęć i OCR (Florence-2, ~250 MB)",
+  "local_vision_desc": "Opisuj zdjęcia i wyodrębniaj tekst OCR lokalnie przez onnx-community/Florence-2-base-ft bez wysyłania obrazów do węzła AI.",
+  "local_vision_downloading": "Pobieranie modelu wizji: {pct}%",
+  "local_vision_ready": "Model Florence-2-base-ft gotowy",
+  "local_vision_later_hint": "Możesz to włączyć później w Ustawienia → Węzeł AI."
 }

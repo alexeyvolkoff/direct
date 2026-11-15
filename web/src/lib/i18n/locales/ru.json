@@ -1903,5 +1903,10 @@
   "local_embeddings_desc": "Локальная векторизация документов моделью Xenova/paraphrase-multilingual-MiniLM-L12-v2 без отправки текста на /embed.",
   "local_embeddings_downloading": "Загрузка модели: {pct}%",
   "local_embeddings_ready": "Модель Xenova/paraphrase-multilingual-MiniLM-L12-v2 готова",
-  "local_embeddings_later_hint": "Можно включить позже в Настройки → AI-нода."
+  "local_embeddings_later_hint": "Можно включить позже в Настройки → AI-нода.",
+  "local_vision_toggle": "Локальный анализ фото и OCR (Florence-2, ~250 МБ)",
+  "local_vision_desc": "Описывать фото и распознавать текст (OCR) локально через onnx-community/Florence-2-base-ft без отправки изображений на AI-ноду.",
+  "local_vision_downloading": "Загрузка модели зрения: {pct}%",
+  "local_vision_ready": "Модель Florence-2-base-ft готова",
+  "local_vision_later_hint": "Можно включить позже в Настройки → AI-нода."
 }

@@ -1902,5 +1902,10 @@
   "local_embeddings_desc": "Dokumente lokal mit Xenova/paraphrase-multilingual-MiniLM-L12-v2 vektorisieren, ohne Text an /embed zu senden.",
   "local_embeddings_downloading": "Modell wird geladen: {pct}%",
   "local_embeddings_ready": "Modell Xenova/paraphrase-multilingual-MiniLM-L12-v2 bereit",
-  "local_embeddings_later_hint": "Kann später unter Einstellungen → KI-Node aktiviert werden."
+  "local_embeddings_later_hint": "Kann später unter Einstellungen → KI-Node aktiviert werden.",
+  "local_vision_toggle": "Lokale Fotoanalyse & OCR (Florence-2, ~250 MB)",
+  "local_vision_desc": "Fotos lokal mit onnx-community/Florence-2-base-ft beschreiben und OCR-Text extrahieren, ohne Bilder an den AI-Node zu senden.",
+  "local_vision_downloading": "Vision-Modell wird geladen: {pct}%",
+  "local_vision_ready": "Modell Florence-2-base-ft bereit",
+  "local_vision_later_hint": "Sie können dies später unter Einstellungen → AI-Node aktivieren."
 }

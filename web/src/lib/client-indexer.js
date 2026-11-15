@@ -17,6 +17,7 @@ import {
   embedTexts,
   computeContentHash,
 } from "./client-rag.js";
+import { isLocalVisionEnabled, recognizeImageLocal } from "./local-vision.js";
 
 const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "webp"]);
 const MANIFEST_KEY = "omd_indexed_manifest_v1";
@@ -528,27 +529,51 @@ class ClientIndexerRunner {
               previewDataUrl = thumb.dataUrl;
             }
 
-            const headers = {
-              Accept: "application/json",
-              "X-OMD-Filename": encodeURIComponent(item.name),
-              "X-OMD-Source": encodeURIComponent(item.path),
-              "X-OMD-Doc-Path": encodeURIComponent(item.docId),
-              "X-OMD-RAG-Scope": "private",
-              "X-OMD-Owner": owner,
-              "X-OMD-Skip-Preview": "1",
-            };
-            if (contentHash) headers["X-OMD-Content-Hash"] = contentHash;
-            if (exif.gpsString) headers["X-OMD-GPS"] = exif.gpsString;
-            if (exif.takenAt) headers["X-OMD-Taken-At"] = exif.takenAt;
+            let data = null;
+            if (isLocalVisionEnabled()) {
+              try {
+                const localRes = await recognizeImageLocal(uploadBytes, {
+                  filename: item.name,
+                  exif,
+                  signal,
+                });
+                const [emb] = await embedTexts(httpDrive, [localRes.annotation], 1, signal);
+                data = {
+                  title: localRes.title,
+                  annotation: localRes.annotation,
+                  tags: localRes.tags,
+                  annotation_embedding: Array.isArray(emb) ? emb : null,
+                  chunks: [{ text: localRes.annotation, embedding: Array.isArray(emb) ? emb : null }],
+                };
+              } catch (localErr) {
+                if (localErr?.name === "AbortError") throw localErr;
+                console.warn(`[client-indexer] local vision fallback to node for ${item.name}:`, localErr);
+              }
+            }
 
-            const res = await httpDrive.fetch("/rag/recognize/raw", {
-              method: "POST",
-              headers,
-              body: uploadBytes,
-              signal,
-            });
-            if (!res.ok) throw new Error(`recognize HTTP ${res.status}`);
-            const data = await res.json();
+            if (!data) {
+              const headers = {
+                Accept: "application/json",
+                "X-OMD-Filename": encodeURIComponent(item.name),
+                "X-OMD-Source": encodeURIComponent(item.path),
+                "X-OMD-Doc-Path": encodeURIComponent(item.docId),
+                "X-OMD-RAG-Scope": "private",
+                "X-OMD-Owner": owner,
+                "X-OMD-Skip-Preview": "1",
+              };
+              if (contentHash) headers["X-OMD-Content-Hash"] = contentHash;
+              if (exif.gpsString) headers["X-OMD-GPS"] = exif.gpsString;
+              if (exif.takenAt) headers["X-OMD-Taken-At"] = exif.takenAt;
+
+              const res = await httpDrive.fetch("/rag/recognize/raw", {
+                method: "POST",
+                headers,
+                body: uploadBytes,
+                signal,
+              });
+              if (!res.ok) throw new Error(`recognize HTTP ${res.status}`);
+              data = await res.json();
+            }
 
             await chatStore.addKnowledge({
               document_id: item.docId,

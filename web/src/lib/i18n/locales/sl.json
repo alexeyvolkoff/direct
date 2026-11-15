@@ -1902,5 +1902,10 @@
   "local_embeddings_desc": "Vektorizirajte dokumente lokalno z Xenova/paraphrase-multilingual-MiniLM-L12-v2 brez pošiljanja besedila na /embed.",
   "local_embeddings_downloading": "Prenašanje modela: {pct}%",
   "local_embeddings_ready": "Model Xenova/paraphrase-multilingual-MiniLM-L12-v2 pripravljen",
-  "local_embeddings_later_hint": "To lahko pozneje omogočite v Nastavitve → AI vozlišče."
+  "local_embeddings_later_hint": "To lahko pozneje omogočite v Nastavitve → AI vozlišče.",
+  "local_vision_toggle": "Local photo analysis & OCR (Florence-2, ~250 MB)",
+  "local_vision_desc": "Describe photos and extract OCR text locally using onnx-community/Florence-2-base-ft without sending images to the AI node.",
+  "local_vision_downloading": "Downloading vision model: {pct}%",
+  "local_vision_ready": "Model Florence-2-base-ft ready",
+  "local_vision_later_hint": "You can enable this later in Settings → AI Node."
 }

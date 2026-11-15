@@ -1902,5 +1902,10 @@
   "local_embeddings_desc": "וקטוריזציה מקומית של מסמכים באמצעות Xenova/paraphrase-multilingual-MiniLM-L12-v2 ללא שליחת טקסט ל-/embed.",
   "local_embeddings_downloading": "מוריד מודל: {pct}%",
   "local_embeddings_ready": "המודל Xenova/paraphrase-multilingual-MiniLM-L12-v2 מוכן",
-  "local_embeddings_later_hint": "ניתן להפעיל מאוחר יותר בהגדרות ← צומת AI."
+  "local_embeddings_later_hint": "ניתן להפעיל מאוחר יותר בהגדרות ← צומת AI.",
+  "local_vision_toggle": "ניתוח תמונות ו-OCR מקומי (Florence-2, ~250 MB)",
+  "local_vision_desc": "תאר תמונות וחלץ טקסט OCR מקומית באמצעות onnx-community/Florence-2-base-ft מבלי לשלוח תמונות לצומת ה-AI.",
+  "local_vision_downloading": "מוריד מודל ראייה: {pct}%",
+  "local_vision_ready": "מודל Florence-2-base-ft מוכן",
+  "local_vision_later_hint": "ניתן להפעיל זאת מאוחר יותר בהגדרות ← צומת AI."
 }

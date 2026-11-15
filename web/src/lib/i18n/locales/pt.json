@@ -1902,5 +1902,10 @@
   "local_embeddings_desc": "Vetorize documentos localmente usando Xenova/paraphrase-multilingual-MiniLM-L12-v2 sem enviar texto para /embed.",
   "local_embeddings_downloading": "Baixando modelo: {pct}%",
   "local_embeddings_ready": "Modelo Xenova/paraphrase-multilingual-MiniLM-L12-v2 pronto",
-  "local_embeddings_later_hint": "Você pode ativar isso depois em Configurações → Nó IA."
+  "local_embeddings_later_hint": "Você pode ativar isso depois em Configurações → Nó IA.",
+  "local_vision_toggle": "Análise local de fotos e OCR (Florence-2, ~250 MB)",
+  "local_vision_desc": "Descreva fotos e extraia texto OCR localmente usando onnx-community/Florence-2-base-ft sem enviar imagens ao nó de IA.",
+  "local_vision_downloading": "Baixando modelo de visão: {pct}%",
+  "local_vision_ready": "Modelo Florence-2-base-ft pronto",
+  "local_vision_later_hint": "Você pode ativar isso depois em Configurações → Nó de IA."
 }
