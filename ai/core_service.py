@@ -51,6 +51,7 @@ from memory_index import (
 
 import unified_memory
 import horde_client
+import horde_image_mapper
 import plane_service
 
 # LLM and RAG settings #
@@ -3099,10 +3100,19 @@ async def is_krea_available(ctx=None) -> bool:
     return _krea_available_cache
 
 
+async def is_image_generation_available(ctx=None) -> bool:
+    """Returns True if any image backend (AI Horde Mapper, Modal/Krea 2, or local ComfyUI) is active."""
+    if horde_image_mapper.is_horde_image_enabled():
+        return True
+    if await is_krea_available(ctx):
+        return True
+    return await is_comfy_available()
+
+
 async def check_krea_status(ctx=None) -> dict:
-    """Checks if Creative Studio engines or local SDXL can be activated on this node."""
+    """Checks if Creative Studio engines, AI Horde Express, or local SDXL can be activated on this node."""
     krea_ok = await is_krea_available(ctx)
-    sdxl_ok = await is_comfy_available()
+    sdxl_ok = await is_comfy_available() or horde_image_mapper.is_horde_image_enabled()
     is_priv = bool(getattr(ctx, "private_mode", False) or getattr(ctx, "trusted_owner", False)) if ctx else True
     if krea_ok or sdxl_ok:
         return {
@@ -3678,21 +3688,22 @@ async def upload_reference_image_to_comfy(img_bytes: bytes, filename: str | None
 
     _cache_reference_image_bytes(filename, img_bytes)
 
-    # 1. ComfyUI /upload/image API (работает локально и удаленно в Colab)
-    try:
-        data = aiohttp.FormData()
-        data.add_field("image", img_bytes, filename=filename, content_type="image/png")
-        data.add_field("overwrite", "true")
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10.0)) as session:
-            async with session.post(f"{COMFY_API_URL}/upload/image", data=data) as resp:
-                if resp.status == 200:
-                    resp_data = await resp.json()
-                    uploaded_name = resp_data.get("name", filename)
-                    _cache_reference_image_bytes(uploaded_name, img_bytes)
-                    logging.info(f"[Krea2] Uploaded reference image to ComfyUI input: {uploaded_name}")
-                    return uploaded_name
-    except Exception as e:
-        logging.warning(f"[Krea2] ComfyUI /upload/image failed: {e}")
+    # 1. ComfyUI /upload/image API (только если локальный/удаленный ComfyUI реально запущен)
+    if await is_comfy_available():
+        try:
+            data = aiohttp.FormData()
+            data.add_field("image", img_bytes, filename=filename, content_type="image/png")
+            data.add_field("overwrite", "true")
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10.0)) as session:
+                async with session.post(f"{COMFY_API_URL}/upload/image", data=data) as resp:
+                    if resp.status == 200:
+                        resp_data = await resp.json()
+                        uploaded_name = resp_data.get("name", filename)
+                        _cache_reference_image_bytes(uploaded_name, img_bytes)
+                        logging.info(f"[Krea2] Uploaded reference image to ComfyUI input: {uploaded_name}")
+                        return uploaded_name
+        except Exception as e:
+            logging.warning(f"[Krea2] ComfyUI /upload/image failed: {e}")
 
     # 2. Прямая запись в ComfyUI input директорию при локальной доступности
     comfy_base = os.path.dirname(COMFY_OUTPUT_DIR) if COMFY_OUTPUT_DIR else ""
@@ -3798,11 +3809,27 @@ def is_sdxl_base_model(base_model: str | None) -> bool:
     return str(base_model or "").strip().lower() in SDXL_BASE_MODELS
 
 
-def get_krea_presets(include_fun: bool = False) -> dict:
-    """Единый реестр стилей и LoRA для универсальной Creative Studio (Krea 2 / Anima + локальный SDXL)."""
+def get_krea_presets(include_fun: bool = False, include_krea: bool = True) -> dict:
+    """Единый реестр стилей и LoRA для универсальной Creative Studio.
+    Для гостей (include_krea=False) креевские/Anima пресеты и LoRA полностью исключаются —
+    остаются только стандартные (SDXL) стили и персонажные типажи.
+    """
     base = _load_base_krea_presets()
-    art_styles = list(base.get("art_styles") or [])
-    archetypes = list(base.get("archetypes") or [])
+    if include_krea:
+        art_styles = list(base.get("art_styles") or [])
+        archetypes = list(base.get("archetypes") or [])
+    else:
+        art_styles = [
+            s for s in (base.get("art_styles") or [])
+            if isinstance(s, dict) and (
+                s.get("id") == "none"
+                or ("sdxl" in (s.get("models") or []))
+            )
+        ]
+        archetypes = [
+            a for a in (base.get("archetypes") or [])
+            if isinstance(a, dict) and ("sdxl" in (a.get("models") or []))
+        ]
     existing_style_ids = {str(s.get("id")) for s in art_styles if isinstance(s, dict)}
     existing_arch_ids = {str(a.get("id")) for a in archetypes if isinstance(a, dict)}
 
@@ -4180,6 +4207,135 @@ def _crop_head_portrait_for_ipadapter(img_bytes: bytes) -> bytes:
         return img_bytes
 
 
+async def generate_horde_mapped_image(
+    ctx: UserContext,
+    prompt: str,
+    persona_prompt: str = "",
+    sliders: dict | None = None,
+    width: int = 896,
+    height: int = 1152,
+    seed: int | None = None,
+    is_uncensored: bool = False,
+    upload_storage: bool = True,
+    save_local: bool = False,
+    **kwargs,
+) -> tuple[str, str, str, bytes]:
+    """
+    Renders an image via the AI Horde (`reGen`) Mapper Layer (`horde_image_mapper`),
+    applying UI style/archetype/aspect mapping, hardcoded SFW safety for guests,
+    daily Kudos budget management, and Direct storage/ephemeral caching.
+    """
+    sliders = sliders or {}
+    clean_user_prompt, initial_title = (
+        extract_title_and_prompt(prompt)
+        if ("Image:" in (prompt or "") or "Title:" in (prompt or ""))
+        else ((prompt or "").strip(), "")
+    )
+    clean_user_prompt = clean_user_prompt or (persona_prompt or "").strip()
+
+    custom_title = str(kwargs.get("custom_title") or initial_title or "").strip()
+    custom_description = str(kwargs.get("custom_description") or "").strip()
+
+    desc_task = None
+    if not (custom_title and custom_description) and clean_user_prompt:
+        desc_task = asyncio.create_task(generate_neutral_description_and_title(ctx, clean_user_prompt))
+
+    try:
+        horde_res = await horde_image_mapper.generate_horde_image(
+            ctx=ctx,
+            prompt=prompt,
+            persona_prompt=persona_prompt,
+            sliders=sliders,
+            width=width,
+            height=height,
+            seed=seed,
+            is_uncensored=is_uncensored,
+            progress_cb=emit_generation_progress,
+        )
+    except Exception:
+        if desc_task and not desc_task.done():
+            desc_task.cancel()
+        raise
+
+    img_data = horde_res["image_bytes"]
+    if not getattr(ctx, "private_mode", False):
+        ctx.tokens_consumed = 0.1
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    raw_prefix = str(kwargs.get("filename_prefix") or "").strip()
+    safe_prefix = re.sub(r"[^a-zA-Z0-9_-]", "", raw_prefix)[:32]
+    base_fn = f"HORDE_{timestamp}.png"
+    filename = f"{safe_prefix}_{base_fn}" if safe_prefix else base_fn
+
+    raw_subfolder = str(kwargs.get("subfolder") or "").strip()
+    safe_subfolder = sanitize_story_slug(raw_subfolder) if raw_subfolder else ""
+
+    neutral_title, neutral_description = "", ""
+    if desc_task is not None:
+        try:
+            neutral_title, neutral_description = await asyncio.wait_for(desc_task, timeout=6.0)
+        except Exception as e:
+            logging.warning(f"[HordeMapper] generate_neutral_description_and_title timed out or failed: {e}")
+
+    if custom_title:
+        neutral_title = custom_title
+    if custom_description:
+        neutral_description = custom_description
+
+    if not neutral_description:
+        clean_plain = re.sub(r"<[^>]+>", "", clean_user_prompt).strip()
+        sentences = [s.strip() for s in clean_plain.split(".") if s.strip()]
+        neutral_description = sentences[0] if sentences else (clean_plain[:120] or "Generated image")
+
+    if neutral_title:
+        img_title = neutral_title
+    else:
+        words = [w for w in neutral_description.replace("<", "").replace(">", "").split() if not w.startswith("<")]
+        img_title = _clean_fallback_title(words, max_words=4) or "AI Creation"
+
+    readme_content = f"# {img_title}\n\n{neutral_description}\n"
+    if clean_user_prompt:
+        readme_content += f"\n<!-- prompt: {clean_user_prompt} -->\n"
+
+    is_node_owner = bool(ctx and (getattr(ctx, "trusted_owner", False) or getattr(ctx, "private_mode", False)))
+    is_p2p = bool(getattr(ctx, "private_mode", False))
+    should_save_local = bool(save_local) or (bool(upload_storage) and is_node_owner)
+
+    if should_save_local:
+        try:
+            rel_gen = f"generated/{safe_subfolder}" if safe_subfolder else "generated"
+            target_dir = resolve_local_target_dir(ctx, rel_gen)
+            os.makedirs(target_dir, exist_ok=True)
+            with open(os.path.join(target_dir, filename), "wb") as f:
+                f.write(img_data)
+            base_name = os.path.splitext(filename)[0]
+            with open(os.path.join(target_dir, f"{base_name}.Readme.md"), "w", encoding="utf-8") as f:
+                f.write(readme_content)
+            logging.info(f"[HordeMapper] Saved generated image locally on AI node: {target_dir}/{filename}")
+        except Exception as e:
+            logging.warning(f"[HordeMapper] Local file save failed: {e}")
+    elif upload_storage and not is_p2p and getattr(ctx, "omd_key", None):
+        effective_storage = ctx.storage or (
+            f"/{ctx.user_id}/Private/onmychat" if ctx.user_id and ctx.user_id != "anonymous" else ""
+        )
+        if effective_storage:
+            dest = f"{effective_storage}/generated"
+            try:
+                upload_data_to_storage(ctx.omd_key, dest, filename, img_data, "image/png")
+                readme_filename = os.path.splitext(filename)[0] + ".Readme.md"
+                upload_data_to_storage(ctx.omd_key, dest, readme_filename, readme_content, "text/markdown")
+            except Exception as e:
+                logging.warning(f"[HordeMapper] Upload to gateway storage failed: {e}")
+
+    try:
+        from api import store_ephemeral_image
+        store_ephemeral_image(filename, img_data)
+    except Exception as e:
+        logging.debug(f"[HordeMapper] store_ephemeral_image skipped: {e}")
+
+    return filename, img_title, neutral_description, img_data
+
+
 async def generate_sdxl_studio_image(
     ctx: UserContext,
     prompt: str,
@@ -4198,7 +4354,7 @@ async def generate_sdxl_studio_image(
     save_local: bool = False,
     **kwargs
 ) -> tuple[str, str, str, bytes]:
-    """Рендерит кадр Creative Studio через локальный быстрый SDXL DMD2 пайплайн (flow.json)."""
+    """Рендерит кадр Creative Studio через AI Horde Mapper (для гостей / без локального ComfyUI) или локальный SDXL DMD2 пайплайн."""
     sliders = sliders or {}
 
     raw_refs: list[str] = []
@@ -4210,6 +4366,34 @@ async def generate_sdxl_studio_image(
     if not prompt and not persona_prompt and not raw_refs:
         raise Exception("Укажите промпт или выберите персону для генерации.")
 
+    is_uncensored = bool(getattr(ctx, "private_mode", False) or getattr(ctx, "trusted_owner", False))
+    try:
+        st = await check_krea_status(ctx)
+        if isinstance(st, dict) and "uncensored" in st:
+            is_uncensored = bool(st.get("uncensored"))
+    except Exception:
+        pass
+
+    comfy_ok = await is_comfy_available()
+    if horde_image_mapper.should_use_horde_for_sdxl(ctx, comfy_available=comfy_ok):
+        logging.info(
+            f"[HordeMapper] Routing Express/SDXL request to AI Horde "
+            f"(comfy_ok={comfy_ok}, base_model={sliders.get('base_model')}, style={sliders.get('style')})"
+        )
+        return await generate_horde_mapped_image(
+            ctx=ctx,
+            prompt=prompt,
+            persona_prompt=persona_prompt,
+            sliders=sliders,
+            width=width,
+            height=height,
+            seed=seed,
+            is_uncensored=is_uncensored,
+            upload_storage=bool(kwargs.pop("upload_storage", True)),
+            save_local=save_local,
+            **kwargs,
+        )
+
     comfy_ref_names: list[str] = []
     comfy_ref_bytes: list[bytes] = []
     for ref_item in raw_refs[:2]:
@@ -4219,15 +4403,6 @@ async def generate_sdxl_studio_image(
             if c_name:
                 comfy_ref_names.append(c_name)
                 comfy_ref_bytes.append(ref_bytes)
-
-    # Check uncensored generation capability from node status
-    is_uncensored = bool(getattr(ctx, "private_mode", False) or getattr(ctx, "trusted_owner", False))
-    try:
-        st = await check_krea_status(ctx)
-        if isinstance(st, dict) and "uncensored" in st:
-            is_uncensored = bool(st.get("uncensored"))
-    except Exception:
-        pass
 
     no_signs_neg = (
         "(english_text, print_shirt, graphic_tee, shirt_print, clothing_text, text_on_clothes, text, "
@@ -11270,6 +11445,19 @@ async def generate_image(ctx: UserContext, prompt, chat: str = 'default', update
     if not prompt:
         raise Exception("Please explain what do you want to see.")
 
+    comfy_ok = await is_comfy_available()
+    if horde_image_mapper.should_use_horde_for_sdxl(ctx, comfy_available=comfy_ok):
+        clean_p, p_prompt, mapped_sliders = extract_krea2_prompt_and_params(ctx, prompt, is_character=use_default_lora)
+        is_uncensored = bool(getattr(ctx, "private_mode", False) or getattr(ctx, "trusted_owner", False))
+        return await generate_horde_mapped_image(
+            ctx=ctx,
+            prompt=prompt,
+            persona_prompt=p_prompt if use_default_lora else "",
+            sliders=mapped_sliders,
+            is_uncensored=is_uncensored,
+            upload_storage=upload_storage,
+        )
+
     user_id = ctx.user_id
 
     effective_fun = ctx.private_mode and ctx.settings.get("content_mode", "work") == "fun"
@@ -11583,8 +11771,8 @@ async def generate_character_image(ctx: UserContext, prompt, chat: str = 'defaul
             reference_image=ref_avatar,
             upload_storage=upload_storage,
         )
-    if await is_comfy_available():
-        logging.info(f"[Express/SDXL] Generating character image in Express ({eff_sliders.get('base_model')}): prompt='{clean_prompt[:50]}...', persona={p_name or 'default'}")
+    if await is_comfy_available() or horde_image_mapper.is_horde_image_enabled():
+        logging.info(f"[Express/Horde] Generating character image ({eff_sliders.get('base_model')}): prompt='{clean_prompt[:50]}...', persona={p_name or 'default'}")
         return await generate_krea2_image(
             ctx,
             clean_prompt,
@@ -11605,8 +11793,8 @@ async def generate_general_image(ctx: UserContext, prompt, chat: str = 'default'
     if can_krea:
         logging.info(f"[Krea2] Generating general image: prompt='{clean_prompt[:50]}...', style={eff_sliders.get('style')}")
         return await generate_krea2_image(ctx, clean_prompt, persona_prompt="", sliders=eff_sliders, upload_storage=upload_storage)
-    if await is_comfy_available():
-        logging.info(f"[Express/SDXL] Generating general image in Express ({eff_sliders.get('base_model')}): prompt='{clean_prompt[:50]}...'")
+    if await is_comfy_available() or horde_image_mapper.is_horde_image_enabled():
+        logging.info(f"[Express/Horde] Generating general image ({eff_sliders.get('base_model')}): prompt='{clean_prompt[:50]}...'")
         return await generate_krea2_image(ctx, clean_prompt, persona_prompt="", sliders=eff_sliders, upload_storage=upload_storage)
     return await generate_image(ctx, prompt, chat, use_default_lora=False, prompt_id=prompt_id, upload_storage=upload_storage)
 

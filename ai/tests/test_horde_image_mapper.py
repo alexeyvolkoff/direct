@@ -1,0 +1,298 @@
+import asyncio
+import base64
+import io
+from types import SimpleNamespace
+
+from aiohttp import web
+from PIL import Image
+import pytest
+
+import horde_client
+import horde_image_mapper
+
+
+def _make_webp_bytes(color=(40, 120, 220)) -> bytes:
+    img = Image.new("RGB", (64, 64), color=color)
+    buf = io.BytesIO()
+    img.save(buf, format="WEBP")
+    return buf.getvalue()
+
+
+def test_map_ui_guest_enforces_sfw_and_strips_private_tags():
+    payload = horde_image_mapper.map_ui_to_horde_request(
+        prompt="Title: Sunset Cafe\nImage: <anime> <domi> <lora:DomiK4:0.8> DomiK woman drinking coffee ### secret",
+        persona_prompt="warm brown eyes, cozy sweater",
+        sliders={"detail": 0.85, "weight": -0.5},
+        width=896,
+        height=1152,
+        seed=42,
+        is_uncensored=False,
+        use_sdxl=True,
+        online_models={
+            "Nova Anime XL": {"name": "Nova Anime XL", "count": 6, "eta": 10},
+            "WAI-CUTE Pony": {"name": "WAI-CUTE Pony", "count": 2, "eta": 0},
+        },
+    )
+    assert payload["nsfw"] is False
+    assert payload["censor_nsfw"] is True
+    assert payload["replacement_filter"] is True
+    assert payload["params"]["width"] == 832
+    assert payload["params"]["height"] == 1024
+    assert payload["params"]["steps"] == 22
+    assert payload["params"]["seed"] == "42"
+    assert "Nova Anime XL" in payload["models"] or "WAI-CUTE Pony" in payload["models"]
+
+    pos, neg = payload["prompt"].split(" ### ", 1)
+    assert "<anime>" not in pos
+    assert "<domi>" not in pos
+    assert "DomiK" not in pos
+    assert "cozy sweater" in pos
+    assert "charismatic stylish brunette woman" in pos
+    assert "slender delicate silhouette" in pos
+    assert "nsfw, nude, naked" in neg
+
+
+def test_map_ui_anon_sd15_keeps_pixels_under_upfront_kudos_limit():
+    for w, h in [(896, 1152), (1344, 768), (1024, 1024)]:
+        payload = horde_image_mapper.map_ui_to_horde_request(
+            prompt="mountain lake at sunrise",
+            sliders={"style": "photorealistic"},
+            width=w,
+            height=h,
+            is_uncensored=False,
+            use_sdxl=False,
+        )
+        out_w = payload["params"]["width"]
+        out_h = payload["params"]["height"]
+        assert out_w % 64 == 0
+        assert out_h % 64 == 0
+        assert (out_w * out_h) <= (576 * 576)
+
+
+def test_daily_guest_kudos_budget_tracking(tmp_path, monkeypatch):
+    budget_file = str(tmp_path / "guest_budget.json")
+    monkeypatch.setitem(horde_image_mapper.SETTINGS, "HORDE_GUEST_DAILY_KUDOS_LIMIT", "100")
+    monkeypatch.setitem(horde_image_mapper.SETTINGS, "HORDE_PER_USER_DAILY_KUDOS_LIMIT", "60")
+
+    ok, rem_g, rem_u = horde_image_mapper.check_guest_priority_budget("guest_1", 30.0, budget_path=budget_file)
+    assert ok is True
+    assert rem_g == 100.0
+    assert rem_u == 60.0
+
+    horde_image_mapper.record_guest_kudos_spent("guest_1", 40.0, budget_path=budget_file)
+    ok_after, rem_g2, rem_u2 = horde_image_mapper.check_guest_priority_budget("guest_1", 30.0, budget_path=budget_file)
+    assert ok_after is False  # guest_1 only has 20 left (< 30)
+    assert rem_u2 == 20.0
+    assert rem_g2 == 60.0
+
+    # Different guest still has priority budget until global cap is hit
+    ok_other, _, _ = horde_image_mapper.check_guest_priority_budget("guest_2", 30.0, budget_path=budget_file)
+    assert ok_other is True
+
+
+@pytest.mark.asyncio
+async def test_generate_horde_image_r2_webp_to_png_and_budget(tmp_path, monkeypatch):
+    webp_bytes = _make_webp_bytes()
+    submitted_payloads = []
+
+    async def handle_models(request):
+        return web.json_response([
+            {"name": "AlbedoBase XL (SDXL)", "count": 7, "eta": 5},
+            {"name": "Deliberate", "count": 10, "eta": 2},
+        ])
+
+    async def handle_submit(request):
+        body = await request.json()
+        submitted_payloads.append((request.headers.get("apikey"), body))
+        return web.json_response({"id": "job-123", "kudos": 30.0}, status=202)
+
+    async def handle_check(request):
+        return web.json_response({"done": True, "faulted": False, "queue_position": 0, "wait_time": 0})
+
+    async def handle_status(request):
+        base_url = str(request.url.origin())
+        return web.json_response({
+            "done": True,
+            "kudos": 30.0,
+            "generations": [
+                {
+                    "img": f"{base_url}/r2/out.webp",
+                    "model": "AlbedoBase XL (SDXL)",
+                    "worker_name": "reGen-Node-1",
+                    "censored": False,
+                }
+            ],
+        })
+
+    async def handle_r2(request):
+        return web.Response(body=webp_bytes, content_type="image/webp")
+
+    app = web.Application()
+    app.router.add_get("/api/v2/status/models", handle_models)
+    app.router.add_post("/api/v2/generate/async", handle_submit)
+    app.router.add_get("/api/v2/generate/check/job-123", handle_check)
+    app.router.add_get("/api/v2/generate/status/job-123", handle_status)
+    app.router.add_get("/r2/out.webp", handle_r2)
+
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "127.0.0.1", 0)
+    await site.start()
+    port = site._server.sockets[0].getsockname()[1]
+
+    try:
+        monkeypatch.setattr(horde_client, "HORDE_BASE_URL", f"http://127.0.0.1:{port}/api/v2")
+        monkeypatch.setattr(horde_image_mapper, "_image_models_cache", (0.0, {}))
+        monkeypatch.setattr(horde_image_mapper, "_last_submit_monotonic", 0.0)
+        monkeypatch.setitem(horde_image_mapper.SETTINGS, "HORDE_WORKER_API_KEY", "priority-secret-key")
+        monkeypatch.setitem(horde_image_mapper.SETTINGS, "HORDE_GUEST_DAILY_KUDOS_LIMIT", "500")
+        monkeypatch.setitem(horde_image_mapper.SETTINGS, "HORDE_PER_USER_DAILY_KUDOS_LIMIT", "100")
+
+        budget_file = str(tmp_path / "budget.json")
+        guest_ctx = SimpleNamespace(user_id="guest_abc", private_mode=False, trusted_owner=False, is_unlimited=False, settings={"style": "realistic"})
+        stages = []
+
+        async def on_prog(stage, **info):
+            stages.append(stage)
+
+        res = await horde_image_mapper.generate_horde_image(
+            ctx=guest_ctx,
+            prompt="cozy cabin in snowy forest",
+            width=896,
+            height=1152,
+            is_uncensored=True,  # must be ignored for guest!
+            progress_cb=on_prog,
+            poll_interval=0.05,
+            budget_path=budget_file,
+        )
+
+        assert res["tier_used"] == "priority_sdxl"
+        assert res["model"] == "AlbedoBase XL (SDXL)"
+        assert res["worker_name"] == "reGen-Node-1"
+        assert res["image_bytes"][:8] == b"\x89PNG\r\n\x1a\n"
+        assert "warming" in stages and "saving" in stages
+
+        api_key_sent, sent_body = submitted_payloads[0]
+        assert api_key_sent == "priority-secret-key"
+        assert sent_body["nsfw"] is False
+        assert sent_body["censor_nsfw"] is True
+
+        _, _, rem_u = horde_image_mapper.check_guest_priority_budget("guest_abc", 10.0, budget_path=budget_file)
+        assert rem_u == 70.0
+    finally:
+        await runner.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_generate_horde_image_downgrades_on_kudos_upfront_and_blocks_censored(tmp_path, monkeypatch):
+    png_img = Image.new("RGB", (32, 32), color=(0, 0, 0))
+    buf = io.BytesIO()
+    png_img.save(buf, format="PNG")
+    b64_png = base64.b64encode(buf.getvalue()).decode("ascii")
+
+    calls = []
+
+    async def handle_models(request):
+        return web.json_response([{"name": "Deliberate", "count": 8, "eta": 1}])
+
+    async def handle_submit(request):
+        key = request.headers.get("apikey")
+        body = await request.json()
+        calls.append((key, body))
+        if key != "0000000000":
+            return web.json_response({"message": "Need upfront kudos", "rc": "KudosUpfront"}, status=403)
+        return web.json_response({"id": "job-anon", "kudos": 8.0}, status=202)
+
+    async def handle_check(request):
+        return web.json_response({"done": True, "faulted": False})
+
+    async def handle_status(request):
+        return web.json_response({
+            "done": True,
+            "kudos": 8.0,
+            "generations": [
+                {
+                    "img": b64_png,
+                    "model": "Deliberate",
+                    "worker_name": "reGen-Node-2",
+                    "censored": True,
+                }
+            ],
+        })
+
+    app = web.Application()
+    app.router.add_get("/api/v2/status/models", handle_models)
+    app.router.add_post("/api/v2/generate/async", handle_submit)
+    app.router.add_get("/api/v2/generate/check/job-anon", handle_check)
+    app.router.add_get("/api/v2/generate/status/job-anon", handle_status)
+
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "127.0.0.1", 0)
+    await site.start()
+    port = site._server.sockets[0].getsockname()[1]
+
+    try:
+        monkeypatch.setattr(horde_client, "HORDE_BASE_URL", f"http://127.0.0.1:{port}/api/v2")
+        monkeypatch.setattr(horde_image_mapper, "_image_models_cache", (0.0, {}))
+        monkeypatch.setattr(horde_image_mapper, "_last_submit_monotonic", 0.0)
+        monkeypatch.setitem(horde_image_mapper.SETTINGS, "HORDE_WORKER_API_KEY", "depleted-key")
+
+        guest_ctx = SimpleNamespace(user_id="guest_xyz", private_mode=False, trusted_owner=False, is_unlimited=False, settings={})
+        with pytest.raises(horde_image_mapper.HordeCensoredError):
+            await horde_image_mapper.generate_horde_image(
+                ctx=guest_ctx,
+                prompt="borderline prompt",
+                poll_interval=0.05,
+                budget_path=str(tmp_path / "budget2.json"),
+            )
+
+        assert len(calls) == 2
+        assert calls[0][0] == "depleted-key"
+        assert calls[1][0] == "0000000000"
+        assert calls[1][1]["params"]["width"] == 512
+        assert calls[1][1]["params"]["height"] == 640
+    finally:
+        await runner.cleanup()
+
+
+def test_guest_krea_presets_excludes_all_krea_and_anima_loras():
+    import core_service
+
+    guest_presets = core_service.get_krea_presets(include_fun=False, include_krea=False)
+    style_ids = [s["id"] for s in guest_presets["art_styles"]]
+    arch_ids = [a["id"] for a in guest_presets["archetypes"]]
+
+    # Zero Krea 2 or Anima presets leaked to guests
+    for s in guest_presets["art_styles"]:
+        assert "krea2" not in (s.get("models") or [])
+        assert "anima" not in (s.get("models") or [])
+    for a in guest_presets["archetypes"]:
+        assert a.get("models") == ["sdxl"]
+        assert a["id"].startswith("sdxl_")
+
+    assert "none" in style_ids
+    assert "sdxl_lora_real_humans" in style_ids
+    assert "sdxl_lora_busty" not in style_ids
+    assert "sdxl_judith" in arch_ids
+    assert "domi" not in arch_ids
+    assert "kate" not in arch_ids
+    assert "frieren" not in arch_ids
+
+    # Standard SDXL LoRA IDs map cleanly to natural visual prompts on AI Horde
+    mapped = horde_image_mapper.map_ui_to_horde_request(
+        prompt="reading a book in a sunlit library",
+        sliders={
+            "base_model": "sdxl_fantasy",
+            "styles": ["none", "sdxl_lora_real_humans"],
+            "archetypes": ["sdxl_judith"],
+        },
+        is_uncensored=False,
+        use_sdxl=True,
+    )
+    pos, _ = mapped["prompt"].split(" ### ", 1)
+    assert "<Judith>" not in pos
+    assert "emerald-green eyes" in pos
+    assert "authentic natural skin texture" in pos
+
+

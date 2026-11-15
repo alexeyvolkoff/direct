@@ -2659,7 +2659,7 @@ async def assistant_info(omd_key: str | None = Depends(get_omd_key)):
             "omd_key": ctx.omd_key or omd_key,
             "summary_threshold": core_service.SUMMARY_THRESHOLD,
             "capabilities": {
-                "image_generation": await core_service.is_comfy_available(),
+                "image_generation": await core_service.is_image_generation_available(ctx),
                 "vision": await core_service.is_vision_available(),
                 "krea2": await core_service.is_krea_available(ctx),
                 "chat": True
@@ -3194,7 +3194,8 @@ async def get_loras(request: Request, mode: str | None = Query(None), omd_key: s
     ctx = get_ctx(omd_key)
     ctx.private_mode = trusted_private_access(request, ctx)
     ctx.trusted_owner = trusted_owner_access(request)
-    return core_service.get_available_loras(ctx, mode=mode)
+    effective_mode = mode if (ctx.private_mode or ctx.trusted_owner) else "work"
+    return core_service.get_available_loras(ctx, mode=effective_mode)
 
 @app.get("/assistant/model/{lora_name}/avatar")
 async def model_avatar(
@@ -4469,7 +4470,13 @@ async def chat_stream(request: Request, prompt: str, omd_key: str | None = Depen
 
                 # Generate image using prompt, DO NOT save yet
                 upload_storage_flag = not is_inline_image
-                res = await core_service.generate_character_image(ctx, img_prompt, chat, update_history=False, prompt_id=prompt_id, upload_storage=upload_storage_flag)
+                try:
+                    res = await core_service.generate_character_image(ctx, img_prompt, chat, update_history=False, prompt_id=prompt_id, upload_storage=upload_storage_flag)
+                except core_service.horde_image_mapper.HordeCensoredError as censor_err:
+                    notice = await core_service.check_prompt_safety(ctx, "explicit nude nsfw")
+                    msg = notice if notice and notice != "SAFE" else str(censor_err)
+                    yield f"data: {json.dumps({'delta': msg, 'role': 'assistant', 'done': True})}\n\n"
+                    return
                 path, title, description = res[0], res[1], res[2]
                 if len(res) > 3 and res[3]:
                     store_ephemeral_image(path, res[3])
@@ -4513,7 +4520,13 @@ async def chat_stream(request: Request, prompt: str, omd_key: str | None = Depen
 
                 # 3️⃣ Generate image (no character LoRA)
                 upload_storage_flag = not is_inline_image
-                res = await core_service.generate_general_image(ctx, img_prompt, chat, prompt_id=prompt_id, upload_storage=upload_storage_flag)
+                try:
+                    res = await core_service.generate_general_image(ctx, img_prompt, chat, prompt_id=prompt_id, upload_storage=upload_storage_flag)
+                except core_service.horde_image_mapper.HordeCensoredError as censor_err:
+                    notice = await core_service.check_prompt_safety(ctx, "explicit nude nsfw")
+                    msg = notice if notice and notice != "SAFE" else str(censor_err)
+                    yield f"data: {json.dumps({'delta': msg, 'role': 'assistant', 'done': True})}\n\n"
+                    return
                 path, title, description = res[0], res[1], res[2]
                 if len(res) > 3 and res[3]:
                     store_ephemeral_image(path, res[3])
@@ -4622,10 +4635,16 @@ async def chat_stream(request: Request, prompt: str, omd_key: str | None = Depen
                     any(k in img_prompt.lower() for k in ["<domi>", "<ada>", "<brie>", "<tifa>", "<alt>", "<influencer>", "<june>", "<persona>"])
                     or (core_service.has_custom_persona(ctx) and active_p_name and active_p_name in img_prompt.lower())
                 )
-                if has_char_tag:
-                    res = await core_service.generate_character_image(ctx, formatted_prompt, chat, update_history=False, prompt_id=prompt_id, upload_storage=upload_storage_flag)
-                else:
-                    res = await core_service.generate_general_image(ctx, formatted_prompt, chat, prompt_id=prompt_id, upload_storage=upload_storage_flag)
+                try:
+                    if has_char_tag:
+                        res = await core_service.generate_character_image(ctx, formatted_prompt, chat, update_history=False, prompt_id=prompt_id, upload_storage=upload_storage_flag)
+                    else:
+                        res = await core_service.generate_general_image(ctx, formatted_prompt, chat, prompt_id=prompt_id, upload_storage=upload_storage_flag)
+                except core_service.horde_image_mapper.HordeCensoredError as censor_err:
+                    notice = await core_service.check_prompt_safety(ctx, "explicit nude nsfw")
+                    msg = notice if notice and notice != "SAFE" else str(censor_err)
+                    yield f"data: {json.dumps({'delta': msg, 'role': 'assistant', 'done': True})}\n\n"
+                    return
                 path, title, description = res[0], res[1], res[2]
                 if len(res) > 3 and res[3]:
                     store_ephemeral_image(path, res[3])
@@ -5064,6 +5083,10 @@ async def generate_krea2_endpoint(request: Request, data: KreaGenerateInput):
                 yield (json.dumps({"type": "result", "data": result_dict}) + "\n").encode("utf-8")
             except HTTPException as he:
                 yield (json.dumps({"type": "error", "detail": str(he.detail)}) + "\n").encode("utf-8")
+            except core_service.horde_image_mapper.HordeCensoredError as censor_err:
+                notice = await core_service.check_prompt_safety(ctx, "explicit nude nsfw")
+                msg = notice if notice and notice != "SAFE" else str(censor_err)
+                yield (json.dumps({"type": "error", "detail": msg}) + "\n").encode("utf-8")
             except Exception as exc:
                 logging.error(f"Error in streamed /generate/krea2: {exc}")
                 yield (json.dumps({"type": "error", "detail": str(exc)}) + "\n").encode("utf-8")
@@ -5071,6 +5094,10 @@ async def generate_krea2_endpoint(request: Request, data: KreaGenerateInput):
         return StreamingResponse(_ndjson_stream(), media_type="application/x-ndjson")
     except HTTPException:
         raise
+    except core_service.horde_image_mapper.HordeCensoredError as censor_err:
+        notice = await core_service.check_prompt_safety(ctx, "explicit nude nsfw")
+        msg = notice if notice and notice != "SAFE" else str(censor_err)
+        raise HTTPException(status_code=403, detail=msg)
     except Exception as e:
         logging.error(f"Error in /generate/krea2: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -5261,7 +5288,47 @@ async def generate_persona_endpoint(request: Request, data: PersonaGenerateInput
     req_settings_mcp = data.settings.get("mcp_keys") if isinstance(data.settings, dict) else None
     ctx.mcp_keys = data.mcp_keys or req_settings_mcp or (ctx.settings.get("mcp_keys") if isinstance(ctx.settings, dict) else None) or getattr(ctx, "mcp_keys", None) or {}
 
-    archetype_presets = {
+    st_persona = await core_service.check_krea_status(ctx)
+    persona_tier = st_persona.get("tier") or ("owner" if _is_persona_disk_owner(request, ctx) else "guest")
+    is_paid_or_owner = persona_tier in ("owner", "muse", "member")
+    allow_krea = bool(is_paid_or_owner and st_persona.get("krea_allowed"))
+
+    sdxl_verbal_passports = {
+        "sdxl_judith": (
+            ["Джудит", "Judith", "Джуна", "June"],
+            "Natural expressive young woman with warm wavy auburn-brown hair, bright emerald-green eyes, subtle freckles across nose, charming friendly smile, soft natural daylight",
+        ),
+        "sdxl_domi": (
+            ["Доминика", "Domi", "Ника", "Dominika"],
+            "Charismatic stylish brunette woman with piercing hazel gaze, shoulder-length layered hair, confident radiant smile, modern chic outfit",
+        ),
+        "sdxl_lana": (
+            ["Лана", "Светлана", "Lana", "Claire"],
+            "Radiant Slavic young woman with soft honey-blonde hair, expressive light eyes, warm natural beauty, gentle poised expression",
+        ),
+        "sdxl_oriana": (
+            ["Ориана", "Oriana", "Диана", "Diana"],
+            "Glamorous confident woman with sculpted facial features, luminous dark eyes, glossy dark waves, magnetic poised presence",
+        ),
+        "sdxl_vera": (
+            ["Вера", "Вероника", "Vera", "Veronika"],
+            "Elegant dark-haired woman with striking deep brown eyes, classic refined features, subtle confident smile, warm studio lighting",
+        ),
+        "sdxl_bianca": (
+            ["Бьянка", "Bianca", "Белла", "Alice"],
+            "Elegant poised blonde woman with refined classic features, bright expressive eyes, graceful serene demeanor, tailored modern attire",
+        ),
+        "sdxl_beatrice": (
+            ["Беатрис", "Beatrice", "Ева", "Eva"],
+            "Classic European beauty with warm chestnut hair, refined cheekbones, intelligent warm gaze, timeless effortless style",
+        ),
+        "sdxl_minerva": (
+            ["Минерва", "Minerva", "Мира", "Mira"],
+            "Striking woman with sleek raven-dark hair, sculpted cheekbones, mystical piercing gaze, refined enigmatic aura",
+        ),
+    }
+
+    krea_only_presets = {
         "domi": {
             "names": ["Доминика", "Domi", "Ника", "Dominika"],
             "title": "Domi / Mysterious Charisma",
@@ -5302,6 +5369,24 @@ async def generate_persona_endpoint(request: Request, data: PersonaGenerateInput
             "archetype": "influencer",
             "lora": "Famegrid-Natural-V1-Krea-2.safetensors"
         },
+        "tifa": {
+            "names": ["Тифа", "Tifa", "Lockhart"],
+            "title": "Legendary Heroine",
+            "passport": "Stunning athletic martial artist with long waist-length glossy black hair tied in dolphin-tail tip, captivating ruby-red eyes, toned athletic build, leather fingerless gloves, iconic white top with suspenders",
+            "style": "photorealistic",
+            "archetype": "tifa",
+            "lora": "tifa_lockhart_krea2.safetensors"
+        },
+        "luna": {
+            "names": ["Луна", "Luna"],
+            "title": "Sweet & Flirtatious Beauty",
+            "passport": "Lun4, attractive young woman, sweet and flirtatious gaze, charming smile, alluring presence",
+            "style": "photorealistic",
+            "archetype": "luna",
+            "lora": "Krea_2_Luna_epoch_10.safetensors"
+        }
+    }
+    standard_presets = {
         "business": {
             "names": ["Виктория", "Елена", "Claire", "Diane", "Ingrid"],
             "title": "Tech Founder & CEO",
@@ -5323,36 +5408,30 @@ async def generate_persona_endpoint(request: Request, data: PersonaGenerateInput
             "style": "anime",
             "archetype": None
         },
-        "tifa": {
-            "names": ["Тифа", "Tifa", "Lockhart"],
-            "title": "Legendary Heroine",
-            "passport": "Stunning athletic martial artist with long waist-length glossy black hair tied in dolphin-tail tip, captivating ruby-red eyes, toned athletic build, leather fingerless gloves, iconic white top with suspenders",
-            "style": "photorealistic",
-            "archetype": "tifa",
-            "lora": "tifa_lockhart_krea2.safetensors"
-        },
-        "luna": {
-            "names": ["Луна", "Luna"],
-            "title": "Sweet & Flirtatious Beauty",
-            "passport": "Lun4, attractive young woman, sweet and flirtatious gaze, charming smile, alluring presence",
-            "style": "photorealistic",
-            "archetype": "luna",
-            "lora": "Krea_2_Luna_epoch_10.safetensors"
-        }
     }
-    krea_data = core_service.get_krea_presets()
+    archetype_presets = {**standard_presets, **(krea_only_presets if allow_krea else {})}
+    krea_data = core_service.get_krea_presets(
+        include_fun=bool(st_persona.get("uncensored")),
+        include_krea=allow_krea,
+    )
     krea_archetypes = {a["id"]: a for a in krea_data.get("archetypes", []) if "id" in a}
 
-    arch_key = data.archetype if (data.archetype in krea_archetypes or data.archetype in archetype_presets) else "alt"
+    default_arch = "alt" if allow_krea else ("sdxl_judith" if "sdxl_judith" in krea_archetypes else next(iter(krea_archetypes), "business"))
+    arch_key = data.archetype if (data.archetype in krea_archetypes or data.archetype in archetype_presets) else default_arch
 
     if arch_key in krea_archetypes:
         k_arch = krea_archetypes[arch_key]
-        name = k_arch.get("name", arch_key)
+        if arch_key in sdxl_verbal_passports:
+            names_pool, verbal_desc = sdxl_verbal_passports[arch_key]
+            name = random.choice(names_pool)
+            passport = verbal_desc
+        else:
+            name = k_arch.get("name", arch_key)
+            passport = k_arch.get("trigger", "")
         title = f"{k_arch.get('name', arch_key)} / {k_arch.get('description', '')}"
-        passport = k_arch.get("trigger", "")
-        style = data.style or "photorealistic"
+        style = data.style or ("sdxl_realistic" if arch_key.startswith("sdxl_") else "photorealistic")
         arch_val = arch_key
-        arch_lora = k_arch.get("lora", "")
+        arch_lora = (k_arch.get("filename") or k_arch.get("lora") or "") if allow_krea or arch_key.startswith("sdxl_") else ""
     else:
         arch = archetype_presets[arch_key]
         name = random.choice(arch["names"])
@@ -5360,19 +5439,16 @@ async def generate_persona_endpoint(request: Request, data: PersonaGenerateInput
         passport = arch["passport"]
         style = data.style or arch["style"]
         arch_val = arch.get("archetype")
-        arch_lora = arch.get("lora", "")
+        arch_lora = arch.get("lora", "") if allow_krea else ""
 
     timestamp = int(time.time())
     persona_id = f"persona_{arch_key}_{timestamp}"
 
-    # Рендерим портрет через Krea 2 (или локальный SDXL для SDXL-архетипов / гостей / локальных узлов)
+    # Рендерим портрет через Krea 2 (только для владельца/подписчиков) или SDXL / AI Horde для гостей
     b64_str = ""
     try:
-        st_persona = await core_service.check_krea_status(ctx)
-        persona_tier = st_persona.get("tier") or ("owner" if _is_persona_disk_owner(request, ctx) else "guest")
-        is_paid_or_owner = persona_tier in ("owner", "muse", "member")
         is_sdxl_arch = arch_key in krea_archetypes and "sdxl" in (krea_archetypes[arch_key].get("models") or [])
-        can_use_krea = is_paid_or_owner and bool(st_persona.get("krea_allowed")) and await core_service.is_krea_available(ctx) and not is_sdxl_arch
+        can_use_krea = allow_krea and await core_service.is_krea_available(ctx) and not is_sdxl_arch
         if can_use_krea:
             res = await core_service.generate_krea2_image(
                 ctx=ctx,
@@ -5387,7 +5463,7 @@ async def generate_persona_endpoint(request: Request, data: PersonaGenerateInput
             )
             img_data = res[3]
             b64_str = f"data:image/png;base64,{base64.b64encode(img_data).decode('utf-8')}" if img_data else ""
-        elif await core_service.is_comfy_available():
+        elif await core_service.is_image_generation_available(ctx):
             res = await core_service.generate_krea2_image(
                 ctx=ctx,
                 prompt="close-up headshot portrait, looking directly at camera, soft studio rim light, natural skin detail",
@@ -5619,15 +5695,19 @@ class KreaStatusInput(BaseModel):
 
 @app.api_route("/krea/presets", methods=["GET", "POST"])
 async def get_krea_presets_endpoint(request: Request, data: Optional[KreaStatusInput] = None):
-    """Отдает единый реестр стилей и LoRA для универсальной Creative Studio (Krea 2 / Anima + SDXL)."""
+    """Отдает реестр стилей и LoRA для Creative Studio. Для гостей креевские LoRA исключаются."""
     ctx = _build_krea_ctx(request, data)
     include_fun = False
+    include_krea = False
     try:
         st = await core_service.check_krea_status(ctx)
         include_fun = bool(st.get("uncensored"))
+        include_krea = bool(st.get("krea_allowed"))
     except Exception:
-        include_fun = bool(getattr(ctx, "private_mode", False) or getattr(ctx, "trusted_owner", False))
-    return core_service.get_krea_presets(include_fun=include_fun)
+        is_priv = bool(getattr(ctx, "private_mode", False) or getattr(ctx, "trusted_owner", False))
+        include_fun = is_priv
+        include_krea = is_priv
+    return core_service.get_krea_presets(include_fun=include_fun, include_krea=include_krea)
 
 
 @app.api_route("/krea/status", methods=["GET", "POST"])

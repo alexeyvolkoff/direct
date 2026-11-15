@@ -637,11 +637,60 @@
   }
 
   // 1. Art Styles & Archetypes from unified registry krea_presets.json + SDXL flow.json
-  let kreaPresets = defaultKreaPresets;
+  const STANDARD_SDXL_PRESETS = {
+    art_styles: [
+      {
+        id: "none",
+        name: "Free",
+        description: "No style modifiers or LoRAs — pure original prompt",
+        icon: "✨",
+        filename: "",
+        trigger: "",
+        strength: 0.0,
+        models: ["all"]
+      },
+      {
+        id: "sdxl_lora_real_humans",
+        name: "Real Humans",
+        description: "Authentic natural skin texture & candid human proportions",
+        icon: "📷",
+        filename: "real-humans-PublicPrompts.safetensors",
+        trigger: "<Real Humans>",
+        strength: 0.7,
+        models: ["sdxl"]
+      }
+    ],
+    archetypes: [
+      { id: "sdxl_judith", name: "Judith", description: "Natural beauty & expressive muse (Judith / June LoRA)", icon: "✨", filename: "JudithCB_r2-000011.safetensors", trigger: "<Judith>", strength: 1.0, models: ["sdxl"] },
+      { id: "sdxl_domi", name: "Domi", description: "Charismatic brunette with piercing hazel gaze", icon: "💎", filename: "XLDomiv2.safetensors", trigger: "<Domi>", strength: 1.0, models: ["sdxl"] },
+      { id: "sdxl_lana", name: "Lana", description: "Radiant Slavic beauty with expressive features", icon: "🌸", filename: "svetlana.safetensors", trigger: "<Lana>", strength: 1.0, models: ["sdxl"] },
+      { id: "sdxl_oriana", name: "Oriana", description: "Glamorous star with bold magnetic presence", icon: "🔥", filename: "ORIANA-XSTAR-XL-FINAL.safetensors", trigger: "<Oriana>", strength: 1.0, models: ["sdxl"] },
+      { id: "sdxl_vera", name: "Vera", description: "Sultry dark-haired allure", icon: "🌹", filename: "VEROTIKA-XSTAR-XL-FINAL.safetensors", trigger: "<Vera>", strength: 1.0, models: ["sdxl"] },
+      { id: "sdxl_bianca", name: "Bianca", description: "Elegant poised blonde beauty", icon: "👑", filename: "BIANCA-XSTAR-XL.safetensors", trigger: "<Bianca>", strength: 1.0, models: ["sdxl"] },
+      { id: "sdxl_beatrice", name: "Beatrice", description: "Classic European charm & refined features", icon: "🎭", filename: "BEATRICE-XSTAR-XL-FINAL.safetensors", trigger: "<Beatrice>", strength: 1.0, models: ["sdxl"] },
+      { id: "sdxl_minerva", name: "Minerva", description: "Mystical striking gaze & sculpted features", icon: "🌙", filename: "MINERVA-XSTAR-XL-FINAL.safetensors", trigger: "<Minerva>", strength: 1.0, models: ["sdxl"] }
+    ]
+  };
 
-  $: currentBaseCategory = isSdxlModel(sliders.base_model) ? "sdxl" : (sliders.base_model === "anima" ? "anima" : "krea2");
+  let kreaPresets = initialHasStudioFlag ? defaultKreaPresets : STANDARD_SDXL_PRESETS;
 
-  $: filteredArtStyles = (kreaPresets.art_styles || []).filter((s) => isStyleCompatibleWithCat(s, currentBaseCategory));
+  $: effectivePresets = (() => {
+    const rawStyles = (kreaPresets && Array.isArray(kreaPresets.art_styles)) ? kreaPresets.art_styles : [];
+    const rawArchs = (kreaPresets && Array.isArray(kreaPresets.archetypes)) ? kreaPresets.archetypes : [];
+    if (canShowStudioTab) {
+      return { art_styles: rawStyles, archetypes: rawArchs };
+    }
+    const sdxlStyles = rawStyles.filter((s) => s && (s.id === "none" || (Array.isArray(s.models) && s.models.includes("sdxl"))));
+    const sdxlArchs = rawArchs.filter((a) => a && Array.isArray(a.models) && a.models.includes("sdxl"));
+    return {
+      art_styles: sdxlStyles.length > 0 ? sdxlStyles : STANDARD_SDXL_PRESETS.art_styles,
+      archetypes: sdxlArchs.length > 0 ? sdxlArchs : STANDARD_SDXL_PRESETS.archetypes
+    };
+  })();
+
+  $: currentBaseCategory = (!canShowStudioTab || isSdxlModel(sliders.base_model)) ? "sdxl" : (sliders.base_model === "anima" ? "anima" : "krea2");
+
+  $: filteredArtStyles = (effectivePresets.art_styles || []).filter((s) => isStyleCompatibleWithCat(s, currentBaseCategory));
 
   $: stylePresets = filteredArtStyles.map((s) => ({
     id: s.id,
@@ -653,7 +702,7 @@
     strength: s.strength
   }));
 
-  $: filteredArchetypes = (kreaPresets.archetypes || []).filter((a) => {
+  $: filteredArchetypes = (effectivePresets.archetypes || []).filter((a) => {
     if (!a.models || a.models.includes("all")) return true;
     return a.models.includes(currentBaseCategory);
   });
@@ -669,7 +718,8 @@
   }));
 
   const _studioRuntime = {
-    prevBaseModel: sliders.base_model,
+    prevBaseModel: null,
+    prevPresetsSig: "",
     driveCleanup: null,
     subscribedDrive: null,
     lastDriveInstance: null,
@@ -682,15 +732,17 @@
   };
 
   function syncBaseModelPresets(curModel, presetsObj) {
-    if (curModel === _studioRuntime.prevBaseModel) return;
-    _studioRuntime.prevBaseModel = curModel;
-    const cat = isSdxlModel(curModel) ? "sdxl" : (curModel === "anima" ? "anima" : "krea2");
+    const cat = (!canShowStudioTab || isSdxlModel(curModel)) ? "sdxl" : (curModel === "anima" ? "anima" : "krea2");
     const availableStyles = ((presetsObj && presetsObj.art_styles) || [])
       .filter((s) => isStyleCompatibleWithCat(s, cat))
       .map((s) => s.id);
     const availableArchetypes = ((presetsObj && presetsObj.archetypes) || [])
       .filter((a) => !a.models || a.models.includes("all") || a.models.includes(cat))
       .map((a) => a.id);
+    const sig = `${curModel}|${cat}|${availableStyles.join(",")}|${availableArchetypes.join(",")}`;
+    if (curModel === _studioRuntime.prevBaseModel && sig === _studioRuntime.prevPresetsSig) return;
+    _studioRuntime.prevBaseModel = curModel;
+    _studioRuntime.prevPresetsSig = sig;
 
     let changed = false;
     if (sliders.styles && sliders.styles.length > 0) {
@@ -715,7 +767,7 @@
     }
   }
 
-  $: syncBaseModelPresets(sliders.base_model, kreaPresets);
+  $: syncBaseModelPresets(sliders.base_model, effectivePresets);
 
   $: activeStyleObjs = stylePresets.filter((s) => (sliders.styles || []).includes(s.id));
   $: activeStyleObj = activeStyleObjs[0] || stylePresets.find((s) => s.id === sliders.style) || stylePresets[0] || { label: "✨ " + $_("krea_free_style", {}, "Свободный"), lora: "" };
@@ -866,7 +918,7 @@
   let personaFormAvatarPreview = "";
   let personaFormCivitaiAccount = "";
   let personaFormPresetEnabled = false;
-  let personaFormBaseModel = "realism";
+  let personaFormBaseModel = initialHasStudioFlag ? "realism" : "sdxl_realistic";
   let personaFormArchetypes = [];
   let personaFormArchetypeWeights = {};
   let personaFormStyles = [];
@@ -877,9 +929,12 @@
   let isAnalyzingFace = false;
   let avatarGenArchetype = "prompt";
 
-  $: personaModalEngineCat = isSdxlModel(personaFormBaseModel) ? "sdxl" : (personaFormBaseModel === "anima" ? "anima" : "krea2");
-  $: personaModalArchetypes = (kreaPresets.archetypes || []).filter((a) => !a.models || a.models.includes("all") || a.models.includes(personaModalEngineCat));
-  $: personaModalStyles = (kreaPresets.art_styles || []).filter((s) => s.id !== "none" && isStyleCompatibleWithCat(s, personaModalEngineCat));
+  $: if (!canShowStudioTab && !isSdxlModel(personaFormBaseModel)) {
+    personaFormBaseModel = "sdxl_realistic";
+  }
+  $: personaModalEngineCat = (!canShowStudioTab || isSdxlModel(personaFormBaseModel)) ? "sdxl" : (personaFormBaseModel === "anima" ? "anima" : "krea2");
+  $: personaModalArchetypes = (effectivePresets.archetypes || []).filter((a) => !a.models || a.models.includes("all") || a.models.includes(personaModalEngineCat));
+  $: personaModalStyles = (effectivePresets.art_styles || []).filter((s) => s.id !== "none" && isStyleCompatibleWithCat(s, personaModalEngineCat));
 
   // Direct CivitAI API Publish Modal state
   let showCivitaiPublishModal = false;
@@ -900,26 +955,34 @@
 
   // AI Persona Factory Modal (Scenario A + Scenario B combined)
   let showAiFactoryModal = false;
-  let aiFactoryArchetype = "alt";
+  let aiFactoryArchetype = initialHasStudioFlag ? "alt" : "sdxl_judith";
   let isGeneratingAiPersona = false;
   let generatedAiPersona = null;
   // Confirmation Modal state
   let deleteConfirmTarget = null;
   let isDeletingItem = false;
-  $: aiArchetypes = (kreaPresets.archetypes || []).map((a) => {
-    const locDesc = $_(`krea_preset_desc_${a.id}`, {}, a.description);
-    return {
-      id: a.id,
-      name: (a.icon ? a.icon + " " : "") + a.name,
-      rawName: a.name,
-      title: a.title || `${a.name} / ${locDesc}`,
-      hint: locDesc + (a.filename ? " (LoRA)" : ""),
-      trigger: a.trigger || "",
-      icon: a.icon || "👤",
-      lora: a.filename || ""
-    };
-  });
-  $: if (!aiFactoryArchetype && aiArchetypes.length > 0) {
+  $: aiArchetypes = (effectivePresets.archetypes || [])
+    .filter((a) => {
+      const models = Array.isArray(a.models) ? a.models : [];
+      if (!canShowStudioTab || studioEngineMode === "sdxl") {
+        return models.includes("sdxl") || models.includes("all");
+      }
+      return !models.includes("sdxl") || models.includes("all");
+    })
+    .map((a) => {
+      const locDesc = $_(`krea_preset_desc_${a.id}`, {}, a.description);
+      return {
+        id: a.id,
+        name: (a.icon ? a.icon + " " : "") + a.name,
+        rawName: a.name,
+        title: a.title || `${a.name} / ${locDesc}`,
+        hint: locDesc + (a.filename ? " (LoRA)" : ""),
+        trigger: a.trigger || "",
+        icon: a.icon || "👤",
+        lora: a.filename || ""
+      };
+    });
+  $: if (aiArchetypes.length > 0 && (!aiFactoryArchetype || !aiArchetypes.some((a) => a.id === aiFactoryArchetype))) {
     aiFactoryArchetype = aiArchetypes[0].id;
   }
 
@@ -1641,12 +1704,12 @@
 
   function captureStudioSettingsIntoPersonaForm() {
     personaFormPresetEnabled = true;
-    personaFormBaseModel = sliders.base_model || "realism";
+    personaFormBaseModel = sliders.base_model || (canShowStudioTab ? "realism" : "sdxl_realistic");
     personaFormArchetypes = Array.isArray(sliders.archetypes) ? [...sliders.archetypes.filter(Boolean)] : [];
     personaFormArchetypeWeights = { ...(sliders.archetype_weights || {}) };
     for (const aid of personaFormArchetypes) {
       if (personaFormArchetypeWeights[aid] === undefined) {
-        const preset = (kreaPresets.archetypes || []).find((a) => a.id === aid);
+        const preset = (effectivePresets.archetypes || []).find((a) => a.id === aid);
         personaFormArchetypeWeights[aid] = preset?.strength ?? 0.8;
       }
     }
@@ -1654,7 +1717,7 @@
     personaFormStyleWeights = { ...(sliders.style_weights || {}) };
     for (const sid of personaFormStyles) {
       if (personaFormStyleWeights[sid] === undefined) {
-        const preset = (kreaPresets.art_styles || []).find((s) => s.id === sid);
+        const preset = (effectivePresets.art_styles || []).find((s) => s.id === sid);
         personaFormStyleWeights[sid] = preset?.strength ?? 0.8;
       }
     }
@@ -1669,7 +1732,7 @@
       personaFormArchetypeWeights = copy;
     } else {
       personaFormArchetypes = [...personaFormArchetypes, archId];
-      const preset = (kreaPresets.archetypes || []).find((a) => a.id === archId);
+      const preset = (effectivePresets.archetypes || []).find((a) => a.id === archId);
       personaFormArchetypeWeights = { ...personaFormArchetypeWeights, [archId]: preset?.strength ?? 0.8 };
       personaFormUseFaceRef = false;
     }
@@ -1683,7 +1746,7 @@
       personaFormStyleWeights = copy;
     } else {
       personaFormStyles = [...personaFormStyles, styleId];
-      const preset = (kreaPresets.art_styles || []).find((s) => s.id === styleId);
+      const preset = (effectivePresets.art_styles || []).find((s) => s.id === styleId);
       personaFormStyleWeights = { ...personaFormStyleWeights, [styleId]: preset?.strength ?? 0.8 };
     }
   }
@@ -1701,7 +1764,7 @@
     personaFormAvatarPreview = "";
     personaFormCivitaiAccount = "";
     personaFormPresetEnabled = false;
-    personaFormBaseModel = sliders.base_model || "realism";
+    personaFormBaseModel = canShowStudioTab ? (sliders.base_model || "realism") : normalizeSdxlModel(sliders.base_model);
     personaFormArchetypes = [];
     personaFormArchetypeWeights = {};
     personaFormStyles = [];
@@ -1847,6 +1910,14 @@
   }
 
   const archetypeDefaultPassports = {
+    sdxl_judith: "Natural expressive young woman with warm wavy auburn-brown hair, bright emerald-green eyes, subtle freckles across nose, charming friendly smile, soft natural daylight",
+    sdxl_domi: "Charismatic stylish brunette woman with piercing hazel gaze, shoulder-length layered hair, confident radiant smile, modern chic outfit",
+    sdxl_lana: "Radiant Slavic young woman with soft honey-blonde hair, expressive light eyes, warm natural beauty, gentle poised expression",
+    sdxl_oriana: "Glamorous confident woman with sculpted facial features, luminous dark eyes, glossy dark waves, magnetic poised presence",
+    sdxl_vera: "Elegant dark-haired woman with striking deep brown eyes, classic refined features, subtle confident smile, warm studio lighting",
+    sdxl_bianca: "Elegant poised blonde woman with refined classic features, bright expressive eyes, graceful serene demeanor, tailored modern attire",
+    sdxl_beatrice: "Classic European beauty with warm chestnut hair, refined cheekbones, intelligent warm gaze, timeless effortless style",
+    sdxl_minerva: "Striking woman with sleek raven-dark hair, sculpted cheekbones, mystical piercing gaze, refined enigmatic aura",
     domi: "DomiK, attractive woman with piercing hazel gaze, shoulder-length stylish layered haircut, confident radiant smile, modern chic outfit, magnetic presence",
     ada: "ada_wong, short sleek black bob hair, elegant crimson silk dress, captivating dark eyes, confident enigmatic expression, cinematic espionage aesthetics",
     brie: "kxbrie woman, blonde wavy hair, sparkling blue eyes, radiant playful smile, sun-kissed natural complexion, stylish casual summer attire",
@@ -1863,8 +1934,11 @@
     if (isGeneratingAvatar) return;
     let cleanPrompt = personaFormPrompt.trim();
     if (!cleanPrompt && avatarGenArchetype && avatarGenArchetype !== "prompt") {
-      const archPreset = (kreaPresets.archetypes || []).find(a => a.id === avatarGenArchetype);
-      cleanPrompt = (archPreset && archPreset.trigger) || archetypeDefaultPassports[avatarGenArchetype] || "";
+      const archPreset = (effectivePresets.archetypes || []).find(a => a.id === avatarGenArchetype);
+      const rawTrigger = (archPreset && archPreset.trigger) ? String(archPreset.trigger).trim() : "";
+      cleanPrompt = (rawTrigger && !rawTrigger.startsWith("<"))
+        ? rawTrigger
+        : (archetypeDefaultPassports[avatarGenArchetype] || rawTrigger || "");
       if (cleanPrompt) {
         personaFormPrompt = cleanPrompt;
       }
@@ -1881,7 +1955,10 @@
         ? (p, opts) => httpDrive.fetch(p, opts)
         : (p, opts) => fetch(p, opts);
 
-      let chosenSliders = { style: "photorealistic", detail: 0.5 };
+      const useSdxlAvatar = !canShowStudioTab || String(avatarGenArchetype || "").startsWith("sdxl_") || isSdxlModel(sliders.base_model);
+      let chosenSliders = useSdxlAvatar
+        ? { base_model: "sdxl_realistic", style: "sdxl_realistic", detail: 0.5 }
+        : { style: "photorealistic", detail: 0.5 };
       if (avatarGenArchetype && avatarGenArchetype !== "prompt") {
         chosenSliders.archetypes = [avatarGenArchetype];
       }
@@ -1955,7 +2032,7 @@
       const renderPresetObj = personaFormPresetEnabled
         ? {
             enabled: true,
-            base_model: personaFormBaseModel || "realism",
+            base_model: canShowStudioTab ? (personaFormBaseModel || "realism") : normalizeSdxlModel(personaFormBaseModel),
             archetypes: [...personaFormArchetypes],
             archetype_weights: { ...personaFormArchetypeWeights },
             styles: [...personaFormStyles],
@@ -1967,7 +2044,7 @@
         ? personaFormArchetypes[0]
         : (existingPersona.archetype || "");
       const primaryArchPreset = primaryArchId
-        ? (kreaPresets.archetypes || []).find((a) => a.id === primaryArchId)
+        ? (effectivePresets.archetypes || []).find((a) => a.id === primaryArchId)
         : null;
 
       const pObj = {
@@ -8674,9 +8751,11 @@
                       <option value="sdxl_perfect">⚡ Express · Perfect</option>
                       <option value="sdxl_fantasy">⚡ Express · Fantasy</option>
                       <option value="sdxl_tooned">⚡ Express · Tooned</option>
-                      <option value="realism">🎬 Studio · Krea 2 Realism</option>
-                      <option value="semi_realism">🎬 Studio · Muse Semi-Realism</option>
-                      <option value="anima">🎬 Studio · Anima Aesthetic 2D</option>
+                      {#if canShowStudioTab}
+                        <option value="realism">🎬 Studio · Krea 2 Realism</option>
+                        <option value="semi_realism">🎬 Studio · Muse Semi-Realism</option>
+                        <option value="anima">🎬 Studio · Anima Aesthetic 2D</option>
+                      {/if}
                     </select>
                   </div>
                   <div style="padding-top: 14px;">
@@ -8743,7 +8822,7 @@
                 {#if isGeneratingAvatar}
                   <div class="avatar-loading-box">
                     <span class="avatar-spinner">⏳</span>
-                    <span>Krea 2...</span>
+                    <span>{canShowStudioTab && !isSdxlModel(sliders.base_model) ? "Krea 2..." : $_("krea_creating", {}, "Создание...")}</span>
                   </div>
                 {:else if personaFormAvatarPreview}
                   <img src={personaFormAvatarPreview} alt="Avatar" class="avatar-preview-box" />
