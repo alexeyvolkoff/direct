@@ -266,13 +266,17 @@ def _save_inbox_unlocked(items: list[dict[str, Any]]) -> None:
 
 
 def _matches_inbox_caller(item: dict[str, Any], owner_only: bool, user_id: str, key_hash: str) -> bool:
+    # CRITICAL: owner_only items (e.g. Autopilot moderation & X replies) must NEVER
+    # be returned to non-owner / guest / demo users.
+    if bool(item.get("owner_only", True)):
+        return bool(owner_only)
     if owner_only:
-        return bool(item.get("owner_only", True))
-    if user_id and item.get("user_id") == user_id:
+        return not item.get("user_id") and not item.get("omd_key_hash")
+    if user_id and user_id not in ("guest", "anonymous", "system") and item.get("user_id") == user_id:
         return True
     if key_hash and item.get("omd_key_hash") == key_hash:
         return True
-    return not item.get("user_id") and not item.get("omd_key_hash")
+    return False
 
 
 def record_inbox_notification(
@@ -643,11 +647,6 @@ async def send_custom_push(
         targets = [sub] if sub else []
     else:
         targets = list_subscriptions(owner_only=owner_only, user_id=user_id, omd_key=omd_key)
-        if owner_only and not targets:
-            with _lock:
-                all_subs = list(_load_subscriptions_unlocked().values())
-            if len(all_subs) == 1:
-                targets = all_subs
 
     effective_inbox_storage = fallback_storage or next(
         (str(s.get("default_storage") or "").strip() for s in targets if s.get("default_storage")),

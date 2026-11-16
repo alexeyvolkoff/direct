@@ -2276,20 +2276,16 @@ def trusted_private_access(request: Request, ctx: user_context.UserContext | Non
 
 
 def trusted_owner_access(request: Request) -> bool:
-    """Вызовывающий — ВЛАДЕЛЕЦ ноды по доверенным заголовкам туннеля
-    (role=owner, или DID, спаренный на самой ноде). Тот же trust-базис, что и
-    в trusted_private_access, но уровень «владелец»: например, владелец читает
-    документы СВОЕЙ ноды напрямую с диска, а не через шлюз снаружи."""
+    """Вызывающий — ВЛАДЕЛЕЦ ноды по доверенным заголовкам туннеля
+    (role=owner, или DID, спаренный на самой ноде)."""
     role = trusted_caller_role(request)
     if role == "owner":
         return True
+    if role in ("guest", "shared"):
+        return False
     caller_did = (request.headers.get("X-OMD-Caller-DID") or request.headers.get("X-OMD-DID") or "").strip()
-    if bool(caller_did) and is_did_paired(caller_did):
-        return True
-    client_host = request.client.host if request.client else ""
-    if client_host in ("127.0.0.1", "::1", "localhost") and role not in ("guest", "shared"):
-        if request.headers.get("x-client") == "svar" or request.headers.get("X-OMD-Private-Mode") == "1":
-            return True
+    if caller_did:
+        return is_did_paired(caller_did)
     return False
 
 
@@ -6805,7 +6801,6 @@ def _resolve_push_caller_owner(request: Request, omd_key: str = "") -> tuple[use
         is_owner = bool(
             validated_node_owner(ctx)
             or getattr(ctx, "trusted_owner", False)
-            or getattr(ctx, "private_mode", False)
             or trusted_owner_access(request)
         )
     except Exception:
