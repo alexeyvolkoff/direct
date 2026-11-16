@@ -4482,6 +4482,9 @@ async def generate_sdxl_studio_image(
         "written_words, inscription, gibberish, caption, subtitles, speech_bubble, label, watermark, signature, artist_name:2.0)"
     )
     negative_prompt = NEGATIVE_PROMPTS["base"]
+    user_neg_sdxl = str(sliders.get("negative_prompt") or "").replace("###", ", ").strip(" ,")
+    if user_neg_sdxl:
+        negative_prompt = user_neg_sdxl[:500] + ", " + negative_prompt
     if not is_uncensored:
         negative_prompt = NEGATIVE_PROMPTS["fun"] + ", " + negative_prompt
     if "print_shirt" not in negative_prompt[:180]:
@@ -4611,21 +4614,97 @@ async def generate_sdxl_studio_image(
         if w > 0:
             active_lora_strengths[lkey] = w
 
+    unresolved_civitai_candidates: list[tuple[str, Any]] = []
+
+    def _activate_or_queue_civitai(token_str: str, custom_weight=None):
+        before_count = len(active_lora_strengths)
+        _activate_sdxl_lora(token_str, custom_weight)
+        if len(active_lora_strengths) == before_count and token_str:
+            cand_low = str(token_str).lower().strip("<> ")
+            if (
+                cand_low.startswith("civitai_")
+                or cand_low.startswith("sdxl_")
+                or cand_low in horde_image_mapper.LORA_ALIAS_MAP
+                or cand_low.isdigit()
+            ):
+                unresolved_civitai_candidates.append((cand_low, custom_weight))
+
     for s_id in selected_styles:
-        _activate_sdxl_lora(s_id, style_weights.get(s_id))
+        _activate_or_queue_civitai(s_id, style_weights.get(s_id))
     for a_id in selected_archs:
-        _activate_sdxl_lora(a_id, arch_weights.get(a_id))
+        _activate_or_queue_civitai(a_id, arch_weights.get(a_id))
     if persona_lora:
-        _activate_sdxl_lora(persona_lora)
+        _activate_or_queue_civitai(persona_lora)
     elif persona_name:
         _activate_sdxl_lora(persona_name)
     for t in inline_tags:
         if ":" in t and t.lower().startswith("lora:"):
             parts_t = t.split(":")
             if len(parts_t) >= 2:
-                _activate_sdxl_lora(parts_t[1], parts_t[2] if len(parts_t) >= 3 else None)
+                _activate_or_queue_civitai(parts_t[1], parts_t[2] if len(parts_t) >= 3 else None)
         else:
-            _activate_sdxl_lora(t)
+            _activate_or_queue_civitai(t)
+
+    # Resolve & cache any predefined or custom CivitAI LoRAs not yet in static flow.json node "103"
+    custom_loras_payload = sliders.get("custom_loras") if isinstance(sliders.get("custom_loras"), list) else []
+    dyn_idx = 0
+    for cand_id, cand_w in unresolved_civitai_candidates[:5]:
+        await emit_generation_progress("generating", phase="loading_models", step=0)
+        resolved_civ = await horde_image_mapper.ensure_local_civitai_lora(
+            cand_id,
+            custom_loras=custom_loras_payload,
+            allow_nsfw=is_uncensored,
+        )
+        if resolved_civ and resolved_civ.get("filename"):
+            dyn_idx += 1
+            dyn_key = f"lora_civitai_{dyn_idx}"
+            try:
+                eff_w = round(max(0.1, min(1.6, float(cand_w))), 2) if cand_w is not None else float(resolved_civ.get("strength", 0.9))
+            except Exception:
+                eff_w = float(resolved_civ.get("strength", 0.9))
+            dyn_entry = {
+                "on": True,
+                "mode": "work",
+                "name": cand_id,
+                "type": resolved_civ.get("category", "character"),
+                "lora": resolved_civ["filename"],
+                "strength": eff_w,
+            }
+            workflow_json["103"]["inputs"][dyn_key] = dyn_entry
+            lora_nodes[dyn_key] = dyn_entry
+            active_lora_strengths[dyn_key] = eff_w
+            for tw in (resolved_civ.get("trained_words") or [])[:2]:
+                if tw and tw.lower() not in combined_raw_text.lower():
+                    full_parts.insert(0, tw)
+                    combined_raw_text = ", ".join(full_parts)
+
+    # Inject trained trigger tokens for active built-in character/style LoRAs (e.g. Domi, JudithCB, OR14N4)
+    for key in list(active_lora_strengths.keys()):
+        node_item = lora_nodes.get(key) or {}
+        lfn_low = str(node_item.get("lora") or "").lower()
+        alias_id = horde_image_mapper.LORA_ALIAS_MAP.get(lfn_low) or horde_image_mapper.LORA_ALIAS_MAP.get(str(node_item.get("name") or "").lower())
+        reg_meta = horde_image_mapper.SDXL_CIVITAI_LORA_REGISTRY.get(alias_id or "")
+        if reg_meta:
+            for tw in (reg_meta.get("trained_words") or [])[:2]:
+                if tw and tw.lower() not in combined_raw_text.lower():
+                    full_parts.insert(0, tw)
+                    combined_raw_text = ", ".join(full_parts)
+
+    # Wire Detail slider (`0.0..1.0`, neutral `0.5`) to local `add-detail-xl.safetensors`
+    if abs(detail_val - 0.5) >= 0.1 and os.path.isfile("/home/alexey/models/comfyui_models/loras/add-detail-xl.safetensors"):
+        det_strength = round((detail_val - 0.5) * 1.4, 2)
+        if abs(det_strength) >= 0.05:
+            det_entry = {
+                "on": True,
+                "mode": "work",
+                "name": "DetailXL",
+                "type": "style",
+                "lora": "add-detail-xl.safetensors",
+                "strength": det_strength,
+            }
+            workflow_json["103"]["inputs"]["lora_detail_xl"] = det_entry
+            lora_nodes["lora_detail_xl"] = det_entry
+            active_lora_strengths["lora_detail_xl"] = det_strength
 
     for key, val in lora_nodes.items():
         if key in active_lora_strengths:
@@ -4649,6 +4728,8 @@ async def generate_sdxl_studio_image(
     )
     if clean_positive and not wants_explicit_text:
         clean_positive = f"{clean_positive}, plain unprinted clothing, solid unadorned fabric, clean background surfaces"
+    if not is_uncensored and clean_positive:
+        clean_positive = f"{clean_positive}, modest buttoned outfit, covered chest, sfw"
     workflow_json["4"]["inputs"]["text"] = negative_prompt
     workflow_json["85"]["inputs"]["text"] = (
         f"{clean_positive}, {IMPROVEMENT_PROMPT}" if clean_positive else IMPROVEMENT_PROMPT
@@ -5280,7 +5361,8 @@ async def generate_sdxl_studio_image(
     if clean_user_prompt:
         readme_content += f"\n<!-- prompt: {clean_user_prompt} -->\n"
 
-    if save_local:
+    is_sdxl_owner = bool(ctx and (getattr(ctx, "trusted_owner", False) or getattr(ctx, "private_mode", False)))
+    if save_local and is_sdxl_owner:
         try:
             rel_gen = f"generated/{safe_subfolder}" if safe_subfolder else "generated"
             target_dir = resolve_local_target_dir(ctx, rel_gen)
@@ -10726,8 +10808,6 @@ async def krea_director_rewrite_prompt(
     if not instruction and not current_prompt:
         raise ValueError(
             "Введите пожелание для Режиссёра, ссылку на CivitAI или вставьте промпт в композер."
-            if is_ru
-            else "Enter a direction for the AI Director, paste a CivitAI link, or type a prompt in the composer."
         )
 
     # Auto-detect CivitAI image/post URL in Director instruction (or bare URL in current_prompt)
@@ -11577,8 +11657,11 @@ async def generate_image(ctx: UserContext, prompt, chat: str = 'default', update
             if isinstance(value, dict) and "name" in value:
                 lora_nodes[key] = value
                 raw_name = value["name"].lower()
+                slug = re.sub(r"[^a-z0-9]+", "_", raw_name).strip("_")
                 lora_map[raw_name] = key
-                lora_map[raw_name.replace(" ", "_")] = key
+                lora_map[slug] = key
+                lora_map[f"sdxl_{slug}"] = key
+                lora_map[f"sdxl_lora_{slug}"] = key
                 lora_map[raw_name.replace(" ", "-")] = key
                 lora_map[raw_name.replace(" ", "")] = key
                 if "lora" in value:
@@ -11590,6 +11673,37 @@ async def generate_image(ctx: UserContext, prompt, chat: str = 'default', update
         if "domi" in lora_map:
             lora_map["june"] = lora_map["domi"]
 
+    async def _resolve_chat_civitai_lora(cand_tok: str) -> str | None:
+        cand_clean = str(cand_tok or "").lower().strip("<> ")
+        if not cand_clean:
+            return None
+        if not (
+            cand_clean.startswith("civitai_")
+            or cand_clean.startswith("sdxl_")
+            or cand_clean in horde_image_mapper.LORA_ALIAS_MAP
+        ):
+            return None
+        resolved_civ = await horde_image_mapper.ensure_local_civitai_lora(
+            cand_clean,
+            allow_nsfw=bool(effective_fun or ctx.private_mode),
+        )
+        if not resolved_civ or not resolved_civ.get("filename"):
+            return None
+        dyn_key = f"lora_chat_{len(lora_nodes) + 1}"
+        dyn_entry = {
+            "on": True,
+            "mode": "work",
+            "name": cand_clean,
+            "type": resolved_civ.get("category", "character"),
+            "lora": resolved_civ["filename"],
+            "strength": float(resolved_civ.get("strength", 0.9)),
+            "trained_words": list(resolved_civ.get("trained_words") or []),
+        }
+        workflow_json["103"]["inputs"][dyn_key] = dyn_entry
+        lora_nodes[dyn_key] = dyn_entry
+        lora_map[cand_clean] = dyn_key
+        return dyn_key
+
     # Find tags in prompt
     active_lora_keys = set()
     tags = re.findall(r"<([^>]+)>", prompt)
@@ -11599,6 +11713,10 @@ async def generate_image(ctx: UserContext, prompt, chat: str = 'default', update
             key = lora_map[tag_lower]
             active_lora_keys.add(key)
             logging.info(f"Found LoRA tag in prompt: {tag} -> {key} ({lora_nodes[key].get('name')})")
+        else:
+            dyn_k = await _resolve_chat_civitai_lora(tag_lower)
+            if dyn_k:
+                active_lora_keys.add(dyn_k)
 
     # If character LoRA is expected (use_default_lora=True), ensure character LoRA is active
     if use_default_lora:
@@ -11617,6 +11735,8 @@ async def generate_image(ctx: UserContext, prompt, chat: str = 'default', update
                         or lora_map.get(candidate.replace(" ", "_"))
                         or lora_map.get(candidate.replace(" ", ""))
                     )
+                    if not matched_key:
+                        matched_key = await _resolve_chat_civitai_lora(candidate)
                     if matched_key:
                         active_lora_keys.add(matched_key)
                         logging.info(f"Using LoRA from settings ({setting_key}={candidate}): {matched_key} ({lora_nodes[matched_key].get('name')})")
@@ -11649,13 +11769,33 @@ async def generate_image(ctx: UserContext, prompt, chat: str = 'default', update
 
         for cand in style_candidates:
             cand_key = lora_map.get(cand) or lora_map.get(cand.replace(" ", "_")) or lora_map.get(cand.replace(" ", ""))
+            if not cand_key:
+                cand_key = await _resolve_chat_civitai_lora(cand)
             if cand_key and cand_key in lora_nodes:
                 active_lora_keys.add(cand_key)
                 has_style_lora = True
                 logging.info(f"Using style LoRA from settings: {cand_key} ({lora_nodes[cand_key].get('name')})")
 
+    # Inject trained trigger words for active LoRAs
+    chat_trig_words = []
+    for k in active_lora_keys:
+        node_item = lora_nodes.get(k) or {}
+        t_words = list(node_item.get("trained_words") or [])
+        if not t_words:
+            lfn_low = str(node_item.get("lora") or "").lower()
+            alias_id = horde_image_mapper.LORA_ALIAS_MAP.get(lfn_low) or horde_image_mapper.LORA_ALIAS_MAP.get(str(node_item.get("name") or "").lower())
+            reg_meta = horde_image_mapper.SDXL_CIVITAI_LORA_REGISTRY.get(alias_id or "")
+            if reg_meta:
+                t_words = list(reg_meta.get("trained_words") or [])
+        for tw in t_words[:2]:
+            if tw and tw.lower() not in prompt.lower() and tw not in chat_trig_words:
+                chat_trig_words.append(tw)
+    if chat_trig_words:
+        workflow_json["85"]["inputs"]["text"] = ", ".join(chat_trig_words) + ", " + workflow_json["85"]["inputs"]["text"]
+
     # Reset all loras to off, then activate active ones
     for key, val in lora_nodes.items():
+        val.pop("trained_words", None)
         if key in active_lora_keys:
             val["on"] = True
             logging.info(f"Activated LoRA {key} ({val.get('name')}) with strength {val.get('strength', 1.0)}")

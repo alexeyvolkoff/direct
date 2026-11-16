@@ -5331,7 +5331,7 @@ async def generate_persona_endpoint(request: Request, data: PersonaGenerateInput
         ),
         "sdxl_domi": (
             ["Доминика", "Domi", "Ника", "Dominika"],
-            "Charismatic stylish woman with layered blonde-chestnut hair, expressive blue-hazel eyes, confident radiant smile, modern chic outfit",
+            "Domi, charismatic young woman with wavy blonde hair, bright blue eyes, light freckles, confident warm smile, modern chic outfit",
         ),
         "sdxl_lana": (
             ["Лана", "Светлана", "Lana", "Claire"],
@@ -5541,9 +5541,8 @@ async def generate_persona_endpoint(request: Request, data: PersonaGenerateInput
                 "archetypes": [arch_val] if arch_val else [],
                 "custom_loras": custom_loras_list,
                 "detail": 0.5,
-                "steps": 18,
-                "cfg": 5.0,
-                "horde_native": True,
+                "steps": 7,
+                "cfg": 1.45,
             }
             render_preset_out = {
                 "enabled": True,
@@ -5561,8 +5560,8 @@ async def generate_persona_endpoint(request: Request, data: PersonaGenerateInput
                 sliders=sdxl_sliders,
                 width=896,
                 height=1152,
-                steps=18,
-                cfg=5.0,
+                steps=7,
+                cfg=1.45,
                 upload_storage=False
             )
             img_data = res[3]

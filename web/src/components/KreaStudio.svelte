@@ -484,12 +484,12 @@
     steps: isVideoModel(initBaseModel)
       ? (videoQuality === "fast" ? 4 : 8)
       : (isSdxlModel(initBaseModel)
-          ? ((initRawSteps !== null && initRawSteps >= 8 && initRawSteps <= 28 && initialSavedSliders?.horde_native) ? initRawSteps : 18)
+          ? ((initRawSteps !== null && initRawSteps >= 4 && initRawSteps <= 12) ? initRawSteps : 7)
           : (initRawSteps !== null ? initRawSteps : (initBaseModel === "anima" ? 25 : 12))),
     cfg: isVideoModel(initBaseModel)
       ? 1.0
       : (isSdxlModel(initBaseModel)
-          ? ((initRawCfg !== null && initRawCfg >= 2.0 && initRawCfg <= 7.0 && initialSavedSliders?.horde_native) ? initRawCfg : 5.0)
+          ? ((initRawCfg !== null && initRawCfg >= 1.0 && initRawCfg <= 2.2) ? initRawCfg : 1.45)
           : (initRawCfg !== null ? initRawCfg : (initBaseModel === "realism" ? 1.5 : (initBaseModel === "semi_realism" ? 2.0 : 3.0))))
   };
 
@@ -545,9 +545,8 @@
       generationError = "";
       if (!isSdxlModel(sliders.base_model)) {
         sliders.base_model = lastSdxlModel || "sdxl_realistic";
-        sliders.cfg = 5.0;
-        sliders.steps = 18;
-        sliders.horde_native = true;
+        sliders.cfg = 1.45;
+        sliders.steps = 7;
         sliders = { ...sliders };
         saveLocalSliders(sliders);
       }
@@ -561,10 +560,9 @@
     if (sliders.base_model === model) {
       if (isSdxlModel(model)) {
         generationError = "";
-        if (sliders.steps < 8 || sliders.steps > 28 || sliders.cfg < 2.0 || sliders.cfg > 7.0) {
-          sliders.steps = 18;
-          sliders.cfg = 5.0;
-          sliders.horde_native = true;
+        if (sliders.steps < 4 || sliders.steps > 12 || sliders.cfg < 1.0 || sliders.cfg > 2.2) {
+          sliders.steps = 7;
+          sliders.cfg = 1.45;
           sliders = { ...sliders };
           saveLocalSliders(sliders);
         }
@@ -579,9 +577,8 @@
     }
     sliders.base_model = model;
     if (isSdxlModel(model)) {
-      sliders.cfg = 5.0;
-      sliders.steps = 18;
-      sliders.horde_native = true;
+      sliders.cfg = 1.45;
+      sliders.steps = 7;
       generationError = "";
     } else if (isVideoModel(model)) {
       sliders.cfg = 1.0;
@@ -625,9 +622,8 @@
 
   function resetAdvancedToModelDefaults() {
     if (isSdxlModel(sliders.base_model)) {
-      sliders.cfg = 5.0;
-      sliders.steps = 18;
-      sliders.horde_native = true;
+      sliders.cfg = 1.45;
+      sliders.steps = 7;
     } else if (sliders.base_model === "realism") {
       sliders.cfg = 1.5;
       sliders.steps = 12;
@@ -2301,9 +2297,8 @@
             style: personaFormStyles[0] || "none",
             custom_loras: customCivitaiLoras,
             detail: 0.5,
-            steps: 18,
-            cfg: 5.0,
-            horde_native: true
+            steps: 7,
+            cfg: 1.45
           }
         : { style: "photorealistic", detail: 0.5 };
       if (avatarGenArchetype && avatarGenArchetype !== "prompt") {
@@ -2320,8 +2315,8 @@
           sliders: chosenSliders,
           width: 768,
           height: 768,
-          steps: useSdxlAvatar ? 18 : 10,
-          cfg: useSdxlAvatar ? 5.0 : 1.0,
+          steps: useSdxlAvatar ? 7 : 10,
+          cfg: useSdxlAvatar ? 1.45 : 1.0,
           omd_key: omdKey || "",
           mcp_keys: mcpPayload,
           settings: { mcp_keys: mcpPayload }
@@ -7154,22 +7149,22 @@
                 <div class="advanced-setting-row">
                   <div class="setting-title-row">
                     <span class="setting-name">{$_("krea_steps", {}, "Шаги (Steps):")}</span>
-                    <span class="setting-val-badge">{sliders.steps} {studioEngineMode === "sdxl" ? (sliders.steps <= 10 ? "(TurboMix)" : "(Karras)") : (sliders.steps <= 8 ? "(Turbo)" : "")}</span>
+                    <span class="setting-val-badge">{sliders.steps} {studioEngineMode === "sdxl" ? "(DMD2)" : (sliders.steps <= 8 ? "(Turbo)" : "")}</span>
                   </div>
                   {#if studioEngineMode === "sdxl"}
                     <input
                       type="range"
-                      min="8"
-                      max="28"
-                      step="2"
+                      min="4"
+                      max="12"
+                      step="1"
                       bind:value={sliders.steps}
-                      on:input={() => { sliders.horde_native = true; sliders = { ...sliders }; saveLocalSliders(sliders); }}
+                      on:input={() => { sliders = { ...sliders }; saveLocalSliders(sliders); }}
                       class="slider-input advanced-slider"
                     />
                     <div class="setting-subtext">
-                      <span>8 (Turbo)</span>
-                      <span>18 ({$_("krea_steps_quality", {}, "Чётко")})</span>
-                      <span>28 (Max)</span>
+                      <span>4 ({$_("krea_steps_fast", {}, "Быстро")})</span>
+                      <span>7 (DMD2)</span>
+                      <span>12 (Max)</span>
                     </div>
                   {:else}
                     <input
@@ -7199,17 +7194,17 @@
                   {#if studioEngineMode === "sdxl"}
                     <input
                       type="range"
-                      min="2.0"
-                      max="7.0"
-                      step="0.5"
+                      min="1.0"
+                      max="2.2"
+                      step="0.05"
                       bind:value={sliders.cfg}
-                      on:input={() => { sliders.horde_native = true; sliders = { ...sliders }; saveLocalSliders(sliders); }}
+                      on:input={() => { sliders = { ...sliders }; saveLocalSliders(sliders); }}
                       class="slider-input advanced-slider"
                     />
                     <div class="setting-subtext">
-                      <span>2.0 (Turbo)</span>
-                      <span>5.0 (SDXL)</span>
-                      <span>7.0 (Max)</span>
+                      <span>1.0 (DMD2)</span>
+                      <span>1.45 ({$_("krea_steps_quality", {}, "Оптимум")})</span>
+                      <span>2.2 (Max)</span>
                     </div>
                   {:else}
                     <input
@@ -7258,13 +7253,13 @@
                 <span class="popup-count-hint">
                   {$_("krea_model_label", {}, "Модель:")}
                   {#if sliders.base_model === "sdxl_realistic"}
-                    Juggernaut XL
+                    CyberRealistic XL
                   {:else if sliders.base_model === "sdxl_perfect"}
-                    CyberRealistic Pony
+                    CyberPony v18
                   {:else if sliders.base_model === "sdxl_fantasy"}
-                    Illustrious XL
+                    CyberIllustrious V12
                   {:else if sliders.base_model === "sdxl_tooned"}
-                    Nova Anime XL
+                    CyberPony Semi V5
                   {:else if sliders.base_model === "anima"}
                     {$_("krea_anima", {}, "Анима")}
                   {:else if sliders.base_model === "semi_realism"}
@@ -7442,13 +7437,13 @@
               <span>{$_("krea_base_model", {}, "Базовая модель")}</span>
               <span class="model-pill-hint">
                 {#if sliders.base_model === "sdxl_realistic"}
-                  Juggernaut XL
+                  CyberRealistic XL
                 {:else if sliders.base_model === "sdxl_perfect"}
-                  CyberRealistic Pony
+                  CyberPony v18
                 {:else if sliders.base_model === "sdxl_fantasy"}
-                  Illustrious XL
+                  CyberIllustrious V12
                 {:else if sliders.base_model === "sdxl_tooned"}
-                  Nova Anime XL
+                  CyberPony Semi V5
                 {:else if sliders.base_model === "anima"}
                   Anima V1.1
                 {:else if sliders.base_model === "semi_realism"}
@@ -7465,7 +7460,7 @@
                   class="pill-btn"
                   class:active={sliders.base_model === "sdxl_realistic" || sliders.base_model === "sdxl"}
                   on:click={() => setBaseModel("sdxl_realistic")}
-                  title={$_("sdxl_realistic_title", {}, "Realistic (Juggernaut XL): candid photography, natural light & skin texture")}
+                  title={$_("sdxl_realistic_title", {}, "Realistic (CyberRealistic XL): candid photography, natural light & skin texture")}
                 >
                   <span class="pill-icon">📸</span>
                   <span>Realistic</span>
@@ -7475,7 +7470,7 @@
                   class="pill-btn"
                   class:active={sliders.base_model === "sdxl_perfect"}
                   on:click={() => setBaseModel("sdxl_perfect")}
-                  title={$_("sdxl_perfect_title", {}, "Perfect (CyberRealistic Pony): expressive anatomy, vivid looks & dynamic angles")}
+                  title={$_("sdxl_perfect_title", {}, "Perfect (CyberRealistic Pony v18): expressive anatomy, vivid looks & dynamic angles")}
                 >
                   <span class="pill-icon">💎</span>
                   <span>Perfect</span>
@@ -7485,7 +7480,7 @@
                   class="pill-btn"
                   class:active={sliders.base_model === "sdxl_fantasy"}
                   on:click={() => setBaseModel("sdxl_fantasy")}
-                  title={$_("sdxl_fantasy_title", {}, "Fantasy (Illustrious XL): fantasy, anime & painterly illustration")}
+                  title={$_("sdxl_fantasy_title", {}, "Fantasy (CyberIllustrious V12): fantasy, anime & painterly illustration")}
                 >
                   <span class="pill-icon">🔮</span>
                   <span>Fantasy</span>
@@ -7495,7 +7490,7 @@
                   class="pill-btn"
                   class:active={sliders.base_model === "sdxl_tooned"}
                   on:click={() => setBaseModel("sdxl_tooned")}
-                  title={$_("sdxl_tooned_title", {}, "Tooned (Nova Anime XL): crisp stylized anime & cel shading")}
+                  title={$_("sdxl_tooned_title", {}, "Tooned (CyberPony Semi V5): stylized 2.5D semi-realism & illustration")}
                 >
                   <span class="pill-icon">🎨</span>
                   <span>Tooned</span>

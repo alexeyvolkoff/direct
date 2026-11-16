@@ -346,3 +346,29 @@ def test_civitai_lora_card_validator_enforces_400mb_and_sdxl():
     # SD 1.5 -> rejected for SDXL picker
     sd15_ver = dict(valid_ver, baseModel="SD 1.5")
     assert horde_image_mapper._extract_civitai_lora_card(base_model_obj, sd15_ver, "character") is None
+
+
+@pytest.mark.asyncio
+async def test_local_comfy_preferred_when_available_and_local_lora_resolved(tmp_path, monkeypatch):
+    guest_ctx = SimpleNamespace(user_id="guest_local", private_mode=False, trusted_owner=False, is_unlimited=False, settings={})
+    owner_ctx = SimpleNamespace(user_id="alexey", private_mode=True, trusted_owner=True, is_unlimited=True, settings={})
+
+    monkeypatch.setitem(horde_image_mapper.SETTINGS, "HORDE_IMAGE_FORCE_FOR_GUESTS", "false")
+    assert horde_image_mapper.should_use_horde_for_sdxl(guest_ctx, comfy_available=True) is False
+    assert horde_image_mapper.should_use_horde_for_sdxl(guest_ctx, comfy_available=False) is True
+    assert horde_image_mapper.should_use_horde_for_sdxl(owner_ctx, comfy_available=True) is False
+
+    monkeypatch.setitem(horde_image_mapper.SETTINGS, "HORDE_IMAGE_FORCE_FOR_GUESTS", "true")
+    assert horde_image_mapper.should_use_horde_for_sdxl(guest_ctx, comfy_available=True) is True
+
+    # Local pre-installed LoRA file resolution (e.g. XLDomiv2.safetensors)
+    fake_domi = tmp_path / "XLDomiv2.safetensors"
+    fake_domi.write_bytes(b"0" * 70000)
+    resolved = await horde_image_mapper.ensure_local_civitai_lora(
+        "sdxl_domi",
+        loras_dir=str(tmp_path),
+    )
+    assert resolved is not None
+    assert resolved["filename"] == "XLDomiv2.safetensors"
+    assert "Domi" in resolved["trained_words"]
+    assert resolved["strength"] == 1.0

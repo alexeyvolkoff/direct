@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import datetime
+import hashlib
 import io
 import json
 import logging
@@ -60,9 +61,10 @@ SDXL_CIVITAI_LORA_REGISTRY: Dict[str, Dict[str, Any]] = {
         "civitai_name": "Judith B",
         "civitai_model_id": "2081266",
         "civitai_version_id": "2360657",
+        "local_filename": "JudithCB_r2-000011.safetensors",
         "base_model": "Pony",
         "category": "character",
-        "strength": 0.9,
+        "strength": 1.0,
         "trained_words": ["JudithCB"],
         "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/ac70cb91-ccd3-4601-8754-f1d5ea5b77d3/width=256/108221436.jpeg",
         "description": "Expressive companion character LoRA (Judith B)",
@@ -73,10 +75,11 @@ SDXL_CIVITAI_LORA_REGISTRY: Dict[str, Dict[str, Any]] = {
         "civitai_name": "SLDomi",
         "civitai_model_id": "589180",
         "civitai_version_id": "1377183",
+        "local_filename": "XLDomiv2.safetensors",
         "base_model": "SDXL 1.0",
         "category": "character",
-        "strength": 0.95,
-        "trained_words": [],
+        "strength": 1.0,
+        "trained_words": ["Domi"],
         "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/2dd69f45-69f3-4b25-9f02-67c0610765c5/width=256/56075413.jpeg",
         "description": "Charismatic companion character LoRA (SLDomi)",
     },
@@ -86,10 +89,11 @@ SDXL_CIVITAI_LORA_REGISTRY: Dict[str, Dict[str, Any]] = {
         "civitai_name": "Svetlana XL",
         "civitai_model_id": "2310427",
         "civitai_version_id": "2599427",
+        "local_filename": "svetlana.safetensors",
         "base_model": "SDXL 1.0",
         "category": "character",
-        "strength": 0.95,
-        "trained_words": [],
+        "strength": 1.0,
+        "trained_words": ["Svetlana"],
         "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/c060b0ae-6f46-4968-a61a-5565df48d27d/width=256/117559750.jpeg",
         "description": "Radiant Slavic companion character LoRA (Svetlana)",
     },
@@ -99,9 +103,10 @@ SDXL_CIVITAI_LORA_REGISTRY: Dict[str, Dict[str, Any]] = {
         "civitai_name": "ORIANA-XSTAR-XL",
         "civitai_model_id": "2584778",
         "civitai_version_id": "2903793",
+        "local_filename": "ORIANA-XSTAR-XL-FINAL.safetensors",
         "base_model": "SDXL 1.0",
         "category": "character",
-        "strength": 0.95,
+        "strength": 1.0,
         "trained_words": ["OR14N4"],
         "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/e9f4420d-87a8-4314-937a-063324438379/width=256/129028954.jpeg",
         "description": "Glamorous magnetic companion LoRA (ORIANA-XSTAR-XL)",
@@ -112,9 +117,10 @@ SDXL_CIVITAI_LORA_REGISTRY: Dict[str, Dict[str, Any]] = {
         "civitai_name": "VEROTIKA-XSTAR-XL",
         "civitai_model_id": "1009099",
         "civitai_version_id": "1130986",
+        "local_filename": "VEROTIKA-XSTAR-XL-FINAL.safetensors",
         "base_model": "SDXL 1.0",
         "category": "character",
-        "strength": 0.95,
+        "strength": 1.0,
         "trained_words": ["V3r0t1k4"],
         "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/b98edfe9-1294-4c4a-8814-2d3ffb1f068a/width=256/43775214.jpeg",
         "description": "Elegant dark-haired companion LoRA (VEROTIKA-XSTAR-XL)",
@@ -125,9 +131,10 @@ SDXL_CIVITAI_LORA_REGISTRY: Dict[str, Dict[str, Any]] = {
         "civitai_name": "BIANCA-XSTAR-XL",
         "civitai_model_id": "1068237",
         "civitai_version_id": "1198981",
+        "local_filename": "BIANCA-XSTAR-XL.safetensors",
         "base_model": "SDXL 1.0",
         "category": "character",
-        "strength": 0.95,
+        "strength": 1.0,
         "trained_words": ["B1anc4"],
         "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/5981dc82-5c87-494d-8bca-a12822a9117a/width=256/47386274.jpeg",
         "description": "Poised blonde companion LoRA (BIANCA-XSTAR-XL)",
@@ -138,9 +145,10 @@ SDXL_CIVITAI_LORA_REGISTRY: Dict[str, Dict[str, Any]] = {
         "civitai_name": "BEATRICE-XSTAR-XL",
         "civitai_model_id": "2322656",
         "civitai_version_id": "2612904",
+        "local_filename": "BEATRICE-XSTAR-XL-FINAL.safetensors",
         "base_model": "SDXL 1.0",
         "category": "character",
-        "strength": 0.95,
+        "strength": 1.0,
         "trained_words": ["B3ATR1C3"],
         "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/8cce104f-1c65-465d-b609-b4abebcc778b/width=256/118088057.jpeg",
         "description": "Classic European companion LoRA (BEATRICE-XSTAR-XL)",
@@ -151,9 +159,10 @@ SDXL_CIVITAI_LORA_REGISTRY: Dict[str, Dict[str, Any]] = {
         "civitai_name": "MINERVA-XSTAR-XL",
         "civitai_model_id": "2497628",
         "civitai_version_id": "2807620",
+        "local_filename": "MINERVA-XSTAR-XL-FINAL.safetensors",
         "base_model": "SDXL 1.0",
         "category": "character",
-        "strength": 0.95,
+        "strength": 1.0,
         "trained_words": ["MINERVA"],
         "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/c0161468-55af-4384-8cbb-10305f57e099/width=256/125529679.jpeg",
         "description": "Mystical raven-haired companion LoRA (MINERVA-XSTAR-XL)",
@@ -165,6 +174,7 @@ SDXL_CIVITAI_LORA_REGISTRY: Dict[str, Dict[str, Any]] = {
         "civitai_name": "Real Humans",
         "civitai_model_id": "232746",
         "civitai_version_id": "262705",
+        "local_filename": "real-humans-PublicPrompts.safetensors",
         "base_model": "SDXL 1.0",
         "category": "style",
         "strength": 0.7,
@@ -175,27 +185,27 @@ SDXL_CIVITAI_LORA_REGISTRY: Dict[str, Dict[str, Any]] = {
     "sdxl_lora_cinematic_shot": {
         "id": "sdxl_lora_cinematic_shot",
         "name": "Cinematic Shot",
-        "civitai_name": "Cinematic Shot",
-        "civitai_model_id": "430657",
-        "civitai_version_id": "481917",
+        "civitai_name": "Juggernaut Cinematic XL LoRA",
+        "civitai_model_id": "120663",
+        "civitai_version_id": "131991",
         "base_model": "SDXL 1.0",
         "category": "style",
         "strength": 0.75,
-        "trained_words": [],
-        "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/036d514d-5f82-4beb-8160-38e7f4411b05/width=256/11368089.jpeg",
+        "trained_words": ["Movie Still", "Film Still"],
+        "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/60a7446c-62ee-4238-8687-dffa7324f844/width=256/1844260.jpeg",
         "description": "Atmospheric 35mm movie lighting, depth & color grading",
     },
     "sdxl_lora_anime_screencap": {
         "id": "sdxl_lora_anime_screencap",
-        "name": "Anime Screencap XL",
-        "civitai_name": "Fine Anime Screencap XL",
-        "civitai_model_id": "345962",
-        "civitai_version_id": "2553688",
-        "base_model": "Illustrious",
+        "name": "Anime Aesthetic XL",
+        "civitai_name": "Aesthetic Anime LoRA",
+        "civitai_model_id": "295100",
+        "civitai_version_id": "331598",
+        "base_model": "SDXL 1.0",
         "category": "style",
         "strength": 0.8,
-        "trained_words": ["anime screencap", "anime coloring"],
-        "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/b2bf710e-a946-4df9-bed5-cfb02e7c19a6/width=256/115872395.jpeg",
+        "trained_words": [],
+        "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/7cd96ef0-a9dc-4906-b258-f389ff640a1a/width=256/6328373.jpeg",
         "description": "Crisp modern anime broadcast aesthetic & cel shading",
     },
     "sdxl_lora_eldritch_comics": {
@@ -595,7 +605,7 @@ def get_predefined_sdxl_presets() -> Dict[str, List[Dict[str, Any]]]:
             "category": item["category"],
             "description": item["description"],
             "icon": "",
-            "filename": f"civitai_{item['civitai_version_id']}.safetensors",
+            "filename": item.get("local_filename") or f"civitai_{item['civitai_version_id']}.safetensors",
             "url": f"https://civitai.com/models/{item['civitai_model_id']}?modelVersionId={item['civitai_version_id']}",
             "image_url": item["image_url"],
             "trained_words": list(item.get("trained_words") or []),
@@ -628,9 +638,9 @@ def is_horde_image_enabled() -> bool:
 
 
 def is_horde_guest_routing_enabled() -> bool:
-    """Returns True when guest / free-tier image requests route directly to AI Horde."""
+    """Returns True only when HORDE_IMAGE_FORCE_FOR_GUESTS is explicitly enabled to bypass local ComfyUI."""
     return is_horde_image_enabled() and _truthy(
-        SETTINGS.get("HORDE_IMAGE_FOR_GUESTS", "true"), default=True
+        SETTINGS.get("HORDE_IMAGE_FORCE_FOR_GUESTS", "false"), default=False
     )
 
 
@@ -1313,7 +1323,13 @@ def map_ui_to_horde_request(
         "n": 1,
     }
     if use_sdxl:
-        params["clip_skip"] = 2
+        uses_clip_skip_2 = (
+            uses_pony
+            or family in ("fantasy", "tooned")
+            or ("illustrious" in primary_model.lower())
+            or ("anime" in primary_model.lower())
+        )
+        params["clip_skip"] = 2 if uses_clip_skip_2 else 1
     if horde_loras:
         params["loras"] = horde_loras
     if seed is not None and int(seed) > 0:
@@ -1754,6 +1770,48 @@ def _extract_civitai_lora_card(
     }
 
 
+_civitai_open_dl_cache: Dict[str, bool] = {}
+
+
+def _get_civitai_api_token() -> str:
+    return str(SETTINGS.get("CIVITAI_API_TOKEN") or os.environ.get("CIVITAI_API_TOKEN") or "").strip()
+
+
+async def _filter_open_civitai_cards(
+    session: aiohttp.ClientSession,
+    cards: List[Dict[str, Any]],
+    limit: int,
+) -> List[Dict[str, Any]]:
+    if not cards:
+        return []
+    token = _get_civitai_api_token()
+    if token:
+        return cards[:limit]
+
+    async def _is_open(card: Dict[str, Any]) -> bool:
+        vid = str(card.get("civitai_version_id") or "").strip()
+        if not vid:
+            return False
+        if vid in _civitai_open_dl_cache:
+            return _civitai_open_dl_cache[vid]
+        try:
+            async with session.get(
+                f"https://civitai.com/api/download/models/{vid}",
+                allow_redirects=False,
+                timeout=aiohttp.ClientTimeout(total=4.0),
+            ) as dr:
+                loc = str(dr.headers.get("Location") or "")
+                ok = dr.status in (200, 301, 302, 303, 307, 308) and "/login" not in loc
+        except Exception:
+            ok = True
+        _civitai_open_dl_cache[vid] = ok
+        return ok
+
+    checks = await asyncio.gather(*(_is_open(c) for c in cards), return_exceptions=True)
+    filtered = [c for c, ok in zip(cards, checks) if ok is True]
+    return filtered[:limit]
+
+
 async def search_civitai_loras(
     mode: str = "character",
     query: str = "",
@@ -1875,10 +1933,258 @@ async def search_civitai_loras(
                             if card:
                                 results.append(card)
                                 break
-                        if len(results) >= lim:
+                        if len(results) >= (lim + 8):
                             break
+                    results = await _filter_open_civitai_cards(session, results, lim)
         except Exception as e:
             logger.warning(f"[CivitaiSearch] Search failed ({norm_mode}, q={q_clean!r}): {e}")
 
     _civitai_search_cache[cache_key] = (now, results)
     return results
+
+
+_LOCAL_LORA_DL_LOCK: Optional[asyncio.Lock] = None
+_MAX_CIVITAI_CACHE_BYTES = int(float(os.environ.get("DIRECT_CIVITAI_LORA_CACHE_GB", "6.0")) * (1024 ** 3))
+
+
+def _prune_civitai_lora_cache(loras_dir: str, max_bytes: int = _MAX_CIVITAI_CACHE_BYTES) -> None:
+    try:
+        entries = []
+        total = 0
+        for fn in os.listdir(loras_dir):
+            if fn.startswith("civitai_") and fn.endswith(".safetensors"):
+                fp = os.path.join(loras_dir, fn)
+                if os.path.isfile(fp):
+                    st = os.stat(fp)
+                    entries.append((st.st_atime or st.st_mtime, st.st_size, fp))
+                    total += st.st_size
+        if total <= max_bytes:
+            return
+        entries.sort(key=lambda x: x[0])
+        for _, sz, fp in entries:
+            if total <= max_bytes:
+                break
+            try:
+                os.remove(fp)
+                meta_fp = fp[:-len(".safetensors")] + ".meta.json"
+                if os.path.isfile(meta_fp):
+                    os.remove(meta_fp)
+                total -= sz
+                logger.info(f"[CivitaiCache] Pruned old cached LoRA {os.path.basename(fp)}")
+            except Exception:
+                pass
+    except Exception as e:
+        logger.debug(f"[CivitaiCache] Cache prune skipped: {e}")
+
+
+async def ensure_local_civitai_lora(
+    lora_key: str,
+    custom_loras: Optional[List[Dict[str, Any]]] = None,
+    loras_dir: Optional[str] = None,
+    allow_nsfw: bool = False,
+) -> Optional[Dict[str, Any]]:
+    """
+    Ensures a predefined or user-selected CivitAI SDXL LoRA (`<= 400 MB` `.safetensors`)
+    exists in the local ComfyUI `loras/` directory so the embedded `reGen` ComfyUI bridge
+    can load it directly in `flow.json`. Returns `{filename, strength, trained_words, category}`.
+    """
+    global _LOCAL_LORA_DL_LOCK
+    if _LOCAL_LORA_DL_LOCK is None:
+        _LOCAL_LORA_DL_LOCK = asyncio.Lock()
+
+    target_dir = loras_dir or SETTINGS.get("COMFY_LORAS_DIR") or "/home/alexey/models/comfyui_models/loras"
+    if not os.path.isdir(target_dir):
+        return None
+
+    custom_lookup: Dict[str, Dict[str, Any]] = {}
+    for cl in (custom_loras or []):
+        if isinstance(cl, dict) and cl.get("civitai_version_id"):
+            vid_s = str(cl["civitai_version_id"]).strip()
+            cid_s = str(cl.get("id") or f"civitai_{vid_s}").strip().lower()
+            entry = {
+                "id": cid_s,
+                "name": str(cl.get("name") or cid_s),
+                "civitai_version_id": vid_s,
+                "category": str(cl.get("category") or "character"),
+                "strength": float(cl.get("strength") or (0.75 if cl.get("category") == "style" else 0.9)),
+                "trained_words": list(cl.get("trained_words") or []),
+            }
+            custom_lookup[cid_s] = entry
+            custom_lookup[vid_s] = entry
+
+    spec = _resolve_lora_spec(lora_key, custom_lookup)
+    if not spec:
+        return None
+
+    local_fn = spec.get("local_filename")
+    if local_fn and os.path.isfile(os.path.join(target_dir, local_fn)):
+        return {
+            "filename": local_fn,
+            "strength": float(spec.get("strength", 0.9)),
+            "trained_words": list(spec.get("trained_words") or []),
+            "category": str(spec.get("category") or "character"),
+        }
+
+    vid = str(spec.get("civitai_version_id") or "").strip()
+    if not vid.isdigit():
+        return None
+
+    cached_fn = f"civitai_{vid}.safetensors"
+    cached_fp = os.path.join(target_dir, cached_fn)
+    meta_fp = os.path.join(target_dir, f"civitai_{vid}.meta.json")
+
+    if os.path.isfile(cached_fp) and os.path.getsize(cached_fp) > 65536:
+        try:
+            os.utime(cached_fp, None)
+        except Exception:
+            pass
+        trained = list(spec.get("trained_words") or [])
+        category = str(spec.get("category") or "character")
+        if os.path.isfile(meta_fp):
+            try:
+                with open(meta_fp, "r", encoding="utf-8") as mf:
+                    m_saved = json.load(mf)
+                if not trained and m_saved.get("trained_words"):
+                    trained = list(m_saved["trained_words"])
+                if m_saved.get("category"):
+                    category = str(m_saved["category"])
+            except Exception:
+                pass
+        return {
+            "filename": cached_fn,
+            "strength": float(spec.get("strength", 0.9)),
+            "trained_words": trained,
+            "category": category,
+        }
+
+    async with _LOCAL_LORA_DL_LOCK:
+        if os.path.isfile(cached_fp) and os.path.getsize(cached_fp) > 65536:
+            return {
+                "filename": cached_fn,
+                "strength": float(spec.get("strength", 0.9)),
+                "trained_words": list(spec.get("trained_words") or []),
+                "category": str(spec.get("category") or "character"),
+            }
+
+        headers = {"User-Agent": "Direct/1.0"}
+        timeout = aiohttp.ClientTimeout(total=180.0, connect=10.0)
+        try:
+            async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+                async with session.get(f"https://civitai.com/api/v1/model-versions/{vid}") as vr:
+                    if vr.status != 200:
+                        logger.warning(f"[CivitaiCache] Version {vid} metadata HTTP {vr.status}")
+                        return None
+                    v_data = await vr.json()
+
+                mid = v_data.get("modelId")
+                m_data: Dict[str, Any] = {}
+                if mid:
+                    async with session.get(f"https://civitai.com/api/v1/models/{mid}") as mr:
+                        if mr.status == 200:
+                            m_data = await mr.json()
+
+                if m_data.get("poi"):
+                    logger.warning(f"[CivitaiCache] Rejected POI LoRA version {vid}")
+                    return None
+                if not allow_nsfw and m_data.get("nsfw") and lora_key not in SDXL_CIVITAI_LORA_REGISTRY:
+                    logger.warning(f"[CivitaiCache] Rejected NSFW LoRA version {vid} for guest")
+                    return None
+
+                base_model = str(v_data.get("baseModel") or "").strip()
+                if base_model and base_model not in SDXL_COMPATIBLE_BASE_MODELS:
+                    logger.warning(f"[CivitaiCache] Rejected non-SDXL baseline '{base_model}' for {vid}")
+                    return None
+
+                chosen_file = None
+                for f_obj in (v_data.get("files") or []):
+                    if not isinstance(f_obj, dict):
+                        continue
+                    fn_low = str(f_obj.get("name") or "").lower()
+                    hashes = f_obj.get("hashes") or {}
+                    if fn_low.endswith(".safetensors") and hashes.get("SHA256") and f_obj.get("downloadUrl"):
+                        if f_obj.get("primary") or chosen_file is None:
+                            chosen_file = f_obj
+                            if f_obj.get("primary"):
+                                break
+                if not chosen_file:
+                    return None
+
+                size_kb = float(chosen_file.get("sizeKB") or 0.0)
+                if size_kb <= 0 or (size_kb / 1024.0) > 400.0:
+                    logger.warning(f"[CivitaiCache] Rejected LoRA {vid} exceeding 400 MB ({size_kb / 1024.0:.1f} MB)")
+                    return None
+
+                expected_sha = str((chosen_file.get("hashes") or {}).get("SHA256") or "").strip().lower()
+                dl_url = str(chosen_file["downloadUrl"])
+                civ_tok = _get_civitai_api_token()
+                if civ_tok and "civitai.com" in dl_url and "token=" not in dl_url:
+                    sep = "&" if "?" in dl_url else "?"
+                    dl_url = f"{dl_url}{sep}token={civ_tok}"
+                tmp_fp = f"{cached_fp}.part.{os.getpid()}"
+                hasher = hashlib.sha256()
+                total_read = 0
+
+                logger.info(f"[CivitaiCache] Downloading CivitAI LoRA {vid} ({size_kb / 1024.0:.1f} MB) -> {cached_fn}")
+                async with session.get(dl_url, allow_redirects=True) as dl_resp:
+                    if dl_resp.status != 200:
+                        logger.warning(f"[CivitaiCache] Download failed HTTP {dl_resp.status} for {vid}")
+                        return None
+                    with open(tmp_fp, "wb") as out_f:
+                        async for chunk in dl_resp.content.iter_chunked(262144):
+                            total_read += len(chunk)
+                            if total_read > 420 * 1024 * 1024:
+                                raise RuntimeError("LoRA download exceeded 400 MB limit")
+                            hasher.update(chunk)
+                            out_f.write(chunk)
+
+                actual_sha = hasher.hexdigest().lower()
+                if expected_sha and actual_sha != expected_sha:
+                    try:
+                        os.remove(tmp_fp)
+                    except Exception:
+                        pass
+                    logger.error(f"[CivitaiCache] SHA256 mismatch for {vid}: expected {expected_sha}, got {actual_sha}")
+                    return None
+
+                os.replace(tmp_fp, cached_fp)
+                trained_api = [
+                    re.sub(r"<lora:[^>]+>", "", str(w)).strip(" ,")
+                    for w in (v_data.get("trainedWords") or [])
+                    if str(w).strip()
+                ]
+                trained_final = list(spec.get("trained_words") or [w for w in trained_api if w][:4])
+                cat_final = str(spec.get("category") or "character")
+                try:
+                    with open(meta_fp, "w", encoding="utf-8") as mf:
+                        json.dump(
+                            {
+                                "civitai_version_id": vid,
+                                "name": m_data.get("name") or spec.get("name") or cached_fn,
+                                "base_model": base_model,
+                                "trained_words": trained_final,
+                                "category": cat_final,
+                            },
+                            mf,
+                            ensure_ascii=False,
+                            indent=2,
+                        )
+                except Exception:
+                    pass
+
+                _prune_civitai_lora_cache(target_dir)
+                logger.info(f"[CivitaiCache] Ready local CivitAI LoRA {cached_fn} ({total_read / (1024 * 1024):.1f} MB)")
+                return {
+                    "filename": cached_fn,
+                    "strength": float(spec.get("strength", 0.9)),
+                    "trained_words": trained_final,
+                    "category": cat_final,
+                }
+        except Exception as e:
+            logger.warning(f"[CivitaiCache] Failed to download CivitAI LoRA {vid}: {e}")
+            try:
+                tmp_cand = f"{cached_fp}.part.{os.getpid()}"
+                if os.path.exists(tmp_cand):
+                    os.remove(tmp_cand)
+            except Exception:
+                pass
+            return None
