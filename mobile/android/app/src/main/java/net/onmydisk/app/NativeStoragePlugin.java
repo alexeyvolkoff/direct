@@ -252,6 +252,7 @@ public class NativeStoragePlugin extends Plugin {
                 baseDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS);
                 break;
             case ROOT_DOWNLOAD:
+            case "Downloads":
                 baseDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
                 break;
             case ROOT_APP_DATA:
