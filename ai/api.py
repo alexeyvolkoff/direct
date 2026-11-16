@@ -2593,6 +2593,9 @@ class PersonaGenerateInput(BaseModel):
     archetype: str = "alt"
     gender: str = "female"
     style: str | None = None
+    styles: list[str] | None = None
+    base_model: str | None = None
+    custom_loras: list[dict] | None = None
     settings: dict | None = None
     mcp_keys: dict | None = None
 
@@ -5282,9 +5285,33 @@ async def generate_krea_video_endpoint(request: Request, data: KreaVideoGenerate
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/horde/civitai/loras")
+async def search_horde_civitai_loras_endpoint(
+    request: Request,
+    mode: str = "character",
+    q: str = "",
+    sort: str = "Most Downloaded",
+    limit: int = 24,
+    omd_key: str | None = Depends(get_omd_key),
+):
+    """Searches SDXL-compatible (<= 400 MB) CivitAI LoRAs for AI Horde (`reGen`) in 'character' or 'style' mode."""
+    ctx = get_ctx(omd_key)
+    ctx.private_mode = trusted_private_access(request, ctx)
+    ctx.trusted_owner = trusted_owner_access(request)
+    is_owner = bool(ctx.private_mode or ctx.trusted_owner)
+    items = await core_service.horde_image_mapper.search_civitai_loras(
+        mode=mode,
+        query=q,
+        sort=sort,
+        limit=limit,
+        allow_nsfw=is_owner,
+    )
+    return {"items": items, "mode": mode}
+
+
 @app.post("/personas/generate")
 async def generate_persona_endpoint(request: Request, data: PersonaGenerateInput):
-    """Генерирует новую персону по типажу (словесный паспорт + портрет Krea 2)."""
+    """Генерирует новую персону по типажу (словесный паспорт + портрет Krea 2 или AI Horde SDXL + CivitAI LoRAs)."""
     import random, base64
     ctx = get_ctx(data.omd_key)
     ctx.private_mode = trusted_private_access(request, ctx)
@@ -5300,11 +5327,11 @@ async def generate_persona_endpoint(request: Request, data: PersonaGenerateInput
     sdxl_verbal_passports = {
         "sdxl_judith": (
             ["Джудит", "Judith", "Джуна", "June"],
-            "Natural expressive young woman with warm wavy auburn-brown hair, bright emerald-green eyes, subtle freckles across nose, charming friendly smile, soft natural daylight",
+            "Natural expressive young woman with warm wavy hair, bright expressive eyes, charming friendly smile, soft natural daylight",
         ),
         "sdxl_domi": (
             ["Доминика", "Domi", "Ника", "Dominika"],
-            "Charismatic stylish brunette woman with piercing hazel gaze, shoulder-length layered hair, confident radiant smile, modern chic outfit",
+            "Charismatic stylish woman with layered blonde-chestnut hair, expressive blue-hazel eyes, confident radiant smile, modern chic outfit",
         ),
         "sdxl_lana": (
             ["Лана", "Светлана", "Lana", "Claire"],
@@ -5331,6 +5358,9 @@ async def generate_persona_endpoint(request: Request, data: PersonaGenerateInput
             "Striking woman with sleek raven-dark hair, sculpted cheekbones, mystical piercing gaze, refined enigmatic aura",
         ),
     }
+
+    custom_loras_list = [x for x in (data.custom_loras or []) if isinstance(x, dict)]
+    custom_arch_map = {str(x.get("id") or ""): x for x in custom_loras_list if x.get("id")}
 
     krea_only_presets = {
         "domi": {
@@ -5421,9 +5451,30 @@ async def generate_persona_endpoint(request: Request, data: PersonaGenerateInput
     krea_archetypes = {a["id"]: a for a in krea_data.get("archetypes", []) if "id" in a}
 
     default_arch = "alt" if allow_krea else ("sdxl_judith" if "sdxl_judith" in krea_archetypes else next(iter(krea_archetypes), "business"))
-    arch_key = data.archetype if (data.archetype in krea_archetypes or data.archetype in archetype_presets) else default_arch
+    is_custom_civitai_arch = bool(data.archetype and (data.archetype in custom_arch_map or str(data.archetype).startswith("civitai_")))
+    arch_key = (
+        data.archetype
+        if (is_custom_civitai_arch or data.archetype in krea_archetypes or data.archetype in archetype_presets)
+        else default_arch
+    )
 
-    if arch_key in krea_archetypes:
+    selected_styles = [str(s).strip() for s in (data.styles or []) if s and str(s).strip() != "none"]
+    if not selected_styles and data.style and data.style != "none" and not core_service.is_sdxl_base_model(data.style):
+        selected_styles = [str(data.style).strip()]
+
+    if is_custom_civitai_arch:
+        c_meta = custom_arch_map.get(arch_key) or {}
+        raw_cname = str(c_meta.get("name") or arch_key.replace("civitai_", "Character ")).strip()
+        short_cname = re.split(r"[\(\[\|/-]", raw_cname)[0].strip() or raw_cname[:28]
+        t_words = [str(w).strip() for w in (c_meta.get("trained_words") or []) if str(w).strip()]
+        trig_prefix = f"{', '.join(t_words[:2])}, " if t_words else ""
+        name = short_cname
+        title = f"{short_cname} / Companion"
+        passport = f"{trig_prefix}expressive companion character portrait, natural lighting, detailed features"
+        style = data.base_model or "sdxl_realistic"
+        arch_val = arch_key
+        arch_lora = str(c_meta.get("filename") or f"{arch_key}.safetensors")
+    elif arch_key in krea_archetypes:
         k_arch = krea_archetypes[arch_key]
         if arch_key in sdxl_verbal_passports:
             names_pool, verbal_desc = sdxl_verbal_passports[arch_key]
@@ -5433,7 +5484,7 @@ async def generate_persona_endpoint(request: Request, data: PersonaGenerateInput
             name = k_arch.get("name", arch_key)
             passport = k_arch.get("trigger", "")
         title = f"{k_arch.get('name', arch_key)} / {k_arch.get('description', '')}"
-        style = data.style or ("sdxl_realistic" if arch_key.startswith("sdxl_") else "photorealistic")
+        style = data.base_model or data.style or ("sdxl_realistic" if arch_key.startswith("sdxl_") else "photorealistic")
         arch_val = arch_key
         arch_lora = (k_arch.get("filename") or k_arch.get("lora") or "") if allow_krea or arch_key.startswith("sdxl_") else ""
     else:
@@ -5446,19 +5497,34 @@ async def generate_persona_endpoint(request: Request, data: PersonaGenerateInput
         arch_lora = arch.get("lora", "") if allow_krea else ""
 
     timestamp = int(time.time())
-    persona_id = f"persona_{arch_key}_{timestamp}"
+    safe_arch_slug = re.sub(r"[^a-zA-Z0-9_-]", "", str(arch_key))[:32]
+    persona_id = f"persona_{safe_arch_slug}_{timestamp}"
 
-    # Рендерим портрет через Krea 2 (только для владельца/подписчиков) или SDXL / AI Horde для гостей
+    chosen_sdxl_base = (
+        data.base_model
+        if (data.base_model and core_service.is_sdxl_base_model(data.base_model))
+        else "sdxl_realistic"
+    )
+    render_preset_out = None
+
+    # Рендерим портрет через Krea 2 (только для владельца/подписчиков на Studio-типажах) или SDXL / AI Horde
     b64_str = ""
     try:
-        is_sdxl_arch = arch_key in krea_archetypes and "sdxl" in (krea_archetypes[arch_key].get("models") or [])
+        is_sdxl_arch = is_custom_civitai_arch or (
+            arch_key in krea_archetypes and "sdxl" in (krea_archetypes[arch_key].get("models") or [])
+        )
         can_use_krea = allow_krea and await core_service.is_krea_available(ctx) and not is_sdxl_arch
         if can_use_krea:
             res = await core_service.generate_krea2_image(
                 ctx=ctx,
                 prompt="close-up headshot portrait, looking directly at camera, soft studio rim light, natural skin detail",
                 persona_prompt=passport,
-                sliders={"style": style, "archetypes": [arch_val] if arch_val else [], "detail": 0.5},
+                sliders={
+                    "style": style,
+                    "styles": selected_styles,
+                    "archetypes": [arch_val] if arch_val else [],
+                    "detail": 0.5,
+                },
                 width=896,
                 height=1152,
                 steps=10,
@@ -5468,15 +5534,35 @@ async def generate_persona_endpoint(request: Request, data: PersonaGenerateInput
             img_data = res[3]
             b64_str = f"data:image/png;base64,{base64.b64encode(img_data).decode('utf-8')}" if img_data else ""
         elif await core_service.is_image_generation_available(ctx):
+            sdxl_sliders = {
+                "base_model": chosen_sdxl_base,
+                "styles": selected_styles,
+                "style": selected_styles[0] if selected_styles else "none",
+                "archetypes": [arch_val] if arch_val else [],
+                "custom_loras": custom_loras_list,
+                "detail": 0.5,
+                "steps": 18,
+                "cfg": 5.0,
+                "horde_native": True,
+            }
+            render_preset_out = {
+                "enabled": True,
+                "base_model": chosen_sdxl_base,
+                "archetypes": [arch_val] if arch_val else [],
+                "styles": selected_styles,
+                "custom_loras": custom_loras_list,
+                "use_face_ref": False,
+            }
             res = await core_service.generate_krea2_image(
                 ctx=ctx,
-                prompt="close-up headshot portrait, looking directly at camera, soft studio rim light, natural skin detail",
+                prompt="close-up headshot portrait, looking directly at camera, soft studio rim light, natural skin detail, stylish modest outfit",
                 persona_prompt=passport,
-                sliders={"base_model": "sdxl_realistic", "archetypes": [arch_val] if arch_val else [], "detail": 0.5},
+                persona_lora=arch_lora or None,
+                sliders=sdxl_sliders,
                 width=896,
                 height=1152,
-                steps=6,
-                cfg=1.0,
+                steps=18,
+                cfg=5.0,
                 upload_storage=False
             )
             img_data = res[3]
@@ -5495,6 +5581,7 @@ async def generate_persona_endpoint(request: Request, data: PersonaGenerateInput
         "archetype": arch_key,
         "lora": arch_lora,
         "style": style,
+        "render_preset": render_preset_out,
         "avatar": b64_str,
         "avatarData": b64_str
     }

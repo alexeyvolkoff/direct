@@ -3322,9 +3322,22 @@ def extract_krea2_prompt_and_params(ctx: UserContext, prompt: str, is_character:
     }
 
     ARCHETYPE_ALIASES = {
-        "domi": "domi",
-        "june": "domi",
-        "default": "domi",
+        "domi": "sdxl_domi" if not (ctx and (getattr(ctx, "private_mode", False) or getattr(ctx, "trusted_owner", False))) else "domi",
+        "sdxl_domi": "sdxl_domi",
+        "judith": "sdxl_judith",
+        "sdxl_judith": "sdxl_judith",
+        "lana": "sdxl_lana",
+        "sdxl_lana": "sdxl_lana",
+        "oriana": "sdxl_oriana",
+        "sdxl_oriana": "sdxl_oriana",
+        "vera": "sdxl_vera",
+        "sdxl_vera": "sdxl_vera",
+        "bianca": "sdxl_bianca",
+        "sdxl_bianca": "sdxl_bianca",
+        "beatrice": "sdxl_beatrice",
+        "sdxl_beatrice": "sdxl_beatrice",
+        "minerva": "sdxl_minerva",
+        "sdxl_minerva": "sdxl_minerva",
         "ada": "ada",
         "ada_wong": "ada",
         "brie": "brie",
@@ -3333,7 +3346,7 @@ def extract_krea2_prompt_and_params(ctx: UserContext, prompt: str, is_character:
         "tifa_lockhart": "tifa",
         "alt": "alt",
         "goth": "alt",
-        "influencer": "influencer"
+        "influencer": "influencer",
     }
 
     # 2. Ищем теги <...> в тексте
@@ -3351,6 +3364,10 @@ def extract_krea2_prompt_and_params(ctx: UserContext, prompt: str, is_character:
             arch = ARCHETYPE_ALIASES[t_clean]
             if arch not in detected_archetypes:
                 detected_archetypes.append(arch)
+        elif t_clean.startswith("civitai_") or re.match(r"^lora:civitai_\d+", t_clean):
+            cid = t_clean.split(":", 1)[1] if t_clean.startswith("lora:") else t_clean
+            if cid not in detected_archetypes:
+                detected_archetypes.append(cid)
         elif t_clean.endswith(".safetensors"):
             custom_lora = tag.strip()
 
@@ -3437,8 +3454,15 @@ def extract_krea2_prompt_and_params(ctx: UserContext, prompt: str, is_character:
             sliders["style_weights"] = dict(persona_preset["style_weights"])
         if isinstance(persona_preset.get("archetype_weights"), dict) and persona_preset["archetype_weights"]:
             sliders["archetype_weights"] = dict(persona_preset["archetype_weights"])
+        if isinstance(persona_preset.get("custom_loras"), list) and persona_preset["custom_loras"]:
+            sliders["custom_loras"] = list(persona_preset["custom_loras"])
+        if persona_preset.get("negative_prompt"):
+            sliders["negative_prompt"] = str(persona_preset["negative_prompt"])
         if "use_face_ref" in persona_preset:
             sliders["use_face_ref"] = bool(persona_preset["use_face_ref"])
+    if isinstance(ctx.settings, dict) and ctx.settings.get("custom_loras") and "custom_loras" not in sliders:
+        if isinstance(ctx.settings["custom_loras"], list):
+            sliders["custom_loras"] = list(ctx.settings["custom_loras"])
     if custom_lora:
         sliders["lora"] = custom_lora
 
@@ -3892,13 +3916,48 @@ def get_krea_presets(include_fun: bool = False, include_krea: bool = True) -> di
         insert_pos = 1 if (art_styles and art_styles[0].get("id") == "none") else 0
         for st_item in sdxl_styles_pending:
             st_item.pop("_prio", None)
+            civ_meta = horde_image_mapper.SDXL_CIVITAI_LORA_REGISTRY.get(st_item["id"])
+            if civ_meta:
+                st_item.update({
+                    "civitai_name": civ_meta["civitai_name"],
+                    "civitai_model_id": civ_meta["civitai_model_id"],
+                    "civitai_version_id": civ_meta["civitai_version_id"],
+                    "base_model": civ_meta["base_model"],
+                    "image_url": civ_meta["image_url"],
+                    "trained_words": list(civ_meta.get("trained_words") or []),
+                    "description": civ_meta["description"],
+                })
             art_styles.insert(insert_pos, st_item)
             insert_pos += 1
 
         sdxl_chars_pending.sort(key=lambda x: x.get("_prio", 2))
         for ch in sdxl_chars_pending:
             ch.pop("_prio", None)
+            civ_meta = horde_image_mapper.SDXL_CIVITAI_LORA_REGISTRY.get(ch["id"])
+            if civ_meta:
+                ch.update({
+                    "civitai_name": civ_meta["civitai_name"],
+                    "civitai_model_id": civ_meta["civitai_model_id"],
+                    "civitai_version_id": civ_meta["civitai_version_id"],
+                    "base_model": civ_meta["base_model"],
+                    "image_url": civ_meta["image_url"],
+                    "trained_words": list(civ_meta.get("trained_words") or []),
+                    "description": civ_meta["description"],
+                })
             archetypes.append(ch)
+
+    # Append any additional predefined CivitAI SDXL styles/characters not present in local flow.json
+    predef = horde_image_mapper.get_predefined_sdxl_presets()
+    existing_style_ids = {str(s.get("id")) for s in art_styles if isinstance(s, dict)}
+    for ps in predef.get("art_styles", []):
+        if ps.get("id") and ps["id"] not in existing_style_ids:
+            art_styles.append(dict(ps))
+            existing_style_ids.add(ps["id"])
+    existing_arch_ids = {str(a.get("id")) for a in archetypes if isinstance(a, dict)}
+    for pa in predef.get("archetypes", []):
+        if pa.get("id") and pa["id"] not in existing_arch_ids:
+            archetypes.append(dict(pa))
+            existing_arch_ids.add(pa["id"])
 
     return {"art_styles": art_styles, "archetypes": archetypes}
 
@@ -4214,7 +4273,11 @@ async def generate_horde_mapped_image(
     sliders: dict | None = None,
     width: int = 896,
     height: int = 1152,
+    steps: int | None = None,
+    cfg: float | None = None,
     seed: int | None = None,
+    persona_lora: str | None = None,
+    persona_name: str | None = None,
     is_uncensored: bool = False,
     upload_storage: bool = True,
     save_local: bool = False,
@@ -4248,7 +4311,11 @@ async def generate_horde_mapped_image(
             sliders=sliders,
             width=width,
             height=height,
+            steps=steps,
+            cfg=cfg,
             seed=seed,
+            persona_lora=persona_lora,
+            persona_name=persona_name,
             is_uncensored=is_uncensored,
             progress_cb=emit_generation_progress,
         )
@@ -4387,7 +4454,11 @@ async def generate_sdxl_studio_image(
             sliders=sliders,
             width=width,
             height=height,
+            steps=steps,
+            cfg=cfg,
             seed=seed,
+            persona_lora=persona_lora,
+            persona_name=persona_name,
             is_uncensored=is_uncensored,
             upload_storage=bool(kwargs.pop("upload_storage", True)),
             save_local=save_local,

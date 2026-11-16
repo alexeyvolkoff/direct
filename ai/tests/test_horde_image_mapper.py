@@ -18,38 +18,48 @@ def _make_webp_bytes(color=(40, 120, 220)) -> bytes:
     return buf.getvalue()
 
 
-def test_map_ui_guest_enforces_sfw_and_strips_private_tags():
+def test_map_ui_guest_enforces_sfw_and_attaches_civitai_loras():
     payload = horde_image_mapper.map_ui_to_horde_request(
         prompt="Title: Sunset Cafe\nImage: <anime> <domi> <lora:DomiK4:0.8> DomiK woman drinking coffee ### secret",
         persona_prompt="warm brown eyes, cozy sweater",
-        sliders={"detail": 0.85, "weight": -0.5},
+        sliders={
+            "detail": 0.85,
+            "negative_prompt": "glasses, hat",
+            "archetype_weights": {"domi": 0.9},
+        },
         width=896,
         height=1152,
         seed=42,
         is_uncensored=False,
         use_sdxl=True,
         online_models={
-            "Nova Anime XL": {"name": "Nova Anime XL", "count": 6, "eta": 10},
-            "WAI-CUTE Pony": {"name": "WAI-CUTE Pony", "count": 2, "eta": 0},
+            "Nova Anime XL": {"name": "Nova Anime XL", "count": 6, "lora_workers": 5, "fast_lora_workers": 5, "eta": 10},
+            "WAI-NSFW-illustrious-SDXL": {"name": "WAI-NSFW-illustrious-SDXL", "count": 9, "lora_workers": 8, "eta": 5},
         },
     )
     assert payload["nsfw"] is False
     assert payload["censor_nsfw"] is True
     assert payload["replacement_filter"] is True
+    assert payload["slow_workers"] is False
     assert payload["params"]["width"] == 832
     assert payload["params"]["height"] == 1024
-    assert payload["params"]["steps"] == 22
+    assert payload["params"]["steps"] == 18
+    assert payload["params"]["sampler_name"] == "k_dpmpp_2m"
+    assert payload["params"]["karras"] is True
+    assert payload["params"]["clip_skip"] == 2
     assert payload["params"]["seed"] == "42"
-    assert "Nova Anime XL" in payload["models"] or "WAI-CUTE Pony" in payload["models"]
+    assert "Nova Anime XL" in payload["models"] or "WAI-NSFW-illustrious-SDXL" in payload["models"]
+
+    lora_ids = [l["name"] for l in payload["params"]["loras"]]
+    assert "1377183" in lora_ids  # SLDomi (XLDomiv2)
+    assert "135867" in lora_ids   # Detail Tweaker XL (detail=0.85)
 
     pos, neg = payload["prompt"].split(" ### ", 1)
     assert "<anime>" not in pos
     assert "<domi>" not in pos
     assert "DomiK" not in pos
-    assert "cozy sweater" in pos
-    assert "charismatic stylish brunette woman" in pos
-    assert "slender delicate silhouette" in pos
     assert "nsfw, nude, naked" in neg
+    assert "glasses, hat" in neg
 
 
 def test_map_ui_anon_sd15_keeps_pixels_under_upfront_kudos_limit():
@@ -279,20 +289,60 @@ def test_guest_krea_presets_excludes_all_krea_and_anima_loras():
     assert "kate" not in arch_ids
     assert "frieren" not in arch_ids
 
-    # Standard SDXL LoRA IDs map cleanly to natural visual prompts on AI Horde
+    # Standard SDXL LoRA IDs + custom CivitAI LoRAs + 8-step TurboMix map cleanly onto AI Horde params.loras
     mapped = horde_image_mapper.map_ui_to_horde_request(
         prompt="reading a book in a sunlit library",
         sliders={
             "base_model": "sdxl_fantasy",
             "styles": ["none", "sdxl_lora_real_humans"],
-            "archetypes": ["sdxl_judith"],
+            "archetypes": ["sdxl_oriana", "civitai_777888"],
+            "custom_loras": [
+                {
+                    "id": "civitai_777888",
+                    "name": "Custom Companion",
+                    "civitai_version_id": "777888",
+                    "strength": 0.8,
+                    "trained_words": ["cust_trig"],
+                    "category": "character",
+                }
+            ],
+            "steps": 8,
+            "horde_native": True,
         },
         is_uncensored=False,
         use_sdxl=True,
     )
     pos, _ = mapped["prompt"].split(" ### ", 1)
-    assert "<Judith>" not in pos
-    assert "emerald-green eyes" in pos
-    assert "authentic natural skin texture" in pos
+    assert "<Oriana>" not in pos
+    assert "OR14N4" in pos
+    assert "cust_trig" in pos
+    assert mapped["params"]["steps"] == 8
+    assert mapped["params"]["sampler_name"] == "k_dpmpp_sde"
+    lora_ids = [l["name"] for l in mapped["params"]["loras"]]
+    assert lora_ids[0] == "247778"  # Haidra pre-cached 12MB TurboMix
+    assert "2903793" in lora_ids    # Oriana
+    assert "777888" in lora_ids     # Custom CivitAI LoRA
+    assert "262705" in lora_ids     # Real Humans
 
 
+def test_civitai_lora_card_validator_enforces_400mb_and_sdxl():
+    base_model_obj = {"id": 100, "name": "Test LoRA", "poi": False, "tags": ["character"]}
+    valid_ver = {
+        "id": 555666,
+        "baseModel": "Illustrious",
+        "trainedWords": ["hero_char"],
+        "files": [{"name": "hero.safetensors", "primary": True, "sizeKB": 220 * 1024, "downloadUrl": "https://x/y", "hashes": {"SHA256": "ABC"}}],
+        "images": [{"type": "image", "nsfwLevel": 1, "url": "https://image.civitai.com/x/y/original=true/1.jpeg"}],
+    }
+    card = horde_image_mapper._extract_civitai_lora_card(base_model_obj, valid_ver, "character")
+    assert card is not None
+    assert card["id"] == "civitai_555666"
+    assert "/width=256/" in card["image_url"]
+
+    # Over 400 MB -> rejected
+    too_big = dict(valid_ver, files=[{"name": "big.safetensors", "primary": True, "sizeKB": 450 * 1024, "downloadUrl": "https://x/y", "hashes": {"SHA256": "ABC"}}])
+    assert horde_image_mapper._extract_civitai_lora_card(base_model_obj, too_big, "character") is None
+
+    # SD 1.5 -> rejected for SDXL picker
+    sd15_ver = dict(valid_ver, baseModel="SD 1.5")
+    assert horde_image_mapper._extract_civitai_lora_card(base_model_obj, sd15_ver, "character") is None

@@ -77,10 +77,11 @@
   $: hasDidStudio = Boolean($profileStore && $profileStore.studio) || Boolean(isPrivateMode);
   $: canShowStudioTab = Boolean(hasDidStudio && kreaSupported && kreaAllowed);
   $: canShowVideoTab = Boolean(hasDidStudio && kreaSupported && kreaAllowed && videoAllowed);
-  $: canShowDirector = Boolean(hasDidStudio && directorAllowed);
+  $: canShowDirectorStoryboard = Boolean(hasDidStudio && directorAllowed);
+  $: canShowDirector = true;
 
-  $: if (!canShowDirector && showDirectorPanel) {
-    showDirectorPanel = false;
+  $: if (!canShowDirectorStoryboard && directorTab === "storyboard") {
+    directorTab = "prompt";
   }
   $: if (canShowDirector && pendingSavedDirectorOpen) {
     pendingSavedDirectorOpen = false;
@@ -459,10 +460,12 @@
   const initRawSteps = (initialSavedSliders && typeof initialSavedSliders.steps === "number") ? initialSavedSliders.steps : null;
   const initRawCfg = (initialSavedSliders && typeof initialSavedSliders.cfg === "number") ? initialSavedSliders.cfg : null;
 
-  // Sliders state (restored from localStorage if available, with DMD2 steps/cfg normalized in SDXL mode)
+  // Sliders state (restored from localStorage if available, with reGen-native steps/cfg normalized in SDXL mode)
   let sliders = {
     base_model: initBaseModel,
     detail: (initialSavedSliders && typeof initialSavedSliders.detail === "number") ? initialSavedSliders.detail : 0.5,
+    negative_prompt: (initialSavedSliders && typeof initialSavedSliders.negative_prompt === "string") ? initialSavedSliders.negative_prompt : "",
+    horde_native: true,
     styles: initStyles,
     style_weights: (initialSavedSliders && typeof initialSavedSliders.style_weights === "object" && initialSavedSliders.style_weights) ? initialSavedSliders.style_weights : {},
     style: initPrimaryStyle,
@@ -470,7 +473,7 @@
     archetypes: initArchetypes,
     archetype_weights: (initialSavedSliders && typeof initialSavedSliders.archetype_weights === "object" && initialSavedSliders.archetype_weights) ? initialSavedSliders.archetype_weights : {},
     archetype: initPrimaryArchetype,
-    archetype_strength: (initialSavedSliders && typeof initialSavedSliders.archetype_strength === "number") ? initialSavedSliders.archetype_strength : 0.4,
+    archetype_strength: (initialSavedSliders && typeof initialSavedSliders.archetype_strength === "number") ? initialSavedSliders.archetype_strength : 0.9,
     aspect: (initialSavedSliders && initialSavedSliders.aspect) || "896x1152",
     ipadapter_weight: (initialSavedSliders && typeof initialSavedSliders.ipadapter_weight === "number") ? initialSavedSliders.ipadapter_weight : 0.65,
     face_restore_visibility: (initialSavedSliders && typeof initialSavedSliders.face_restore_visibility === "number") ? initialSavedSliders.face_restore_visibility : 0.30,
@@ -481,12 +484,12 @@
     steps: isVideoModel(initBaseModel)
       ? (videoQuality === "fast" ? 4 : 8)
       : (isSdxlModel(initBaseModel)
-          ? ((initRawSteps !== null && initRawSteps >= 4 && initRawSteps <= 12) ? initRawSteps : 6)
+          ? ((initRawSteps !== null && initRawSteps >= 8 && initRawSteps <= 28 && initialSavedSliders?.horde_native) ? initRawSteps : 18)
           : (initRawSteps !== null ? initRawSteps : (initBaseModel === "anima" ? 25 : 12))),
     cfg: isVideoModel(initBaseModel)
       ? 1.0
       : (isSdxlModel(initBaseModel)
-          ? ((initRawCfg !== null && initRawCfg >= 1.0 && initRawCfg <= 2.0) ? initRawCfg : 1.0)
+          ? ((initRawCfg !== null && initRawCfg >= 2.0 && initRawCfg <= 7.0 && initialSavedSliders?.horde_native) ? initRawCfg : 5.0)
           : (initRawCfg !== null ? initRawCfg : (initBaseModel === "realism" ? 1.5 : (initBaseModel === "semi_realism" ? 2.0 : 3.0))))
   };
 
@@ -542,8 +545,9 @@
       generationError = "";
       if (!isSdxlModel(sliders.base_model)) {
         sliders.base_model = lastSdxlModel || "sdxl_realistic";
-        sliders.cfg = 1.0;
-        sliders.steps = 6;
+        sliders.cfg = 5.0;
+        sliders.steps = 18;
+        sliders.horde_native = true;
         sliders = { ...sliders };
         saveLocalSliders(sliders);
       }
@@ -557,9 +561,10 @@
     if (sliders.base_model === model) {
       if (isSdxlModel(model)) {
         generationError = "";
-        if (sliders.steps > 12 || sliders.cfg > 2.0) {
-          sliders.steps = 6;
-          sliders.cfg = 1.0;
+        if (sliders.steps < 8 || sliders.steps > 28 || sliders.cfg < 2.0 || sliders.cfg > 7.0) {
+          sliders.steps = 18;
+          sliders.cfg = 5.0;
+          sliders.horde_native = true;
           sliders = { ...sliders };
           saveLocalSliders(sliders);
         }
@@ -574,8 +579,9 @@
     }
     sliders.base_model = model;
     if (isSdxlModel(model)) {
-      sliders.cfg = 1.0;
-      sliders.steps = 6;
+      sliders.cfg = 5.0;
+      sliders.steps = 18;
+      sliders.horde_native = true;
       generationError = "";
     } else if (isVideoModel(model)) {
       sliders.cfg = 1.0;
@@ -619,8 +625,9 @@
 
   function resetAdvancedToModelDefaults() {
     if (isSdxlModel(sliders.base_model)) {
-      sliders.cfg = 1.0;
-      sliders.steps = 6;
+      sliders.cfg = 5.0;
+      sliders.steps = 18;
+      sliders.horde_native = true;
     } else if (sliders.base_model === "realism") {
       sliders.cfg = 1.5;
       sliders.steps = 12;
@@ -632,18 +639,205 @@
       sliders.steps = 25;
     }
     sliders.detail = 0.5;
+    sliders.negative_prompt = "";
     sliders = { ...sliders };
     saveLocalSliders(sliders);
   }
 
-  // 1. Art Styles & Archetypes from unified registry krea_presets.json + SDXL flow.json
+  // 1. Art Styles & Archetypes from unified registry + CivitAI SDXL catalog
+  const CUSTOM_CIVITAI_STORAGE_KEY = "direct_custom_civitai_loras_v1";
+  function loadSavedCustomCivitaiLoras() {
+    if (typeof localStorage === "undefined") return [];
+    try {
+      const raw = localStorage.getItem(CUSTOM_CIVITAI_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed.filter((x) => x && x.id && x.civitai_version_id) : [];
+    } catch (_) {
+      return [];
+    }
+  }
+  function persistCustomCivitaiLoras(list) {
+    if (typeof localStorage === "undefined") return;
+    try {
+      localStorage.setItem(CUSTOM_CIVITAI_STORAGE_KEY, JSON.stringify(list || []));
+    } catch (_) {}
+  }
+
+  let customCivitaiLoras = loadSavedCustomCivitaiLoras();
+
+  // CivitAI LoRA Browser Modal State ("character" | "style")
+  let showCivitaiLoraModal = false;
+  let civitaiModalMode = "character"; // "character" | "style"
+  let civitaiModalContext = "toolbar"; // "toolbar" | "factory" | "persona_form"
+  let civitaiSearchQuery = "";
+  let civitaiSearchSort = "Most Downloaded";
+  let civitaiSearchResults = [];
+  let isSearchingCivitaiLoras = false;
+  let civitaiSearchError = "";
+  let civitaiSearchSeq = 0;
+
+  async function searchCivitaiCatalog() {
+    const seq = ++civitaiSearchSeq;
+    isSearchingCivitaiLoras = true;
+    civitaiSearchError = "";
+    try {
+      const fetchFn = getKreaFetch();
+      const qs = new URLSearchParams({
+        mode: civitaiModalMode,
+        q: (civitaiSearchQuery || "").trim(),
+        sort: civitaiSearchSort,
+        limit: "24",
+        omd_key: omdKey || ""
+      });
+      const res = await fetchFn(`/horde/civitai/loras?${qs.toString()}`, {
+        method: "GET",
+        headers: buildAuthHeaders()
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      if (seq !== civitaiSearchSeq) return;
+      civitaiSearchResults = Array.isArray(data.items) ? data.items : [];
+    } catch (err) {
+      if (seq !== civitaiSearchSeq) return;
+      civitaiSearchError = err?.message || String(err);
+      civitaiSearchResults = [];
+    } finally {
+      if (seq === civitaiSearchSeq) {
+        isSearchingCivitaiLoras = false;
+      }
+    }
+  }
+
+  function openCivitaiLoraModal(mode = "character", targetContext = "toolbar") {
+    civitaiModalMode = mode === "style" ? "style" : "character";
+    civitaiModalContext = targetContext || "toolbar";
+    civitaiSearchQuery = "";
+    showStyleDropdown = false;
+    showArchetypeDropdown = false;
+    showCivitaiLoraModal = true;
+    searchCivitaiCatalog();
+  }
+
+  function switchCivitaiModalMode(nextMode) {
+    if (civitaiModalMode === nextMode) return;
+    civitaiModalMode = nextMode;
+    searchCivitaiCatalog();
+  }
+
+  function isCustomLoraAdded(id) {
+    return customCivitaiLoras.some((x) => x.id === id)
+      || (STANDARD_SDXL_PRESETS.archetypes || []).some((x) => x.civitai_version_id && `civitai_${x.civitai_version_id}` === id)
+      || (STANDARD_SDXL_PRESETS.art_styles || []).some((x) => x.civitai_version_id && `civitai_${x.civitai_version_id}` === id);
+  }
+
+  function addCustomCivitaiLora(card) {
+    if (!card || !card.civitai_version_id) return;
+    const norm = {
+      id: card.id || `civitai_${card.civitai_version_id}`,
+      name: card.name || `LoRA ${card.civitai_version_id}`,
+      civitai_name: card.civitai_name || card.name || "",
+      civitai_model_id: String(card.civitai_model_id || ""),
+      civitai_version_id: String(card.civitai_version_id),
+      base_model: card.base_model || "SDXL 1.0",
+      size_mb: card.size_mb || 0,
+      category: civitaiModalMode === "style" ? "style" : "character",
+      image_url: card.image_url || "",
+      trained_words: Array.isArray(card.trained_words) ? card.trained_words : [],
+      description: card.description || `${card.base_model || "SDXL"} LoRA`,
+      icon: "",
+      filename: `civitai_${card.civitai_version_id}.safetensors`,
+      trigger: `<${card.id || `civitai_${card.civitai_version_id}`}>`,
+      strength: civitaiModalMode === "style" ? 0.75 : 0.9,
+      models: ["sdxl"],
+      is_custom: true
+    };
+
+    const existingIdx = customCivitaiLoras.findIndex((x) => x.id === norm.id);
+    if (existingIdx !== -1) {
+      customCivitaiLoras[existingIdx] = norm;
+      customCivitaiLoras = [...customCivitaiLoras];
+    } else {
+      customCivitaiLoras = [norm, ...customCivitaiLoras];
+    }
+    persistCustomCivitaiLoras(customCivitaiLoras);
+
+    // Immediately select in the caller context
+    if (civitaiModalContext === "factory") {
+      if (norm.category === "character") {
+        aiFactoryArchetype = norm.id;
+      } else if (!aiFactoryStyles.includes(norm.id)) {
+        aiFactoryStyles = [...aiFactoryStyles, norm.id];
+      }
+      showCivitaiLoraModal = false;
+    } else if (civitaiModalContext === "persona_form") {
+      personaFormPresetEnabled = true;
+      if (!isSdxlModel(personaFormBaseModel)) {
+        personaFormBaseModel = "sdxl_realistic";
+      }
+      if (norm.category === "character") {
+        if (!personaFormArchetypes.includes(norm.id)) {
+          personaFormArchetypes = [...personaFormArchetypes, norm.id];
+          personaFormArchetypeWeights = { ...personaFormArchetypeWeights, [norm.id]: norm.strength };
+          personaFormUseFaceRef = false;
+        }
+        avatarGenArchetype = norm.id;
+      } else {
+        if (!personaFormStyles.includes(norm.id)) {
+          personaFormStyles = [...personaFormStyles, norm.id];
+          personaFormStyleWeights = { ...personaFormStyleWeights, [norm.id]: norm.strength };
+        }
+      }
+      showCivitaiLoraModal = false;
+    } else {
+      if (!isSdxlModel(sliders.base_model)) {
+        setBaseModel(lastSdxlModel || "sdxl_realistic");
+      }
+      if (norm.category === "character") {
+        sliders.archetypes = [norm.id];
+        sliders.archetype = norm.id;
+        sliders.archetype_weights = { ...(sliders.archetype_weights || {}), [norm.id]: norm.strength };
+      } else {
+        sliders.styles = [norm.id];
+        sliders.style = norm.id;
+        sliders.style_weights = { ...(sliders.style_weights || {}), [norm.id]: norm.strength };
+      }
+      sliders = { ...sliders };
+      saveLocalSliders(sliders);
+      showCivitaiLoraModal = false;
+    }
+  }
+
+  function removeCustomCivitaiLora(id, e) {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    customCivitaiLoras = customCivitaiLoras.filter((x) => x.id !== id);
+    persistCustomCivitaiLoras(customCivitaiLoras);
+    if ((sliders.archetypes || []).includes(id)) {
+      sliders.archetypes = sliders.archetypes.filter((x) => x !== id);
+      sliders.archetype = sliders.archetypes[0] || null;
+      sliders = { ...sliders };
+      saveLocalSliders(sliders);
+    }
+    if ((sliders.styles || []).includes(id)) {
+      sliders.styles = sliders.styles.filter((x) => x !== id);
+      sliders.style = sliders.styles[0] || "none";
+      sliders = { ...sliders };
+      saveLocalSliders(sliders);
+    }
+  }
+
   const STANDARD_SDXL_PRESETS = {
     art_styles: [
       {
         id: "none",
         name: "Free",
-        description: "No style modifiers or LoRAs — pure original prompt",
-        icon: "✨",
+        description: "Pure base checkpoint guided by your prompt",
+        icon: "",
+        image_url: "",
         filename: "",
         trigger: "",
         strength: 0.0,
@@ -652,39 +846,129 @@
       {
         id: "sdxl_lora_real_humans",
         name: "Real Humans",
-        description: "Authentic natural skin texture & candid human proportions",
-        icon: "📷",
+        civitai_name: "Real Humans",
+        civitai_version_id: "262705",
+        base_model: "SDXL 1.0",
+        description: "Authentic natural skin texture & candid photography",
+        icon: "",
+        image_url: "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/e9fdda22-7af8-4e91-84ca-641caff8d41c/width=256/4587751.jpeg",
         filename: "real-humans-PublicPrompts.safetensors",
         trigger: "<Real Humans>",
         strength: 0.7,
         models: ["sdxl"]
+      },
+      {
+        id: "sdxl_lora_cinematic_shot",
+        name: "Cinematic Shot",
+        civitai_name: "Cinematic Shot",
+        civitai_version_id: "481917",
+        base_model: "SDXL 1.0",
+        description: "Atmospheric 35mm movie lighting, depth & color grading",
+        icon: "",
+        image_url: "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/036d514d-5f82-4beb-8160-38e7f4411b05/width=256/11368089.jpeg",
+        filename: "civitai_481917.safetensors",
+        trigger: "<Cinematic Shot>",
+        strength: 0.75,
+        models: ["sdxl"]
+      },
+      {
+        id: "sdxl_lora_anime_screencap",
+        name: "Anime Screencap XL",
+        civitai_name: "Fine Anime Screencap XL",
+        civitai_version_id: "2553688",
+        base_model: "Illustrious",
+        description: "Crisp modern anime broadcast aesthetic & cel shading",
+        icon: "",
+        image_url: "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/b2bf710e-a946-4df9-bed5-cfb02e7c19a6/width=256/115872395.jpeg",
+        filename: "civitai_2553688.safetensors",
+        trigger: "<Anime Screencap XL>",
+        strength: 0.8,
+        models: ["sdxl"]
+      },
+      {
+        id: "sdxl_lora_eldritch_comics",
+        name: "Eldritch Comics",
+        civitai_name: "Eldritch Comics",
+        civitai_version_id: "305491",
+        base_model: "SDXL 1.0",
+        description: "Expressive graphic novel ink linework & vibrant colors",
+        icon: "",
+        image_url: "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/09e5cda5-31bb-4601-8e71-462b1ebc7ba6/width=256/5678307.jpeg",
+        filename: "civitai_305491.safetensors",
+        trigger: "<Eldritch Comics>",
+        strength: 0.8,
+        models: ["sdxl"]
       }
     ],
     archetypes: [
-      { id: "sdxl_judith", name: "Judith", description: "Natural beauty & expressive muse (Judith / June LoRA)", icon: "✨", filename: "JudithCB_r2-000011.safetensors", trigger: "<Judith>", strength: 1.0, models: ["sdxl"] },
-      { id: "sdxl_domi", name: "Domi", description: "Charismatic brunette with piercing hazel gaze", icon: "💎", filename: "XLDomiv2.safetensors", trigger: "<Domi>", strength: 1.0, models: ["sdxl"] },
-      { id: "sdxl_lana", name: "Lana", description: "Radiant Slavic beauty with expressive features", icon: "🌸", filename: "svetlana.safetensors", trigger: "<Lana>", strength: 1.0, models: ["sdxl"] },
-      { id: "sdxl_oriana", name: "Oriana", description: "Glamorous star with bold magnetic presence", icon: "🔥", filename: "ORIANA-XSTAR-XL-FINAL.safetensors", trigger: "<Oriana>", strength: 1.0, models: ["sdxl"] },
-      { id: "sdxl_vera", name: "Vera", description: "Sultry dark-haired allure", icon: "🌹", filename: "VEROTIKA-XSTAR-XL-FINAL.safetensors", trigger: "<Vera>", strength: 1.0, models: ["sdxl"] },
-      { id: "sdxl_bianca", name: "Bianca", description: "Elegant poised blonde beauty", icon: "👑", filename: "BIANCA-XSTAR-XL.safetensors", trigger: "<Bianca>", strength: 1.0, models: ["sdxl"] },
-      { id: "sdxl_beatrice", name: "Beatrice", description: "Classic European charm & refined features", icon: "🎭", filename: "BEATRICE-XSTAR-XL-FINAL.safetensors", trigger: "<Beatrice>", strength: 1.0, models: ["sdxl"] },
-      { id: "sdxl_minerva", name: "Minerva", description: "Mystical striking gaze & sculpted features", icon: "🌙", filename: "MINERVA-XSTAR-XL-FINAL.safetensors", trigger: "<Minerva>", strength: 1.0, models: ["sdxl"] }
+      { id: "sdxl_domi", name: "SLDomi (Domi)", civitai_name: "SLDomi", civitai_version_id: "1377183", base_model: "SDXL 1.0", description: "Charismatic companion LoRA (SLDomi)", icon: "", image_url: "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/2dd69f45-69f3-4b25-9f02-67c0610765c5/width=256/56075413.jpeg", filename: "XLDomiv2.safetensors", trigger: "<Domi>", strength: 0.95, models: ["sdxl"] },
+      { id: "sdxl_judith", name: "Judith B", civitai_name: "Judith B", civitai_version_id: "2360657", base_model: "Pony", description: "Expressive companion LoRA (Judith B)", icon: "", image_url: "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/ac70cb91-ccd3-4601-8754-f1d5ea5b77d3/width=256/108221436.jpeg", filename: "JudithCB_r2-000011.safetensors", trigger: "<Judith>", strength: 0.9, models: ["sdxl"] },
+      { id: "sdxl_lana", name: "Svetlana (Lana)", civitai_name: "svetlana", civitai_version_id: "2599427", base_model: "SDXL 1.0", description: "Radiant Slavic companion LoRA (Svetlana)", icon: "", image_url: "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/c060b0ae-6f46-4968-a61a-5565df48d27d/width=256/117559750.jpeg", filename: "svetlana.safetensors", trigger: "<Lana>", strength: 0.95, models: ["sdxl"] },
+      { id: "sdxl_oriana", name: "Oriana XL", civitai_name: "ORIANA-XSTAR-XL", civitai_version_id: "2903793", base_model: "SDXL 1.0", description: "Glamorous magnetic companion LoRA", icon: "", image_url: "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/e9f4420d-87a8-4314-937a-063324438379/width=256/129028954.jpeg", filename: "ORIANA-XSTAR-XL-FINAL.safetensors", trigger: "<Oriana>", strength: 0.95, models: ["sdxl"] },
+      { id: "sdxl_vera", name: "Verotika (Vera)", civitai_name: "VEROTIKA-XSTAR-XL", civitai_version_id: "1130986", base_model: "SDXL 1.0", description: "Elegant dark-haired companion LoRA", icon: "", image_url: "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/b98edfe9-1294-4c4a-8814-2d3ffb1f068a/width=256/43775214.jpeg", filename: "VEROTIKA-XSTAR-XL-FINAL.safetensors", trigger: "<Vera>", strength: 0.95, models: ["sdxl"] },
+      { id: "sdxl_bianca", name: "Bianca XL", civitai_name: "BIANCA-XSTAR-XL", civitai_version_id: "1198981", base_model: "SDXL 1.0", description: "Poised blonde companion LoRA", icon: "", image_url: "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/5981dc82-5c87-494d-8bca-a12822a9117a/width=256/47386274.jpeg", filename: "BIANCA-XSTAR-XL.safetensors", trigger: "<Bianca>", strength: 0.95, models: ["sdxl"] },
+      { id: "sdxl_beatrice", name: "Beatrice XL", civitai_name: "BEATRICE-XSTAR-XL", civitai_version_id: "2612904", base_model: "SDXL 1.0", description: "Classic European companion LoRA", icon: "", image_url: "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/8cce104f-1c65-465d-b609-b4abebcc778b/width=256/118088057.jpeg", filename: "BEATRICE-XSTAR-XL-FINAL.safetensors", trigger: "<Beatrice>", strength: 0.95, models: ["sdxl"] },
+      { id: "sdxl_minerva", name: "Minerva XL", civitai_name: "MINERVA-XSTAR-XL", civitai_version_id: "2807620", base_model: "SDXL 1.0", description: "Mystical raven-haired companion LoRA", icon: "", image_url: "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/c0161468-55af-4384-8cbb-10305f57e099/width=256/125529679.jpeg", filename: "MINERVA-XSTAR-XL-FINAL.safetensors", trigger: "<Minerva>", strength: 0.95, models: ["sdxl"] }
     ]
   };
+
+  const SDXL_PRESET_THUMB_MAP = Object.fromEntries(
+    [...STANDARD_SDXL_PRESETS.art_styles, ...STANDARD_SDXL_PRESETS.archetypes]
+      .filter((x) => x && x.id && x.image_url)
+      .map((x) => [x.id, x])
+  );
 
   let kreaPresets = initialHasStudioFlag ? defaultKreaPresets : STANDARD_SDXL_PRESETS;
 
   $: effectivePresets = (() => {
     const rawStyles = (kreaPresets && Array.isArray(kreaPresets.art_styles)) ? kreaPresets.art_styles : [];
     const rawArchs = (kreaPresets && Array.isArray(kreaPresets.archetypes)) ? kreaPresets.archetypes : [];
-    if (canShowStudioTab) {
-      return { art_styles: rawStyles, archetypes: rawArchs };
+    const customStyles = customCivitaiLoras.filter((x) => x.category === "style");
+    const customChars = customCivitaiLoras.filter((x) => x.category !== "style");
+
+    const enrichItem = (item) => {
+      if (!item) return item;
+      const fallbackMeta = SDXL_PRESET_THUMB_MAP[item.id];
+      if (fallbackMeta) {
+        return {
+          ...fallbackMeta,
+          ...item,
+          name: fallbackMeta.name || item.name,
+          image_url: item.image_url || fallbackMeta.image_url || "",
+          civitai_version_id: item.civitai_version_id || fallbackMeta.civitai_version_id || "",
+          base_model: item.base_model || fallbackMeta.base_model || "",
+          icon: (item.image_url || fallbackMeta.image_url) ? "" : (item.icon || "")
+        };
+      }
+      return item;
+    };
+
+    let baseStyles = canShowStudioTab
+      ? rawStyles.map(enrichItem)
+      : rawStyles.filter((s) => s && (s.id === "none" || (Array.isArray(s.models) && s.models.includes("sdxl")))).map(enrichItem);
+    let baseArchs = canShowStudioTab
+      ? rawArchs.map(enrichItem)
+      : rawArchs.filter((a) => a && Array.isArray(a.models) && a.models.includes("sdxl")).map(enrichItem);
+
+    if (!canShowStudioTab) {
+      if (baseStyles.length <= 1) baseStyles = [...STANDARD_SDXL_PRESETS.art_styles];
+      else {
+        const seenS = new Set(baseStyles.map((s) => s.id));
+        for (const stdS of STANDARD_SDXL_PRESETS.art_styles) {
+          if (!seenS.has(stdS.id)) baseStyles.push(stdS);
+        }
+      }
+      if (baseArchs.length === 0) baseArchs = [...STANDARD_SDXL_PRESETS.archetypes];
     }
-    const sdxlStyles = rawStyles.filter((s) => s && (s.id === "none" || (Array.isArray(s.models) && s.models.includes("sdxl"))));
-    const sdxlArchs = rawArchs.filter((a) => a && Array.isArray(a.models) && a.models.includes("sdxl"));
+
+    const seenStyleIds = new Set(baseStyles.map((s) => s.id));
+    const mergedStyles = [...baseStyles, ...customStyles.filter((cs) => !seenStyleIds.has(cs.id))];
+    const seenArchIds = new Set(baseArchs.map((a) => a.id));
+    const mergedArchs = [...baseArchs, ...customChars.filter((ca) => !seenArchIds.has(ca.id))];
+
     return {
-      art_styles: sdxlStyles.length > 0 ? sdxlStyles : STANDARD_SDXL_PRESETS.art_styles,
-      archetypes: sdxlArchs.length > 0 ? sdxlArchs : STANDARD_SDXL_PRESETS.archetypes
+      art_styles: mergedStyles,
+      archetypes: mergedArchs
     };
   })();
 
@@ -694,9 +978,12 @@
 
   $: stylePresets = filteredArtStyles.map((s) => ({
     id: s.id,
-    label: (s.icon ? s.icon + " " : "") + (s.id === "none" ? $_("krea_style_none", {}, s.name) : s.name),
+    label: (!s.image_url && s.icon ? s.icon + " " : "") + (s.id === "none" ? $_("krea_style_none", {}, s.name) : s.name),
     name: s.id === "none" ? $_("krea_style_none", {}, s.name) : s.name,
     desc: s.id === "none" ? $_("krea_style_none_desc", {}, s.description) : $_(`krea_preset_desc_${s.id}`, {}, s.description),
+    image_url: s.image_url || "",
+    base_model: s.base_model || "",
+    is_custom: Boolean(s.is_custom),
     trigger: s.trigger,
     lora: s.filename,
     strength: s.strength
@@ -709,9 +996,12 @@
 
   $: archetypePresets = filteredArchetypes.map((a) => ({
     id: a.id,
-    label: (a.icon ? a.icon + " " : "") + a.name,
+    label: (!a.image_url && a.icon ? a.icon + " " : "") + a.name,
     name: a.name,
     desc: $_(`krea_preset_desc_${a.id}`, {}, a.description),
+    image_url: a.image_url || "",
+    base_model: a.base_model || "",
+    is_custom: Boolean(a.is_custom),
     trigger: a.trigger,
     lora: a.filename,
     strength: a.strength
@@ -770,10 +1060,10 @@
   $: syncBaseModelPresets(sliders.base_model, effectivePresets);
 
   $: activeStyleObjs = stylePresets.filter((s) => (sliders.styles || []).includes(s.id));
-  $: activeStyleObj = activeStyleObjs[0] || stylePresets.find((s) => s.id === sliders.style) || stylePresets[0] || { label: "✨ " + $_("krea_free_style", {}, "Свободный"), lora: "" };
+  $: activeStyleObj = activeStyleObjs[0] || stylePresets.find((s) => s.id === sliders.style) || stylePresets[0] || { label: $_("krea_free_style", {}, "Free"), lora: "" };
   $: activeStyleLabel = (() => {
     const list = (sliders.styles || []).filter((id) => id !== "none");
-    if (list.length === 0) return "✨ " + $_("krea_free_style", {}, "Свободный");
+    if (list.length === 0) return $_("krea_free_style", {}, "Free");
     if (list.length === 1) {
       const s = activeStyleObjs[0];
       const w = sliders.style_weights?.[s?.id] ?? s?.strength;
@@ -793,7 +1083,7 @@
   $: activeArchetypeObj = activeArchetypeObjs[0] || null;
   $: activeArchetypeLabel = (() => {
     const list = sliders.archetypes || [];
-    if (list.length === 0) return "✨ " + $_("krea_free_style", {}, "Свободный");
+    if (list.length === 0) return $_("krea_free_style", {}, "Free");
     if (list.length === 1) {
       const a = activeArchetypeObjs[0];
       const w = sliders.archetype_weights?.[a?.id] ?? a?.strength;
@@ -955,7 +1245,8 @@
 
   // AI Persona Factory Modal (Scenario A + Scenario B combined)
   let showAiFactoryModal = false;
-  let aiFactoryArchetype = initialHasStudioFlag ? "alt" : "sdxl_judith";
+  let aiFactoryArchetype = initialHasStudioFlag ? "alt" : "sdxl_domi";
+  let aiFactoryStyles = [];
   let isGeneratingAiPersona = false;
   let generatedAiPersona = null;
   // Confirmation Modal state
@@ -973,17 +1264,46 @@
       const locDesc = $_(`krea_preset_desc_${a.id}`, {}, a.description);
       return {
         id: a.id,
-        name: (a.icon ? a.icon + " " : "") + a.name,
+        name: (!a.image_url && a.icon ? a.icon + " " : "") + a.name,
         rawName: a.name,
         title: a.title || `${a.name} / ${locDesc}`,
-        hint: locDesc + (a.filename ? " (LoRA)" : ""),
+        hint: locDesc,
+        image_url: a.image_url || "",
+        base_model: a.base_model || "",
+        is_custom: Boolean(a.is_custom),
         trigger: a.trigger || "",
-        icon: a.icon || "👤",
+        icon: a.icon || "",
         lora: a.filename || ""
       };
     });
+  $: aiStyles = (effectivePresets.art_styles || [])
+    .filter((s) => {
+      if (!s || s.id === "none") return false;
+      const models = Array.isArray(s.models) ? s.models : [];
+      if (!canShowStudioTab || studioEngineMode === "sdxl") {
+        return models.includes("sdxl") || models.includes("all");
+      }
+      return !models.includes("sdxl") || models.includes("all");
+    })
+    .map((s) => ({
+      id: s.id,
+      name: (!s.image_url && s.icon ? s.icon + " " : "") + s.name,
+      rawName: s.name,
+      hint: $_(`krea_preset_desc_${s.id}`, {}, s.description),
+      image_url: s.image_url || "",
+      base_model: s.base_model || "",
+      is_custom: Boolean(s.is_custom)
+    }));
   $: if (aiArchetypes.length > 0 && (!aiFactoryArchetype || !aiArchetypes.some((a) => a.id === aiFactoryArchetype))) {
     aiFactoryArchetype = aiArchetypes[0].id;
+  }
+
+  function toggleAiFactoryStyle(styleId) {
+    if (aiFactoryStyles.includes(styleId)) {
+      aiFactoryStyles = aiFactoryStyles.filter((x) => x !== styleId);
+    } else {
+      aiFactoryStyles = [...aiFactoryStyles, styleId];
+    }
   }
 
   // Dynamic Scene & Action Generator (combines vivid action, emotion, lighting, and camera angle)
@@ -1569,6 +1889,20 @@
   function applyPersonaRenderPreset(p) {
     if (!p || !p.render_preset || p.render_preset.enabled === false) return;
     const rp = p.render_preset;
+    if (Array.isArray(rp.custom_loras) && rp.custom_loras.length > 0) {
+      let mergedCustom = [...customCivitaiLoras];
+      let addedAny = false;
+      for (const cl of rp.custom_loras) {
+        if (cl && cl.id && cl.civitai_version_id && !mergedCustom.some((x) => x.id === cl.id)) {
+          mergedCustom.push({ ...cl, is_custom: true });
+          addedAny = true;
+        }
+      }
+      if (addedAny) {
+        customCivitaiLoras = mergedCustom;
+        persistCustomCivitaiLoras(customCivitaiLoras);
+      }
+    }
     const nextModel = rp.base_model || sliders.base_model || "realism";
     if (sliders.base_model !== nextModel) {
       setBaseModel(nextModel);
@@ -1588,6 +1922,9 @@
       if (sliders.style !== "none" && sliders.style_weights[sliders.style] !== undefined) {
         sliders.style_strength = sliders.style_weights[sliders.style];
       }
+    }
+    if (typeof rp.negative_prompt === "string" && rp.negative_prompt) {
+      sliders.negative_prompt = rp.negative_prompt;
     }
     sliders = { ...sliders };
     saveLocalSliders(sliders);
@@ -1815,7 +2152,8 @@
   }
 
   function openAiPersonaModal() {
-    aiFactoryArchetype = "alt";
+    aiFactoryArchetype = aiArchetypes[0]?.id || (canShowStudioTab && studioEngineMode !== "sdxl" ? "alt" : "sdxl_domi");
+    aiFactoryStyles = [];
     generatedAiPersona = null;
     showAiFactoryModal = true;
   }
@@ -1955,9 +2293,18 @@
         ? (p, opts) => httpDrive.fetch(p, opts)
         : (p, opts) => fetch(p, opts);
 
-      const useSdxlAvatar = !canShowStudioTab || String(avatarGenArchetype || "").startsWith("sdxl_") || isSdxlModel(sliders.base_model);
+      const useSdxlAvatar = !canShowStudioTab || String(avatarGenArchetype || "").startsWith("sdxl_") || String(avatarGenArchetype || "").startsWith("civitai_") || isSdxlModel(sliders.base_model);
       let chosenSliders = useSdxlAvatar
-        ? { base_model: "sdxl_realistic", style: "sdxl_realistic", detail: 0.5 }
+        ? {
+            base_model: isSdxlModel(personaFormBaseModel) ? personaFormBaseModel : "sdxl_realistic",
+            styles: [...personaFormStyles],
+            style: personaFormStyles[0] || "none",
+            custom_loras: customCivitaiLoras,
+            detail: 0.5,
+            steps: 18,
+            cfg: 5.0,
+            horde_native: true
+          }
         : { style: "photorealistic", detail: 0.5 };
       if (avatarGenArchetype && avatarGenArchetype !== "prompt") {
         chosenSliders.archetypes = [avatarGenArchetype];
@@ -1968,13 +2315,13 @@
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          prompt: "close-up headshot avatar portrait, looking directly at camera, soft studio rim light, natural skin detail, crisp sharp focus",
+          prompt: "close-up headshot avatar portrait, looking directly at camera, soft studio rim light, natural skin detail, crisp sharp focus, stylish modest outfit",
           persona_prompt: cleanPrompt || "",
           sliders: chosenSliders,
           width: 768,
           height: 768,
-          steps: 6,
-          cfg: 1.0,
+          steps: useSdxlAvatar ? 18 : 10,
+          cfg: useSdxlAvatar ? 5.0 : 1.0,
           omd_key: omdKey || "",
           mcp_keys: mcpPayload,
           settings: { mcp_keys: mcpPayload }
@@ -2029,6 +2376,9 @@
     try {
       const id = editingPersonaId || ("persona_" + Date.now());
       const existingPersona = personas.find((x) => x.id === id) || {};
+      const relevantCustomLoras = personaFormPresetEnabled
+        ? customCivitaiLoras.filter((cl) => personaFormArchetypes.includes(cl.id) || personaFormStyles.includes(cl.id))
+        : [];
       const renderPresetObj = personaFormPresetEnabled
         ? {
             enabled: true,
@@ -2037,6 +2387,7 @@
             archetype_weights: { ...personaFormArchetypeWeights },
             styles: [...personaFormStyles],
             style_weights: { ...personaFormStyleWeights },
+            custom_loras: relevantCustomLoras,
             use_face_ref: Boolean(personaFormUseFaceRef)
           }
         : null;
@@ -2193,11 +2544,17 @@
         : (p, opts) => fetch(p, opts);
 
       const mcpPayload = getMcpPayload();
+      const factoryCustomLoras = customCivitaiLoras.filter(
+        (cl) => cl.id === aiFactoryArchetype || aiFactoryStyles.includes(cl.id)
+      );
       const res = await fetchFn("/personas/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           archetype: aiFactoryArchetype,
+          styles: aiFactoryStyles,
+          base_model: isSdxlModel(sliders.base_model) ? sliders.base_model : "sdxl_realistic",
+          custom_loras: factoryCustomLoras,
           omd_key: omdKey || "",
           mcp_keys: mcpPayload,
           settings: { mcp_keys: mcpPayload }
@@ -3325,6 +3682,9 @@
       sliders: {
         base_model: effectiveBaseModel || "realism",
         detail: sliders.detail,
+        negative_prompt: sliders.negative_prompt || "",
+        horde_native: true,
+        custom_loras: customCivitaiLoras,
         styles: Array.isArray(sliders.styles) ? sliders.styles.filter((x) => x && x !== "none") : [],
         style: (sliders.styles && sliders.styles.length > 0) ? sliders.styles[0] : "none",
         style_weights: sliders.style_weights || {},
@@ -4570,12 +4930,17 @@
       showDirectorPanel = false;
       return;
     }
+    if (!canShowDirectorStoryboard) {
+      directorTab = "prompt";
+    }
     showDirectorPanel = !showDirectorPanel;
     try {
       localStorage.setItem("krea_director_open_v1", showDirectorPanel ? "1" : "0");
     } catch (_) {}
     if (showDirectorPanel) {
-      loadSavedStories().catch(() => {});
+      if (canShowDirectorStoryboard) {
+        loadSavedStories().catch(() => {});
+      }
       scrollDirectorFeedToBottom();
       tick().then(() => {
         resizeDirectorTextarea();
@@ -6787,23 +7152,22 @@
                 <div class="advanced-setting-row">
                   <div class="setting-title-row">
                     <span class="setting-name">{$_("krea_steps", {}, "Шаги (Steps):")}</span>
-                    <span class="setting-val-badge">{sliders.steps} {studioEngineMode === "sdxl" ? "(DMD2)" : (sliders.steps <= 8 ? "(Turbo)" : "")}</span>
+                    <span class="setting-val-badge">{sliders.steps} {studioEngineMode === "sdxl" ? (sliders.steps <= 10 ? "(TurboMix)" : "(Karras)") : (sliders.steps <= 8 ? "(Turbo)" : "")}</span>
                   </div>
                   {#if studioEngineMode === "sdxl"}
                     <input
                       type="range"
-                      min="4"
-                      max="12"
-                      step="1"
+                      min="8"
+                      max="28"
+                      step="2"
                       bind:value={sliders.steps}
-                      on:input={() => { sliders = { ...sliders }; saveLocalSliders(sliders); }}
+                      on:input={() => { sliders.horde_native = true; sliders = { ...sliders }; saveLocalSliders(sliders); }}
                       class="slider-input advanced-slider"
                     />
                     <div class="setting-subtext">
-                      <span>4 ({$_("krea_steps_fast", {}, "Быстро")})</span>
-                      <span>6 (DMD2)</span>
-                      <span>8</span>
-                      <span>12 (Max)</span>
+                      <span>8 (Turbo)</span>
+                      <span>18 ({$_("krea_steps_quality", {}, "Чётко")})</span>
+                      <span>28 (Max)</span>
                     </div>
                   {:else}
                     <input
@@ -6833,17 +7197,17 @@
                   {#if studioEngineMode === "sdxl"}
                     <input
                       type="range"
-                      min="1.0"
-                      max="2.2"
-                      step="0.1"
+                      min="2.0"
+                      max="7.0"
+                      step="0.5"
                       bind:value={sliders.cfg}
-                      on:input={() => { sliders = { ...sliders }; saveLocalSliders(sliders); }}
+                      on:input={() => { sliders.horde_native = true; sliders = { ...sliders }; saveLocalSliders(sliders); }}
                       class="slider-input advanced-slider"
                     />
                     <div class="setting-subtext">
-                      <span>1.0 (DMD2)</span>
-                      <span>1.5</span>
-                      <span>2.0 (Max)</span>
+                      <span>2.0 (Turbo)</span>
+                      <span>5.0 (SDXL)</span>
+                      <span>7.0 (Max)</span>
                     </div>
                   {:else}
                     <input
@@ -6863,19 +7227,42 @@
                     </div>
                   {/if}
                 </div>
+
+                <!-- Setting 4: Negative Prompt -->
+                <div class="advanced-setting-row">
+                  <div class="setting-title-row">
+                    <span class="setting-name">{$_("krea_negative_prompt_label", {}, "Negative prompt:")}</span>
+                    {#if sliders.negative_prompt}
+                      <button
+                        type="button"
+                        class="popup-reset-link"
+                        on:click={() => { sliders.negative_prompt = ""; sliders = { ...sliders }; saveLocalSliders(sliders); }}
+                      >
+                        {$_("krea_clear", {}, "Clear")}
+                      </button>
+                    {/if}
+                  </div>
+                  <textarea
+                    rows="2"
+                    class="negative-prompt-textarea"
+                    placeholder={$_("krea_negative_prompt_placeholder", {}, "Exclude details (e.g. glasses, hat, dark background)...")}
+                    bind:value={sliders.negative_prompt}
+                    on:input={() => { sliders = { ...sliders }; saveLocalSliders(sliders); }}
+                  ></textarea>
+                </div>
               </div>
 
               <div class="popup-menu-footer">
                 <span class="popup-count-hint">
                   {$_("krea_model_label", {}, "Модель:")}
                   {#if sliders.base_model === "sdxl_realistic"}
-                    Realistic (DMD2)
+                    Juggernaut XL
                   {:else if sliders.base_model === "sdxl_perfect"}
-                    Perfect (DMD2)
+                    CyberRealistic Pony
                   {:else if sliders.base_model === "sdxl_fantasy"}
-                    Fantasy (DMD2)
+                    Illustrious XL
                   {:else if sliders.base_model === "sdxl_tooned"}
-                    Tooned (DMD2)
+                    Nova Anime XL
                   {:else if sliders.base_model === "anima"}
                     {$_("krea_anima", {}, "Анима")}
                   {:else if sliders.base_model === "semi_realism"}
@@ -7053,13 +7440,13 @@
               <span>{$_("krea_base_model", {}, "Базовая модель")}</span>
               <span class="model-pill-hint">
                 {#if sliders.base_model === "sdxl_realistic"}
-                  CyberRealistic XL
+                  Juggernaut XL
                 {:else if sliders.base_model === "sdxl_perfect"}
-                  CyberPony XL
+                  CyberRealistic Pony
                 {:else if sliders.base_model === "sdxl_fantasy"}
                   Illustrious XL
                 {:else if sliders.base_model === "sdxl_tooned"}
-                  Pony Semi-Real
+                  Nova Anime XL
                 {:else if sliders.base_model === "anima"}
                   Anima V1.1
                 {:else if sliders.base_model === "semi_realism"}
@@ -7076,7 +7463,7 @@
                   class="pill-btn"
                   class:active={sliders.base_model === "sdxl_realistic" || sliders.base_model === "sdxl"}
                   on:click={() => setBaseModel("sdxl_realistic")}
-                  title={$_("sdxl_realistic_title", {}, "Realistic (CyberRealistic XL) — candid photography, natural light & skin texture")}
+                  title={$_("sdxl_realistic_title", {}, "Realistic (Juggernaut XL): candid photography, natural light & skin texture")}
                 >
                   <span class="pill-icon">📸</span>
                   <span>Realistic</span>
@@ -7086,7 +7473,7 @@
                   class="pill-btn"
                   class:active={sliders.base_model === "sdxl_perfect"}
                   on:click={() => setBaseModel("sdxl_perfect")}
-                  title={$_("sdxl_perfect_title", {}, "Perfect (CyberPony XL) — expressive anatomy, vivid looks & dynamic angles")}
+                  title={$_("sdxl_perfect_title", {}, "Perfect (CyberRealistic Pony): expressive anatomy, vivid looks & dynamic angles")}
                 >
                   <span class="pill-icon">💎</span>
                   <span>Perfect</span>
@@ -7096,7 +7483,7 @@
                   class="pill-btn"
                   class:active={sliders.base_model === "sdxl_fantasy"}
                   on:click={() => setBaseModel("sdxl_fantasy")}
-                  title={$_("sdxl_fantasy_title", {}, "Fantasy (CyberIllustrious XL) — fantasy, anime & painterly illustration")}
+                  title={$_("sdxl_fantasy_title", {}, "Fantasy (Illustrious XL): fantasy, anime & painterly illustration")}
                 >
                   <span class="pill-icon">🔮</span>
                   <span>Fantasy</span>
@@ -7106,7 +7493,7 @@
                   class="pill-btn"
                   class:active={sliders.base_model === "sdxl_tooned"}
                   on:click={() => setBaseModel("sdxl_tooned")}
-                  title={$_("sdxl_tooned_title", {}, "Tooned (CyberPony Semi-Real) — stylized 2.5D semi-realism")}
+                  title={$_("sdxl_tooned_title", {}, "Tooned (Nova Anime XL): crisp stylized anime & cel shading")}
                 >
                   <span class="pill-icon">🎨</span>
                   <span>Tooned</span>
@@ -7150,7 +7537,7 @@
           </div>
         </div>
 
-        <!-- Card 2: Art Style (Multi-select with inline LoRA sliders) -->
+        <!-- Card 2: Art Style (Multi-select with CivitAI thumbnails & inline LoRA sliders) -->
         <div class="param-card style-card">
           <div class="dropdown-control style-dropdown-control" class:active={showStyleDropdown}>
             <span class="select-label">{$_("krea_art_style", {}, "Стиль арта:")}</span>
@@ -7165,7 +7552,12 @@
                 if (showStyleDropdown) showArchetypeDropdown = false;
               }}
             >
-              <span class="trigger-label">{activeStyleLabel}</span>
+              <span class="trigger-label-with-thumb">
+                {#if activeStyleObjs[0]?.image_url}
+                  <img src={activeStyleObjs[0].image_url} alt="" class="lora-thumb-mini" loading="lazy" />
+                {/if}
+                <span class="trigger-label">{activeStyleLabel}</span>
+              </span>
               <svg class="chevron" class:open={showStyleDropdown} viewBox="0 0 20 20" fill="currentColor" width="13" height="13">
                 <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/>
               </svg>
@@ -7176,16 +7568,27 @@
               <!-- svelte-ignore a11y-no-static-element-interactions -->
               <div class="dropdown-popup-menu style-popup" transition:fade={{ duration: 100 }} on:click|stopPropagation>
                 <div class="popup-menu-header">
-                  <span>{$_("krea_image_style", {}, "Стили изображения / LoRA")}</span>
-                  {#if (sliders.styles || []).length > 0}
-                    <button
-                      type="button"
-                      class="popup-reset-link"
-                      on:click={() => { sliders.styles = []; sliders.style = "none"; sliders = { ...sliders }; saveLocalSliders(sliders); }}
-                    >
-                      {$_("krea_reset", {}, "Сбросить")}
-                    </button>
-                  {/if}
+                  <span>{$_("krea_image_style", {}, "Styles & Concepts (LoRA)")}</span>
+                  <div class="popup-header-actions">
+                    {#if currentBaseCategory === "sdxl"}
+                      <button
+                        type="button"
+                        class="civitai-add-inline-btn"
+                        on:click={() => openCivitaiLoraModal("style", "toolbar")}
+                      >
+                        + CivitAI
+                      </button>
+                    {/if}
+                    {#if (sliders.styles || []).length > 0}
+                      <button
+                        type="button"
+                        class="popup-reset-link"
+                        on:click={() => { sliders.styles = []; sliders.style = "none"; sliders = { ...sliders }; saveLocalSliders(sliders); }}
+                      >
+                        {$_("krea_reset", {}, "Сбросить")}
+                      </button>
+                    {/if}
+                  </div>
                 </div>
                 <div class="popup-options-list">
                   <button
@@ -7202,7 +7605,7 @@
                       {/if}
                     </div>
                     <div class="option-main">
-                      <span class="option-label">✨ {$_("krea_free_style", {}, "Свободный")}</span>
+                      <span class="option-label">{$_("krea_free_style", {}, "Free")}</span>
                       <span class="option-desc">{$_("krea_free_style_desc", {}, "Без LoRA (управляется текстом промпта)")}</span>
                     </div>
                   </button>
@@ -7230,10 +7633,27 @@
                               </svg>
                             {/if}
                           </div>
+                          {#if sp.image_url}
+                            <img src={sp.image_url} alt="" class="lora-thumb-row" loading="lazy" />
+                          {/if}
                           <div class="option-main">
-                            <span class="option-label">{sp.label}</span>
+                            <span class="option-label">
+                              {sp.label}
+                              {#if sp.base_model}
+                                <span class="lora-base-tag">{sp.base_model.replace(" 1.0", "")}</span>
+                              {/if}
+                            </span>
                             <span class="option-desc">{sp.desc}</span>
                           </div>
+                          {#if sp.is_custom}
+                            <!-- svelte-ignore a11y-click-events-have-key-events -->
+                            <!-- svelte-ignore a11y-no-static-element-interactions -->
+                            <span
+                              class="custom-lora-remove-btn"
+                              title={$_("krea_civitai_remove_lora", {}, "Remove from list")}
+                              on:click={(ev) => removeCustomCivitaiLora(sp.id, ev)}
+                            >✕</span>
+                          {/if}
                         </button>
                         {#if isChecked && sp.lora}
                           <!-- svelte-ignore a11y-click-events-have-key-events -->
@@ -7258,7 +7678,17 @@
                   {/each}
                 </div>
                 <div class="popup-menu-footer">
-                  <span class="popup-count-hint">{$_("krea_selected_count", { count: (sliders.styles || []).length }, `Выбрано: ${(sliders.styles || []).length}`)}</span>
+                  {#if currentBaseCategory === "sdxl"}
+                    <button
+                      type="button"
+                      class="civitai-footer-btn"
+                      on:click={() => openCivitaiLoraModal("style", "toolbar")}
+                    >
+                      {$_("krea_civitai_add_style_btn", {}, "+ Add Style / Concept from CivitAI")}
+                    </button>
+                  {:else}
+                    <span class="popup-count-hint">{$_("krea_selected_count", { count: (sliders.styles || []).length }, `Выбрано: ${(sliders.styles || []).length}`)}</span>
+                  {/if}
                   <button
                     type="button"
                     class="popup-done-btn"
@@ -7272,10 +7702,10 @@
           </div>
         </div>
 
-        <!-- Card 3: Archetype / Character LoRA (Multi-select with inline LoRA sliders) -->
+        <!-- Card 3: Archetype / Character LoRA (Multi-select with CivitAI thumbnails & inline LoRA sliders) -->
         <div class="param-card archetype-card">
           <div class="dropdown-control archetype-dropdown-control" class:active={showArchetypeDropdown}>
-            <span class="select-label">{$_("krea_archetype_lora", {}, "Типаж / LoRA:")}</span>
+            <span class="select-label">{$_("krea_archetype_lora", {}, "Character / LoRA:")}</span>
             <button
               type="button"
               class="dropdown-trigger-btn"
@@ -7287,7 +7717,12 @@
                 if (showArchetypeDropdown) showStyleDropdown = false;
               }}
             >
-              <span class="trigger-label">{activeArchetypeLabel}</span>
+              <span class="trigger-label-with-thumb">
+                {#if activeArchetypeObjs[0]?.image_url}
+                  <img src={activeArchetypeObjs[0].image_url} alt="" class="lora-thumb-mini" loading="lazy" />
+                {/if}
+                <span class="trigger-label">{activeArchetypeLabel}</span>
+              </span>
               <svg class="chevron" class:open={showArchetypeDropdown} viewBox="0 0 20 20" fill="currentColor" width="13" height="13">
                 <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/>
               </svg>
@@ -7298,16 +7733,27 @@
               <!-- svelte-ignore a11y-no-static-element-interactions -->
               <div class="dropdown-popup-menu archetype-popup" transition:fade={{ duration: 100 }} on:click|stopPropagation>
                 <div class="popup-menu-header">
-                  <span>{$_("krea_appearance_lora", {}, "Типажи внешности / LoRA")}</span>
-                  {#if (sliders.archetypes || []).length > 0}
-                    <button
-                      type="button"
-                      class="popup-reset-link"
-                      on:click={() => { sliders.archetypes = []; sliders.archetype = null; sliders = { ...sliders }; saveLocalSliders(sliders); }}
-                    >
-                      {$_("krea_reset", {}, "Сбросить")}
-                    </button>
-                  {/if}
+                  <span>{$_("krea_appearance_lora", {}, "Characters (LoRA)")}</span>
+                  <div class="popup-header-actions">
+                    {#if currentBaseCategory === "sdxl"}
+                      <button
+                        type="button"
+                        class="civitai-add-inline-btn"
+                        on:click={() => openCivitaiLoraModal("character", "toolbar")}
+                      >
+                        + CivitAI
+                      </button>
+                    {/if}
+                    {#if (sliders.archetypes || []).length > 0}
+                      <button
+                        type="button"
+                        class="popup-reset-link"
+                        on:click={() => { sliders.archetypes = []; sliders.archetype = null; sliders = { ...sliders }; saveLocalSliders(sliders); }}
+                      >
+                        {$_("krea_reset", {}, "Сбросить")}
+                      </button>
+                    {/if}
+                  </div>
                 </div>
                 <div class="popup-options-list">
                   <button
@@ -7324,7 +7770,7 @@
                       {/if}
                     </div>
                     <div class="option-main">
-                      <span class="option-label">✨ {$_("krea_free_style", {}, "Свободный")}</span>
+                      <span class="option-label">{$_("krea_free_style", {}, "Free")}</span>
                       <span class="option-desc">{$_("krea_free_style_desc", {}, "Без LoRA (управляется текстом промпта)")}</span>
                     </div>
                   </button>
@@ -7350,10 +7796,27 @@
                             </svg>
                           {/if}
                         </div>
+                        {#if ap.image_url}
+                          <img src={ap.image_url} alt="" class="lora-thumb-row" loading="lazy" />
+                        {/if}
                         <div class="option-main">
-                          <span class="option-label">{ap.label}</span>
+                          <span class="option-label">
+                            {ap.label}
+                            {#if ap.base_model}
+                              <span class="lora-base-tag">{ap.base_model.replace(" 1.0", "")}</span>
+                            {/if}
+                          </span>
                           <span class="option-desc">{ap.desc}</span>
                         </div>
+                        {#if ap.is_custom}
+                          <!-- svelte-ignore a11y-click-events-have-key-events -->
+                          <!-- svelte-ignore a11y-no-static-element-interactions -->
+                          <span
+                            class="custom-lora-remove-btn"
+                            title={$_("krea_civitai_remove_lora", {}, "Remove from list")}
+                            on:click={(ev) => removeCustomCivitaiLora(ap.id, ev)}
+                          >✕</span>
+                        {/if}
                       </button>
                       {#if isChecked && ap.lora}
                         <!-- svelte-ignore a11y-click-events-have-key-events -->
@@ -7377,7 +7840,17 @@
                   {/each}
                 </div>
                 <div class="popup-menu-footer">
-                  <span class="popup-count-hint">{$_("krea_selected_count", { count: (sliders.archetypes || []).length }, `Выбрано: ${(sliders.archetypes || []).length}`)}</span>
+                  {#if currentBaseCategory === "sdxl"}
+                    <button
+                      type="button"
+                      class="civitai-footer-btn"
+                      on:click={() => openCivitaiLoraModal("character", "toolbar")}
+                    >
+                      {$_("krea_civitai_add_char_btn", {}, "+ Add Character from CivitAI")}
+                    </button>
+                  {:else}
+                    <span class="popup-count-hint">{$_("krea_selected_count", { count: (sliders.archetypes || []).length }, `Выбрано: ${(sliders.archetypes || []).length}`)}</span>
+                  {/if}
                   <button
                     type="button"
                     class="popup-done-btn"
@@ -7523,6 +7996,9 @@
         {#each activeStyleObjs as sp (sp.id)}
           {#if sp.id !== "none"}
             <div class="active-pill style-pill" in:fade={{ duration: 100 }} title={sp.desc}>
+              {#if sp.image_url}
+                <img src={sp.image_url} alt="" class="pill-lora-thumb" loading="lazy" />
+              {/if}
               <span class="pill-text">{sp.label} {sliders.style_weights?.[sp.id] !== undefined ? `(${sliders.style_weights[sp.id]})` : (sp.strength ? `(${sp.strength})` : "")}</span>
               <button
                 type="button"
@@ -7536,6 +8012,9 @@
 
         {#each activeArchetypeObjs as ap (ap.id)}
           <div class="active-pill archetype-pill" in:fade={{ duration: 100 }} title={ap.desc}>
+            {#if ap.image_url}
+              <img src={ap.image_url} alt="" class="pill-lora-thumb" loading="lazy" />
+            {/if}
             <span class="pill-text">{ap.label} {sliders.archetype_weights?.[ap.id] !== undefined ? `(${sliders.archetype_weights[ap.id]})` : (ap.strength ? `(${ap.strength})` : "")}</span>
             <button
               type="button"
@@ -8056,27 +8535,29 @@
         <button type="button" class="director-close-btn" title={$_("krea_dir_hide_panel", {}, "Hide panel")} on:click={toggleDirectorPanel}>✕</button>
       </div>
 
-      <div class="director-mode-tabs">
-        <button
-          type="button"
-          class="director-tab-btn"
-          class:active={directorTab === "prompt"}
-          on:click={() => { directorTab = "prompt"; scrollDirectorFeedToBottom(); }}
-        >
-          ✍️ {$_("krea_dir_tab_prompt", {}, "Prompt Co-Pilot")}
-        </button>
-        <button
-          type="button"
-          class="director-tab-btn"
-          class:active={directorTab === "storyboard"}
-          on:click={() => { directorTab = "storyboard"; loadSavedStories().catch(() => {}); }}
-        >
-          🎞️ {$_("krea_storyboard_tab", {}, "Storyboard")}
-          {#if storyScenes.length > 0}
-            <span class="director-tab-badge">{storyScenes.length}</span>
-          {/if}
-        </button>
-      </div>
+      {#if canShowDirectorStoryboard}
+        <div class="director-mode-tabs">
+          <button
+            type="button"
+            class="director-tab-btn"
+            class:active={directorTab === "prompt"}
+            on:click={() => { directorTab = "prompt"; scrollDirectorFeedToBottom(); }}
+          >
+            ✍️ {$_("krea_dir_tab_prompt", {}, "Prompt Co-Pilot")}
+          </button>
+          <button
+            type="button"
+            class="director-tab-btn"
+            class:active={directorTab === "storyboard"}
+            on:click={() => { directorTab = "storyboard"; loadSavedStories().catch(() => {}); }}
+          >
+            🎞️ {$_("krea_storyboard_tab", {}, "Storyboard")}
+            {#if storyScenes.length > 0}
+              <span class="director-tab-badge">{storyScenes.length}</span>
+            {/if}
+          </button>
+        </div>
+      {/if}
 
       {#if directorTab === "prompt"}
         <!-- TAB 1: PROMPT CO-PILOT -->
@@ -8767,15 +9248,32 @@
                 </div>
 
                 <div>
-                  <span style="font-size: 11.5px; opacity: 0.85;">{$_("krea_persona_archetypes", {}, "Character LoRAs / Archetypes:")}</span>
-                  <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px;">
+                  <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                    <span style="font-size: 11.5px; opacity: 0.85;">{$_("krea_persona_archetypes", {}, "Character LoRAs:")}</span>
+                    {#if personaModalEngineCat === "sdxl"}
+                      <button
+                        type="button"
+                        class="civitai-add-inline-btn"
+                        on:click={() => openCivitaiLoraModal("character", "persona_form")}
+                      >
+                        {$_("krea_civitai_add_char_btn", {}, "+ Add Character from CivitAI")}
+                      </button>
+                    {/if}
+                  </div>
+                  <div class="persona-lora-chip-grid">
                     {#each personaModalArchetypes as arch}
                       <button
                         type="button"
+                        class="persona-lora-chip-btn"
+                        class:active={personaFormArchetypes.includes(arch.id)}
                         on:click={() => togglePersonaFormArchetype(arch.id)}
-                        style="font-size: 12px; padding: 4px 9px; border-radius: 7px; cursor: pointer; border: 1px solid {personaFormArchetypes.includes(arch.id) ? '#6c8cff' : 'rgba(255,255,255,0.14)'}; background: {personaFormArchetypes.includes(arch.id) ? 'rgba(108,140,255,0.22)' : 'rgba(0,0,0,0.2)'}; color: inherit;"
                       >
-                        {arch.icon || ""} {arch.name}
+                        {#if arch.image_url}
+                          <img src={arch.image_url} alt="" class="persona-chip-thumb" loading="lazy" />
+                        {:else if arch.icon}
+                          <span>{arch.icon}</span>
+                        {/if}
+                        <span>{arch.name}</span>
                       </button>
                     {/each}
                   </div>
@@ -8797,15 +9295,32 @@
                 </div>
 
                 <div>
-                  <span style="font-size: 11.5px; opacity: 0.85;">{$_("krea_persona_styles", {}, "Style LoRAs (optional):")}</span>
-                  <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px;">
+                  <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                    <span style="font-size: 11.5px; opacity: 0.85;">{$_("krea_persona_styles", {}, "Style / Concept LoRAs (optional):")}</span>
+                    {#if personaModalEngineCat === "sdxl"}
+                      <button
+                        type="button"
+                        class="civitai-add-inline-btn"
+                        on:click={() => openCivitaiLoraModal("style", "persona_form")}
+                      >
+                        {$_("krea_civitai_add_style_short", {}, "+ Add Style from CivitAI")}
+                      </button>
+                    {/if}
+                  </div>
+                  <div class="persona-lora-chip-grid">
                     {#each personaModalStyles as st}
                       <button
                         type="button"
+                        class="persona-lora-chip-btn"
+                        class:active={personaFormStyles.includes(st.id)}
                         on:click={() => togglePersonaFormStyle(st.id)}
-                        style="font-size: 12px; padding: 4px 9px; border-radius: 7px; cursor: pointer; border: 1px solid {personaFormStyles.includes(st.id) ? '#6c8cff' : 'rgba(255,255,255,0.14)'}; background: {personaFormStyles.includes(st.id) ? 'rgba(108,140,255,0.22)' : 'rgba(0,0,0,0.2)'}; color: inherit;"
                       >
-                        {st.icon || ""} {st.name}
+                        {#if st.image_url}
+                          <img src={st.image_url} alt="" class="persona-chip-thumb" loading="lazy" />
+                        {:else if st.icon}
+                          <span>{st.icon}</span>
+                        {/if}
+                        <span>{st.name}</span>
                       </button>
                     {/each}
                   </div>
@@ -9078,20 +9593,80 @@
 
         <div class="modal-body">
           <div class="modal-field">
-            <label>{$_("krea_select_archetype", {}, "Выберите типаж / архетип:")}</label>
-            <div class="archetype-grid">
+            <div class="factory-section-head">
+              <label style="margin: 0;">{$_("krea_select_archetype", {}, "Character LoRA:")}</label>
+              {#if !canShowStudioTab || studioEngineMode === "sdxl"}
+                <button
+                  type="button"
+                  class="civitai-add-inline-btn"
+                  on:click={() => openCivitaiLoraModal("character", "factory")}
+                >
+                  {$_("krea_civitai_add_char_btn", {}, "+ Add Character from CivitAI")}
+                </button>
+              {/if}
+            </div>
+            <div class="archetype-grid visual-lora-grid">
               {#each aiArchetypes as arch}
                 <button
-                  class="archetype-card"
+                  type="button"
+                  class="archetype-card visual-arch-card"
                   class:active={aiFactoryArchetype === arch.id}
                   on:click={() => (aiFactoryArchetype = arch.id)}
                 >
-                  <span class="arch-name">{arch.name}</span>
-                  <span class="arch-hint">{arch.hint}</span>
+                  {#if arch.image_url}
+                    <img src={arch.image_url} alt="" class="factory-lora-thumb" loading="lazy" />
+                  {/if}
+                  <div class="factory-lora-meta">
+                    <span class="arch-name">{arch.name}</span>
+                    <span class="arch-hint">{arch.hint}</span>
+                  </div>
                 </button>
               {/each}
+              {#if !canShowStudioTab || studioEngineMode === "sdxl"}
+                <button
+                  type="button"
+                  class="archetype-card add-civitai-factory-card"
+                  on:click={() => openCivitaiLoraModal("character", "factory")}
+                >
+                  <span class="add-plus-circle">+</span>
+                  <span class="arch-name">{$_("krea_civitai_add_card_title", {}, "Add from CivitAI")}</span>
+                  <span class="arch-hint">{$_("krea_civitai_add_card_hint", {}, "Browse SDXL character LoRAs")}</span>
+                </button>
+              {/if}
             </div>
           </div>
+
+          {#if aiStyles.length > 0}
+            <div class="modal-field">
+              <div class="factory-section-head">
+                <label style="margin: 0;">{$_("krea_persona_styles", {}, "Style / Concept LoRAs (optional):")}</label>
+                {#if !canShowStudioTab || studioEngineMode === "sdxl"}
+                  <button
+                    type="button"
+                    class="civitai-add-inline-btn"
+                    on:click={() => openCivitaiLoraModal("style", "factory")}
+                  >
+                    {$_("krea_civitai_add_style_short", {}, "+ Add Style from CivitAI")}
+                  </button>
+                {/if}
+              </div>
+              <div class="persona-lora-chip-grid">
+                {#each aiStyles as st}
+                  <button
+                    type="button"
+                    class="persona-lora-chip-btn"
+                    class:active={aiFactoryStyles.includes(st.id)}
+                    on:click={() => toggleAiFactoryStyle(st.id)}
+                  >
+                    {#if st.image_url}
+                      <img src={st.image_url} alt="" class="persona-chip-thumb" loading="lazy" />
+                    {/if}
+                    <span>{st.name}</span>
+                  </button>
+                {/each}
+              </div>
+            </div>
+          {/if}
 
           <div class="ai-factory-action-row">
             <button
@@ -9102,7 +9677,7 @@
             >
               {#if isGeneratingAiPersona}
                 <div class="spinner"></div>
-                <span>{$_("krea_generating_face", {}, "Генерирую внешность (~4s)...")}</span>
+                <span>{$_("krea_creating", {}, "Generating portrait...")}</span>
               {:else}
                 <span>🎲 {$_("krea_factory_generate_btn", {}, "Сгенерировать паспорт и портрет")}</span>
               {/if}
@@ -9147,6 +9722,126 @@
               <button class="save-btn" on:click={() => saveAiGeneratedPersona(false)}>
                 💾 {$_("krea_save_to_personas", {}, "Сохранить в мои персоны")}
               </button>
+            </div>
+          {/if}
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Modal: CivitAI LoRA Browser (Characters & Styles/Concepts) -->
+  {#if showCivitaiLoraModal}
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
+    <div class="modal-backdrop" on:click={() => (showCivitaiLoraModal = false)}>
+      <!-- svelte-ignore a11y-click-events-have-key-events -->
+      <!-- svelte-ignore a11y-no-static-element-interactions -->
+      <div class="persona-modal-card civitai-browser-modal" on:click|stopPropagation>
+        <div class="modal-header">
+          <div class="civitai-browser-head-left">
+            <h3>{$_("krea_civitai_modal_title", {}, "Add SDXL LoRA from CivitAI")}</h3>
+            <div class="civitai-mode-pills">
+              <button
+                type="button"
+                class="civitai-mode-pill"
+                class:active={civitaiModalMode === "character"}
+                on:click={() => switchCivitaiModalMode("character")}
+              >
+                {$_("krea_civitai_tab_characters", {}, "Characters")}
+              </button>
+              <button
+                type="button"
+                class="civitai-mode-pill"
+                class:active={civitaiModalMode === "style"}
+                on:click={() => switchCivitaiModalMode("style")}
+              >
+                {$_("krea_civitai_tab_styles", {}, "Styles / Concepts")}
+              </button>
+            </div>
+          </div>
+          <button class="modal-close-btn" on:click={() => (showCivitaiLoraModal = false)}>✕</button>
+        </div>
+
+        <div class="civitai-search-toolbar">
+          <input
+            type="text"
+            class="modal-input civitai-search-input"
+            placeholder={civitaiModalMode === "character"
+              ? $_("krea_civitai_search_char_ph", {}, "Search character name or paste CivitAI model link / ID...")
+              : $_("krea_civitai_search_style_ph", {}, "Search art style, aesthetic, lighting, or paste CivitAI link / ID...")}
+            bind:value={civitaiSearchQuery}
+            on:keydown={(e) => { if (e.key === "Enter") searchCivitaiCatalog(); }}
+          />
+          <select
+            class="select-styled civitai-sort-select"
+            bind:value={civitaiSearchSort}
+            on:change={searchCivitaiCatalog}
+          >
+            <option value="Most Downloaded">{$_("krea_civitai_sort_downloads", {}, "Most Downloaded")}</option>
+            <option value="Highest Rated">{$_("krea_civitai_sort_rated", {}, "Highest Rated")}</option>
+            <option value="Newest">{$_("krea_civitai_sort_newest", {}, "Newest")}</option>
+          </select>
+          <button
+            type="button"
+            class="save-btn civitai-search-go-btn"
+            disabled={isSearchingCivitaiLoras}
+            on:click={searchCivitaiCatalog}
+          >
+            {isSearchingCivitaiLoras ? "..." : $_("krea_civitai_search_btn", {}, "Search")}
+          </button>
+        </div>
+
+        <div class="modal-body civitai-browser-body">
+          {#if isSearchingCivitaiLoras}
+            <div class="civitai-browser-empty">
+              <div class="spinner"></div>
+              <span>{$_("krea_civitai_searching", {}, "Searching SDXL-compatible CivitAI LoRAs...")}</span>
+            </div>
+          {:else if civitaiSearchError}
+            <div class="civitai-browser-empty">
+              <span>{$_("krea_civitai_error", { error: civitaiSearchError }, `Could not query CivitAI: ${civitaiSearchError}`)}</span>
+            </div>
+          {:else if civitaiSearchResults.length === 0}
+            <div class="civitai-browser-empty">
+              <span>{$_("krea_civitai_empty", {}, "No matching SDXL LoRAs (under 400 MB) found. Try another keyword or paste a CivitAI link.")}</span>
+            </div>
+          {:else}
+            <div class="civitai-results-grid">
+              {#each civitaiSearchResults as item (item.id)}
+                {@const alreadyAdded = isCustomLoraAdded(item.id)}
+                <div class="civitai-lora-card" class:added={alreadyAdded}>
+                  <div class="civitai-card-media">
+                    {#if item.image_url}
+                      <img src={item.image_url} alt={item.name} loading="lazy" />
+                    {/if}
+                    <span class="civitai-card-base">{item.base_model.replace(" 1.0", "")}</span>
+                    <span class="civitai-card-size">{Math.round(item.size_mb)} MB</span>
+                  </div>
+                  <div class="civitai-card-info">
+                    <div class="civitai-card-title" title={item.name}>{item.name}</div>
+                    {#if item.trained_words && item.trained_words.length > 0}
+                      <div class="civitai-card-trigger" title={item.trained_words.join(", ")}>
+                        {$_("krea_civitai_trigger", {}, "Trigger")}: {item.trained_words[0]}
+                      </div>
+                    {:else}
+                      <div class="civitai-card-trigger muted">{$_("krea_civitai_no_trigger", {}, "No trigger word needed")}</div>
+                    {/if}
+                    <div class="civitai-card-actions">
+                      {#if item.url}
+                        <a href={item.url} target="_blank" rel="noopener noreferrer" class="civitai-ext-link" title={$_("krea_civitai_open_link", {}, "View on CivitAI")}>↗</a>
+                      {/if}
+                      <button
+                        type="button"
+                        class="civitai-pick-btn"
+                        class:added={alreadyAdded}
+                        on:click={() => addCustomCivitaiLora(item)}
+                      >
+                        {alreadyAdded ? $_("krea_civitai_select_btn", {}, "✓ Select") : $_("krea_civitai_add_select_btn", {}, "+ Add & Select")}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              {/each}
             </div>
           {/if}
         </div>
@@ -12579,1369 +13274,6 @@
   }
   .krea-studio-root.light-theme .advanced-popup {
     background: #ffffff;
-    border-color: #F2E5ED;
-    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.05);
-  }
-  .krea-studio-root.light-theme .advanced-popup .setting-name {
-    color: #1A121D;
-  }
-  .krea-studio-root.light-theme .advanced-popup .setting-val-badge {
-    color: #6d28d9;
-    background: #ede9fe;
-    border-color: #c4b5fd;
-  }
-  .krea-studio-root.light-theme .advanced-popup .setting-subtext {
-    color: #7D6376;
-  }
-  .krea-studio-root.light-theme .advanced-popup .advanced-slider {
-    background: #E6D3DF;
-    accent-color: #7c3aed;
-  }
-  .krea-studio-root.light-theme .param-card {
-    background: #FCF7FA;
-    border-color: #F2E5ED;
-  }
-  .krea-studio-root.light-theme .persona-pill {
-    background: #ede9fe;
-    border-color: #c4b5fd;
-    color: #5b21b6;
-  }
-  .krea-studio-root.light-theme .style-pill {
-    background: #FCE7F3;
-    border-color: #F9A8D4;
-    color: #9D174D;
-  }
-  .krea-studio-root.light-theme .archetype-pill {
-    background: #fce7f3;
-    border-color: var(--accent-hover);
-    color: #9d174d;
-  }
-  .krea-studio-root.light-theme .tokens-preview-panel {
-    background: #ffffff;
-    border-color: #E6D3DF;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
-  }
-  .krea-studio-root.light-theme .preview-title {
-    color: #6d28d9;
-  }
-  .krea-studio-root.light-theme .token-text {
-    color: #352339;
-  }
-  .krea-studio-root.light-theme .prompt-textarea {
-    background: #ffffff;
-    border-color: #E6D3DF;
-    color: #0F0A10;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-  }
-  .krea-studio-root.light-theme .prompt-textarea::placeholder {
-    color: #998094;
-  }
-  .krea-studio-root.light-theme .prompt-textarea:focus {
-    border-color: #8b5cf6;
-    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15);
-  }
-  .krea-studio-root.light-theme .attached-refs-bar {
-    background: #ffffff;
-    border-color: #F2E5ED;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-  }
-  .krea-studio-root.light-theme .refs-label {
-    color: #7D6376;
-  }
-  .krea-studio-root.light-theme .ref-chip {
-    background: #F7ECF2;
-    border-color: #E6D3DF;
-    color: #1A121D;
-  }
-  .krea-studio-root.light-theme .ref-chip.interactive:hover,
-  .krea-studio-root.light-theme .ref-chip.open {
-    background: #f5f3ff;
-    border-color: #8b5cf6;
-  }
-  .krea-studio-root.light-theme .ref-chip-weight {
-    background: #ede9fe;
-    color: #6d28d9;
-    border-color: #c4b5fd;
-  }
-  .krea-studio-root.light-theme .ref-weight-popover {
-    background: #ffffff;
-    border-color: #F2E5ED;
-    box-shadow: 0 14px 34px rgba(15, 10, 16, 0.14), 0 0 0 1px rgba(15, 10, 16, 0.04);
-  }
-  .krea-studio-root.light-theme .ref-popover-header {
-    border-bottom-color: #F7ECF2;
-  }
-  .krea-studio-root.light-theme .ref-popover-title {
-    color: #0F0A10;
-  }
-  .krea-studio-root.light-theme .ref-popover-close {
-    color: #7D6376;
-  }
-  .krea-studio-root.light-theme .ref-popover-close:hover {
-    color: #0F0A10;
-  }
-  .krea-studio-root.light-theme .ref-weight-popover .setting-name {
-    color: #1A121D;
-  }
-  .krea-studio-root.light-theme .ref-weight-popover .setting-val-badge {
-    color: #6d28d9;
-    background: #ede9fe;
-    border-color: #c4b5fd;
-  }
-  .krea-studio-root.light-theme .ref-weight-popover .setting-subtext {
-    color: #7D6376;
-  }
-  .krea-studio-root.light-theme .ref-weight-popover .advanced-slider {
-    background: #E6D3DF;
-    accent-color: #7c3aed;
-  }
-  .krea-studio-root.light-theme .add-ref-mini-btn {
-    background: #ffffff;
-    border-color: #E6D3DF;
-    color: #664D5F;
-  }
-  .krea-studio-root.light-theme .add-ref-mini-btn:hover {
-    background: #f5f3ff;
-    border-color: #7c3aed;
-    color: #7c3aed;
-  }
-  .krea-studio-root.light-theme .sdxl-ref-mode-badge {
-    background: #f5f3ff;
-    border-color: #ddd6fe;
-    color: #6d28d9;
-  }
-  .krea-studio-root.light-theme .sdxl-ref-mode-group {
-    background: #F7ECF2;
-    border-color: #F2E5ED;
-  }
-  .krea-studio-root.light-theme .sdxl-mode-pill {
-    color: #664D5F;
-  }
-  .krea-studio-root.light-theme .sdxl-mode-pill:hover {
-    color: #0F0A10;
-  }
-  .krea-studio-root.light-theme .sdxl-mode-pill.active {
-    background: #ffffff;
-    color: #6d28d9;
-    box-shadow: 0 1px 3px rgba(15, 10, 16, 0.08);
-  }
-  .krea-studio-root.light-theme .sdxl-face-target-group {
-    background: #F7ECF2;
-    border-color: #F2E5ED;
-  }
-  .krea-studio-root.light-theme .sdxl-target-pill {
-    color: #664D5F;
-  }
-  .krea-studio-root.light-theme .sdxl-target-pill:hover {
-    color: #0F0A10;
-  }
-  .krea-studio-root.light-theme .sdxl-target-pill.active {
-    background: #ffffff;
-    color: #6d28d9;
-    box-shadow: 0 1px 3px rgba(15, 10, 16, 0.08);
-  }
-  .krea-studio-root.light-theme .sdxl-duo-hint {
-    color: #7D6376;
-  }
-  .krea-studio-root.light-theme .prompts-popup {
-    background: #ffffff;
-    border-color: #F2E5ED;
-    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.12);
-  }
-  .krea-studio-root.light-theme .prompts-popup-header {
-    border-bottom-color: #F7ECF2;
-  }
-  .krea-studio-root.light-theme .prompts-header-title {
-    color: #0F0A10;
-  }
-  .krea-studio-root.light-theme .prompts-popup-close {
-    color: #7D6376;
-  }
-  .krea-studio-root.light-theme .prompts-popup-close:hover {
-    color: #0F0A10;
-  }
-  .krea-studio-root.light-theme .prompts-search-wrap {
-    border-bottom-color: #F7ECF2;
-  }
-  .krea-studio-root.light-theme .prompts-search-input {
-    background: #FCF7FA;
-    border-color: #E6D3DF;
-    color: #0F0A10;
-  }
-  .krea-studio-root.light-theme .prompt-item:hover {
-    background: #FCF7FA;
-  }
-  .krea-studio-root.light-theme .prompt-item-text {
-    color: #0F0A10;
-  }
-  .krea-studio-root.light-theme .prompt-item-meta {
-    color: #7D6376;
-  }
-  .krea-studio-root.light-theme .prompt-style-badge {
-    background: #ede9fe;
-    color: #7c3aed;
-  }
-  .krea-studio-root.light-theme .prompt-delete-btn {
-    color: #998094;
-  }
-  .krea-studio-root.light-theme .prompts-empty-state {
-    color: #7D6376;
-  }
-
-  /* Modal */
-  .krea-studio-root.light-theme .persona-modal-card {
-    background: #ffffff;
-    border-color: #F2E5ED;
-    color: #0F0A10;
-    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.15);
-  }
-  .krea-studio-root.light-theme .modal-header {
-    border-bottom-color: #F7ECF2;
-  }
-  .krea-studio-root.light-theme .modal-header h3 {
-    color: #0F0A10;
-  }
-  .krea-studio-root.light-theme .modal-close-btn {
-    color: #7D6376;
-  }
-  .krea-studio-root.light-theme .modal-close-btn:hover {
-    color: #0F0A10;
-  }
-  .krea-studio-root.light-theme .modal-field label {
-    color: #352339;
-  }
-  .krea-studio-root.light-theme .modal-input,
-  .krea-studio-root.light-theme .modal-textarea {
-    background: #FCF7FA;
-    border-color: #E6D3DF;
-    color: #0F0A10;
-  }
-  .krea-studio-root.light-theme .field-hint {
-    color: #7D6376;
-  }
-  .krea-studio-root.light-theme .archetype-card {
-    background: #FCF7FA;
-    border-color: #F2E5ED;
-  }
-  .krea-studio-root.light-theme .archetype-card:hover {
-    background: #F7ECF2;
-    border-color: #E6D3DF;
-  }
-  .krea-studio-root.light-theme .archetype-card.active {
-    background: #ede9fe;
-    border-color: #8b5cf6;
-  }
-  .krea-studio-root.light-theme .arch-name {
-    color: #0F0A10;
-  }
-  .krea-studio-root.light-theme .arch-hint {
-    color: #7D6376;
-  }
-  .krea-studio-root.light-theme .generated-persona-card {
-    background: #FCF7FA;
-    border-color: #F2E5ED;
-  }
-  .krea-studio-root.light-theme .avatar-generator-card {
-    background: #FCF7FA;
-    border-color: #F2E5ED;
-  }
-  .krea-studio-root.light-theme .archetype-select {
-    background: #ffffff;
-    border-color: #E6D3DF;
-    color: #0F0A10;
-  }
-  .krea-studio-root.light-theme .archetype-select option {
-    background: #ffffff;
-    color: #0F0A10;
-  }
-  .krea-studio-root.light-theme .avatar-empty-box {
-    background: #F7ECF2;
-    border-color: #E6D3DF;
-    color: #998094;
-  }
-  .krea-studio-root.light-theme .modal-footer {
-    background: #FCF7FA;
-    border-top-color: #F2E5ED;
-  }
-  .krea-studio-root.light-theme .cancel-btn {
-    border-color: #E6D3DF;
-    color: #664D5F;
-  }
-  .krea-studio-root.light-theme .cancel-btn:hover {
-    background: #F2E5ED;
-    color: #0F0A10;
-  }
-
-  /* ── Custom Confirmation Modal ─────────────────── */
-  .confirm-modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.75);
-    backdrop-filter: blur(6px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 10000;
-    padding: 16px;
-  }
-
-  .confirm-modal-box {
-    background: var(--bg-secondary, #1A121D);
-    border: 1px solid var(--border-color, #352339);
-    border-radius: 14px;
-    width: 440px;
-    max-width: 92vw;
-    padding: 24px;
-    box-shadow: 0 20px 45px rgba(0, 0, 0, 0.6);
-    color: #F7ECF2;
-    font-family: inherit;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .confirm-modal-header {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 14px;
-  }
-
-  .confirm-modal-header h3 {
-    margin: 0;
-    font-size: 1.15rem;
-    font-weight: 600;
-    color: #F7ECF2;
-  }
-
-  .confirm-danger-icon {
-    color: #f85149;
-    flex-shrink: 0;
-  }
-
-  .confirm-modal-body p {
-    margin: 0 0 8px 0;
-    font-size: 0.95rem;
-    line-height: 1.5;
-    color: #D4BECF;
-    word-break: break-word;
-    overflow-wrap: anywhere;
-  }
-
-  .confirm-modal-body strong {
-    word-break: break-word;
-    overflow-wrap: anywhere;
-    color: #ffffff;
-    font-weight: 600;
-  }
-
-  .confirm-modal-subtext {
-    font-size: 0.85rem !important;
-    color: #998094 !important;
-    margin-bottom: 0 !important;
-  }
-
-  .confirm-modal-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
-    margin-top: 22px;
-  }
-
-  .confirm-btn {
-    padding: 9px 18px;
-    border-radius: 8px;
-    font-size: 0.9rem;
-    font-weight: 500;
-    cursor: pointer;
-    border: 1px solid transparent;
-    transition: background 0.15s, border-color 0.15s, transform 0.1s;
-  }
-
-  .confirm-btn:active {
-    transform: scale(0.98);
-  }
-
-  .confirm-btn.cancel {
-    background: #221727;
-    border-color: var(--border-color, #352339);
-    color: #D4BECF;
-  }
-
-  .confirm-btn.cancel:hover {
-    background: var(--border-color, #352339);
-  }
-
-  .confirm-btn.danger {
-    background: #da3633;
-    color: #ffffff;
-    border-color: rgba(255, 255, 255, 0.1);
-  }
-
-  .confirm-btn.danger:hover {
-    background: #b82a28;
-  }
-
-  .confirm-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  /* Confirmation Modal (Light Theme) */
-  .krea-studio-root.light-theme .confirm-modal-box {
-    background: #ffffff;
-    border-color: #F2E5ED;
-    box-shadow: 0 20px 45px rgba(0, 0, 0, 0.15);
-    color: #0F0A10;
-  }
-
-  .krea-studio-root.light-theme .confirm-modal-header h3 {
-    color: #0F0A10;
-  }
-
-  .krea-studio-root.light-theme .confirm-modal-body p {
-    color: #352339;
-  }
-
-  .krea-studio-root.light-theme .confirm-modal-body strong {
-    color: #0F0A10;
-  }
-
-  .krea-studio-root.light-theme .confirm-modal-subtext {
-    color: #7D6376 !important;
-  }
-
-  .krea-studio-root.light-theme .confirm-btn.cancel {
-    background: #F7ECF2;
-    border-color: #E6D3DF;
-    color: #352339;
-  }
-
-  .krea-studio-root.light-theme .confirm-btn.cancel:hover {
-    background: #F2E5ED;
-  }
-
-  .krea-studio-root.light-theme .confirm-btn.danger {
-    background: #ef4444;
-    color: #ffffff;
-  }
-
-  .krea-studio-root.light-theme .confirm-btn.danger:hover {
-    background: #dc2626;
-  }
-
-  /* Attached References Bar & Chips */
-  .attached-refs-bar {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 10px;
-    padding: 6px 14px;
-    background: rgba(15, 10, 16, 0.7);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 12px;
-    margin-bottom: 8px;
-    backdrop-filter: blur(12px);
-  }
-
-  .refs-label {
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: #998094;
-  }
-
-  .refs-list {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-
-  .ref-chip-wrap {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-  }
-
-  .ref-chip {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    background: rgba(26, 18, 29, 0.85);
-    border: 1px solid rgba(139, 92, 246, 0.4);
-    padding: 3px 8px 3px 4px;
-    border-radius: 20px;
-    font-size: 0.78rem;
-    color: #F7ECF2;
-    transition: border-color 0.15s ease, background 0.15s ease;
-  }
-
-  .ref-chip.interactive {
-    cursor: pointer;
-    user-select: none;
-  }
-
-  .ref-chip.interactive:hover,
-  .ref-chip.open {
-    border-color: #8b5cf6;
-    background: rgba(46, 16, 101, 0.45);
-  }
-
-  .ref-chip-weight {
-    font-size: 0.68rem;
-    font-weight: 600;
-    padding: 1px 6px;
-    border-radius: 9px;
-    background: rgba(139, 92, 246, 0.2);
-    border: 1px solid rgba(139, 92, 246, 0.35);
-    color: #ddd6fe;
-    line-height: 1.25;
-  }
-
-  .ref-weight-popover {
-    position: absolute;
-    bottom: calc(100% + 10px);
-    left: 0;
-    width: 280px;
-    padding: 12px 14px;
-    border-radius: 14px;
-    background: rgba(15, 10, 16, 0.96);
-    border: 1px solid rgba(139, 92, 246, 0.32);
-    box-shadow: 0 16px 38px rgba(0, 0, 0, 0.45);
-    backdrop-filter: blur(16px);
-    z-index: 95;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  .ref-popover-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding-bottom: 6px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  }
-
-  .ref-popover-title {
-    font-size: 0.78rem;
-    font-weight: 700;
-    color: #FCF7FA;
-  }
-
-  .ref-popover-actions {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .ref-popover-reset {
-    border: none;
-    background: transparent;
-    color: #8b5cf6;
-    font-size: 0.72rem;
-    font-weight: 600;
-    cursor: pointer;
-    padding: 0;
-  }
-
-  .ref-popover-reset:hover {
-    text-decoration: underline;
-  }
-
-  .ref-popover-close {
-    border: none;
-    background: transparent;
-    color: #998094;
-    font-size: 0.82rem;
-    cursor: pointer;
-    padding: 0 2px;
-    line-height: 1;
-  }
-
-  .ref-popover-close:hover {
-    color: #FCF7FA;
-  }
-
-  .ref-popover-row {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-  }
-
-  .ref-popover-label-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-  }
-
-  .ref-chip-idx {
-    font-size: 0.7rem;
-    font-weight: 700;
-    background: #8b5cf6;
-    color: #ffffff;
-    padding: 1px 6px;
-    border-radius: 10px;
-  }
-
-  .ref-chip-img {
-    width: 24px;
-    height: 24px;
-    border-radius: 50%;
-    object-fit: cover;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-  }
-
-  .ref-chip-title {
-    max-width: 120px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .ref-chip-del {
-    background: transparent;
-    border: none;
-    color: #998094;
-    cursor: pointer;
-    font-size: 0.85rem;
-    padding: 0 2px;
-    line-height: 1;
-    transition: color 0.15s;
-  }
-
-  .ref-chip-del:hover {
-    color: #ef4444;
-  }
-
-  .add-ref-mini-btn {
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px dashed rgba(255, 255, 255, 0.2);
-    color: #E6D3DF;
-    font-size: 0.75rem;
-    padding: 3px 10px;
-    border-radius: 14px;
-    cursor: pointer;
-    transition: all 0.2s ease;
-  }
-
-  .add-ref-mini-btn:hover {
-    background: rgba(139, 92, 246, 0.15);
-    border-color: #8b5cf6;
-    color: var(--accent-hover);
-  }
-
-  .sdxl-ref-controls {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-left: auto;
-    flex-wrap: wrap;
-  }
-
-  .sdxl-ref-mode-group {
-    display: inline-flex;
-    align-items: center;
-    gap: 2px;
-    padding: 2px;
-    border-radius: 14px;
-    background: rgba(26, 18, 29, 0.8);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-  }
-
-  .sdxl-mode-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    border: none;
-    background: transparent;
-    color: #998094;
-    font-size: 0.72rem;
-    font-weight: 600;
-    padding: 3px 9px;
-    border-radius: 11px;
-    cursor: pointer;
-    transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
-    white-space: nowrap;
-  }
-
-  .sdxl-mode-pill:hover {
-    color: #F2E5ED;
-  }
-
-  .sdxl-mode-pill.active {
-    background: rgba(139, 92, 246, 0.35);
-    color: #ffffff;
-  }
-
-  .sdxl-face-target-group {
-    display: inline-flex;
-    align-items: center;
-    gap: 2px;
-    padding: 2px;
-    border-radius: 14px;
-    background: rgba(26, 18, 29, 0.8);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-  }
-
-  .sdxl-target-pill {
-    border: none;
-    background: transparent;
-    color: #998094;
-    font-size: 0.72rem;
-    font-weight: 600;
-    padding: 2px 8px;
-    border-radius: 11px;
-    cursor: pointer;
-    transition: background 0.15s ease, color 0.15s ease;
-    white-space: nowrap;
-  }
-
-  .sdxl-target-pill:hover {
-    color: #F2E5ED;
-  }
-
-  .sdxl-target-pill.active {
-    background: rgba(139, 92, 246, 0.35);
-    color: #ffffff;
-  }
-
-  .sdxl-duo-hint {
-    font-size: 0.72rem;
-    color: #998094;
-    white-space: nowrap;
-  }
-
-
-  .card-toolbar .card-ref-btn:hover {
-    background: rgba(139, 92, 246, 0.28);
-    color: #ede9fe;
-  }
-
-  /* Header Mode Switcher (CyberCraft / Krea Studio) */
-  .header-mode-toggle-group {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .header-count-pill {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 24px;
-    height: 24px;
-    padding: 0 8px;
-    font-size: 0.78rem;
-    font-weight: 600;
-    border-radius: 9999px;
-    background: rgba(255, 255, 255, 0.12);
-    color: rgba(255, 255, 255, 0.9);
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
-  }
-  :global(.light-theme) .header-count-pill {
-    background: rgba(0, 0, 0, 0.06);
-    color: #352339;
-    border-color: rgba(0, 0, 0, 0.08);
-  }
-  .header-mode-toggle {
-    display: inline-flex;
-    align-items: center;
-    background: rgba(15, 10, 16, 0.55);
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 9999px;
-    padding: 3px;
-    gap: 2px;
-  }
-  :global(.light-theme) .header-mode-toggle {
-    background: rgba(247, 236, 242, 0.9);
-    border-color: rgba(0, 0, 0, 0.1);
-  }
-  .mode-toggle-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 5px 13px;
-    border-radius: 9999px;
-    border: 1px solid transparent;
-    background: transparent;
-    color: rgba(255, 255, 255, 0.65);
-    font-size: 0.88rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
-    user-select: none;
-  }
-  :global(.light-theme) .mode-toggle-btn {
-    color: rgba(26, 18, 29, 0.7);
-  }
-  .mode-toggle-btn:hover:not(.active) {
-    color: rgba(255, 255, 255, 0.95);
-    background: rgba(255, 255, 255, 0.08);
-  }
-  :global(.light-theme) .mode-toggle-btn:hover:not(.active) {
-    color: #0F0A10;
-    background: rgba(0, 0, 0, 0.05);
-  }
-  .mode-toggle-btn.active {
-    background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 40%, transparent), color-mix(in srgb, var(--accent) 40%, transparent));
-    border-color: color-mix(in srgb, var(--accent) 50%, transparent);
-    color: #fff;
-    font-weight: 600;
-    box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 25%, transparent);
-  }
-  :global(.light-theme) .mode-toggle-btn.active {
-    background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 18%, transparent), color-mix(in srgb, var(--accent) 18%, transparent));
-    border-color: color-mix(in srgb, var(--accent) 40%, transparent);
-    color: #7E22CE;
-  }
-  .mode-toggle-btn .mode-icon {
-    font-size: 0.95rem;
-  }
-  .mode-toggle-btn.locked {
-    opacity: 0.72;
-  }
-
-  .mode-text-short {
-    display: none;
-  }
-
-  /* Responsive Mobile Layout (max-width: 640px) */
-  @media (max-width: 640px) {
-    .studio-header {
-      flex-wrap: wrap;
-      padding: 8px 10px;
-      gap: 6px 8px;
-    }
-
-    .header-left {
-      gap: 6px;
-      flex: 1;
-      min-width: 0;
-    }
-
-    .header-mode-toggle-group {
-      gap: 4px;
-    }
-
-    .header-mode-toggle {
-      padding: 2px;
-      gap: 2px;
-    }
-
-    .mode-toggle-btn {
-      padding: 4px 8px;
-      font-size: 0.8rem;
-      gap: 4px;
-    }
-
-    .header-count-pill {
-      display: none;
-    }
-
-    .header-right {
-      gap: 4px;
-      flex-shrink: 0;
-    }
-
-    .header-right .icon-btn {
-      width: 34px;
-      height: 34px;
-      padding: 4px;
-    }
-
-    /* Tabs (Gallery vs Personas) become a sleek full-width segmented control on row 2 */
-    .header-tabs {
-      order: 3;
-      width: 100%;
-      margin-top: 2px;
-      padding: 3px;
-      gap: 4px;
-      border-radius: 12px;
-      box-sizing: border-box;
-    }
-
-    .header-tabs .tab-btn {
-      flex: 1;
-      justify-content: center;
-      padding: 6px 8px;
-      font-size: 12px;
-      gap: 6px;
-    }
-
-    /* Sticky Bottom Composer */
-    .studio-composer {
-      padding: 10px 10px 12px 10px;
-    }
-
-    .composer-controls-row {
-      margin-bottom: 6px;
-      gap: 4px;
-      flex-wrap: nowrap;
-      align-items: center;
-      width: 100%;
-      justify-content: space-between;
-    }
-
-    .composer-controls-left {
-      gap: 4px;
-      flex-wrap: nowrap;
-      min-width: 0;
-      flex-shrink: 1;
-    }
-
-    .active-personas-wrap {
-      flex-wrap: nowrap;
-      gap: 4px;
-      min-width: 0;
-    }
-
-    .active-persona-pill .pill-name {
-      max-width: 58px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .composer-controls-right {
-      margin-left: auto;
-      justify-content: flex-end;
-      gap: 3px;
-      flex-wrap: nowrap;
-      flex-shrink: 0;
-    }
-
-    .pill-label-desktop {
-      display: none !important;
-    }
-
-    .pill-label-mobile {
-      display: inline-flex;
-      align-items: center;
-      font-size: 12px;
-      line-height: 1;
-    }
-
-    .pick-persona-btn,
-    .add-more-personas-btn,
-    .add-photo-pill,
-    .active-persona-pill,
-    .toggle-director-pill,
-    .toggle-history-pill,
-    .toggle-tokens-btn,
-    .toggle-sliders-btn,
-    .advanced-gear-btn {
-      font-size: 11px;
-      padding: 0 6px;
-      gap: 3px;
-      height: 26px;
-      white-space: nowrap;
-      flex-shrink: 0;
-    }
-
-    .active-persona-pill {
-      flex-shrink: 1;
-      min-width: 0;
-    }
-
-    /* Input Row: prompt full-width on top, action button row below */
-    .composer-input-row {
-      flex-direction: column;
-      align-items: stretch;
-      gap: 8px;
-    }
-
-    .prompt-textarea {
-      width: 100%;
-      min-height: 46px;
-      max-height: 120px;
-      font-size: 15px;
-      line-height: 20px;
-      padding: 9px 12px;
-      box-sizing: border-box;
-    }
-
-    .composer-actions {
-      width: 100%;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .generate-submit-btn {
-      flex: 1;
-      min-width: 0;
-      height: 40px;
-      padding: 0 10px;
-      font-size: 14px;
-      justify-content: center;
-    }
-
-    /* Prompts popup */
-    .prompts-popup {
-      left: 10px;
-      right: 10px;
-      max-height: 60vh;
-    }
-
-    /* Sliders panel on mobile */
-    .sliders-panel {
-      grid-template-columns: 1fr;
-      padding: 10px;
-      gap: 10px;
-      max-height: 45vh;
-      overflow-y: auto;
-    }
-
-    .studio-main {
-      padding: 10px 10px 240px 10px;
-    }
-
-    .gallery-grid {
-      gap: 12px;
-      grid-template-columns: 1fr;
-    }
-  }
-
-  @media (max-width: 640px) {
-    .mode-text-full {
-      display: none;
-    }
-    .mode-text-short {
-      display: inline;
-    }
-  }
-
-  /* =======================================================================
-     🎬 AI DIRECTOR'S CHAIR & SPLIT WORKSPACE STYLES
-     ======================================================================= */
-  .studio-body-split {
-    display: flex;
-    flex: 1;
-    min-height: 0;
-    width: 100%;
-    position: relative;
-    overflow: hidden;
-  }
-
-  .studio-canvas-col {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    min-width: 0;
-    min-height: 0;
-    position: relative;
-    overflow: hidden;
-  }
-
-  .director-icon-btn.is-active {
-    color: #c4b5fd;
-    background: rgba(139, 92, 246, 0.16);
-    border-color: rgba(167, 139, 250, 0.45);
-  }
-
-  .toggle-director-pill {
-    background: transparent;
-    border: 1px solid rgba(167, 139, 250, 0.3);
-    color: #c4b5fd;
-    padding: 0 10px;
-    border-radius: 12px;
-    height: 26px;
-    font-size: 11px;
-    font-weight: 500;
-    font-family: inherit;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    box-sizing: border-box;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    white-space: nowrap;
-  }
-
-  .toggle-director-pill:hover {
-    background: rgba(139, 92, 246, 0.15);
-    border-color: rgba(167, 139, 250, 0.5);
-    color: #ede9fe;
-  }
-
-  .toggle-director-pill.open,
-  .toggle-director-pill.active {
-    background: rgba(139, 92, 246, 0.22);
-    border-color: rgba(167, 139, 250, 0.55);
-    color: #ede9fe;
-    font-weight: 600;
-  }
-
-  /* Story Subfolders Filter Bar in Gallery */
-  .story-folders-bar {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-bottom: 16px;
-    padding-bottom: 10px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-  }
-
-  .story-folder-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 5px 12px;
-    border-radius: 14px;
-    font-size: 12px;
-    font-weight: 500;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    color: #E6D3DF;
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
-
-  .story-folder-pill:hover {
-    background: rgba(139, 92, 246, 0.16);
-    border-color: rgba(139, 92, 246, 0.4);
-    color: #fff;
-  }
-
-  .story-folder-pill.active {
-    background: var(--accent-gradient);
-    border-color: transparent;
-    color: #fff;
-    font-weight: 600;
-  }
-
-  .story-open-director-chip {
-    margin-left: auto;
-    padding: 5px 11px;
-    border-radius: 14px;
-    font-size: 12px;
-    font-weight: 600;
-    background: color-mix(in srgb, var(--accent) 18%, transparent);
-    border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
-    color: #fbcfe8;
-    cursor: pointer;
-  }
-
-  /* Director Panel */
-  .director-panel {
-    position: relative;
-    flex-shrink: 0;
-    width: 390px;
-    min-width: 320px;
-    max-width: 820px;
-    height: 100%;
-    background: rgba(15, 10, 16, 0.98);
-    border-left: 1px solid rgba(255, 255, 255, 0.1);
-    display: flex;
-    flex-direction: column;
-    z-index: 35;
-    box-shadow: -8px 0 28px rgba(0, 0, 0, 0.45);
-  }
-
-  .director-resize-handle {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: -4px;
-    width: 8px;
-    cursor: col-resize;
-    z-index: 45;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    touch-action: none;
-  }
-
-  .director-resize-handle::after {
-    content: "";
-    width: 2px;
-    height: 100%;
-    background: transparent;
-    transition: background 0.15s ease;
-  }
-
-  .director-resize-handle:hover::after,
-  .director-resize-handle.active::after {
-    background: #8b5cf6;
-  }
-
-  .director-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px 14px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    background: rgba(26, 18, 29, 0.8);
-  }
-
-  .director-title-group {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-  }
-
-  .director-icon {
-    font-size: 20px;
-  }
-
-  .director-title {
-    font-size: 14px;
-    font-weight: 700;
-    color: #FCF7FA;
-  }
-
-  .director-subtitle {
-    font-size: 11px;
-    color: #998094;
-  }
-
-  .director-close-btn {
-    background: transparent;
-    border: none;
-    color: #998094;
-    font-size: 15px;
-    width: 28px;
-    height: 28px;
-    border-radius: 6px;
-    cursor: pointer;
-  }
-
-  .director-close-btn:hover {
-    background: rgba(255, 255, 255, 0.08);
-    color: #fff;
-  }
-
-  .director-mode-tabs {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 4px;
-    margin: 8px 12px;
-    padding: 3px;
-    border-radius: 12px;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-  }
-
-  .director-tab-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-    padding: 6px 10px;
-    border-radius: 9px;
-    border: none;
-    background: transparent;
-    color: #E6D3DF;
-    font-size: 12px;
-    font-weight: 600;
-    font-family: inherit;
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
-
-  .director-tab-btn:hover {
-    color: #ffffff;
-    background: rgba(255, 255, 255, 0.06);
-  }
-
-  .director-tab-btn.active {
-    background: linear-gradient(135deg, #9333EA 0%, #7c3aed 100%);
-    color: #ffffff;
-    box-shadow: 0 2px 8px rgba(124, 58, 237, 0.35);
-  }
-
-  .director-tab-badge {
-    font-size: 10px;
-    background: rgba(0, 0, 0, 0.3);
-    padding: 1px 6px;
-    border-radius: 8px;
-  }
-
-  .director-context-bar {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 5px;
-    padding: 8px 12px;
-    background: rgba(255, 255, 255, 0.025);
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  }
-
-  .ctx-chip {
-    font-size: 11px;
-    font-weight: 500;
-    padding: 2px 8px;
-    border-radius: 8px;
-    border: 1px solid rgba(167, 139, 250, 0.3);
-    background: rgba(139, 92, 246, 0.18);
-    color: #ede9fe;
-  }
-
-  .ctx-chip.persona {
-    border-color: color-mix(in srgb, var(--accent) 35%, transparent);
-    background: color-mix(in srgb, var(--accent) 18%, transparent);
-    color: #fce7f3;
-  }
-
-  .ctx-chip.muted {
-    border-color: rgba(255, 255, 255, 0.12);
-    background: rgba(255, 255, 255, 0.06);
-    color: #E6D3DF;
-  }
-
-  .ctx-undo-btn {
-    margin-left: auto;
-    font-size: 11px;
-    font-weight: 600;
-    padding: 2px 8px;
-    border-radius: 7px;
-    border: 1px solid rgba(250, 204, 21, 0.45);
-    background: rgba(250, 204, 21, 0.15);
-    color: #fef08a;
-    cursor: pointer;
-  }
-
-  .director-quick-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 5px;
-    padding: 8px 12px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  }
-
-  .quick-chip {
-    font-size: 11px;
-    font-weight: 500;
-    font-family: inherit;
-    padding: 4px 9px;
-    border-radius: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.16);
-    background: rgba(255, 255, 255, 0.06);
-    color: #F2E5ED;
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
-
-  .quick-chip:hover {
-    background: rgba(139, 92, 246, 0.2);
-    border-color: rgba(167, 139, 250, 0.45);
-    color: #fff;
-  }
-
-  .director-feed {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    padding: 12px;
-    display: flex;
     flex-direction: column;
     gap: 10px;
   }
@@ -15408,5 +14740,482 @@
     background: #ede9fe;
     border-color: #7c3aed;
     color: #5b21b6;
+  }
+
+  /* --- CivitAI LoRA Thumbnails, Browser Modal & Negative Prompt --- */
+  .trigger-label-with-thumb {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .lora-thumb-mini {
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
+    object-fit: cover;
+    object-position: center 20%;
+    flex-shrink: 0;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+  }
+  .lora-thumb-row {
+    width: 36px;
+    height: 36px;
+    border-radius: 7px;
+    object-fit: cover;
+    object-position: center 18%;
+    flex-shrink: 0;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.04);
+  }
+  .pill-lora-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    object-fit: cover;
+    object-position: center 20%;
+    flex-shrink: 0;
+  }
+  .lora-base-tag {
+    display: inline-block;
+    margin-left: 5px;
+    padding: 1px 5px;
+    font-size: 9.5px;
+    font-weight: 600;
+    border-radius: 4px;
+    background: rgba(139, 92, 246, 0.18);
+    color: #c4b5fd;
+    vertical-align: middle;
+  }
+  .popup-header-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .civitai-add-inline-btn {
+    padding: 3px 9px;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 6px;
+    border: 1px solid rgba(168, 85, 247, 0.45);
+    background: rgba(168, 85, 247, 0.16);
+    color: #e9d5ff;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .civitai-add-inline-btn:hover {
+    background: rgba(168, 85, 247, 0.32);
+    border-color: #c084fc;
+    color: #fff;
+  }
+  .civitai-footer-btn {
+    padding: 5px 10px;
+    font-size: 11.5px;
+    font-weight: 600;
+    border-radius: 7px;
+    border: 1px dashed rgba(168, 85, 247, 0.5);
+    background: rgba(168, 85, 247, 0.1);
+    color: #d8b4fe;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .civitai-footer-btn:hover {
+    background: rgba(168, 85, 247, 0.24);
+    color: #fff;
+  }
+  .custom-lora-remove-btn {
+    margin-left: auto;
+    padding: 2px 6px;
+    font-size: 11px;
+    opacity: 0.55;
+    border-radius: 5px;
+    cursor: pointer;
+  }
+  .custom-lora-remove-btn:hover {
+    opacity: 1;
+    background: rgba(248, 81, 73, 0.2);
+    color: #ff7b72;
+  }
+  .negative-prompt-textarea {
+    width: 100%;
+    margin-top: 5px;
+    padding: 6px 8px;
+    border-radius: 7px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(0, 0, 0, 0.28);
+    color: inherit;
+    font-size: 11.5px;
+    line-height: 1.35;
+    resize: vertical;
+    min-height: 44px;
+    max-height: 110px;
+    font-family: inherit;
+  }
+  .negative-prompt-textarea:focus {
+    outline: none;
+    border-color: rgba(168, 85, 247, 0.65);
+  }
+  .factory-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .visual-arch-card {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 10px !important;
+    padding: 8px 10px !important;
+    text-align: left !important;
+  }
+  .factory-lora-thumb {
+    width: 46px;
+    height: 54px;
+    border-radius: 8px;
+    object-fit: cover;
+    object-position: center 16%;
+    flex-shrink: 0;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+  }
+  .factory-lora-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .add-civitai-factory-card {
+    border-style: dashed !important;
+    border-color: rgba(168, 85, 247, 0.45) !important;
+    align-items: center !important;
+    justify-content: center !important;
+    text-align: center !important;
+  }
+  .add-plus-circle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 999px;
+    background: rgba(168, 85, 247, 0.22);
+    color: #e9d5ff;
+    font-size: 16px;
+    font-weight: 700;
+    margin-bottom: 2px;
+  }
+  .persona-lora-chip-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+  }
+  .persona-lora-chip-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    padding: 4px 9px 4px 5px;
+    border-radius: 8px;
+    cursor: pointer;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(0, 0, 0, 0.22);
+    color: inherit;
+    transition: all 0.14s ease;
+  }
+  .persona-lora-chip-btn.active {
+    border-color: #a855f7;
+    background: rgba(168, 85, 247, 0.24);
+    color: #fff;
+  }
+  .persona-chip-thumb {
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
+    object-fit: cover;
+    object-position: center 20%;
+  }
+  .civitai-browser-modal {
+    width: min(860px, 95vw) !important;
+    max-width: 860px !important;
+    max-height: 86vh !important;
+    display: flex;
+    flex-direction: column;
+  }
+  .civitai-browser-head-left {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  .civitai-mode-pills {
+    display: inline-flex;
+    background: rgba(255, 255, 255, 0.06);
+    padding: 3px;
+    border-radius: 9px;
+    gap: 3px;
+  }
+  .civitai-mode-pill {
+    padding: 4px 12px;
+    border-radius: 7px;
+    border: none;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .civitai-mode-pill.active {
+    background: rgba(168, 85, 247, 0.35);
+    color: #fff;
+  }
+  .civitai-search-toolbar {
+    display: flex;
+    gap: 8px;
+    padding: 10px 18px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .civitai-search-input {
+    flex: 1;
+  }
+  .civitai-sort-select {
+    width: 165px;
+  }
+  .civitai-search-go-btn {
+    padding: 0 16px;
+    white-space: nowrap;
+  }
+  .civitai-browser-body {
+    overflow-y: auto;
+    padding: 14px 18px;
+    min-height: 300px;
+  }
+  .civitai-browser-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    min-height: 240px;
+    opacity: 0.75;
+    font-size: 13px;
+    text-align: center;
+  }
+  .civitai-results-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
+    gap: 12px;
+  }
+  .civitai-lora-card {
+    display: flex;
+    flex-direction: column;
+    border-radius: 11px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.03);
+    transition: border-color 0.15s ease, transform 0.15s ease;
+  }
+  .civitai-lora-card:hover {
+    border-color: rgba(168, 85, 247, 0.55);
+    transform: translateY(-1px);
+  }
+  .civitai-card-media {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 3 / 4;
+    background: rgba(0, 0, 0, 0.35);
+    overflow: hidden;
+  }
+  .civitai-card-media img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center 15%;
+  }
+  .civitai-card-base {
+    position: absolute;
+    top: 7px;
+    left: 7px;
+    padding: 2px 6px;
+    font-size: 10px;
+    font-weight: 700;
+    border-radius: 5px;
+    background: rgba(15, 10, 25, 0.78);
+    color: #e9d5ff;
+    backdrop-filter: blur(4px);
+  }
+  .civitai-card-size {
+    position: absolute;
+    bottom: 7px;
+    right: 7px;
+    padding: 2px 6px;
+    font-size: 10px;
+    border-radius: 5px;
+    background: rgba(15, 10, 25, 0.75);
+    color: rgba(255, 255, 255, 0.85);
+  }
+  .civitai-card-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 9px 10px 10px;
+    flex: 1;
+  }
+  .civitai-card-title {
+    font-size: 12.5px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .civitai-card-trigger {
+    font-size: 10.5px;
+    opacity: 0.72;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .civitai-card-trigger.muted {
+    opacity: 0.45;
+  }
+  .civitai-card-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: auto;
+    padding-top: 6px;
+  }
+  .civitai-ext-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    color: inherit;
+    text-decoration: none;
+    font-size: 12px;
+    opacity: 0.75;
+  }
+  .civitai-ext-link:hover {
+    opacity: 1;
+    border-color: rgba(255, 255, 255, 0.35);
+  }
+  .civitai-pick-btn {
+    flex: 1;
+    height: 26px;
+    border-radius: 6px;
+    border: 1px solid rgba(168, 85, 247, 0.55);
+    background: rgba(168, 85, 247, 0.22);
+    color: #f3e8ff;
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.14s ease;
+  }
+  .civitai-pick-btn:hover {
+    background: rgba(168, 85, 247, 0.42);
+    color: #fff;
+  }
+  .civitai-pick-btn.added {
+    border-color: rgba(52, 211, 153, 0.5);
+    background: rgba(16, 185, 129, 0.18);
+    color: #a7f3d0;
+  }
+
+  /* Light theme overrides for CivitAI LoRA UI & Negative Prompt */
+  .krea-studio-root.light-theme .lora-thumb-mini,
+  .krea-studio-root.light-theme .lora-thumb-row,
+  .krea-studio-root.light-theme .factory-lora-thumb {
+    border-color: rgba(124, 58, 237, 0.22);
+    background: #f5f3ff;
+  }
+  .krea-studio-root.light-theme .lora-base-tag {
+    background: #ede9fe;
+    color: #6d28d9;
+  }
+  .krea-studio-root.light-theme .civitai-add-inline-btn {
+    background: #f5f3ff;
+    border-color: rgba(124, 58, 237, 0.35);
+    color: #6d28d9;
+  }
+  .krea-studio-root.light-theme .civitai-add-inline-btn:hover {
+    background: #ede9fe;
+    border-color: #7c3aed;
+    color: #4c1d95;
+  }
+  .krea-studio-root.light-theme .civitai-footer-btn {
+    background: #faf5ff;
+    border-color: rgba(124, 58, 237, 0.4);
+    color: #6d28d9;
+  }
+  .krea-studio-root.light-theme .civitai-footer-btn:hover {
+    background: #ede9fe;
+    color: #4c1d95;
+  }
+  .krea-studio-root.light-theme .negative-prompt-textarea {
+    background: #f8fafc;
+    border-color: #cbd5e1;
+    color: #1e293b;
+  }
+  .krea-studio-root.light-theme .negative-prompt-textarea:focus {
+    border-color: #7c3aed;
+    background: #ffffff;
+  }
+  .krea-studio-root.light-theme .persona-lora-chip-btn {
+    background: #f8fafc;
+    border-color: #e2e8f0;
+    color: #334155;
+  }
+  .krea-studio-root.light-theme .persona-lora-chip-btn.active {
+    background: #ede9fe;
+    border-color: #7c3aed;
+    color: #4c1d95;
+  }
+  .krea-studio-root.light-theme .add-plus-circle {
+    background: #ede9fe;
+    color: #6d28d9;
+  }
+  .krea-studio-root.light-theme .civitai-mode-pills {
+    background: #f1f5f9;
+  }
+  .krea-studio-root.light-theme .civitai-mode-pill {
+    color: #475569;
+  }
+  .krea-studio-root.light-theme .civitai-mode-pill.active {
+    background: #7c3aed;
+    color: #ffffff;
+  }
+  .krea-studio-root.light-theme .civitai-search-toolbar {
+    border-bottom-color: #e2e8f0;
+  }
+  .krea-studio-root.light-theme .civitai-lora-card {
+    background: #ffffff;
+    border-color: #e2e8f0;
+    color: #1e293b;
+  }
+  .krea-studio-root.light-theme .civitai-lora-card:hover {
+    border-color: #8b5cf6;
+  }
+  .krea-studio-root.light-theme .civitai-ext-link {
+    border-color: #cbd5e1;
+    color: #475569;
+  }
+  .krea-studio-root.light-theme .civitai-pick-btn {
+    background: #f5f3ff;
+    border-color: rgba(124, 58, 237, 0.45);
+    color: #5b21b6;
+  }
+  .krea-studio-root.light-theme .civitai-pick-btn:hover {
+    background: #7c3aed;
+    color: #ffffff;
+  }
+  .krea-studio-root.light-theme .civitai-pick-btn.added {
+    background: #ecfdf5;
+    border-color: #34d399;
+    color: #065f46;
   }
 </style>

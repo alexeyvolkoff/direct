@@ -1,18 +1,21 @@
 """
-AI Horde Image Generation Mapper Layer (`reGen` / SDXL / SD 1.5).
+AI Horde Image Generation Mapper Layer (`reGen` / SDXL / CivitAI LoRAs / SD 1.5).
 
-Maps Direct UI image selections (styles, Creative Studio Express `base_model`,
-character archetypes, verbal persona passports, sliders, and aspect ratios)
-onto AI Horde's `/api/v2/generate/async` image network:
+Maps Direct UI image selections (4 base model pills, predefined & user-added CivitAI
+character/style LoRAs, verbal persona passports, reGen-native sampling sliders,
+custom negative prompts, and aspect ratios) onto AI Horde's `/api/v2/generate/async`
+network following official Haidra / `horde-worker-reGen` best practices:
 
 - **Owner / Paid Tiers (`Modal Krea 2`)**: Handled upstream by Modal Cloud GPU;
   uses this mapper only if Express SDXL is explicitly invoked while local ComfyUI is offline.
 - **Guests / Free Users**:
   1. Hardcoded SFW enforcement (`nsfw=False`, `censor_nsfw=True`, `replacement_filter=True`,
-     SFW negative prompt, and post-generation `censored` verification).
+     SFW negative prompt armor, and post-generation `censored` verification).
   2. Priority queue via `HORDE_WORKER_API_KEY` up to configurable daily Kudos caps
      (`HORDE_GUEST_DAILY_KUDOS_LIMIT` global + `HORDE_PER_USER_DAILY_KUDOS_LIMIT` per user).
-  3. Automatic zero-cost fallback to anonymous (`0000000000`) SD 1.5 (`<= 512x640`)
+  3. Worker-aware SDXL + CivitAI LoRA routing (`slow_workers=False`, live `lora=True`
+     worker filtering, Haidra `247778` 8-step TurboMix or 18-step `k_dpmpp_2m Karras` + CAS).
+  4. Automatic zero-cost fallback to anonymous (`0000000000`) SD 1.5 (`<= 512x640`)
      whenever the daily Kudos cap is reached or `KudosUpfront` is returned.
 """
 
@@ -28,10 +31,11 @@ import os
 import re
 import threading
 import time
+import urllib.parse
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 import aiohttp
-from PIL import Image
+from PIL import Image, ImageFilter
 
 from config import SETTINGS
 import horde_client
@@ -41,39 +45,255 @@ logger = logging.getLogger("horde_image_mapper")
 DEFAULT_CLIENT_AGENT = horde_client.DEFAULT_CLIENT_AGENT
 ANONYMOUS_API_KEY = horde_client.ANONYMOUS_API_KEY
 
-# Curated AI Horde (`horde-worker-reGen`) model pools by visual family.
-# Ordered by visual quality and typical worker availability on AI Horde.
+# Official Haidra pre-cached 12.4 MB SDXL 8-step accelerator (`AI-Horde-Styles`: `sdxl-photo`)
+HORDE_TURBOMIX_LORA_VERSION_ID = "247778"
+# Official CivitAI `Detail Tweaker XL` (`add-detail-xl.safetensors`, 217.9 MB)
+HORDE_DETAIL_TWEAKER_XL_VERSION_ID = "135867"
+MAX_HORDE_LORAS = 5
+
+# Verified predefined SDXL CivitAI LoRAs (all <= 400 MB, primary .safetensors with SHA256)
+SDXL_CIVITAI_LORA_REGISTRY: Dict[str, Dict[str, Any]] = {
+    # --- Predefined Companion Character LoRAs ---
+    "sdxl_judith": {
+        "id": "sdxl_judith",
+        "name": "Judith",
+        "civitai_name": "Judith B",
+        "civitai_model_id": "2081266",
+        "civitai_version_id": "2360657",
+        "base_model": "Pony",
+        "category": "character",
+        "strength": 0.9,
+        "trained_words": ["JudithCB"],
+        "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/ac70cb91-ccd3-4601-8754-f1d5ea5b77d3/width=256/108221436.jpeg",
+        "description": "Expressive companion character LoRA (Judith B)",
+    },
+    "sdxl_domi": {
+        "id": "sdxl_domi",
+        "name": "Domi",
+        "civitai_name": "SLDomi",
+        "civitai_model_id": "589180",
+        "civitai_version_id": "1377183",
+        "base_model": "SDXL 1.0",
+        "category": "character",
+        "strength": 0.95,
+        "trained_words": [],
+        "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/2dd69f45-69f3-4b25-9f02-67c0610765c5/width=256/56075413.jpeg",
+        "description": "Charismatic companion character LoRA (SLDomi)",
+    },
+    "sdxl_lana": {
+        "id": "sdxl_lana",
+        "name": "Lana",
+        "civitai_name": "Svetlana XL",
+        "civitai_model_id": "2310427",
+        "civitai_version_id": "2599427",
+        "base_model": "SDXL 1.0",
+        "category": "character",
+        "strength": 0.95,
+        "trained_words": [],
+        "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/c060b0ae-6f46-4968-a61a-5565df48d27d/width=256/117559750.jpeg",
+        "description": "Radiant Slavic companion character LoRA (Svetlana)",
+    },
+    "sdxl_oriana": {
+        "id": "sdxl_oriana",
+        "name": "Oriana",
+        "civitai_name": "ORIANA-XSTAR-XL",
+        "civitai_model_id": "2584778",
+        "civitai_version_id": "2903793",
+        "base_model": "SDXL 1.0",
+        "category": "character",
+        "strength": 0.95,
+        "trained_words": ["OR14N4"],
+        "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/e9f4420d-87a8-4314-937a-063324438379/width=256/129028954.jpeg",
+        "description": "Glamorous magnetic companion LoRA (ORIANA-XSTAR-XL)",
+    },
+    "sdxl_vera": {
+        "id": "sdxl_vera",
+        "name": "Vera",
+        "civitai_name": "VEROTIKA-XSTAR-XL",
+        "civitai_model_id": "1009099",
+        "civitai_version_id": "1130986",
+        "base_model": "SDXL 1.0",
+        "category": "character",
+        "strength": 0.95,
+        "trained_words": ["V3r0t1k4"],
+        "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/b98edfe9-1294-4c4a-8814-2d3ffb1f068a/width=256/43775214.jpeg",
+        "description": "Elegant dark-haired companion LoRA (VEROTIKA-XSTAR-XL)",
+    },
+    "sdxl_bianca": {
+        "id": "sdxl_bianca",
+        "name": "Bianca",
+        "civitai_name": "BIANCA-XSTAR-XL",
+        "civitai_model_id": "1068237",
+        "civitai_version_id": "1198981",
+        "base_model": "SDXL 1.0",
+        "category": "character",
+        "strength": 0.95,
+        "trained_words": ["B1anc4"],
+        "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/5981dc82-5c87-494d-8bca-a12822a9117a/width=256/47386274.jpeg",
+        "description": "Poised blonde companion LoRA (BIANCA-XSTAR-XL)",
+    },
+    "sdxl_beatrice": {
+        "id": "sdxl_beatrice",
+        "name": "Beatrice",
+        "civitai_name": "BEATRICE-XSTAR-XL",
+        "civitai_model_id": "2322656",
+        "civitai_version_id": "2612904",
+        "base_model": "SDXL 1.0",
+        "category": "character",
+        "strength": 0.95,
+        "trained_words": ["B3ATR1C3"],
+        "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/8cce104f-1c65-465d-b609-b4abebcc778b/width=256/118088057.jpeg",
+        "description": "Classic European companion LoRA (BEATRICE-XSTAR-XL)",
+    },
+    "sdxl_minerva": {
+        "id": "sdxl_minerva",
+        "name": "Minerva",
+        "civitai_name": "MINERVA-XSTAR-XL",
+        "civitai_model_id": "2497628",
+        "civitai_version_id": "2807620",
+        "base_model": "SDXL 1.0",
+        "category": "character",
+        "strength": 0.95,
+        "trained_words": ["MINERVA"],
+        "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/c0161468-55af-4384-8cbb-10305f57e099/width=256/125529679.jpeg",
+        "description": "Mystical raven-haired companion LoRA (MINERVA-XSTAR-XL)",
+    },
+    # --- Predefined Style / Concept LoRAs ---
+    "sdxl_lora_real_humans": {
+        "id": "sdxl_lora_real_humans",
+        "name": "Real Humans",
+        "civitai_name": "Real Humans",
+        "civitai_model_id": "232746",
+        "civitai_version_id": "262705",
+        "base_model": "SDXL 1.0",
+        "category": "style",
+        "strength": 0.7,
+        "trained_words": ["photo", "portrait photo"],
+        "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/e9fdda22-7af8-4e91-84ca-641caff8d41c/width=256/4587751.jpeg",
+        "description": "Authentic natural skin texture & candid photography",
+    },
+    "sdxl_lora_cinematic_shot": {
+        "id": "sdxl_lora_cinematic_shot",
+        "name": "Cinematic Shot",
+        "civitai_name": "Cinematic Shot",
+        "civitai_model_id": "430657",
+        "civitai_version_id": "481917",
+        "base_model": "SDXL 1.0",
+        "category": "style",
+        "strength": 0.75,
+        "trained_words": [],
+        "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/036d514d-5f82-4beb-8160-38e7f4411b05/width=256/11368089.jpeg",
+        "description": "Atmospheric 35mm movie lighting, depth & color grading",
+    },
+    "sdxl_lora_anime_screencap": {
+        "id": "sdxl_lora_anime_screencap",
+        "name": "Anime Screencap XL",
+        "civitai_name": "Fine Anime Screencap XL",
+        "civitai_model_id": "345962",
+        "civitai_version_id": "2553688",
+        "base_model": "Illustrious",
+        "category": "style",
+        "strength": 0.8,
+        "trained_words": ["anime screencap", "anime coloring"],
+        "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/b2bf710e-a946-4df9-bed5-cfb02e7c19a6/width=256/115872395.jpeg",
+        "description": "Crisp modern anime broadcast aesthetic & cel shading",
+    },
+    "sdxl_lora_eldritch_comics": {
+        "id": "sdxl_lora_eldritch_comics",
+        "name": "Comic Illustration XL",
+        "civitai_name": "Eldritch Comics",
+        "civitai_model_id": "271002",
+        "civitai_version_id": "305491",
+        "base_model": "SDXL 1.0",
+        "category": "style",
+        "strength": 0.8,
+        "trained_words": ["comic book"],
+        "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/09e5cda5-31bb-4601-8e71-462b1ebc7ba6/width=256/5678307.jpeg",
+        "description": "Expressive graphic novel ink linework & vibrant colors",
+    },
+}
+
+# Short aliases -> canonical registry keys (works for both RP chat `<domi>` and Studio `sdxl_domi`)
+LORA_ALIAS_MAP: Dict[str, str] = {
+    "judith": "sdxl_judith",
+    "sdxl_judith": "sdxl_judith",
+    "judithcb_r2-000011": "sdxl_judith",
+    "judithcb_r2-000011.safetensors": "sdxl_judith",
+    "domi": "sdxl_domi",
+    "sdxl_domi": "sdxl_domi",
+    "xldomiv2": "sdxl_domi",
+    "xldomiv2.safetensors": "sdxl_domi",
+    "lana": "sdxl_lana",
+    "sdxl_lana": "sdxl_lana",
+    "svetlana": "sdxl_lana",
+    "svetlana.safetensors": "sdxl_lana",
+    "oriana": "sdxl_oriana",
+    "sdxl_oriana": "sdxl_oriana",
+    "oriana-xstar-xl-final": "sdxl_oriana",
+    "oriana-xstar-xl-final.safetensors": "sdxl_oriana",
+    "vera": "sdxl_vera",
+    "sdxl_vera": "sdxl_vera",
+    "verotika": "sdxl_vera",
+    "verotika-xstar-xl-final": "sdxl_vera",
+    "verotika-xstar-xl-final.safetensors": "sdxl_vera",
+    "bianca": "sdxl_bianca",
+    "sdxl_bianca": "sdxl_bianca",
+    "bianca-xstar-xl": "sdxl_bianca",
+    "bianca-xstar-xl.safetensors": "sdxl_bianca",
+    "beatrice": "sdxl_beatrice",
+    "sdxl_beatrice": "sdxl_beatrice",
+    "beatrice-xstar-xl-final": "sdxl_beatrice",
+    "beatrice-xstar-xl-final.safetensors": "sdxl_beatrice",
+    "minerva": "sdxl_minerva",
+    "sdxl_minerva": "sdxl_minerva",
+    "minerva-xstar-xl-final": "sdxl_minerva",
+    "minerva-xstar-xl-final.safetensors": "sdxl_minerva",
+    "real_humans": "sdxl_lora_real_humans",
+    "real humans": "sdxl_lora_real_humans",
+    "sdxl_lora_real_humans": "sdxl_lora_real_humans",
+    "real-humans-publicprompts": "sdxl_lora_real_humans",
+    "real-humans-publicprompts.safetensors": "sdxl_lora_real_humans",
+    "sdxl_lora_cinematic_shot": "sdxl_lora_cinematic_shot",
+    "cinematic_shot": "sdxl_lora_cinematic_shot",
+    "sdxl_lora_anime_screencap": "sdxl_lora_anime_screencap",
+    "anime_screencap": "sdxl_lora_anime_screencap",
+    "sdxl_lora_eldritch_comics": "sdxl_lora_eldritch_comics",
+    "eldritch_comics": "sdxl_lora_eldritch_comics",
+}
+
+# 4 Main UI Base Model Pills -> Official AI Horde SDXL Checkpoints
 STYLE_FAMILY_SDXL_MODELS: Dict[str, List[str]] = {
     "realistic": [
-        "AlbedoBase XL (SDXL)",
         "Juggernaut XL",
+        "AlbedoBase XL (SDXL)",
         "AlbedoBase XL 3.1",
+        "ICBINP XL",
+        "CyberRealistic Pony",
+    ],
+    "perfect": [
         "CyberRealistic Pony",
         "Pony Realism",
-        "Quiet Goodnight XL",
-        "SDXL 1.0",
-    ],
-    "semireal": [
-        "AlbedoBase XL (SDXL)",
-        "CyberRealistic Pony",
         "Juggernaut XL",
-        "AlbedoBase XL 3.1",
-        "Prefect Pony",
-        "AMPonyXL",
-    ],
-    "anime": [
-        "Nova Anime XL",
-        "WAI-CUTE Pony",
-        "TUNIX Pony",
-        "Prefect Pony",
         "AlbedoBase XL (SDXL)",
     ],
     "fantasy": [
-        "AlbedoBase XL (SDXL)",
+        "WAI-NSFW-illustrious-SDXL",
         "Juggernaut XL",
-        "AlbedoBase XL 3.1",
-        "AMPonyXL",
+        "AlbedoBase XL (SDXL)",
+        "DreamShaper XL",
+    ],
+    "anime": [
+        "Nova Anime XL",
+        "WAI-NSFW-illustrious-SDXL",
+        "Mistoon Anime",
+        "Animagine XL",
+        "AlbedoBase XL (SDXL)",
+    ],
+    "semireal": [
         "CyberRealistic Pony",
+        "Juggernaut XL",
+        "AlbedoBase XL (SDXL)",
+        "WAI-NSFW-illustrious-SDXL",
     ],
 }
 
@@ -82,8 +302,14 @@ STYLE_FAMILY_SD15_MODELS: Dict[str, List[str]] = {
         "ICBINP - I Can't Believe It's Not Photography",
         "AbsoluteReality",
         "Deliberate",
-        "majicMIX realistic",
         "Realistic Vision",
+        "stable_diffusion",
+    ],
+    "perfect": [
+        "Deliberate",
+        "AbsoluteReality",
+        "ICBINP - I Can't Believe It's Not Photography",
+        "Dreamshaper",
         "stable_diffusion",
     ],
     "semireal": [
@@ -109,85 +335,57 @@ STYLE_FAMILY_SD15_MODELS: Dict[str, List[str]] = {
     ],
 }
 
-# Maps UI style / base_model identifiers to (family, natural prompt modifier)
+# Maps UI base_model / style identifiers to (family, natural prompt modifier)
 UI_STYLE_MAP: Dict[str, Tuple[str, str]] = {
     "none": ("realistic", ""),
     "free": ("realistic", ""),
     "realistic": (
         "realistic",
-        "photorealistic, candid raw photography, natural skin texture, realistic lighting, sharp focus",
+        "photorealistic, candid natural photography, detailed skin texture, natural lighting, sharp focus",
     ),
     "photorealistic": (
         "realistic",
-        "8k uhd photorealistic, authentic raw candid photography, natural skin texture, realistic daylight",
+        "photorealistic, candid natural photography, detailed skin texture, natural daylight, sharp focus",
     ),
     "sdxl_realistic": (
         "realistic",
         "photorealistic, natural lighting, detailed skin texture, sharp focus",
     ),
-    "sdxl_lora_real_humans": (
-        "realistic",
-        "authentic natural skin texture, candid human proportions, raw daylight photography, realistic pores",
-    ),
-    "real_humans": (
-        "realistic",
-        "authentic natural skin texture, candid human proportions, raw daylight photography, realistic pores",
-    ),
-    "real humans": (
-        "realistic",
-        "authentic natural skin texture, candid human proportions, raw daylight photography, realistic pores",
-    ),
     "sdxl": (
         "realistic",
         "high detail, crisp focus, natural lighting",
     ),
-    "cinematic": (
-        "realistic",
-        "cinematic movie still, 35mm film photography, dramatic lighting, anamorphic bokeh, subtle film grain",
-    ),
-    "semireal": (
-        "semireal",
-        "2.5d digital art, semi-realistic illustration, soft cinematic subsurface scattering, refined stylized features",
-    ),
     "perfect": (
-        "semireal",
-        "masterpiece portrait, refined aesthetics, studio rim lighting, ultra detailed",
+        "perfect",
+        "masterpiece portrait, expressive features, dynamic studio lighting, ultra detailed",
     ),
     "sdxl_perfect": (
-        "semireal",
-        "masterpiece portrait, refined aesthetics, studio rim lighting, ultra detailed",
+        "perfect",
+        "masterpiece portrait, expressive features, dynamic studio lighting, ultra detailed",
     ),
-    "art": (
-        "semireal",
-        "artistic digital illustration, painterly lighting, expressive composition",
+    "fantasy": (
+        "fantasy",
+        "masterpiece illustration, atmospheric magical lighting, rich intricate details",
     ),
-    "pinup": (
-        "semireal",
-        "vintage 1950s technicolor pin-up art style, retro glamour, warm painterly studio lighting, playful composition",
+    "sdxl_fantasy": (
+        "fantasy",
+        "masterpiece illustration, atmospheric magical lighting, rich intricate details",
     ),
-    "retro": (
-        "semireal",
-        "vintage retro technicolor illustration, warm nostalgic tones, painterly lighting",
+    "midjourney": (
+        "fantasy",
+        "artistic concept art, ethereal atmospheric lighting, dramatic composition, masterpiece",
     ),
-    "pixar": (
-        "semireal",
-        "3d animated movie style, expressive stylized character, vibrant Pixar-like 3d digital render, soft subsurface scattering",
+    "tooned": (
+        "anime",
+        "vibrant stylized anime illustration, clean detailed linework, expressive eyes, rich colors",
     ),
-    "3d": (
-        "semireal",
-        "3d stylized digital render, expressive character design, soft studio lighting",
+    "sdxl_tooned": (
+        "anime",
+        "vibrant stylized anime illustration, clean detailed linework, expressive eyes, rich colors",
     ),
     "anime": (
         "anime",
         "vibrant masterwork anime illustration, clean detailed linework, expressive eyes, cel-shaded aesthetics",
-    ),
-    "tooned": (
-        "anime",
-        "vibrant stylized anime illustration, clean lineart, expressive features, rich colors",
-    ),
-    "sdxl_tooned": (
-        "anime",
-        "vibrant stylized anime illustration, clean lineart, expressive features, rich colors",
     ),
     "comic": (
         "anime",
@@ -197,40 +395,80 @@ UI_STYLE_MAP: Dict[str, Tuple[str, str]] = {
         "anime",
         "expressive western comic book art, clean ink linework, vibrant cel-shaded colors",
     ),
-    "midjourney": (
-        "fantasy",
-        "artistic concept art, ethereal atmospheric lighting, dramatic composition, masterpiece",
+    "cinematic": (
+        "realistic",
+        "cinematic movie still, 35mm film photography, dramatic lighting, anamorphic bokeh",
     ),
-    "fantasy": (
-        "fantasy",
-        "epic fantasy concept art, ethereal magical lighting, intricate atmospheric details, masterpiece",
+    "semireal": (
+        "semireal",
+        "2.5d semi-realistic digital art, soft cinematic lighting, refined stylized features",
     ),
-    "sdxl_fantasy": (
-        "fantasy",
-        "epic fantasy concept art, ethereal magical lighting, intricate atmospheric details, masterpiece",
+    "art": (
+        "semireal",
+        "artistic digital illustration, painterly lighting, expressive composition",
+    ),
+    "pinup": (
+        "semireal",
+        "vintage 1950s technicolor pin-up art style, retro glamour, warm painterly studio lighting",
+    ),
+    "retro": (
+        "semireal",
+        "vintage retro technicolor illustration, warm nostalgic tones, painterly lighting",
+    ),
+    "pixar": (
+        "semireal",
+        "3d animated movie style, expressive stylized character, soft subsurface scattering",
+    ),
+    "3d": (
+        "semireal",
+        "3d stylized digital render, expressive character design, soft studio lighting",
     ),
     "neon": (
         "fantasy",
-        "neon noir cyberpunk aesthetic, vibrant cyan and magenta rim light, glowing neon bokeh, night city reflections",
+        "neon noir cyberpunk aesthetic, vibrant cyan and magenta rim light, night city reflections",
     ),
     "cyberpunk": (
         "fantasy",
-        "cyberpunk night aesthetic, neon reflections, atmospheric rain and volumetric glow",
+        "cyberpunk night aesthetic, neon reflections, atmospheric volumetric glow",
+    ),
+    # Predefined CivitAI style LoRAs
+    "sdxl_lora_real_humans": (
+        "realistic",
+        "photo, portrait photo, authentic natural skin texture, raw daylight photography",
+    ),
+    "real_humans": (
+        "realistic",
+        "photo, portrait photo, authentic natural skin texture, raw daylight photography",
+    ),
+    "real humans": (
+        "realistic",
+        "photo, portrait photo, authentic natural skin texture, raw daylight photography",
+    ),
+    "sdxl_lora_cinematic_shot": (
+        "realistic",
+        "cinematic shot, 35mm film grain, dramatic atmospheric lighting, shallow depth of field",
+    ),
+    "sdxl_lora_anime_screencap": (
+        "anime",
+        "anime screencap, anime coloring, crisp cel shading",
+    ),
+    "sdxl_lora_eldritch_comics": (
+        "anime",
+        "comic book illustration, expressive ink linework",
     ),
 }
 
-# Pure visual descriptions for Direct UI archetypes (free of private LoRA trigger tokens)
+# Verbal fallback descriptions (used on anonymous SD 1.5 fallback or for non-SDXL archetypes)
 ARCHETYPE_VISUAL_TRAITS: Dict[str, Tuple[str, Optional[str]]] = {
-    # Standard (SDXL) character archetypes
-    "judith": ("natural expressive young woman with warm wavy auburn-brown hair, bright emerald-green eyes, subtle freckles, charming smile", None),
-    "sdxl_judith": ("natural expressive young woman with warm wavy auburn-brown hair, bright emerald-green eyes, subtle freckles, charming smile", None),
-    "june": ("charismatic stylish young woman, warm expressive gaze, modern look", None),
-    "domi": ("charismatic stylish brunette woman with piercing hazel gaze, modern chic look", None),
-    "sdxl_domi": ("charismatic stylish brunette woman with piercing hazel gaze, modern chic look", None),
-    "lana": ("radiant Slavic young woman with honey-blonde hair, expressive light eyes, warm natural beauty", None),
-    "sdxl_lana": ("radiant Slavic young woman with honey-blonde hair, expressive light eyes, warm natural beauty", None),
-    "oriana": ("glamorous confident woman with sculpted features, luminous dark eyes, magnetic poised presence", None),
-    "sdxl_oriana": ("glamorous confident woman with sculpted features, luminous dark eyes, magnetic poised presence", None),
+    "judith": ("expressive young woman with warm wavy hair, bright eyes, charming friendly smile", None),
+    "sdxl_judith": ("expressive young woman with warm wavy hair, bright eyes, charming friendly smile", None),
+    "june": ("pretty young woman with long wavy auburn hair, bright emerald-green eyes, subtle freckles across nose", None),
+    "domi": ("charismatic stylish woman with layered blonde-chestnut hair, expressive blue-hazel eyes, modern chic look", None),
+    "sdxl_domi": ("charismatic stylish woman with layered blonde-chestnut hair, expressive blue-hazel eyes, modern chic look", None),
+    "lana": ("radiant Slavic young woman with soft honey-blonde hair, expressive light eyes, warm natural beauty", None),
+    "sdxl_lana": ("radiant Slavic young woman with soft honey-blonde hair, expressive light eyes, warm natural beauty", None),
+    "oriana": ("glamorous confident woman with sculpted features, luminous dark eyes, poised magnetic presence", None),
+    "sdxl_oriana": ("glamorous confident woman with sculpted features, luminous dark eyes, poised magnetic presence", None),
     "vera": ("elegant dark-haired woman with striking deep gaze, classic refined features", None),
     "sdxl_vera": ("elegant dark-haired woman with striking deep gaze, classic refined features", None),
     "bianca": ("elegant poised blonde woman with refined classic features, bright eyes, graceful demeanor", None),
@@ -239,14 +477,13 @@ ARCHETYPE_VISUAL_TRAITS: Dict[str, Tuple[str, Optional[str]]] = {
     "sdxl_beatrice": ("classic European beauty with chestnut hair, refined cheekbones, warm intelligent gaze", None),
     "minerva": ("striking woman with dark raven hair, sculpted cheekbones, mystical piercing gaze", None),
     "sdxl_minerva": ("striking woman with dark raven hair, sculpted cheekbones, mystical piercing gaze", None),
-    # Studio (Krea 2 / Anima) archetypes (kept for private fallback if needed)
     "ada": ("confident woman with short black bob hair, elegant crimson dress, poised gaze", None),
     "ada_wong": ("confident woman with short black bob hair, elegant crimson dress, poised gaze", None),
     "brie": ("cheerful blonde woman, bright blue eyes, warm radiant smile", None),
     "kxbrie": ("cheerful blonde woman, bright blue eyes, warm radiant smile", None),
     "tifa": ("athletic young woman with long dark brown hair and ruby-red eyes, confident expression", None),
     "tifa_lockhart": ("athletic young woman with long dark brown hair and ruby-red eyes, confident expression", None),
-    "alt": ("alternative goth aesthetic young woman, dark eyeliner, choker, subtle colored hair highlights, moody lighting", "fantasy"),
+    "alt": ("alternative goth aesthetic young woman, dark eyeliner, choker, subtle colored hair highlights", "fantasy"),
     "goth": ("alternative goth aesthetic young woman, dark eyeliner, choker, moody atmospheric shadows", "fantasy"),
     "influencer": ("candid lifestyle portrait, golden hour natural sunlight, authentic relaxed expression", "realistic"),
     "luna": ("charming young woman, warm expressive eyes, gentle smile, soft natural lighting", None),
@@ -265,20 +502,45 @@ BASE_NEGATIVE_PROMPT = (
 )
 
 GUEST_SFW_NEGATIVE_PROMPT = (
-    "nsfw, nude, naked, explicit, topless, nipples, genitalia, areola, "
+    "nsfw, nude, naked, explicit, topless, nipples, genitalia, areola, deep cleavage, "
     "underwear, lingerie, sexual, erotic, suggestive, uncensored, fetishes, gore"
 )
 
-# Synthetic private LoRA tokens to strip if they appear in raw prompts
+PONY_MODEL_NAMES = {
+    "CyberRealistic Pony",
+    "Pony Realism",
+    "Pony Diffusion XL",
+    "Prefect Pony",
+    "AMPonyXL",
+    "WAI-CUTE Pony",
+    "WAI-ANI-NSFW-PONYXL",
+}
+
+SDXL_COMPATIBLE_BASE_MODELS = {
+    "SDXL 1.0",
+    "SDXL Turbo",
+    "SDXL Lightning",
+    "SDXL Hyper",
+    "SDXL Distilled",
+    "Pony",
+    "Illustrious",
+    "NoobAI",
+}
+
+# Synthetic private Krea-only LoRA tokens to strip if they appear in raw prompts
 _PRIVATE_TRIGGER_RE = re.compile(
     r"\b(?:DomiK4?|kxbrie|KR2Pix|Lun4|sysdeep_2b|CPELucy|sysdeep_asuka|Bradhamel\s+art\s+style|famegrid\s+style)\b,?\s*",
     flags=re.IGNORECASE,
 )
 _ANGLE_TAG_RE = re.compile(r"<[^>]+>")
+_CIVITAI_CUSTOM_ID_RE = re.compile(r"^(?:civitai[_:])?(\d{4,12})$", flags=re.IGNORECASE)
 
-# Cache for AI Horde online image models
+# Caches for AI Horde online image models, live worker capabilities, and CivitAI searches
 _IMAGE_MODELS_CACHE_TTL = 60.0
 _image_models_cache: Tuple[float, Dict[str, Dict[str, Any]]] = (0.0, {})
+_worker_caps_cache: Tuple[float, Dict[str, Dict[str, Any]]] = (0.0, {})
+_CIVITAI_SEARCH_CACHE_TTL = 300.0
+_civitai_search_cache: Dict[str, Tuple[float, List[Dict[str, Any]]]] = {}
 
 # Global rate-limiter for AI Horde `/generate/async` (limit is 2 req/sec; we space by >=0.65s)
 _submit_rate_lock: Optional[asyncio.Lock] = None
@@ -299,6 +561,54 @@ class HordeImageError(RuntimeError):
 
 class HordeCensoredError(HordeImageError):
     """Raised when AI Horde worker censored a guest generation due to NSFW safety."""
+
+
+def get_predefined_sdxl_presets() -> Dict[str, List[Dict[str, Any]]]:
+    """Returns enriched SDXL style & character LoRA definitions with CivitAI metadata and thumbnails."""
+    art_styles: List[Dict[str, Any]] = [
+        {
+            "id": "none",
+            "name": "Free",
+            "description": "Pure base checkpoint guided by your prompt",
+            "icon": "",
+            "filename": "",
+            "url": "",
+            "image_url": "",
+            "civitai_version_id": "",
+            "civitai_name": "",
+            "trained_words": [],
+            "trigger": "",
+            "strength": 0.0,
+            "models": ["all"],
+        }
+    ]
+    archetypes: List[Dict[str, Any]] = []
+
+    for key, item in SDXL_CIVITAI_LORA_REGISTRY.items():
+        entry = {
+            "id": item["id"],
+            "name": item["name"],
+            "civitai_name": item["civitai_name"],
+            "civitai_model_id": item["civitai_model_id"],
+            "civitai_version_id": item["civitai_version_id"],
+            "base_model": item["base_model"],
+            "category": item["category"],
+            "description": item["description"],
+            "icon": "",
+            "filename": f"civitai_{item['civitai_version_id']}.safetensors",
+            "url": f"https://civitai.com/models/{item['civitai_model_id']}?modelVersionId={item['civitai_version_id']}",
+            "image_url": item["image_url"],
+            "trained_words": list(item.get("trained_words") or []),
+            "trigger": f"<{item['name']}>",
+            "strength": float(item["strength"]),
+            "models": ["sdxl"],
+        }
+        if item["category"] == "style":
+            art_styles.append(entry)
+        else:
+            archetypes.append(entry)
+
+    return {"art_styles": art_styles, "archetypes": archetypes}
 
 
 def _truthy(val: Any, default: bool = True) -> bool:
@@ -339,14 +649,6 @@ def _is_privileged_caller(ctx: Any) -> bool:
 
 
 def should_use_horde_for_sdxl(ctx: Any, comfy_available: bool = False) -> bool:
-    """
-    Determines whether an Express / SDXL / non-Krea image request should be fulfilled
-    via AI Horde (`reGen`) instead of local ComfyUI:
-    - Always False if `HORDE_IMAGE_ENABLED = false`.
-    - True for all Guests / Free users when `HORDE_IMAGE_FOR_GUESTS = true` (default),
-      keeping local GPU free for Ollama + standalone `horde-worker-reGen`.
-    - True for ANY user (including Owner) when local ComfyUI (`localhost:8188`) is offline.
-    """
     if not is_horde_image_enabled():
         return False
     if not comfy_available:
@@ -400,11 +702,6 @@ def check_guest_priority_budget(
     estimated_kudos: float = 32.0,
     budget_path: Optional[str] = None,
 ) -> Tuple[bool, float, float]:
-    """
-    Checks whether `user_id` is within both the per-user and global daily Kudos caps
-    for priority AI Horde image generation.
-    Returns `(within_budget, remaining_global, remaining_user)`.
-    """
     try:
         global_cap = max(0.0, float(SETTINGS.get("HORDE_GUEST_DAILY_KUDOS_LIMIT", 2000.0)))
     except Exception:
@@ -451,42 +748,89 @@ def _resolve_priority_api_key() -> str:
     return ""
 
 
+def _parse_mps(perf_str: Any) -> float:
+    m = re.search(r"([0-9]+(?:\.[0-9]+)?)", str(perf_str or ""))
+    return float(m.group(1)) if m else 0.0
+
+
 async def fetch_online_image_models(
     session: aiohttp.ClientSession,
     client_agent: str = DEFAULT_CLIENT_AGENT,
     force_refresh: bool = False,
 ) -> Dict[str, Dict[str, Any]]:
-    """Fetches and caches online AI Horde image models (`count >= 1`) for 60s."""
-    global _image_models_cache
+    """
+    Fetches and caches live AI Horde image models enriched with worker-level LoRA
+    and speed (`fast_lora_workers`) capabilities for 60 seconds.
+    """
+    global _image_models_cache, _worker_caps_cache
     now = time.monotonic()
     cached_ts, cached_map = _image_models_cache
     if not force_refresh and cached_map and (now - cached_ts) < _IMAGE_MODELS_CACHE_TTL:
         return cached_map
 
     base = horde_client.HORDE_BASE_URL.rstrip("/")
+    headers = {"Client-Agent": client_agent, "User-Agent": "Direct/1.0"}
+    online: Dict[str, Dict[str, Any]] = {}
+
     try:
         async with session.get(
             f"{base}/status/models?type=image",
-            headers={"Client-Agent": client_agent, "User-Agent": "Direct/1.0"},
+            headers=headers,
             timeout=aiohttp.ClientTimeout(total=8.0),
         ) as resp:
             if resp.status == 200:
                 items = await resp.json()
                 if isinstance(items, list):
-                    online: Dict[str, Dict[str, Any]] = {}
                     for m in items:
                         if not isinstance(m, dict):
                             continue
                         name = str(m.get("name") or "").strip()
                         cnt = int(m.get("count") or 0)
                         if name and cnt > 0:
-                            online[name] = m
-                    if online:
-                        _image_models_cache = (now, online)
-                        return online
+                            online[name] = dict(m)
     except Exception as e:
         logger.debug(f"[HordeMapper] Could not refresh online image models: {e}")
 
+    # Enrich with live worker LoRA & speed capabilities
+    try:
+        async with session.get(
+            f"{base}/workers?type=image",
+            headers=headers,
+            timeout=aiohttp.ClientTimeout(total=8.0),
+        ) as w_resp:
+            if w_resp.status == 200:
+                workers = await w_resp.json()
+                if isinstance(workers, list):
+                    model_caps: Dict[str, Dict[str, Any]] = {}
+                    for w in workers:
+                        if not isinstance(w, dict) or not w.get("online") or w.get("maintenance_mode"):
+                            continue
+                        has_lora = bool(w.get("lora"))
+                        mps = _parse_mps(w.get("performance"))
+                        is_fast = mps >= 0.45 and not bool(w.get("extra_slow_worker"))
+                        for mname in (w.get("models") or []):
+                            st = model_caps.setdefault(
+                                mname,
+                                {"lora_workers": 0, "fast_lora_workers": 0, "fast_workers": 0, "max_mps": 0.0},
+                            )
+                            if is_fast:
+                                st["fast_workers"] += 1
+                            if has_lora:
+                                st["lora_workers"] += 1
+                                if is_fast:
+                                    st["fast_lora_workers"] += 1
+                            if mps > st["max_mps"]:
+                                st["max_mps"] = mps
+                    _worker_caps_cache = (now, model_caps)
+                    for mname, caps in model_caps.items():
+                        if mname in online:
+                            online[mname].update(caps)
+    except Exception as e:
+        logger.debug(f"[HordeMapper] Could not enrich worker LoRA capabilities: {e}")
+
+    if online:
+        _image_models_cache = (now, online)
+        return online
     return cached_map
 
 
@@ -494,11 +838,13 @@ def select_online_models_for_family(
     family: str,
     use_sdxl: bool,
     online_models: Dict[str, Dict[str, Any]],
-    max_models: int = 4,
+    require_lora: bool = False,
+    max_models: int = 3,
 ) -> List[str]:
     """
     Picks up to `max_models` live AI Horde models matching `family` (`realistic`,
-    `semireal`, `anime`, `fantasy`) and generation tier (`SDXL` vs `SD 1.5`).
+    `perfect`, `fantasy`, `anime`, `semireal`), preferring curated priority order,
+    low queue ETA, and active fast LoRA workers when `require_lora=True`.
     """
     pool = (
         STYLE_FAMILY_SDXL_MODELS.get(family) or STYLE_FAMILY_SDXL_MODELS["realistic"]
@@ -508,22 +854,41 @@ def select_online_models_for_family(
     if not online_models:
         return list(pool[:max_models])
 
-    available = [m for m in pool if m in online_models]
+    def _has_worker(mname: str) -> bool:
+        info = online_models.get(mname)
+        if not info:
+            return False
+        if require_lora and "lora_workers" in info:
+            return int(info.get("lora_workers") or 0) > 0
+        return int(info.get("count") or 0) > 0
+
+    available = [m for m in pool if _has_worker(m)]
+    if not available and use_sdxl and require_lora:
+        # Relax across all SDXL realistic/fantasy models that currently have LoRA workers
+        fallback_sdxl = []
+        for fam_list in STYLE_FAMILY_SDXL_MODELS.values():
+            for cand in fam_list:
+                if cand not in fallback_sdxl and _has_worker(cand):
+                    fallback_sdxl.append(cand)
+        available = fallback_sdxl
     if not available and use_sdxl:
-        # Fallback across general SDXL realistic models if specialized family is offline
-        available = [m for m in STYLE_FAMILY_SDXL_MODELS["realistic"] if m in online_models]
+        available = [m for m in pool if m in online_models] or [
+            m for m in STYLE_FAMILY_SDXL_MODELS["realistic"] if m in online_models
+        ]
     if not available:
         available = [m for m in STYLE_FAMILY_SD15_MODELS["realistic"] if m in online_models]
     if not available:
         return list(pool[:max_models])
 
-    def _score(model_name: str) -> Tuple[int, float, int]:
+    def _score(model_name: str) -> Tuple[int, int, float]:
         info = online_models.get(model_name) or {}
-        cnt = int(info.get("count") or 0)
+        fast_lora = int(info.get("fast_lora_workers") or info.get("lora_workers") or info.get("count") or 0)
         eta = float(info.get("eta") or 0.0)
-        # Prefer models with >= 2 workers and low ETA while keeping curated top choices strong
-        curated_bonus = max(0, 10 - pool.index(model_name)) if model_name in pool else 0
-        return (1 if cnt >= 2 else 0, -eta, cnt + curated_bonus)
+        curated_rank = (len(pool) - pool.index(model_name)) if model_name in pool else 0
+        # Penalize heavily queued models (>90s ETA) while preserving our curated checkpoint fidelity
+        not_congested = 1 if eta <= 75.0 else 0
+        has_fast = 1 if fast_lora >= 1 else 0
+        return (has_fast + not_congested, curated_rank, -eta)
 
     ranked = sorted(available, key=_score, reverse=True)
     return ranked[:max_models]
@@ -531,15 +896,12 @@ def select_online_models_for_family(
 
 def _extract_clean_prompt_and_tags(raw_prompt: str) -> Tuple[str, List[str]]:
     text = str(raw_prompt or "").strip()
-    # Strip "Title: ...\nImage: ..." wrapper if passed from /chat/stream
     if "Image:" in text:
         text = text.split("Image:", 1)[1].strip()
     elif text.lower().startswith("title:") and "\n" in text:
         text = text.split("\n", 1)[1].strip()
 
-    # Prevent `###` prompt-splitting injection from user text
     text = text.replace("###", ", ")
-
     tags = [t.strip().lower() for t in re.findall(r"<([^>]+)>", text) if t.strip()]
     clean = _ANGLE_TAG_RE.sub(" ", text)
     clean = _PRIVATE_TRIGGER_RE.sub("", clean)
@@ -548,12 +910,6 @@ def _extract_clean_prompt_and_tags(raw_prompt: str) -> Tuple[str, List[str]]:
 
 
 def _resolve_dimensions(width: int, height: int, use_sdxl: bool) -> Tuple[int, int]:
-    """
-    Maps requested UI canvas dimensions to AI Horde multiples of 64:
-    - Priority SDXL (`use_sdxl=True`): `832x1024` (portrait), `1024x832` (landscape), `896x896` (square).
-    - Anonymous SD 1.5 (`use_sdxl=False`): `512x640` (portrait), `640x512` (landscape), `512x512` (square)
-      — strictly `<= 327,680` pixels so AI Horde never rejects anonymous `0000000000` with `KudosUpfront`.
-    """
     w = max(256, int(width or 896))
     h = max(256, int(height or 1152))
     ratio = w / float(h)
@@ -571,6 +927,41 @@ def _resolve_dimensions(width: int, height: int, use_sdxl: bool) -> Tuple[int, i
         return 512, 512
 
 
+def _resolve_lora_spec(
+    raw_id: str,
+    custom_lookup: Dict[str, Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """
+    Resolves an archetype/style identifier (`sdxl_domi`, `domi`, `XLDomiv2.safetensors`,
+    `civitai_1377183`, or user-added custom CivitAI LoRA) into a normalized CivitAI LoRA spec.
+    """
+    cand = str(raw_id or "").strip().strip("<> ").lower()
+    if not cand or cand in ("none", "free", "prompt"):
+        return None
+
+    if cand in custom_lookup:
+        return custom_lookup[cand]
+
+    canonical = LORA_ALIAS_MAP.get(cand)
+    if canonical and canonical in SDXL_CIVITAI_LORA_REGISTRY:
+        return SDXL_CIVITAI_LORA_REGISTRY[canonical]
+
+    m = _CIVITAI_CUSTOM_ID_RE.match(cand.replace(".safetensors", ""))
+    if m:
+        vid = m.group(1)
+        if f"civitai_{vid}" in custom_lookup:
+            return custom_lookup[f"civitai_{vid}"]
+        return {
+            "id": f"civitai_{vid}",
+            "name": f"LoRA {vid}",
+            "civitai_version_id": vid,
+            "strength": 0.85,
+            "trained_words": [],
+            "inject_any": True,
+        }
+    return None
+
+
 def map_ui_to_horde_request(
     prompt: str,
     persona_prompt: str = "",
@@ -578,141 +969,356 @@ def map_ui_to_horde_request(
     style_setting: str = "",
     width: int = 896,
     height: int = 1152,
+    steps: Optional[int] = None,
+    cfg: Optional[float] = None,
     seed: Optional[int] = None,
+    persona_lora: Optional[str] = None,
+    persona_name: Optional[str] = None,
     is_uncensored: bool = False,
     use_sdxl: bool = True,
     online_models: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
-    Translates Direct UI parameters into a validated AI Horde `/api/v2/generate/async` JSON payload.
+    Translates Direct UI parameters (Base Model pill, predefined & custom CivitAI
+    Character/Style LoRAs, steps/cfg/detail sliders, custom negative prompt) into a
+    validated AI Horde `/api/v2/generate/async` JSON payload.
     """
     sliders = sliders or {}
     clean_scene, prompt_tags = _extract_clean_prompt_and_tags(prompt)
-    clean_persona, _ = _extract_clean_prompt_and_tags(persona_prompt)
+    clean_persona, persona_tags = _extract_clean_prompt_and_tags(persona_prompt)
+    all_inline_tags = prompt_tags + [t for t in persona_tags if t not in prompt_tags]
 
-    # 1. Resolve UI style & model family
-    style_candidates: List[str] = []
-    for t in prompt_tags:
-        if t in UI_STYLE_MAP and t not in ("none", "free"):
-            style_candidates.append(t)
+    # Index any user-supplied custom CivitAI LoRAs from UI / Persona render_preset
+    custom_lookup: Dict[str, Dict[str, Any]] = {}
+    raw_custom_list = sliders.get("custom_loras")
+    if isinstance(raw_custom_list, list):
+        for item in raw_custom_list:
+            if not isinstance(item, dict):
+                continue
+            vid = str(item.get("civitai_version_id") or item.get("version_id") or "").strip()
+            cid = str(item.get("id") or (f"civitai_{vid}" if vid else "")).strip().lower()
+            if cid and vid.isdigit():
+                spec = {
+                    "id": cid,
+                    "name": str(item.get("name") or f"LoRA {vid}"),
+                    "civitai_version_id": vid,
+                    "strength": float(item.get("strength") or 0.85),
+                    "trained_words": [str(w).strip() for w in (item.get("trained_words") or []) if str(w).strip()],
+                    "category": str(item.get("category") or "character"),
+                }
+                custom_lookup[cid] = spec
+                custom_lookup[f"civitai_{vid}"] = spec
+                custom_lookup[vid] = spec
+
+    # 1. Resolve Base Model family (`realistic`, `perfect`, `fantasy`, `anime`) and style modifier
+    base_candidates: List[str] = []
+    for raw_b in (sliders.get("base_model"), style_setting):
+        b_low = str(raw_b or "").strip().lower().strip("<> ")
+        if b_low in UI_STYLE_MAP and b_low not in ("none", "free"):
+            base_candidates.append(b_low)
+
+    style_ids: List[str] = []
     if isinstance(sliders.get("styles"), list):
         for s in sliders["styles"]:
-            s_low = str(s or "").strip().lower()
-            if s_low in UI_STYLE_MAP and s_low not in ("none", "free"):
-                style_candidates.append(s_low)
-    for raw_s in (sliders.get("style"), sliders.get("base_model"), style_setting):
-        s_low = str(raw_s or "").strip().lower().strip("<> ")
-        if s_low in UI_STYLE_MAP and s_low not in ("none", "free"):
-            style_candidates.append(s_low)
+            s_clean = str(s or "").strip().lower()
+            if s_clean and s_clean not in ("none", "free") and s_clean not in style_ids:
+                style_ids.append(s_clean)
+    elif sliders.get("style"):
+        s_clean = str(sliders.get("style") or "").strip().lower()
+        if s_clean and s_clean not in ("none", "free"):
+            style_ids.append(s_clean)
 
-    chosen_style_key = style_candidates[0] if style_candidates else "realistic"
-    family, style_modifier = UI_STYLE_MAP.get(chosen_style_key, UI_STYLE_MAP["realistic"])
+    for t in all_inline_tags:
+        if t in UI_STYLE_MAP and t not in ("none", "free") and t not in style_ids:
+            style_ids.append(t)
 
-    # 2. Resolve character archetypes -> visual traits
+    primary_base_key = base_candidates[0] if base_candidates else (
+        next((s for s in style_ids if s in UI_STYLE_MAP), "realistic")
+    )
+    family, base_modifier = UI_STYLE_MAP.get(primary_base_key, UI_STYLE_MAP["realistic"])
+
+    extra_style_modifiers: List[str] = []
+    for sid in style_ids:
+        if sid in UI_STYLE_MAP and sid != primary_base_key:
+            s_fam, s_mod = UI_STYLE_MAP[sid]
+            if s_mod and s_mod not in extra_style_modifiers and s_mod != base_modifier:
+                extra_style_modifiers.append(s_mod)
+            if not base_candidates and s_fam:
+                family = s_fam
+
+    # 2. Collect Character & Style LoRAs (for SDXL `reGen` workers) + verbal traits
     raw_archs: List[str] = []
     if isinstance(sliders.get("archetypes"), (list, tuple)):
-        raw_archs.extend(str(a).strip().lower() for a in sliders["archetypes"] if a)
+        for a in sliders["archetypes"]:
+            a_low = str(a or "").strip().lower()
+            if a_low and a_low != "none" and a_low not in raw_archs:
+                raw_archs.append(a_low)
     elif isinstance(sliders.get("archetype"), str) and sliders["archetype"].strip():
-        raw_archs.extend(a.strip().lower() for a in sliders["archetype"].split(",") if a.strip())
-    for t in prompt_tags:
-        if t in ARCHETYPE_VISUAL_TRAITS and t not in raw_archs:
-            raw_archs.append(t)
+        for a in sliders["archetype"].split(","):
+            a_low = a.strip().lower()
+            if a_low and a_low != "none" and a_low not in raw_archs:
+                raw_archs.append(a_low)
 
+    for extra_cand in (persona_lora, sliders.get("lora")):
+        if extra_cand:
+            ec = str(extra_cand).strip().lower()
+            if ec and ec not in raw_archs:
+                raw_archs.append(ec)
+
+    if not raw_archs and persona_name:
+        pn_low = str(persona_name).strip().lower()
+        if pn_low in LORA_ALIAS_MAP:
+            raw_archs.append(LORA_ALIAS_MAP[pn_low])
+
+    for t in all_inline_tags:
+        t_clean = t.split(":", 1)[1].strip() if t.startswith("lora:") else t
+        if (t_clean in LORA_ALIAS_MAP or t_clean in ARCHETYPE_VISUAL_TRAITS or _CIVITAI_CUSTOM_ID_RE.match(t_clean)) and t_clean not in raw_archs:
+            raw_archs.append(t_clean)
+
+    arch_weights = sliders.get("archetype_weights") if isinstance(sliders.get("archetype_weights"), dict) else {}
+    style_weights = sliders.get("style_weights") if isinstance(sliders.get("style_weights"), dict) else {}
+
+    horde_loras: List[Dict[str, Any]] = []
+    seen_version_ids: set[str] = set()
+    lora_trigger_words: List[str] = []
     arch_traits: List[str] = []
-    for arch in raw_archs:
-        trait_entry = ARCHETYPE_VISUAL_TRAITS.get(arch)
-        if trait_entry:
-            trait_text, arch_family = trait_entry
-            if trait_text and trait_text not in arch_traits:
-                arch_traits.append(trait_text)
-            # If user didn't pick an explicit non-default style, let anime archetypes steer family
-            if arch_family and chosen_style_key in ("realistic", "sdxl_realistic", "sdxl", "none", "free"):
-                family = arch_family
 
-    # 3. Compose natural positive prompt (scene first, then persona/archetype, then sliders & style)
+    def _lookup_weight(weight_dict: Dict[str, Any], raw_key: str, canonical_id: str, default_w: float) -> float:
+        for k in (raw_key, canonical_id, raw_key.upper(), canonical_id.replace("sdxl_", "")):
+            if k in weight_dict and weight_dict[k] is not None:
+                try:
+                    return round(max(0.1, min(1.5, float(weight_dict[k]))), 2)
+                except Exception:
+                    pass
+        return round(float(default_w), 2)
+
+    # Resolve Character LoRAs first (highest companion priority)
+    for arch in raw_archs:
+        spec = _resolve_lora_spec(arch, custom_lookup) if use_sdxl else None
+        if spec and len(horde_loras) < MAX_HORDE_LORAS:
+            vid = str(spec["civitai_version_id"])
+            if vid not in seen_version_ids:
+                w = _lookup_weight(arch_weights, arch, spec["id"], spec.get("strength", 0.9))
+                lora_entry: Dict[str, Any] = {
+                    "name": vid,
+                    "model": w,
+                    "clip": w,
+                    "is_version": True,
+                }
+                t_words = spec.get("trained_words") or []
+                if t_words:
+                    for tw in t_words[:2]:
+                        if tw and tw not in lora_trigger_words:
+                            lora_trigger_words.append(tw)
+                elif spec.get("inject_any"):
+                    lora_entry["inject_trigger"] = "any"
+                horde_loras.append(lora_entry)
+                seen_version_ids.add(vid)
+        else:
+            # Verbal trait fallback (when on SD 1.5 anonymous fallback or non-CivitAI preset)
+            trait_entry = ARCHETYPE_VISUAL_TRAITS.get(arch)
+            if trait_entry:
+                trait_text, arch_family = trait_entry
+                if trait_text and trait_text not in arch_traits:
+                    arch_traits.append(trait_text)
+                if arch_family and not base_candidates:
+                    family = arch_family
+
+    # Resolve Style / Concept LoRAs second
+    for sid in style_ids:
+        spec = _resolve_lora_spec(sid, custom_lookup) if use_sdxl else None
+        if spec and len(horde_loras) < MAX_HORDE_LORAS:
+            vid = str(spec["civitai_version_id"])
+            if vid not in seen_version_ids:
+                w = _lookup_weight(style_weights, sid, spec["id"], spec.get("strength", 0.75))
+                lora_entry = {
+                    "name": vid,
+                    "model": w,
+                    "clip": w,
+                    "is_version": True,
+                }
+                t_words = spec.get("trained_words") or []
+                if t_words:
+                    for tw in t_words[:2]:
+                        if tw and tw not in lora_trigger_words:
+                            lora_trigger_words.append(tw)
+                elif spec.get("inject_any"):
+                    lora_entry["inject_trigger"] = "any"
+                horde_loras.append(lora_entry)
+                seen_version_ids.add(vid)
+
+    # 3. Resolve Steps, CFG, Sampler & TurboMix / Detail Tweaker XL LoRAs
+    raw_steps = steps if steps is not None else sliders.get("steps")
+    raw_cfg = cfg if cfg is not None else sliders.get("cfg")
+    horde_native = bool(sliders.get("horde_native"))
+
+    if not use_sdxl:
+        eff_steps = 20
+        eff_cfg = 6.5
+        sampler_name = "k_euler_a"
+        karras_flag = True
+    else:
+        parsed_steps = 18
+        if raw_steps is not None:
+            try:
+                s_int = int(raw_steps)
+                # Legacy DMD2 default (`6` or `7` with cfg <= 2.0 and without horde_native flag) -> map to 18 crisp Karras steps
+                if not horde_native and s_int in (6, 7) and (raw_cfg is None or float(raw_cfg) <= 2.2):
+                    parsed_steps = 18
+                else:
+                    parsed_steps = max(6, min(30, s_int))
+            except Exception:
+                parsed_steps = 18
+
+        is_turbo_8step = parsed_steps <= 10
+        if is_turbo_8step:
+            eff_steps = max(6, min(10, parsed_steps))
+            eff_cfg = 2.0
+            sampler_name = "k_dpmpp_sde"
+            karras_flag = True
+            if (
+                HORDE_TURBOMIX_LORA_VERSION_ID not in seen_version_ids
+                and len(horde_loras) < MAX_HORDE_LORAS
+            ):
+                horde_loras.insert(
+                    0,
+                    {
+                        "name": HORDE_TURBOMIX_LORA_VERSION_ID,
+                        "model": 1.0,
+                        "clip": 1.0,
+                        "is_version": True,
+                    },
+                )
+                seen_version_ids.add(HORDE_TURBOMIX_LORA_VERSION_ID)
+        else:
+            eff_steps = max(12, min(28, parsed_steps))
+            sampler_name = "k_dpmpp_2m"
+            karras_flag = True
+            eff_cfg = 5.0
+            if raw_cfg is not None:
+                try:
+                    c_flt = float(raw_cfg)
+                    if not horde_native and c_flt <= 2.2:
+                        eff_cfg = 5.0
+                    else:
+                        eff_cfg = round(max(2.5, min(8.0, c_flt)), 1)
+                except Exception:
+                    eff_cfg = 5.0
+
+        # Detail Tweaker XL (`135867`) when user moves Detail slider away from neutral 0.5
+        try:
+            detail_val = float(sliders.get("detail", 0.5))
+            if (
+                abs(detail_val - 0.5) >= 0.15
+                and HORDE_DETAIL_TWEAKER_XL_VERSION_ID not in seen_version_ids
+                and len(horde_loras) < MAX_HORDE_LORAS
+            ):
+                # Map 0.0..1.0 -> 0.15..0.85 strength
+                det_w = round(max(0.15, min(0.9, detail_val * 0.85)), 2)
+                horde_loras.append(
+                    {
+                        "name": HORDE_DETAIL_TWEAKER_XL_VERSION_ID,
+                        "model": det_w,
+                        "clip": det_w,
+                        "is_version": True,
+                    }
+                )
+                seen_version_ids.add(HORDE_DETAIL_TWEAKER_XL_VERSION_ID)
+        except Exception:
+            pass
+
+    # 4. Select online models (filtering to active LoRA-capable workers when `horde_loras` is non-empty)
+    models = select_online_models_for_family(
+        family=family,
+        use_sdxl=use_sdxl,
+        online_models=online_models or {},
+        require_lora=bool(horde_loras),
+        max_models=3 if horde_loras else 4,
+    )
+
+    primary_model = models[0] if models else ""
+    uses_pony = use_sdxl and (primary_model in PONY_MODEL_NAMES)
+
+    # 5. Compose Positive Prompt
     prompt_parts: List[str] = []
+    if uses_pony:
+        prompt_parts.append("score_9, score_8_up, score_7_up")
+    for tw in lora_trigger_words:
+        if tw.lower() not in clean_scene.lower():
+            prompt_parts.append(tw)
     if clean_scene:
         prompt_parts.append(clean_scene)
-    if clean_persona and clean_persona.lower() not in clean_scene.lower():
+    # Only inject long verbal persona appearance when no dedicated CivitAI character LoRA is active,
+    # or keep short non-conflicting context so hair/eye color from verbal passport doesn't fight the LoRA
+    has_char_civitai_lora = any(
+        vid not in (HORDE_TURBOMIX_LORA_VERSION_ID, HORDE_DETAIL_TWEAKER_XL_VERSION_ID)
+        for vid in seen_version_ids
+    )
+    if clean_persona and not has_char_civitai_lora and clean_persona.lower() not in clean_scene.lower():
         prompt_parts.append(clean_persona)
     for tr in arch_traits:
         if tr.lower() not in clean_scene.lower():
             prompt_parts.append(tr)
 
-    # Micro-sliders from Creative Studio
     try:
         detail_val = float(sliders.get("detail", 0.5))
         if detail_val >= 0.7:
-            prompt_parts.append("ultra-detailed, fine textures, crisp focus")
+            prompt_parts.append("ultra-detailed, fine skin texture, crisp sharp focus")
         elif detail_val <= 0.3:
             prompt_parts.append("soft cinematic focus, gentle atmospheric glow")
     except Exception:
         pass
 
-    try:
-        age_val = float(sliders.get("age", 0.0))
-        if age_val > 0.3:
-            prompt_parts.append("mature distinguished appearance")
-        elif age_val < -0.3:
-            prompt_parts.append("youthful vibrant appearance")
-    except Exception:
-        pass
+    if base_modifier:
+        prompt_parts.append(base_modifier)
+    for em in extra_style_modifiers:
+        prompt_parts.append(em)
 
-    try:
-        weight_val = float(sliders.get("weight", 0.0))
-        if weight_val > 0.3:
-            prompt_parts.append("curvy athletic build")
-        elif weight_val < -0.3:
-            prompt_parts.append("slender delicate silhouette")
-    except Exception:
-        pass
+    # Prevent random gibberish shirt text unless user explicitly asked for text/logos
+    if use_sdxl and not re.search(r"\b(text|logo|sign|print|printed|banner|надпис|принт|лого)\b", clean_scene, re.I):
+        prompt_parts.append("plain unprinted clothing")
 
-    if style_modifier:
-        prompt_parts.append(style_modifier)
+    # Gentle SFW clothing guard when guest runs Pony or NSFW-trained CivitAI character LoRA
+    if not is_uncensored and use_sdxl and (uses_pony or has_char_civitai_lora):
+        if not re.search(r"\b(shirt|dress|jacket|blazer|sweater|coat|suit|armor|hoodie|top|blouse|outfit)\b", clean_scene, re.I):
+            prompt_parts.append("stylish modest outfit")
 
     positive_prompt = ", ".join(p.strip(" ,") for p in prompt_parts if p and p.strip(" ,"))
     if not positive_prompt:
-        positive_prompt = "beautiful scenic illustration, high quality, detailed"
-    # Keep prompt well within AI Horde max length
+        positive_prompt = "portrait, natural lighting, high quality, detailed"
     positive_prompt = positive_prompt[:1400]
 
-    # 4. Compose negative prompt (hardcoded SFW negative armor for all non-uncensored/guest callers)
-    neg_parts = [BASE_NEGATIVE_PROMPT]
+    # 6. Compose Negative Prompt (preserving mandatory SFW armor for guests + user's custom negative prompt)
+    neg_parts: List[str] = []
     if not is_uncensored:
-        neg_parts.insert(0, GUEST_SFW_NEGATIVE_PROMPT)
-    if family == "realistic":
-        neg_parts.append("3d render, cgi, anime, cartoon, plastic skin")
+        neg_parts.append(GUEST_SFW_NEGATIVE_PROMPT)
+    user_neg = str(sliders.get("negative_prompt") or "").replace("###", ", ").strip(" ,")
+    if user_neg:
+        neg_parts.append(user_neg[:500])
+    neg_parts.append(BASE_NEGATIVE_PROMPT)
+    if family in ("realistic", "perfect"):
+        neg_parts.append("3d render, cgi, cartoon, plastic skin")
     negative_prompt = ", ".join(neg_parts)
 
     horde_prompt = f"{positive_prompt} ### {negative_prompt}"
 
-    # 5. Dimensions, sampler, steps, and live models
     target_w, target_h = _resolve_dimensions(width, height, use_sdxl=use_sdxl)
-    steps = 22 if use_sdxl else 20
-    cfg_scale = 5.5 if use_sdxl else 6.5
-
-    models = select_online_models_for_family(
-        family=family,
-        use_sdxl=use_sdxl,
-        online_models=online_models or {},
-        max_models=4,
-    )
-
     params: Dict[str, Any] = {
-        "sampler_name": "k_euler_a",
-        "cfg_scale": cfg_scale,
+        "sampler_name": sampler_name,
+        "cfg_scale": eff_cfg,
         "width": target_w,
         "height": target_h,
-        "steps": steps,
-        "karras": True,
+        "steps": eff_steps,
+        "karras": karras_flag,
         "n": 1,
     }
+    if use_sdxl:
+        params["clip_skip"] = 2
+    if horde_loras:
+        params["loras"] = horde_loras
     if seed is not None and int(seed) > 0:
         params["seed"] = str(int(seed))
 
-    # Hardcoded guest safety guarantees:
-    # - Guests (`is_uncensored=False`): nsfw=False, censor_nsfw=True, replacement_filter=True
-    # - Verified Owner (`is_uncensored=True`): nsfw=True, censor_nsfw=False
     allow_nsfw = bool(is_uncensored)
     payload: Dict[str, Any] = {
         "prompt": horde_prompt,
@@ -721,18 +1327,23 @@ def map_ui_to_horde_request(
         "censor_nsfw": not allow_nsfw,
         "replacement_filter": not allow_nsfw,
         "trusted_workers": False,
-        "slow_workers": True,
+        "slow_workers": not use_sdxl,
         "models": models,
         "r2": True,
     }
     return payload
 
 
-def _normalize_image_to_png(raw_bytes: bytes) -> bytes:
-    """Converts WebP/JPEG/PNG bytes returned by AI Horde into standard RGB PNG bytes."""
+def _normalize_image_to_png(raw_bytes: bytes, apply_cas_sharpen: bool = True) -> bytes:
+    """
+    Converts WebP/JPEG/PNG bytes returned by AI Horde into standard RGB PNG bytes,
+    applying subtle Contrast-Adaptive Unsharp (`flow.json` node `123` equivalent).
+    """
     with Image.open(io.BytesIO(raw_bytes)) as im:
         if im.mode not in ("RGB", "RGBA"):
             im = im.convert("RGB")
+        if apply_cas_sharpen and min(im.size) >= 640:
+            im = im.filter(ImageFilter.UnsharpMask(radius=1.1, percent=52, threshold=2))
         out = io.BytesIO()
         im.save(out, format="PNG")
         return out.getvalue()
@@ -744,7 +1355,6 @@ async def _throttled_submit(
     payload: Dict[str, Any],
     headers: Dict[str, str],
 ) -> Tuple[int, Dict[str, Any], str]:
-    """Submits `POST /generate/async` respecting AI Horde's 2 req/sec limit with 429 retry."""
     global _submit_rate_lock, _last_submit_monotonic
     if _submit_rate_lock is None:
         _submit_rate_lock = asyncio.Lock()
@@ -799,28 +1409,18 @@ async def generate_horde_image(
     sliders: Optional[Dict[str, Any]] = None,
     width: int = 896,
     height: int = 1152,
+    steps: Optional[int] = None,
+    cfg: Optional[float] = None,
     seed: Optional[int] = None,
+    persona_lora: Optional[str] = None,
+    persona_name: Optional[str] = None,
     is_uncensored: bool = False,
     progress_cb: Optional[Callable[..., Awaitable[None]]] = None,
     client_agent: str = DEFAULT_CLIENT_AGENT,
-    poll_interval: float = 2.2,
+    poll_interval: float = 2.0,
     max_wait_seconds: Optional[int] = None,
     budget_path: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """
-    End-to-end AI Horde image generation with UI mapping, SFW guest enforcement,
-    daily Kudos cap management, automatic anonymous SD 1.5 fallback, and PNG conversion.
-
-    Returns:
-        {
-            "image_bytes": bytes (PNG),
-            "model": str,
-            "worker_name": str,
-            "kudos": float,
-            "tier_used": "priority_sdxl" | "anon_sd15",
-            "censored": bool,
-        }
-    """
     if max_wait_seconds is None:
         try:
             max_wait_seconds = max(30, int(SETTINGS.get("HORDE_IMAGE_MAX_WAIT_SECONDS", 150)))
@@ -828,7 +1428,6 @@ async def generate_horde_image(
             max_wait_seconds = 150
 
     is_owner_or_priv = _is_privileged_caller(ctx)
-    # Guests are NEVER allowed uncensored Horde image requests regardless of caller args
     effective_uncensored = bool(is_uncensored and is_owner_or_priv)
 
     user_id = getattr(ctx, "user_id", None) or "anonymous"
@@ -843,13 +1442,13 @@ async def generate_horde_image(
             use_priority = True
         else:
             within_cap, rem_g, rem_u = check_guest_priority_budget(
-                user_id, estimated_kudos=32.0, budget_path=budget_path
+                user_id, estimated_kudos=28.0, budget_path=budget_path
             )
             use_priority = within_cap
             if not within_cap:
                 logger.info(
                     f"[HordeMapper] Guest '{user_id}' priority Kudos cap reached "
-                    f"(rem_global={rem_g:.1f}, rem_user={rem_u:.1f}) — falling back to anonymous SD 1.5"
+                    f"(rem_global={rem_g:.1f}, rem_user={rem_u:.1f}), falling back to anonymous SD 1.5"
                 )
 
     base = horde_client.HORDE_BASE_URL.rstrip("/")
@@ -861,7 +1460,6 @@ async def generate_horde_image(
         if progress_cb:
             await progress_cb("warming", phase="queueing")
 
-        # Try priority SDXL first if eligible; auto-downgrade to anonymous SD 1.5 on KudosUpfront
         tiers_to_try = ["priority_sdxl", "anon_sd15"] if use_priority else ["anon_sd15"]
         if is_owner_or_priv and not use_priority:
             tiers_to_try = ["anon_sd15"]
@@ -874,8 +1472,6 @@ async def generate_horde_image(
         for candidate_tier in tiers_to_try:
             is_sdxl_tier = candidate_tier == "priority_sdxl"
             active_api_key = priority_key if is_sdxl_tier else ANONYMOUS_API_KEY
-            # Note: anonymous 0000000000 on AI Horde cannot reliably request high-res NSFW;
-            # keep effective_uncensored only when authenticated with priority key.
             tier_uncensored = effective_uncensored and is_sdxl_tier
             req_payload = map_ui_to_horde_request(
                 prompt=prompt,
@@ -884,7 +1480,11 @@ async def generate_horde_image(
                 style_setting=style_setting,
                 width=width,
                 height=height,
+                steps=steps,
+                cfg=cfg,
                 seed=seed,
+                persona_lora=persona_lora,
+                persona_name=persona_name,
                 is_uncensored=tier_uncensored,
                 use_sdxl=is_sdxl_tier,
                 online_models=online_models,
@@ -898,12 +1498,27 @@ async def generate_horde_image(
             status_code, parsed, raw_err = await _throttled_submit(
                 session, f"{base}/generate/async", req_payload, headers
             )
+            rc = str(parsed.get("rc") or "")
+            # If fast workers only (`slow_workers=False`) had zero worker match (not an auth/kudos error), retry once allowing slow_workers
+            if (
+                status_code not in (200, 202)
+                and is_sdxl_tier
+                and not req_payload.get("slow_workers")
+                and status_code not in (401, 403)
+                and rc not in ("KudosUpfront", "InvalidCredentials")
+            ):
+                req_payload_slow = dict(req_payload, slow_workers=True)
+                status_code, parsed, raw_err = await _throttled_submit(
+                    session, f"{base}/generate/async", req_payload_slow, headers
+                )
+                rc = str(parsed.get("rc") or "")
+                if status_code in (200, 202) and parsed.get("id"):
+                    req_payload = req_payload_slow
+
             if status_code in (200, 202) and parsed.get("id"):
                 submit_res = parsed
                 tier_used = candidate_tier
                 break
-
-            rc = str(parsed.get("rc") or "")
             if is_sdxl_tier and (status_code in (401, 403) or rc in ("KudosUpfront", "InvalidCredentials")):
                 logger.warning(
                     f"[HordeMapper] Priority SDXL rejected ({status_code} {rc}: {raw_err[:120]}), "
@@ -918,10 +1533,11 @@ async def generate_horde_image(
         task_id = str(submit_res.get("id") or "")
         kudos_cost = float(submit_res.get("kudos") or 0.0)
         models_requested = req_payload.get("models") or []
+        loras_requested = [l.get("name") for l in (req_payload.get("params", {}).get("loras") or [])]
         logger.info(
             f"[HordeMapper] Submitted job {task_id} (tier={tier_used}, models={models_requested}, "
-            f"size={req_payload['params']['width']}x{req_payload['params']['height']}, "
-            f"nsfw={req_payload['nsfw']}, censor={req_payload['censor_nsfw']}, kudos={kudos_cost})"
+            f"loras={loras_requested}, steps={req_payload['params']['steps']}, cfg={req_payload['params']['cfg_scale']}, "
+            f"size={req_payload['params']['width']}x{req_payload['params']['height']}, kudos={kudos_cost})"
         )
 
         task_terminal = False
@@ -949,14 +1565,14 @@ async def generate_horde_image(
                     raise HordeImageError("AI Horde worker faulted during image generation.")
 
                 if chk.get("is_possible") is False:
-                    raise HordeImageError("No online AI Horde workers can fulfill this image style right now.")
+                    raise HordeImageError("No online AI Horde workers can fulfill this model/LoRA combination right now.")
 
                 q_pos = int(chk.get("queue_position") or 0)
                 wait_s = int(chk.get("wait_time") or 0)
                 processing = int(chk.get("processing") or 0)
                 if progress_cb:
                     if processing > 0 or q_pos == 0:
-                        elapsed_ratio = min(0.9, (time.monotonic() - start_mono) / max(12.0, float(wait_s + 8)))
+                        elapsed_ratio = min(0.92, (time.monotonic() - start_mono) / max(10.0, float(wait_s + 6)))
                         est_step = max(1, int(round(elapsed_ratio * req_payload["params"]["steps"])))
                         await progress_cb(
                             "generating",
@@ -974,7 +1590,6 @@ async def generate_horde_image(
             else:
                 raise HordeImageError(f"AI Horde image generation timed out after {max_wait_seconds}s.")
 
-            # Fetch final generation payload once `done == True`
             async with session.get(
                 f"{base}/generate/status/{task_id}",
                 headers={"apikey": active_api_key, "Client-Agent": client_agent, "User-Agent": "Direct/1.0"},
@@ -993,7 +1608,7 @@ async def generate_horde_image(
             if was_censored and not effective_uncensored:
                 logger.warning(f"[HordeMapper] Worker censored NSFW output for guest '{user_id}' on job {task_id}")
                 raise HordeCensoredError(
-                    "Generated image was blocked by the AI Horde SFW safety filter. Please try a safer prompt."
+                    "Generated image was blocked by the AI Horde SFW safety filter. Please try a more modest outfit or prompt."
                 )
 
             img_field = str(gen.get("img") or "").strip()
@@ -1013,7 +1628,7 @@ async def generate_horde_image(
                     _, img_field = img_field.split(",", 1)
                 raw_img_bytes = base64.b64decode(img_field)
 
-            png_bytes = _normalize_image_to_png(raw_img_bytes)
+            png_bytes = _normalize_image_to_png(raw_img_bytes, apply_cas_sharpen=(tier_used == "priority_sdxl"))
             actual_model = str(gen.get("model") or (models_requested[0] if models_requested else "AI Horde"))
             worker_name = str(gen.get("worker_name") or "horde-worker")
             final_kudos = float(st_data.get("kudos") or kudos_cost or 0.0)
@@ -1039,3 +1654,231 @@ async def generate_horde_image(
             if task_id and not task_terminal:
                 await asyncio.shield(_cancel_image_task(task_id, active_api_key, client_agent))
 
+
+def _format_civitai_thumb(url: str) -> str:
+    if not url:
+        return ""
+    u = re.sub(r"/original=true/", "/width=256/", url)
+    u = re.sub(r"/width=\d+/", "/width=256/", u)
+    return u
+
+
+def _extract_civitai_lora_card(
+    model_obj: Dict[str, Any],
+    version_obj: Dict[str, Any],
+    category: str,
+    allow_nsfw_thumbs: bool = False,
+) -> Optional[Dict[str, Any]]:
+    """
+    Validates a CivitAI model + version against `horde-worker-reGen` (`hordelib`) rules:
+    - SDXL / Pony / Illustrious / NoobAI baseline
+    - Primary `.safetensors` file with SHA256 and `size_mb <= 400`
+    - Not a real-person POI (`poi == False`)
+    - Static preview image (`nsfwLevel <= 2` unless `allow_nsfw_thumbs=True`)
+    """
+    if bool(model_obj.get("poi")):
+        return None
+    base_model = str(version_obj.get("baseModel") or "").strip()
+    if base_model not in SDXL_COMPATIBLE_BASE_MODELS:
+        return None
+
+    chosen_file = None
+    for f in (version_obj.get("files") or []):
+        if not isinstance(f, dict):
+            continue
+        fname = str(f.get("name") or "")
+        hashes = f.get("hashes") or {}
+        if fname.endswith(".safetensors") and hashes.get("SHA256") and f.get("downloadUrl"):
+            if f.get("primary") or chosen_file is None:
+                chosen_file = f
+                if f.get("primary"):
+                    break
+    if not chosen_file:
+        return None
+
+    size_mb = round(float(chosen_file.get("sizeKB") or 0.0) / 1024.0, 1)
+    if size_mb <= 0 or size_mb > 400.0:
+        return None
+
+    max_nsfw_lvl = 16 if allow_nsfw_thumbs else 2
+    preview_url = ""
+    for im in (version_obj.get("images") or []):
+        if not isinstance(im, dict) or im.get("type") == "video":
+            continue
+        lvl = int(im.get("nsfwLevel") or 1)
+        if lvl <= max_nsfw_lvl and im.get("url"):
+            preview_url = _format_civitai_thumb(str(im["url"]))
+            break
+    if not preview_url:
+        return None
+
+    vid = str(version_obj.get("id") or "").strip()
+    mid = str(model_obj.get("id") or version_obj.get("modelId") or "").strip()
+    if not vid.isdigit():
+        return None
+
+    raw_name = str(model_obj.get("name") or f"LoRA {vid}").strip()
+    if not allow_nsfw_thumbs and re.search(
+        r"\b(?:nsfw|hentai|porn|nude|naked|fetish|explicit|sex|xxx|erotic|furry\s+babes|boobs|breasts)\b",
+        raw_name,
+        flags=re.IGNORECASE,
+    ):
+        return None
+    trained = [
+        re.sub(r"<lora:[^>]+>", "", str(w)).strip(" ,")
+        for w in (version_obj.get("trainedWords") or [])
+        if str(w).strip()
+    ]
+    trained = [w for w in trained if w][:4]
+    tags = [str(t).strip().lower() for t in (model_obj.get("tags") or []) if str(t).strip()]
+
+    return {
+        "id": f"civitai_{vid}",
+        "name": raw_name,
+        "civitai_name": raw_name,
+        "version_name": str(version_obj.get("name") or ""),
+        "civitai_model_id": mid,
+        "civitai_version_id": vid,
+        "base_model": base_model,
+        "size_mb": size_mb,
+        "category": category,
+        "image_url": preview_url,
+        "trained_words": trained,
+        "tags": tags[:6],
+        "strength": 0.9 if category == "character" else 0.75,
+        "filename": f"civitai_{vid}.safetensors",
+        "trigger": f"<civitai_{vid}>",
+        "models": ["sdxl"],
+        "url": f"https://civitai.com/models/{mid}?modelVersionId={vid}" if mid else "",
+        "description": f"{base_model} · {size_mb:.0f} MB" + (f" · trigger: {trained[0]}" if trained else ""),
+    }
+
+
+async def search_civitai_loras(
+    mode: str = "character",
+    query: str = "",
+    sort: str = "Most Downloaded",
+    limit: int = 24,
+    allow_nsfw: bool = False,
+) -> List[Dict[str, Any]]:
+    """
+    Searches CivitAI for SDXL-compatible (`<= 400 MB`) LoRAs in two modes:
+    - `mode="character"`: Companion / fictional characters (`tag=character`, excluding sliders/poses)
+    - `mode="style"`: Art styles, aesthetics, lighting, concepts (everything that is NOT a character)
+    Also supports pasting a direct CivitAI model/version URL or numeric ID into `query`.
+    """
+    norm_mode = "character" if str(mode or "").strip().lower().startswith("char") else "style"
+    q_clean = str(query or "").strip()
+    norm_sort = sort if sort in ("Most Downloaded", "Highest Rated", "Newest") else "Most Downloaded"
+    lim = max(4, min(36, int(limit or 24)))
+
+    cache_key = f"{norm_mode}|{q_clean.lower()}|{norm_sort}|{lim}|{int(bool(allow_nsfw))}"
+    now = time.monotonic()
+    cached = _civitai_search_cache.get(cache_key)
+    if cached and (now - cached[0]) < _CIVITAI_SEARCH_CACHE_TTL:
+        return cached[1]
+
+    headers = {"User-Agent": "Direct/1.0"}
+    timeout = aiohttp.ClientTimeout(total=12.0, connect=6.0)
+    results: List[Dict[str, Any]] = []
+
+    async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+        # Case A: User pasted a CivitAI URL (`civitai.com/models/12345?modelVersionId=67890`) or raw numeric ID
+        url_vid_match = re.search(r"modelVersionId=(\d+)", q_clean)
+        url_mid_match = re.search(r"civitai\.(?:com|red)/models/(\d+)", q_clean)
+        raw_id_match = re.match(r"^(\d{4,12})$", q_clean)
+
+        if url_vid_match or url_mid_match or raw_id_match:
+            try:
+                if url_vid_match:
+                    vid = url_vid_match.group(1)
+                    async with session.get(f"https://civitai.com/api/v1/model-versions/{vid}") as vr:
+                        if vr.status == 200:
+                            v_data = await vr.json()
+                            mid = v_data.get("modelId")
+                            async with session.get(f"https://civitai.com/api/v1/models/{mid}") as mr:
+                                if mr.status == 200:
+                                    m_data = await mr.json()
+                                    card = _extract_civitai_lora_card(m_data, v_data, norm_mode, allow_nsfw_thumbs=allow_nsfw)
+                                    if card:
+                                        results.append(card)
+                else:
+                    num_id = url_mid_match.group(1) if url_mid_match else raw_id_match.group(1)
+                    # Try as model ID first, then as version ID
+                    async with session.get(f"https://civitai.com/api/v1/models/{num_id}") as mr:
+                        if mr.status == 200:
+                            m_data = await mr.json()
+                            if str(m_data.get("type") or "").upper() == "LORA":
+                                for v_data in (m_data.get("modelVersions") or [])[:3]:
+                                    card = _extract_civitai_lora_card(m_data, v_data, norm_mode, allow_nsfw_thumbs=allow_nsfw)
+                                    if card:
+                                        results.append(card)
+                                        break
+                    if not results:
+                        async with session.get(f"https://civitai.com/api/v1/model-versions/{num_id}") as vr:
+                            if vr.status == 200:
+                                v_data = await vr.json()
+                                mid = v_data.get("modelId")
+                                async with session.get(f"https://civitai.com/api/v1/models/{mid}") as mr2:
+                                    if mr2.status == 200:
+                                        m_data = await mr2.json()
+                                        card = _extract_civitai_lora_card(m_data, v_data, norm_mode, allow_nsfw_thumbs=allow_nsfw)
+                                        if card:
+                                            results.append(card)
+            except Exception as e:
+                logger.debug(f"[CivitaiSearch] Direct ID/URL lookup failed for '{q_clean}': {e}")
+
+            if results:
+                _civitai_search_cache[cache_key] = (now, results)
+                return results
+
+        # Case B: Keyword / tag catalog search on CivitAI
+        params: List[Tuple[str, str]] = [
+            ("types", "LORA"),
+            ("sort", norm_sort),
+            ("limit", str(min(60, lim * 2 + 12))),
+            ("nsfw", "true" if allow_nsfw else "false"),
+            ("baseModels", "SDXL 1.0"),
+            ("baseModels", "Pony"),
+            ("baseModels", "Illustrious"),
+        ]
+        if norm_mode == "character":
+            params.append(("tag", "character"))
+        elif not q_clean:
+            params.append(("tag", "style"))
+
+        if q_clean:
+            params.append(("query", q_clean))
+
+        qs = urllib.parse.urlencode(params)
+        try:
+            async with session.get(f"https://civitai.com/api/v1/models?{qs}") as resp:
+                if resp.status == 200:
+                    payload = await resp.json()
+                    for item in (payload.get("items") or []):
+                        if not isinstance(item, dict):
+                            continue
+                        tags_low = {str(t).strip().lower() for t in (item.get("tags") or [])}
+                        if not allow_nsfw and (item.get("nsfw") or (tags_low & {"nsfw", "hentai", "explicit", "fetish"})):
+                            continue
+                        if norm_mode == "character":
+                            if tags_low & {"slider", "poses", "background", "architecture", "vehicle"}:
+                                continue
+                        else:
+                            # Styles / Concepts: exclude character & celebrity LoRAs
+                            if tags_low & {"character", "celebrity", "vtuber"}:
+                                continue
+
+                        # Pick first SDXL-compatible version <= 400 MB
+                        for ver in (item.get("modelVersions") or [])[:2]:
+                            card = _extract_civitai_lora_card(item, ver, norm_mode, allow_nsfw_thumbs=allow_nsfw)
+                            if card:
+                                results.append(card)
+                                break
+                        if len(results) >= lim:
+                            break
+        except Exception as e:
+            logger.warning(f"[CivitaiSearch] Search failed ({norm_mode}, q={q_clean!r}): {e}")
+
+    _civitai_search_cache[cache_key] = (now, results)
+    return results
