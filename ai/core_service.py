@@ -4366,7 +4366,7 @@ async def generate_horde_mapped_image(
 
     is_node_owner = bool(ctx and (getattr(ctx, "trusted_owner", False) or getattr(ctx, "private_mode", False)))
     is_p2p = bool(getattr(ctx, "private_mode", False))
-    should_save_local = bool(save_local) or (bool(upload_storage) and is_node_owner)
+    should_save_local = bool(is_node_owner and (save_local or upload_storage))
 
     if should_save_local:
         try:
@@ -5901,7 +5901,7 @@ async def generate_krea2_image(
 
     # Случай 1: Владелец ноды выбрал сохранение на этой ноде (save_local=True или upload_storage=True для владельца)
     is_node_owner = bool(ctx and (getattr(ctx, "trusted_owner", False) or getattr(ctx, "private_mode", False)))
-    should_save_local = bool(save_local) or (bool(upload_storage) and is_node_owner)
+    should_save_local = bool(is_node_owner and (save_local or upload_storage))
     target_img_path = None
     if should_save_local:
         try:
@@ -6782,7 +6782,8 @@ async def generate_krea_video(
     if final_video_prompt:
         readme_content += f"\n<!-- prompt: {final_video_prompt} -->\n"
 
-    if save_local:
+    is_vid_owner = bool(ctx and (getattr(ctx, "trusted_owner", False) or getattr(ctx, "private_mode", False)))
+    if save_local and is_vid_owner:
         try:
             rel_gen = f"generated/{safe_subfolder}" if safe_subfolder else "generated"
             target_dir = resolve_local_target_dir(ctx, rel_gen)
@@ -6945,7 +6946,8 @@ async def stitch_storyboard_videos(
     final_desc = (story_description or "").strip() or f"Full stitched movie ({len(resolved_clips)} clips, {actual_duration}s)."
     readme_content = f"# {final_title}\n\n{final_desc}\n\n<!-- clips: {len(resolved_clips)}, duration: {actual_duration}s -->\n"
 
-    if save_local:
+    is_stitch_owner = bool(ctx and (getattr(ctx, "trusted_owner", False) or getattr(ctx, "private_mode", False)))
+    if save_local and is_stitch_owner:
         try:
             rel_gen = f"generated/{safe_subfolder}" if safe_subfolder else "generated"
             target_dir = resolve_local_target_dir(ctx, rel_gen)

@@ -4972,7 +4972,7 @@ async def generate_krea2_endpoint(request: Request, data: KreaGenerateInput):
             )
         except Exception:
             is_node_owner = getattr(ctx, "trusted_owner", False)
-        save_locally = bool(is_node_owner or data.save_local)
+        save_locally = bool(is_node_owner and data.save_local)
 
         ref_imgs = data.reference_images or ([data.reference_image] if data.reference_image else None)
         is_sdxl_req = isinstance(data.sliders, dict) and core_service.is_sdxl_base_model(data.sliders.get("base_model"))
@@ -5140,7 +5140,7 @@ async def generate_krea_video_endpoint(request: Request, data: KreaVideoGenerate
             )
         except Exception:
             is_node_owner = getattr(ctx, "trusted_owner", False)
-        save_locally = bool(is_node_owner or data.save_local)
+        save_locally = bool(is_node_owner and data.save_local)
 
         ref_imgs = data.reference_images or ([data.reference_image] if data.reference_image else None)
 
@@ -6110,7 +6110,7 @@ async def krea_storyboard_stitch_endpoint(request: Request, data: StoryStitchInp
         )
     except Exception:
         is_owner = getattr(ctx, "trusted_owner", False)
-    save_locally = bool(is_owner or data.save_local)
+    save_locally = bool(is_owner and data.save_local)
 
     try:
         filename, title, description, video_data, cover_bytes, actual_duration, clips_count = (

@@ -3658,7 +3658,9 @@
     }
 
     const targetDev = resolveDevice();
+    const targetDriveForSave = getTargetDrive();
     const isAiNodeTarget = Boolean(targetDev && targetDev.isAiNode);
+    const shouldSaveOnAiNode = Boolean(isAiNodeTarget || !targetDriveForSave || (httpDrive && targetDriveForSave === httpDrive));
     const baseStorage = getBaseStorage();
     const fetchFn = getKreaFetch();
 
@@ -3739,7 +3741,7 @@
       stream: true,
       client: "svar",
       image_delivery: "inline",
-      save_local: true,
+      save_local: shouldSaveOnAiNode,
       mcp_keys: getMcpPayload(),
       settings: {
         defaultStorage: baseStorage,
