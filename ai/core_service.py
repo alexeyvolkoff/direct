@@ -5492,7 +5492,7 @@ async def generate_krea2_image(
     # 1. Art Styles (Loaded dynamically from krea_presets.json)
     STYLE_CONFIGS = get_krea_style_configs()
 
-    style_aliases = {"art": "semireal", "3d": "pixar", "cyberpunk": "neon"}
+    style_aliases = {"art": "semireal", "3d": "pixar", "cyberpunk": "neon", "nix_comic_lora": "nix_comic"}
 
     if "styles" in sliders and sliders["styles"] is not None:
         raw_styles = sliders["styles"]
@@ -5627,8 +5627,8 @@ async def generate_krea2_image(
         and not any(k in p_low_scene for k in ("close-up", "closeup", "headshot"))
     )
     for arch_id in archetype_list:
-        if arch_id in ARCHETYPE_CONFIGS:
-            cfg_arch = ARCHETYPE_CONFIGS[arch_id]
+        cfg_arch = ARCHETYPE_CONFIGS.get(arch_id) or (STYLE_CONFIGS.get("nix_comic") if arch_id == "nix_comic_lora" else None)
+        if cfg_arch:
             arch_trigger = cfg_arch.get("trigger") or ""
             if arch_trigger and is_wide_scene:
                 arch_trigger = re.sub(r"\s*,\s*,+", ", ", _FACIAL_DETAIL_CLAUSE_RE.sub("", arch_trigger)).strip(" ,.")

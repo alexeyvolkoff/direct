@@ -668,6 +668,7 @@
   let civitaiModalEcosystem = "sdxl"; // "sdxl" | "krea2" | "anima"
   let civitaiSearchQuery = "";
   let civitaiSearchSort = "Most Downloaded";
+  let showCivitaiSortMenu = false;
   let civitaiSearchResults = [];
   let isSearchingCivitaiLoras = false;
   let civitaiSearchError = "";
@@ -724,6 +725,7 @@
       civitaiModalEcosystem = currentBaseCategory || "sdxl";
     }
     civitaiSearchQuery = "";
+    showCivitaiSortMenu = false;
     showStyleDropdown = false;
     showArchetypeDropdown = false;
     showCivitaiLoraModal = true;
@@ -9748,10 +9750,10 @@
   {#if showCivitaiLoraModal}
     <!-- svelte-ignore a11y-click-events-have-key-events -->
     <!-- svelte-ignore a11y-no-static-element-interactions -->
-    <div class="modal-backdrop" on:click={() => (showCivitaiLoraModal = false)}>
+    <div class="modal-backdrop" on:click={() => { showCivitaiSortMenu = false; showCivitaiLoraModal = false; }}>
       <!-- svelte-ignore a11y-click-events-have-key-events -->
       <!-- svelte-ignore a11y-no-static-element-interactions -->
-      <div class="persona-modal-card civitai-browser-modal" on:click|stopPropagation>
+      <div class="persona-modal-card civitai-browser-modal" on:click|stopPropagation={() => (showCivitaiSortMenu = false)}>
         <div class="modal-header">
           <div class="civitai-browser-head-left">
             <h3>{civitaiModalEcosystem === "sdxl" ? $_("krea_civitai_modal_title", {}, "Add SDXL LoRA from CivitAI") : `${civitaiModalEcoLabel} · CivitAI LoRA`}</h3>
@@ -9807,15 +9809,54 @@
             bind:value={civitaiSearchQuery}
             on:keydown={(e) => { if (e.key === "Enter") searchCivitaiCatalog(); }}
           />
-          <select
-            class="select-styled civitai-sort-select"
-            bind:value={civitaiSearchSort}
-            on:change={searchCivitaiCatalog}
-          >
-            <option value="Most Downloaded">{$_("krea_civitai_sort_downloads", {}, "Most Downloaded")}</option>
-            <option value="Highest Rated">{$_("krea_civitai_sort_rated", {}, "Highest Rated")}</option>
-            <option value="Newest">{$_("krea_civitai_sort_newest", {}, "Newest")}</option>
-          </select>
+          <!-- svelte-ignore a11y-click-events-have-key-events -->
+          <!-- svelte-ignore a11y-no-static-element-interactions -->
+          <div class="civitai-sort-dropdown" on:click|stopPropagation>
+            <button
+              type="button"
+              class="civitai-sort-trigger"
+              class:open={showCivitaiSortMenu}
+              aria-haspopup="listbox"
+              aria-expanded={showCivitaiSortMenu}
+              on:click={() => (showCivitaiSortMenu = !showCivitaiSortMenu)}
+            >
+              <span class="civitai-sort-label">
+                {civitaiSearchSort === "Highest Rated"
+                  ? $_("krea_civitai_sort_rated", {}, "Highest Rated")
+                  : civitaiSearchSort === "Newest"
+                    ? $_("krea_civitai_sort_newest", {}, "Newest")
+                    : $_("krea_civitai_sort_downloads", {}, "Most Downloaded")}
+              </span>
+              <span class="civitai-sort-caret" aria-hidden="true">▾</span>
+            </button>
+            {#if showCivitaiSortMenu}
+              <div class="civitai-sort-menu" role="listbox">
+                {#each [
+                  { value: "Most Downloaded", label: $_("krea_civitai_sort_downloads", {}, "Most Downloaded") },
+                  { value: "Highest Rated", label: $_("krea_civitai_sort_rated", {}, "Highest Rated") },
+                  { value: "Newest", label: $_("krea_civitai_sort_newest", {}, "Newest") }
+                ] as opt}
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={civitaiSearchSort === opt.value}
+                    class="civitai-sort-option"
+                    class:active={civitaiSearchSort === opt.value}
+                    on:click={() => {
+                      civitaiSearchSort = opt.value;
+                      showCivitaiSortMenu = false;
+                      searchCivitaiCatalog();
+                    }}
+                  >
+                    <span>{opt.label}</span>
+                    {#if civitaiSearchSort === opt.value}
+                      <span class="civitai-sort-check">✓</span>
+                    {/if}
+                  </button>
+                {/each}
+              </div>
+            {/if}
+          </div>
           <button
             type="button"
             class="save-btn civitai-search-go-btn"
@@ -13077,86 +13118,6 @@
 
   .krea-studio-root.light-theme .dropdown-trigger-btn.has-archetype {
     background: #fdf2f8;
-    border-color: var(--accent-hover);
-    color: #9d174d;
-  }
-
-  .krea-studio-root.light-theme .dropdown-popup-menu {
-    background: #ffffff;
-    border-color: #F2E5ED;
-    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.05);
-  }
-
-  .krea-studio-root.light-theme .popup-menu-header {
-    border-bottom-color: #F7ECF2;
-    color: #664D5F;
-  }
-
-  .krea-studio-root.light-theme .popup-option-card {
-    background: transparent;
-    border-color: transparent;
-  }
-
-  .krea-studio-root.light-theme .popup-option-card:hover {
-    background: #FCF7FA;
-  }
-
-  .krea-studio-root.light-theme .popup-option-card.selected {
-    background: #f5f3ff;
-    border-color: #ddd6fe;
-  }
-
-  .krea-studio-root.light-theme .archetype-popup .popup-option-card.selected {
-    background: #fdf2f8;
-    border-color: #fbcfe8;
-  }
-
-  .krea-studio-root.light-theme .popup-option-row {
-    color: #0F0A10;
-  }
-
-  .krea-studio-root.light-theme .popup-option-item {
-    color: #0F0A10;
-  }
-
-  .krea-studio-root.light-theme .popup-option-item:hover {
-    background: #FCF7FA;
-  }
-
-  .krea-studio-root.light-theme .popup-option-item.selected {
-    background: #ede9fe;
-    color: #5b21b6;
-  }
-
-  .krea-studio-root.light-theme .archetype-popup .popup-option-item.selected {
-    background: #fdf2f8;
-    color: #9d174d;
-  }
-
-  .krea-studio-root.light-theme .option-label {
-    color: #0F0A10;
-    font-weight: 600;
-  }
-
-  .krea-studio-root.light-theme .popup-option-card.selected .option-label {
-    color: #4c1d95;
-    font-weight: 700;
-  }
-
-  .krea-studio-root.light-theme .archetype-popup .popup-option-card.selected .option-label {
-    color: #831843;
-    font-weight: 700;
-  }
-
-  .krea-studio-root.light-theme .option-desc {
-    color: #7D6376;
-  }
-
-  .krea-studio-root.light-theme .popup-option-card.selected .option-desc {
-    color: #6d28d9;
-  }
-
-  .krea-studio-root.light-theme .archetype-popup .popup-option-card.selected .option-desc {
     color: #be185d;
   }
 
@@ -16378,8 +16339,113 @@
   .civitai-search-input {
     flex: 1;
   }
-  .civitai-sort-select {
-    width: 165px;
+  .select-styled {
+    color-scheme: dark;
+    background-color: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 8px;
+    color: #f8fafc;
+    cursor: pointer;
+  }
+  .select-styled:focus {
+    border-color: #8b5cf6;
+    outline: none;
+  }
+  .select-styled option {
+    background-color: #1A121D;
+    color: #f8fafc;
+  }
+  .civitai-sort-dropdown {
+    position: relative;
+    width: 176px;
+    flex-shrink: 0;
+  }
+  .civitai-sort-trigger {
+    width: 100%;
+    height: 100%;
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 0 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.05);
+    color: #f8fafc;
+    font-size: 13px;
+    font-family: inherit;
+    font-weight: 500;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+  .civitai-sort-trigger:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(168, 85, 247, 0.45);
+  }
+  .civitai-sort-trigger.open,
+  .civitai-sort-trigger:focus-visible {
+    border-color: #8b5cf6;
+    outline: none;
+  }
+  .civitai-sort-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .civitai-sort-caret {
+    font-size: 11px;
+    opacity: 0.72;
+    transition: transform 0.15s ease;
+  }
+  .civitai-sort-trigger.open .civitai-sort-caret {
+    transform: rotate(180deg);
+  }
+  .civitai-sort-menu {
+    position: absolute;
+    top: calc(100% + 5px);
+    right: 0;
+    min-width: 100%;
+    padding: 5px;
+    border-radius: 10px;
+    background: #1a1222;
+    border: 1px solid rgba(168, 85, 247, 0.35);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .civitai-sort-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    padding: 7px 10px;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.86);
+    font-size: 12.5px;
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  .civitai-sort-option:hover {
+    background: rgba(168, 85, 247, 0.18);
+    color: #ffffff;
+  }
+  .civitai-sort-option.active {
+    background: rgba(168, 85, 247, 0.32);
+    color: #ffffff;
+    font-weight: 600;
+  }
+  .civitai-sort-check {
+    color: #c084fc;
+    font-size: 12px;
+    font-weight: 700;
   }
   .civitai-search-go-btn {
     padding: 0 16px;
@@ -16587,8 +16653,50 @@
     background: #7c3aed;
     color: #ffffff;
   }
+  .krea-studio-root.light-theme .select-styled {
+    color-scheme: light;
+    background-color: #FCF7FA;
+    border-color: #E6D3DF;
+    color: #0F0A10;
+  }
+  .krea-studio-root.light-theme .select-styled option {
+    background-color: #ffffff;
+    color: #0F0A10;
+  }
   .krea-studio-root.light-theme .civitai-search-toolbar {
     border-bottom-color: #e2e8f0;
+  }
+  .krea-studio-root.light-theme .civitai-sort-trigger {
+    background: #FCF7FA;
+    border-color: #E6D3DF;
+    color: #0F0A10;
+  }
+  .krea-studio-root.light-theme .civitai-sort-trigger:hover {
+    background: #F7ECF2;
+    border-color: #c4b5fd;
+  }
+  .krea-studio-root.light-theme .civitai-sort-trigger.open {
+    border-color: #7c3aed;
+    background: #ffffff;
+  }
+  .krea-studio-root.light-theme .civitai-sort-menu {
+    background: #ffffff;
+    border-color: #ddd6fe;
+    box-shadow: 0 10px 26px rgba(15, 10, 16, 0.14);
+  }
+  .krea-studio-root.light-theme .civitai-sort-option {
+    color: #334155;
+  }
+  .krea-studio-root.light-theme .civitai-sort-option:hover {
+    background: #f5f3ff;
+    color: #4c1d95;
+  }
+  .krea-studio-root.light-theme .civitai-sort-option.active {
+    background: #ede9fe;
+    color: #5b21b6;
+  }
+  .krea-studio-root.light-theme .civitai-sort-check {
+    color: #7c3aed;
   }
   .krea-studio-root.light-theme .civitai-lora-card {
     background: #ffffff;

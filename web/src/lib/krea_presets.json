@@ -473,24 +473,6 @@
       "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/f98d585a-38e8-4af8-ad1f-bf82550b1cc7/width=256/144650643.jpeg"
     },
     {
-      "id": "nix_comic_lora",
-      "name": "Nix Comic",
-      "description": "90s Disney + Marvel comic style (balanced facial features & linework)",
-      "icon": "🦸",
-      "filename": "krea2_nix_comic_v2.safetensors",
-      "url": "https://civitai.com/api/download/models/3268616",
-      "trigger": "",
-      "strength": 0.5,
-      "models": [
-        "krea2"
-      ],
-      "civitai_version_id": "3268616",
-      "civitai_model_id": "2836231",
-      "civitai_name": "Nix Comic [Multiple Styles]",
-      "base_model": "Krea 2",
-      "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/2a07a4aa-893a-47a2-bddb-121abb6c4d07/width=256/147999900.jpeg"
-    },
-    {
       "id": "maddie",
       "name": "Maddie",
       "description": "Natural girl-next-door charm, realistic skin texture & authentic features",
