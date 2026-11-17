@@ -131,9 +131,10 @@
   // Gallery items & Personas
   let items = [];
 
-  let sortOrder = typeof localStorage !== "undefined"
+  let mainLibrarySortOrder = typeof localStorage !== "undefined"
     ? localStorage.getItem("omd_krea_sort") || localStorage.getItem("omd_creations_sort") || "desc"
-    : "desc"; // 'desc' (newest first) | 'asc' (oldest first)
+    : "desc";
+  let sortOrder = mainLibrarySortOrder; // 'desc' (newest first) | 'asc' (oldest first)
 
   function getItemTimestamp(item) {
     if (!item) return 0;
@@ -179,9 +180,12 @@
 
   async function toggleSortOrder() {
     sortOrder = sortOrder === "desc" ? "asc" : "desc";
-    if (typeof localStorage !== "undefined") {
-      localStorage.setItem("omd_krea_sort", sortOrder);
-      localStorage.setItem("omd_creations_sort", sortOrder);
+    if (!activeStorySubfolder) {
+      mainLibrarySortOrder = sortOrder;
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem("omd_krea_sort", sortOrder);
+        localStorage.setItem("omd_creations_sort", sortOrder);
+      }
     }
     items = sortItemsList(items, sortOrder);
     await tick();
@@ -5783,9 +5787,18 @@
   }
 
   async function selectStorySubfolder(sub) {
-    activeStorySubfolder = sub || "";
-    if (sub) {
-      sortOrder = "asc"; // Show story frames in 01, 02, 03 narrative order!
+    const nextSub = sub || "";
+    if (!activeStorySubfolder && nextSub) {
+      mainLibrarySortOrder = sortOrder;
+    }
+    activeStorySubfolder = nextSub;
+    if (nextSub) {
+      sortOrder = "asc"; // Show story frames in 01, 02, 03 narrative order
+    } else {
+      sortOrder = mainLibrarySortOrder || "desc";
+    }
+    if (scrollContainerEl) {
+      scrollContainerEl.scrollTop = 0;
     }
     await loadCreations();
     if (sub) {
