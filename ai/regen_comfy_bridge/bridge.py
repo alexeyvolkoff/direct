@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import gc
+import glob
 import logging
 import os
 import sys
@@ -41,6 +42,30 @@ CUSTOM_NODE_PACKAGES = (
 _installed_hook = False
 
 
+def _resolve_frontend_dirs() -> tuple[str | None, str | None, str | None]:
+    """Locate modern comfyui-frontend-package static/templates/docs from standalone ComfyUI venv."""
+    comfy_base = os.path.dirname(os.path.abspath(CUSTOM_NODES_DIR))
+    candidates = [WEB_ROOT_DIR]
+    candidates.extend(
+        sorted(
+            glob.glob(os.path.join(comfy_base, "venv", "lib", "python*", "site-packages", "comfyui_frontend_package", "static")),
+            reverse=True,
+        )
+    )
+    web_dir = next((p for p in candidates if p and os.path.isfile(os.path.join(p, "index.html"))), None)
+    tpl_candidates = sorted(
+        glob.glob(os.path.join(comfy_base, "venv", "lib", "python*", "site-packages", "comfyui_workflow_templates", "templates")),
+        reverse=True,
+    )
+    doc_candidates = sorted(
+        glob.glob(os.path.join(comfy_base, "venv", "lib", "python*", "site-packages", "comfyui_embedded_docs", "docs")),
+        reverse=True,
+    )
+    tpl_dir = next((p for p in tpl_candidates if os.path.isdir(p)), None)
+    doc_dir = next((p for p in doc_candidates if os.path.isdir(p)), None)
+    return web_dir, tpl_dir, doc_dir
+
+
 def _configure_comfy_paths_and_nodes() -> None:
     if os.path.isdir(OVERLAY_SITE_DIR) and OVERLAY_SITE_DIR not in sys.path:
         sys.path.append(OVERLAY_SITE_DIR)
@@ -53,8 +78,9 @@ def _configure_comfy_paths_and_nodes() -> None:
     if not hasattr(comfy.samplers, "SCHEDULER_HANDLERS"):
         comfy.samplers.SCHEDULER_HANDLERS = {name: None for name in comfy.samplers.SCHEDULER_NAMES}
 
-    if os.path.isfile(os.path.join(WEB_ROOT_DIR, "index.html")):
-        comfy.cli_args.args.front_end_root = WEB_ROOT_DIR
+    resolved_web_dir, _, _ = _resolve_frontend_dirs()
+    if resolved_web_dir:
+        comfy.cli_args.args.front_end_root = resolved_web_dir
 
     # Ensure trusted local YOLOv8 .pt detectors are whitelisted for PyTorch 2.6+ safe loading in Impact Subpack
     try:
@@ -230,10 +256,24 @@ def patch_regen_classes() -> None:
                 import uuid as _uuid
                 from aiohttp import web as _aweb
                 import comfy.cli_args
-                if os.path.isfile(os.path.join(WEB_ROOT_DIR, "index.html")):
-                    comfy.cli_args.args.front_end_root = WEB_ROOT_DIR
+                resolved_web_dir, resolved_tpl_dir, resolved_doc_dir = _resolve_frontend_dirs()
+                if resolved_web_dir:
+                    comfy.cli_args.args.front_end_root = resolved_web_dir
                 srv = server.PromptServer(loop)
                 q = execution.PromptQueue(srv)
+
+                @srv.routes.get("/workflow_templates")
+                async def _handle_workflow_templates(_request: Any) -> Any:
+                    return _aweb.json_response({})
+
+                @srv.routes.get("/i18n")
+                async def _handle_comfy_i18n(_request: Any) -> Any:
+                    return _aweb.json_response({})
+
+                if resolved_tpl_dir:
+                    srv.app.add_routes([_aweb.static("/templates", resolved_tpl_dir)])
+                if resolved_doc_dir:
+                    srv.app.add_routes([_aweb.static("/docs", resolved_doc_dir)])
 
                 # Ring buffer so P2P Service-Worker iframe clients (/app/<node>/comfyui) can poll WS events over HTTP
                 poll_events: deque[tuple[int, float, str | None, dict]] = deque(maxlen=400)
