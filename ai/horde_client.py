@@ -44,8 +44,9 @@ _OLLAMA_THINK_PREFIX_RE = re.compile(r'^\s*<\|(?:no)?think\|>\s*\n?', re.IGNOREC
 
 # Strong chat / RP models frequently online on AI Horde OAI & KoboldCpp/Aphrodite
 DEFAULT_HORDE_MODELS = [
-    "koboldcpp/Orion-26B-A4B-v1.1",
     "koboldcpp/G4-MeroMero-26B-A4B-it-uncensored-heretic",
+    "Nimbz/Gemma-4-Dark-Orthia-31B",
+    "aphrodite/TheDrummer/Behemoth-128B-v3",
     "koboldcpp/Cydonia-24B-v4zg-Q4_K_M",
     "koboldcpp/mini-magnum-12b-v1.1",
     "koboldcpp/L3-8B-Stheno-v3.2",
@@ -74,24 +75,66 @@ def _quarantine_faulted_model(model_id: str) -> None:
         _faulted_oai_models[model_id] = time.monotonic() + _FAULT_COOLDOWN_SECONDS
 
 
+_MOE_ACTIVE_TAG_RE = re.compile(r"(?:^|[-_/ ])a\d+(?:\.\d+)?b(?=$|[-_/ .])", re.IGNORECASE)
+_MOE_EXPERTS_RE = re.compile(r"(?:^|[-_/ ])(\d+)x(\d+(?:\.\d+)?)b(?=$|[-_/ .])", re.IGNORECASE)
+_EDGE_PARAM_RE = re.compile(r"(?:^|[-_/ ])e(\d+(?:\.\d+)?)b(?=$|[-_/ .])", re.IGNORECASE)
+_MILLION_PARAM_RE = re.compile(r"(?:^|[-_/ ])(\d{2,3})m(?=$|[-_/ .])", re.IGNORECASE)
+_BILLION_PARAM_RE = re.compile(r"(?:^|[-_/ ]|[a-z])(\d+(?:\.\d+)?)b(?=$|[-_/ .])", re.IGNORECASE)
+
+
+def _extract_model_param_billions(model_id: str) -> Optional[float]:
+    low = (model_id or "").lower()
+    if not low:
+        return None
+    # Strip MoE active-parameter suffixes like -A4B / -A3B so total params (26B, 35B) win
+    cleaned = _MOE_ACTIVE_TAG_RE.sub("", low)
+    moe_m = _MOE_EXPERTS_RE.search(cleaned)
+    if moe_m:
+        try:
+            return float(moe_m.group(1)) * float(moe_m.group(2))
+        except ValueError:
+            pass
+    b_matches = [float(m.group(1)) for m in _BILLION_PARAM_RE.finditer(cleaned)]
+    if b_matches:
+        return max(b_matches)
+    edge_m = _EDGE_PARAM_RE.search(cleaned)
+    if edge_m:
+        try:
+            return float(edge_m.group(1))
+        except ValueError:
+            pass
+    mil_m = _MILLION_PARAM_RE.search(cleaned)
+    if mil_m:
+        try:
+            return float(mil_m.group(1)) / 1000.0
+        except ValueError:
+            pass
+    return None
+
+
 def _is_tiny_or_debug_model(model_id: str) -> bool:
-    low = model_id.lower()
+    low = (model_id or "").lower()
     if "debug" in low:
         return True
-    if any(tag in low for tag in ("0.5b", "0.6b", "270m", "135m", "1.5b", "1.7b")):
+    params_b = _extract_model_param_billions(low)
+    if params_b is not None and params_b < 8.0:
         return True
     return False
 
 
-def _rank_oai_card(card: Dict[str, Any]) -> Tuple[int, int, int, float]:
+def _rank_oai_card(card: Dict[str, Any]) -> Tuple[int, int, int, int, float]:
     model_id = str(card.get("id") or "")
     xh = card.get("x_horde") or {}
     workers = int(xh.get("workers") or 0)
     ctx_len = int(card.get("context_length") or 0)
     queued = float(xh.get("queued") or 0.0)
-    not_tiny = 0 if _is_tiny_or_debug_model(model_id) else 1
-    # Prefer non-tiny models with online workers, larger context, and smaller queue
-    return (not_tiny, workers, ctx_len, -queued)
+    if _is_tiny_or_debug_model(model_id):
+        size_tier = 0
+    else:
+        params_b = _extract_model_param_billions(model_id)
+        size_tier = 2 if (params_b is not None and params_b >= 12.0) else 1
+    # Prefer >=12B models over 8B, exclude <8B/debug, cap worker-count bias so 4x mobile nodes never beat 26B/31B/128B
+    return (size_tier, 1 if workers > 0 else 0, min(workers, 3), ctx_len, -queued)
 
 
 async def _fetch_oai_model_cards(
@@ -178,7 +221,7 @@ async def get_online_text_models(limit: int = 40) -> List[Dict[str, Any]]:
 
             for card in oai_cards:
                 m_id = str(card.get("id") or "").strip()
-                if not m_id or m_id in seen:
+                if not m_id or m_id in seen or _is_tiny_or_debug_model(m_id):
                     continue
                 seen.add(m_id)
                 xh = card.get("x_horde") or {}
@@ -209,10 +252,13 @@ async def get_online_text_models(limit: int = 40) -> List[Dict[str, Any]]:
                     "supported_parameters": supported_params,
                 })
 
-            # Append remaining active legacy-only text models
+            # Append remaining active legacy-only text models (excluding tiny/debug <8B models)
             leg_only = [
                 m for m in leg_models
-                if isinstance(m, dict) and m.get("name") and str(m.get("name")) not in seen
+                if isinstance(m, dict)
+                and m.get("name")
+                and str(m.get("name")) not in seen
+                and not _is_tiny_or_debug_model(str(m.get("name")))
             ]
             leg_only.sort(key=lambda m: (m.get("count", 0), m.get("performance", 0)), reverse=True)
             for m in leg_only:
@@ -563,11 +609,21 @@ async def _horde_generate_oai_stream(
                 leg_models = leg_res if isinstance(leg_res, list) else []
 
             oai_by_id = {str(c.get("id")): c for c in oai_cards if isinstance(c, dict) and c.get("id")}
-            healthy_oai_ids = [
+            capable_oai_ids = [
+                str(c["id"]) for c in oai_cards
+                if isinstance(c, dict)
+                and c.get("id")
+                and not _is_model_quarantined(str(c["id"]))
+                and not _is_tiny_or_debug_model(str(c["id"]))
+            ]
+            healthy_oai_ids = capable_oai_ids or [
                 str(c["id"]) for c in oai_cards
                 if isinstance(c, dict) and c.get("id") and not _is_model_quarantined(str(c["id"]))
             ]
             ranked_oai_ids = healthy_oai_ids or [
+                str(c["id"]) for c in oai_cards
+                if isinstance(c, dict) and c.get("id") and not _is_tiny_or_debug_model(str(c["id"]))
+            ] or [
                 str(c["id"]) for c in oai_cards if isinstance(c, dict) and c.get("id")
             ]
             leg_online = {
@@ -850,6 +906,7 @@ async def _horde_generate_oai_stream(
                         f"tokens={eval_count}, kudos={kudos_used}"
                     )
 
+                    is_fallback_model = bool(req_model and actual_model != req_model)
                     done_payload: Dict[str, Any] = {
                         "done": True,
                         "done_reason": finish_reason or "stop",
@@ -860,6 +917,8 @@ async def _horde_generate_oai_stream(
                             "worker_name": worker_name,
                             "worker_id": worker_id,
                             "model": actual_model,
+                            "requested_model": req_model or "auto",
+                            "fallback": is_fallback_model,
                             "kudos": kudos_used,
                             "usage": usage_info,
                         },
@@ -1007,11 +1066,21 @@ async def _horde_generate_legacy_stream(
                         }
                         await asyncio.sleep(0.02)
 
+                    req_pref = str(preferred_model or payload.get("model") or "").strip()
+                    if req_pref.lower() == "auto":
+                        req_pref = ""
                     yield {
                         "done": True,
                         "done_reason": "stop",
                         "eval_count": len(words),
                         "worker_info": f"{worker_name} [{actual_model}]",
+                        "horde_meta": {
+                            "request_id": task_id,
+                            "worker_name": worker_name,
+                            "model": actual_model,
+                            "requested_model": req_pref or "auto",
+                            "fallback": bool(req_pref and actual_model != req_pref),
+                        },
                     }
                     return
 

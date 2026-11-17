@@ -306,6 +306,8 @@ export function createChunkMapper(onStatus) {
             if (ev.new_title) metadata.newTitle = ev.new_title;
             if (ev.summary) metadata.summary = ev.summary;
             if (ev.facts) metadata.facts = ev.facts;
+            if (ev.worker_info) metadata.workerInfo = ev.worker_info;
+            if (ev.horde_meta) metadata.hordeMeta = ev.horde_meta;
             chunks.push({ type: 'finish', finishReason: 'stop', messageMetadata: metadata });
             return chunks;
         }

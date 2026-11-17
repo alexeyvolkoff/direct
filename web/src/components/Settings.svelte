@@ -1004,13 +1004,36 @@
 
   const POPULAR_HORDE_MODELS = [
     { id: "auto", label: "⚡ Auto (Best Online Streaming Model)" },
+    { id: "koboldcpp/G4-MeroMero-26B-A4B-it-uncensored-heretic", label: "⚡ G4-MeroMero-26B-A4B (Gemma 4 26B MoE / 256k)" },
     { id: "Nimbz/Gemma-4-Dark-Orthia-31B", label: "⚡ Gemma-4-Dark-Orthia-31B (31B / 256k)" },
-    { id: "koboldcpp/G4-MeroMero-26B-A4B-it-uncensored-heretic", label: "⚡ G4-MeroMero-26B-A4B (26B MoE / 128k)" },
+    { id: "aphrodite/TheDrummer/Behemoth-128B-v3", label: "⚡ Behemoth-128B-v3 (Mistral Large 128B RP)" },
     { id: "koboldcpp/Cydonia-24B-v4zg-Q4_K_M", label: "⚡ Cydonia-24B-v4zg (Creative RP / 24B)" },
-    { id: "koboldcpp/L3-8B-Stheno-v3.2", label: "⚡ L3-8B-Stheno-v3.2 (Fast 8B RP)" },
+    { id: "koboldcpp/Skyfall-31B-v4.2", label: "⚡ Skyfall-31B-v4.2 (Creative RP / 31B)" },
     { id: "koboldcpp/mini-magnum-12b-v1.1", label: "⚡ Mini-Magnum-12B-v1.1 (12B RP)" },
-    { id: "aphrodite/TheDrummer/Skyfall-31B-v4.2", label: "Skyfall-31B-v4.2 (Creative RP / 31B)" },
+    { id: "koboldcpp/L3-8B-Stheno-v3.2", label: "⚡ L3-8B-Stheno-v3.2 (Fast 8B RP)" },
   ];
+
+  function extractHordeParamBillions(modelId) {
+    const low = String(modelId || "").toLowerCase();
+    if (!low) return null;
+    const cleaned = low.replace(/(?:^|[-_/ ])a\d+(?:\.\d+)?b(?=$|[-_/ .])/g, "");
+    const moe = cleaned.match(/(?:^|[-_/ ])(\d+)x(\d+(?:\.\d+)?)b(?=$|[-_/ .])/);
+    if (moe) return parseFloat(moe[1]) * parseFloat(moe[2]);
+    const bAll = [...cleaned.matchAll(/(?:^|[-_/ ]|[a-z])(\d+(?:\.\d+)?)b(?=$|[-_/ .])/g)].map((m) => parseFloat(m[1]));
+    if (bAll.length) return Math.max(...bAll);
+    const edge = cleaned.match(/(?:^|[-_/ ])e(\d+(?:\.\d+)?)b(?=$|[-_/ .])/);
+    if (edge) return parseFloat(edge[1]);
+    const mil = cleaned.match(/(?:^|[-_/ ])(\d{2,3})m(?=$|[-_/ .])/);
+    if (mil) return parseFloat(mil[1]) / 1000;
+    return null;
+  }
+
+  function isTinyOrDebugHordeModel(modelId) {
+    const low = String(modelId || "").toLowerCase();
+    if (low.includes("debug")) return true;
+    const b = extractHordeParamBillions(low);
+    return b !== null && b < 8;
+  }
 
   let hordeModels = [...POPULAR_HORDE_MODELS];
   let loadingHordeModels = false;
@@ -1343,11 +1366,16 @@
       }
       if (Array.isArray(rawList) && rawList.length > 0) {
         const active = rawList
-          .filter(m => m.type === "text" && ((m.count || 0) > 0 || (m.queued || 0) > 0))
+          .filter(m => m.type === "text" && ((m.count || 0) > 0 || (m.queued || 0) > 0) && !isTinyOrDebugHordeModel(m.name))
           .sort((a, b) => {
             const oaiDiff = Number(Boolean(b.oai_supported)) - Number(Boolean(a.oai_supported));
             if (oaiDiff !== 0) return oaiDiff;
-            return (b.count || 0) - (a.count || 0);
+            const sizeA = (extractHordeParamBillions(a.name) || 8) >= 12 ? 2 : 1;
+            const sizeB = (extractHordeParamBillions(b.name) || 8) >= 12 ? 2 : 1;
+            if (sizeB !== sizeA) return sizeB - sizeA;
+            const wDiff = Math.min(b.count || 0, 3) - Math.min(a.count || 0, 3);
+            if (wDiff !== 0) return wDiff;
+            return (b.context_length || 0) - (a.context_length || 0);
           });
 
         const activeList = active.map(m => {
@@ -3405,7 +3433,7 @@
                       type="text"
                       bind:value={hordeModel}
                       on:change={handleHordeModelCustomChange}
-                      placeholder="e.g. aphrodite/TheDrummer/Behemoth-X-123B-v2.1"
+                      placeholder="e.g. aphrodite/TheDrummer/Behemoth-128B-v3"
                       class="text-input-styled"
                       style="margin-top: 4px;"
                     />

@@ -8707,6 +8707,8 @@ async def _perform_prompt_gen(ctx: UserContext,
                     response["event"] = event
                     if data.get("worker_info"):
                         response["worker_info"] = data["worker_info"]
+                    if data.get("horde_meta"):
+                        response["horde_meta"] = data["horde_meta"]
                     if data.get("tool_calls") or accumulated_tool_calls:
                         response["tool_calls"] = data.get("tool_calls") or accumulated_tool_calls
                     yield response
@@ -8775,6 +8777,7 @@ async def _perform_prompt_gen(ctx: UserContext,
             full_content = ""
             full_thinking = ""
             worker_info = None
+            horde_meta = None
             async for chunk in horde_client.horde_generate_stream(
                 main_payload,
                 api_key=h_key,
@@ -8790,12 +8793,15 @@ async def _perform_prompt_gen(ctx: UserContext,
                     full_content += msg["content"]
                 if chunk.get("worker_info"):
                     worker_info = chunk["worker_info"]
+                if chunk.get("horde_meta"):
+                    horde_meta = chunk["horde_meta"]
             data = {"message": {"role": "assistant", "content": full_content}}
             if full_thinking and allow_thinking:
                 data["message"]["thinking"] = full_thinking
         else:
             logging.info(f"Requesting LLM {model}")
             worker_info = None
+            horde_meta = None
             data = await llm_request(main_payload)
 
         if not data:
@@ -8804,6 +8810,8 @@ async def _perform_prompt_gen(ctx: UserContext,
         response = await process_response(data)
         if worker_info:
             response["worker_info"] = worker_info
+        if horde_meta:
+            response["horde_meta"] = horde_meta
         yield response
         return
 

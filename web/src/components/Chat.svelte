@@ -1776,6 +1776,42 @@
 
   // Сохраняет ответ ассистента (текст/изображение/факты/источники) в чат,
   // вытаскивая последнее assistant-сообщение из AI SDK после завершения стрима.
+  function getHordeBadgeInfo(msg) {
+    const meta = (msg && msg.metadata) || {};
+    const hm = meta.hordeMeta || null;
+    const wi = typeof meta.workerInfo === "string" ? meta.workerInfo : "";
+    let rawModel = (hm && hm.model) || "";
+    let workerName = (hm && hm.worker_name) || "";
+    if (!rawModel && wi) {
+      const m = wi.match(/^(.*?)\s*\[([^\]]+)\]\s*$/);
+      if (m) {
+        workerName = workerName || m[1].trim();
+        rawModel = m[2].trim();
+      } else {
+        rawModel = wi.trim();
+      }
+    }
+    if (!rawModel) return null;
+    let shortModel = rawModel.split("/").pop() || rawModel;
+    shortModel = shortModel
+      .replace(/-it-uncensored-heretic$/i, "")
+      .replace(/-uncensored-hauhaucs-aggressive.*$/i, "")
+      .replace(/-Q\d_[A-Z0-9_]+$/i, "");
+    const fallback = Boolean(hm && hm.fallback);
+    const reqModel = (hm && hm.requested_model) || "";
+    const kudos = hm && hm.kudos != null ? Math.round(Number(hm.kudos)) : null;
+    const parts = [`AI Horde: ${rawModel}`];
+    if (workerName) parts.push(`Worker: ${workerName}`);
+    if (kudos !== null && !isNaN(kudos)) parts.push(`Kudos: ${kudos}`);
+    if (fallback && reqModel) parts.push(`Fallback (${reqModel} offline)`);
+    return {
+      shortModel,
+      fallback,
+      tooltip: parts.join(" | "),
+    };
+  }
+
+  // Сохранение последнего ответа ассистента в локально/GunDB хранилище.
   // Используется и в обычной отправке, и в sendLearnQuestion.
   async function persistAssistantReply(currentId) {
     if (!chatStore || !currentId || !chat || !chat.messages) return;
@@ -1790,6 +1826,8 @@
     const newFactPart = lastAssistant.parts.find((p) => p.type === "data-new-fact");
     const savedFacts = (factsPart && factsPart.data?.facts) || (lastAssistant.metadata && lastAssistant.metadata.facts) || "";
     const savedNewFact = (newFactPart && newFactPart.data?.fact) || "";
+    const savedWorkerInfo = (lastAssistant.metadata && lastAssistant.metadata.workerInfo) || "";
+    const savedHordeMeta = (lastAssistant.metadata && lastAssistant.metadata.hordeMeta) || null;
     const savedSources = [];
     const seenSourceUrls = new Set();
     for (const p of lastAssistant.parts) {
@@ -1822,6 +1860,8 @@
           ...(savedFacts ? { facts: savedFacts } : {}),
           ...(savedNewFact ? { newFact: savedNewFact } : {}),
           ...(savedSources.length ? { sources: savedSources } : {}),
+          ...(savedWorkerInfo ? { workerInfo: savedWorkerInfo } : {}),
+          ...(savedHordeMeta ? { hordeMeta: savedHordeMeta } : {}),
         })
         .catch((e) => console.warn("[chat] persist asst msg error:", e));
 
@@ -2616,12 +2656,16 @@
                 parts.unshift({ type: "data-image", data: m.image });
               }
             }
+            const restoredMeta = {};
+            if (m.workerInfo) restoredMeta.workerInfo = m.workerInfo;
+            if (m.hordeMeta) restoredMeta.hordeMeta = m.hordeMeta;
             return {
               id: String(m.nonce || m.timestamp || Math.random().toString(36).slice(2)),
               nonce: m.nonce ? String(m.nonce) : null,
               timestamp: m.timestamp || null,
               role: m.role === "assistant" ? "assistant" : "user",
               parts,
+              ...(Object.keys(restoredMeta).length ? { metadata: restoredMeta } : {}),
             };
           })
         );
@@ -6104,6 +6148,18 @@ function lastFreshTitle(messages) {
                           <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                         </svg>
                       </button>
+
+                      {#if getHordeBadgeInfo(m)}
+                        {@const hBadge = getHordeBadgeInfo(m)}
+                        <span
+                          class="horde-model-badge"
+                          class:is-fallback={hBadge.fallback}
+                          title={hBadge.tooltip}
+                        >
+                          <span class="horde-badge-icon">{hBadge.fallback ? "↪" : "⚡"}</span>
+                          <span class="horde-badge-name">{hBadge.shortModel}</span>
+                        </span>
+                      {/if}
                     </div>
                   {/if}
 
@@ -8247,6 +8303,41 @@ function lastFreshTitle(messages) {
   .tool-btn:hover {
     background: rgba(255, 255, 255, 0.08);
     color: var(--text-primary);
+  }
+
+  .horde-model-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.72rem;
+    padding: 2px 8px;
+    border-radius: 999px;
+    color: var(--text-secondary);
+    background: var(--bg-secondary, rgba(128, 128, 128, 0.12));
+    border: 1px solid var(--border-color, rgba(128, 128, 128, 0.2));
+    max-width: 240px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: help;
+    user-select: none;
+  }
+
+  .horde-model-badge.is-fallback {
+    color: #d97706;
+    border-color: rgba(217, 119, 6, 0.35);
+    background: rgba(217, 119, 6, 0.1);
+  }
+
+  :global(.dark-theme) .horde-model-badge.is-fallback {
+    color: #fbbf24;
+    border-color: rgba(251, 191, 36, 0.32);
+    background: rgba(251, 191, 36, 0.1);
+  }
+
+  .horde-badge-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .copied-label {

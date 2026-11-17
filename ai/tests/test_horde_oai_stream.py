@@ -331,3 +331,41 @@ async def test_get_online_text_models_merges_oai_and_legacy(monkeypatch):
     finally:
         await runner.cleanup()
 
+
+def test_tiny_model_filter_and_moe_ranking():
+    # Sub-8B and debug models are filtered out
+    for tiny in (
+        "koboldcpp/Llama-3.2-1B-Instruct",
+        "koboldcpp/Llama-3.2-3B-Instruct",
+        "koboldcpp/Qwen3-0.6B",
+        "koboldcpp/Qwen3-1.7B",
+        "koboldcpp/Qwen3.5-4B",
+        "koboldcpp/Gemma-4-E4B-it-Ultra-Uncensored-Heretic",
+        "koboldcpp/debug-gemma-4-E2B-Queen-it",
+    ):
+        assert horde_client._is_tiny_or_debug_model(tiny) is True, f"Expected {tiny} to be marked tiny"
+
+    # Capable >=8B and MoE models (26B-A4B, 35B-A3B, 128B) are preserved
+    for good in (
+        "koboldcpp/G4-MeroMero-26B-A4B-it-uncensored-heretic",
+        "llamacpp/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive",
+        "Nimbz/Gemma-4-Dark-Orthia-31B",
+        "aphrodite/TheDrummer/Behemoth-128B-v3",
+        "koboldcpp/Cydonia-24B-v4zg-Q4_K_M",
+        "koboldcpp/L3-8B-Stheno-v3.2",
+    ):
+        assert horde_client._is_tiny_or_debug_model(good) is False, f"Expected {good} NOT to be marked tiny"
+
+    # 26B MoE and 128B rank strictly higher than 8B (even with 5 workers) and 1B (with 4 workers)
+    cards = [
+        {"id": "koboldcpp/Llama-3.2-1B-Instruct", "context_length": 16384, "x_horde": {"workers": 4, "queued": 0}},
+        {"id": "koboldcpp/L3-8B-Stheno-v3.2", "context_length": 8192, "x_horde": {"workers": 5, "queued": 0}},
+        {"id": "aphrodite/TheDrummer/Behemoth-128B-v3", "context_length": 32768, "x_horde": {"workers": 1, "queued": 0}},
+        {"id": "koboldcpp/G4-MeroMero-26B-A4B-it-uncensored-heretic", "context_length": 262144, "x_horde": {"workers": 3, "queued": 0}},
+    ]
+    ranked = [c["id"] for c in sorted(cards, key=horde_client._rank_oai_card, reverse=True)]
+    assert ranked[0] == "koboldcpp/G4-MeroMero-26B-A4B-it-uncensored-heretic"
+    assert ranked[1] == "aphrodite/TheDrummer/Behemoth-128B-v3"
+    assert ranked[-1] == "koboldcpp/Llama-3.2-1B-Instruct"
+
+
