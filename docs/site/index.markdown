@@ -12,7 +12,7 @@ Welcome to the official documentation for [**Disk Direct**](https://disk.direct)
 
 ### 📁 Core Storage, Nodes & Connectivity
 Connect browsers, mobile devices, laptops, mini-PCs, NAS boxes, and routers into a unified multi-device P2P storage fabric:
-* **[Getting Started](/getstarted/)**: Set up decentralized DID sign-in, explore **Files**, **Chats**, **Creations**, and **Knowledge** from the sidebar, connect local folders or hardware nodes, and create secure public or DID shares.
+* **[Getting Started](/getstarted/)**: Set up decentralized DID sign-in, explore **Files**, **Chats**, **Creations**, **Knowledge**, and **Media Library** from the sidebar, connect local folders or hardware nodes, and create secure public or DID shares.
 * **[Decentralized Identity (DID)](/did/)**: Self-sovereign `did:gun` keypairs, flexible display nicknames with `#tag` fingerprints, one-click `.json` keyfile backup & passwordless sign-in, and P2P node trust.
 * **[Node Deployment & Modes (Linux, OpenWrt, Windows, macOS)](/advanced/)**: Install the standalone P2P node on **Linux**, **OpenWrt routers** (`mips`/`mipsel`/`armv7`/`arm64`), **Windows**, or **macOS**, explore all operating modes (**Storage-only**, **Agentic P2P**, **Full Local AI**, **Hybrid**, **Public Guest AI**), and use **WebSSH** & **`omd-tunnel`**.
 * **[OpenWrt Routers](/openwrt/)**: Dedicated `.ipk` installation guide (`mips`, `mipsel`, `armv7`, `arm64`) for turning Wi-Fi routers with USB storage into `< 5 W` always-on P2P cloud nodes and LuCI/SSH gateways.
@@ -20,9 +20,10 @@ Connect browsers, mobile devices, laptops, mini-PCs, NAS boxes, and routers into
 
 ### 🤖 Private AI & Knowledge Workspace
 Turn your storage into an intelligent, privacy-preserving workspace powered by **AI Assistant Direct**:
-* **[Personal AI Node](/ainode/)**: Deploy the local AI service (`:4000`) with **Ollama** (CPU/CUDA/Metal), **Rockchip RKLLAMA** (NPU), **Hybrid**, or zero-GPU **Agentic P2P** inference — plus **MCP** tools.
-* **[Semantic Search](/searchnode/)**: Search documents, photos, and people by meaning across 50+ languages using the unified multimodal vector index.
+* **[Personal AI Node](/ainode/)**: Deploy the local AI service (`:4000`) with **Ollama** (CPU/CUDA/Metal), **Rockchip RKLLAMA** (NPU), **Hybrid**, **Horde AI**, or zero-GPU **Agentic P2P** inference, and configure node routing vs assistant persona in dedicated **AI Node** and **AI Assistant** settings tabs.
+* **[Semantic Search](/searchnode/)**: Search documents, photos, videos, and people by meaning across 50+ languages using the unified multimodal vector index.
 * **[Storage as Knowledge (RAG)](/rag/)**: Browse multimodal **Memory Cards** right from the sidebar, find specific people and photos with on-device facial & vision recognition, and chat with your private documents.
+* **[Media Library](/media/)**: Explore all indexed photos and videos in a chronological **Timeline** with a Year-Month scrubber and automatic **Auto-Albums** (**People**, **Moments & Trips**, **Places**, **Themes & Tags**), including offline mobile device previews.
 * **[Agentic Loop & MCP](/mcp/)**: Automate multi-step tasks and Office document creation (`WordCraft`, `GridCraft`, `DeckCraft`) in chat or connect external MCP agents.
 * **[Image Generation (Creations)](/creations/)** *(Optional)*: Render artworks in **Creations** (`Express` SDXL + DMD2, CivitAI LoRAs, one-shot face/reference conditioning, plus optional cloud `Studio` & `Video`) via local or P2P-tunneled **ComfyUI**.
 * **[AI Horde & Worker Bridge](/horde/)**: Tap into crowdsourced **AI Horde** (`aihorde.net`) 70B-123B creative models and contribute idle GPU cycles via the built-in **SDXL Dreamer Worker** or cooperative **`horde-worker-reGen` ComfyUI Bridge** (`/horde`).

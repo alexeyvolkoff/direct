@@ -26,7 +26,7 @@ Documents from your laptop and photos synced from your phone's camera roll are i
 ![Semantic Memory Cards](/images/memory_cards.png)
 
 Filter and explore your knowledge graph effortlessly:
-* **🖼️ Photos & Scenes**: Every recognized photo gets an AI-generated scene caption, date/location context, OCR text, and clickable topic/place `#tags` (saved alongside `<image>.Readme.md` sidecars). Search by visual description, landmark, season, or mood.
+* **🖼️ Photos, Videos & Scenes**: Every recognized photo and video gets an AI-generated scene caption, capture date/location context, poster thumbnail, OCR text, and clickable topic/place `#tags` (saved alongside `<media>.Readme.md` sidecars). Search by visual description, landmark, season, or mood, or open **[Media Library](/media/)** right next to **Knowledge** in the sidebar to browse everything in a chronological **Timeline** and automatic **Auto-Albums** (**People**, **Moments & Trips**, **Places**, and **Themes & Tags**), with seamless `base64` previews even when your phone is offline.
 * **👥 People (Facial Recognition)**: On-device face clustering and recognition links portraits and group shots to named **People** cards — so you can filter photos of family, friends, or teammates in one click or ask the assistant for photos of a specific person.
 * **📁 Folders, 📄 Docs, 💡 Notes & 🌐 Links**: Browse indexed Office/PDF documents, synced **Obsidian** / Markdown vaults, saved web links, and personal conversation facts (`👤 Personal`), or filter by `# Tags` and `🖥️ On-device` records.
 

@@ -132,6 +132,13 @@ The **Knowledge** section allows you to manage the information that the AI assis
 
 Using the Knowledge Base makes the assistant's answers more accurate and tailored to your specific context.
 
+### Media Library
+Located right next to **Knowledge** in the sidebar, **Media Library** automatically organizes all photos and videos indexed in your Knowledge Base without re-scanning:
+*   **Timeline & Date Scrubber**: Chronological stream grouped by capture day and GPS place, with newest/oldest sort toggle, **Photos / Videos** filter pills, and a right-side Year-Month scrubber for instant navigation.
+*   **Smart Auto-Albums**: Automatic collections for **People** (on-device face recognition), **Moments & Trips**, **Places** (cities and countries), and **Themes & Tags**. Fullscreen photo and video playback is scoped strictly to the selected day group or album.
+*   **`+ Creations` & `Work / Fun` Privacy**: AI-generated artworks stay separate by default and can be included anytime via **`+ Creations`**, honoring `#sensitive` blur protection in **Work** mode.
+*   **Offline Mobile Previews**: When photos were indexed on a phone that is currently offline, Media Library displays the cached `base64` preview from your Knowledge Base (or a clean `Device offline` placeholder) without broken image requests.
+
 ---
 
 ## 7. Settings
@@ -139,11 +146,10 @@ Using the Knowledge Base makes the assistant's answers more accurate and tailore
 In the settings section, you can fully personalize the system.
 
 ### Settings Tabs:
-*   **Profile**: Information about your plan (FREE/Pro), account ID, and API token.
+*   **Profile**: Manage your DID identity, security keys, and `.json` keyfile backup.
 *   **Device**: Manage device name and the list of connected folders.
-*   **Assistant**: Configure your AI assistant:
-    *   Change the name and personality.
-    *   Select a folder for saving generated materials.
+*   **AI Node**: Choose your compute backend (`Auto`, paired hardware node, Public Demo Node, or standalone **`Horde AI`**), switch runtime modes (`Local`, `Hybrid`, `Horde`, `Agentic P2P`), configure and save your **AI Horde** API key and model (`>= 8B` quality filter), and toggle local on-device text/photo processing.
+*   **AI Assistant**: Customize your assistant's persona (`Name`, `Avatar`, **Work** and **Fun** prompts, Character Card import) and default folder for saving generated Creations.
 *   **Viewer**: Set preferences for viewing documents and media files.
 
 ---

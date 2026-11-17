@@ -18,16 +18,21 @@ nav_order: 8.5
 
 ---
 
-## 1. Hybrid Client Mode: Private Work RAG + AI Horde Roleplay & Images
+## 1. AI Horde Client Modes (`Settings -> AI Node`)
 
-In **Settings -> AI Assistant -> AI Node** (or in `/opt/direct/ai/config.ini`), choose how **AI Assistant** routes requests:
+In **Settings -> AI Node** (or in `/opt/direct/ai/config.ini`), you can use **AI Horde** either as a dedicated standalone **AI Node** choice (available to all users, even without a personal hardware node) or as a **Runtime mode** on your own node:
+
+* **Standalone `Horde AI` Node (`AI Node: Horde AI`)**: Select **`Horde AI`** directly in the top **AI Node** dropdown, enter your optional **Horde API Key** (`0000000000` = anonymous, or personal key for priority Kudos), pick **Auto** or a preferred **Horde Model**, and click **Save AI Node Settings**. Both **Work** and **Fun** chats plus **Creations** (`Express`) run entirely through the AI Horde community cluster.
+* **Personal Node Runtime Modes (`Runtime mode`)**:
 
 | Runtime Mode | Work Mode (RAG, Docs, Code, MCP) | Fun Mode & Creations Studio |
 | :--- | :--- | :--- |
 | **`Local`** | Local **Ollama** (`:11434`) | Local **Ollama** (`FUN_MODEL`) & local **ComfyUI** (`:8188`) |
-| **`Hybrid (AI Horde for fun mode)`** | **Local Ollama** (100% private local RAG) | **AI Horde** (`70B-123B` community RP models) + local **ComfyUI** / **AI Horde** image fallback |
-| **`AI Horde only`** | **AI Horde** | **AI Horde** (text & SDXL image generation) |
+| **`Hybrid (AI Horde for fun mode)`** | **Local Ollama** (100% private local RAG) | **AI Horde** (`26B-128B+` community RP models) + local **ComfyUI** / **AI Horde** image fallback |
+| **`Horde (all inference via AI Horde)`** | **AI Horde** | **AI Horde** (text & SDXL image generation) |
 | **`Agentic P2P`** | Remote GPU node over WebRTC P2P | Remote GPU node over WebRTC P2P |
+
+* **Quality-Filtered Multi-Model Fallback & Live Worker Badge**: Automatic model selection and offline-model fallback strictly filter out tiny `< 8B` and debug workers (retaining capable `8B-128B+` dense and MoE models), and every AI Horde chat reply displays a compact badge (`⚡` when answered by your primary model, or `↪` when answered by an online fallback worker) showing the exact model that generated the response.
 
 ![AI Horde Hybrid Mode & SillyTavern Character Import](/images/horde_assistant.png)
 

@@ -16,16 +16,16 @@ Run your own private AI infrastructure: uncensored, unlimited, and completely un
 
 ---
 
-## 1. Choose Your Inference Mode (`AI_PROVIDER`)
+## 1. Choose Your Inference Mode (`AI_PROVIDER` & `Settings -> AI Node`)
 
-The AI node supports four runtime inference modes in `config.ini` (and live switching in **Settings → AI Assistant → AI Node**):
+The AI node supports four runtime inference modes in `config.ini` (and live switching in the dedicated **Settings -> AI Node** section):
 
 | `AI_PROVIDER` | Where RAG & Embeddings Run | Where LLM & ComfyUI Run | Best For |
 |---------------|----------------------------|-------------------------|----------|
 | **`local`** | Local (`ChromaDB` + CPU/GPU) | Local **Ollama** (`:11434`) or **RKLLAMA** (`:8080`) + local **ComfyUI** (`:8188`) | GPU workstations, Apple Silicon, or RK3588 NPU boards |
 | **`agentic`** | **Local on CPU** (`ChromaDB` + `SentenceTransformers`) | **Tunneled over WebRTC P2P** to the **Public AI Node** or your own remote GPU node | **Laptops, mini-PCs, and NAS boxes without a GPU** |
 | **`hybrid`** | Local (`ChromaDB`) | **Local Ollama** for private Work/RAG + **[AI Horde](/horde/)** for creative Fun/RP | Balanced privacy + access to large community RP models |
-| **`horde`** | Local (`ChromaDB`) | Distributed **[AI Horde](/horde/)** workers | Zero-GPU text chat fallback when no P2P inference node is used |
+| **`horde`** | Local (`ChromaDB` / `GunDB`) | Distributed **[AI Horde](/horde/)** workers (chat & SDXL images) | Pure AI Horde fans (also selectable directly as **`Horde AI`** in the top **AI Node** dropdown even without a personal node) |
 
 > **Earn Priority Kudos Automatically**: If your node has a local GPU with **ComfyUI**, enable the built-in **[AI Horde & Dreamer Worker](/horde/)** (`HORDE_WORKER_ENABLED = true`) to volunteer idle GPU cycles and earn Kudos for priority LLM & image generations.
 {: .tip }
@@ -197,12 +197,19 @@ curl http://127.0.0.1:4000/api/agentic/status
 
 ---
 
-## 5. Assistant Persona & Runtime Switching
+## 5. Dedicated `AI Node` & `AI Assistant` Settings Sections
 
-In **Disk Direct**, navigate to **Settings → AI Assistant**:
-* **AI Node & Runtime Mode**: Choose **Auto (own AI node)**, a specific paired node, or the **Public Demo AI Node**. Node owners can also toggle **Runtime mode** (`Local`, `Hybrid`, `Agentic`) and select the remote **Inference node** on the fly.
-* **Assistant Profile & Character Import**: Customize the assistant's **Name** (default `June`), **Title**, **Appearance & Avatar**, how it **Calls you**, or click **Import Character** to load an existing SillyTavern character card.
-* **Work & Fun Personalities**: Define dedicated system prompts for **Work** mode (problem-solving, document analysis, and tasks) and **Fun** mode (creative chats and roleplay), plus your default output folder.
+In **Disk Direct**, infrastructure routing and assistant persona configuration are cleanly separated into two dedicated sections under **Settings**:
+
+### `Settings -> AI Node` (Compute, Horde & On-Device Processing)
+* **AI Node Selector**: Choose **Auto (own node, fallback to public)**, a specific paired hardware node, the **Public Demo AI Node**, or standalone **`Horde AI`** (available to all users for running 100% of chats and SDXL image generations via **[AI Horde](/horde/)**).
+* **Runtime Mode** *(for paired personal nodes)*: Switch live between **`Local`**, **`Hybrid (AI Horde for fun mode)`**, **`Horde (all inference via AI Horde)`**, and **`Agentic P2P`**, and pick your remote **Inference node** when running in Agentic mode.
+* **AI Horde API Key, Model Filter & Save**: Enter your personal **Horde API Key** (`0000000000` for anonymous, or your key for priority Kudos queue), choose **`Auto`** or a specific live **Horde Model** (automatically filtered to capable `>= 8B` models, excluding tiny `< 8B` or debug workers, with the actual answered model badge shown under each reply in chat), and click **Save AI Node Settings**.
+* **Local On-Device Processing**: Enable **Local data extraction** and **Local photo analysis** to process documents and photos directly on your device without uploading raw files.
+
+### `Settings -> AI Assistant` (Persona & Prompts)
+* **Assistant Profile & Character Import**: Customize the assistant's **Name** (default `June`), **Title**, **Appearance & Avatar**, how it **Calls you**, or click **Import Character** to load an existing SillyTavern `.png` / `.json` character card.
+* **Work & Fun Personalities**: Define dedicated system prompts for **Work** mode (problem-solving, document analysis, and tasks) and **Fun** mode (creative chats and roleplay), plus your default storage folder for generated Creations.
 
 ![AI Assistant Settings](/images/persona.png)
 
