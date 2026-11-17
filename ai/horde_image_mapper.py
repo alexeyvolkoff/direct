@@ -684,9 +684,36 @@ def _is_privileged_caller(ctx: Any) -> bool:
     return False
 
 
+def is_client_horde_only(ctx: Any) -> bool:
+    if ctx is None:
+        return False
+    settings = getattr(ctx, "settings", None)
+    if not isinstance(settings, dict):
+        return False
+    for key in ("ai_node", "ai_provider", "ai_mode"):
+        val = str(settings.get(key) or "").strip().lower()
+        if val == "horde":
+            return True
+    return False
+
+
+def _resolve_client_horde_api_key(ctx: Any) -> str:
+    if ctx is None:
+        return ""
+    settings = getattr(ctx, "settings", None)
+    if not isinstance(settings, dict):
+        return ""
+    k = str(settings.get("horde_api_key") or "").strip()
+    if k and k != ANONYMOUS_API_KEY:
+        return k
+    return ""
+
+
 def should_use_horde_for_sdxl(ctx: Any, comfy_available: bool = False) -> bool:
     if not is_horde_image_enabled():
         return False
+    if is_client_horde_only(ctx):
+        return True
     if not comfy_available:
         return True
     if not _is_privileged_caller(ctx) and is_horde_guest_routing_enabled():
@@ -1484,28 +1511,36 @@ async def generate_horde_image(
             max_wait_seconds = 150
 
     is_owner_or_priv = _is_privileged_caller(ctx)
-    effective_uncensored = bool(is_uncensored and is_owner_or_priv)
+    client_horde_key = _resolve_client_horde_api_key(ctx)
+    using_client_personal_key = bool(client_horde_key)
+    effective_uncensored = bool(
+        is_uncensored and (is_owner_or_priv or (is_client_horde_only(ctx) and using_client_personal_key))
+    )
 
     user_id = getattr(ctx, "user_id", None) or "anonymous"
     style_setting = ""
     if ctx is not None and isinstance(getattr(ctx, "settings", None), dict):
         style_setting = str(ctx.settings.get("style") or "")
 
-    priority_key = _resolve_priority_api_key()
-    use_priority = False
-    if priority_key:
-        if is_owner_or_priv:
-            use_priority = True
-        else:
-            within_cap, rem_g, rem_u = check_guest_priority_budget(
-                user_id, estimated_kudos=28.0, budget_path=budget_path
-            )
-            use_priority = within_cap
-            if not within_cap:
-                logger.info(
-                    f"[HordeMapper] Guest '{user_id}' priority Kudos cap reached "
-                    f"(rem_global={rem_g:.1f}, rem_user={rem_u:.1f}), falling back to anonymous SD 1.5"
+    if using_client_personal_key:
+        priority_key = client_horde_key
+        use_priority = True
+    else:
+        priority_key = _resolve_priority_api_key()
+        use_priority = False
+        if priority_key:
+            if is_owner_or_priv:
+                use_priority = True
+            else:
+                within_cap, rem_g, rem_u = check_guest_priority_budget(
+                    user_id, estimated_kudos=28.0, budget_path=budget_path
                 )
+                use_priority = within_cap
+                if not within_cap:
+                    logger.info(
+                        f"[HordeMapper] Guest '{user_id}' priority Kudos cap reached "
+                        f"(rem_global={rem_g:.1f}, rem_user={rem_u:.1f}), falling back to anonymous SD 1.5"
+                    )
 
     base = horde_client.HORDE_BASE_URL.rstrip("/")
     timeout = aiohttp.ClientTimeout(total=max_wait_seconds + 20, connect=15)
@@ -1689,7 +1724,7 @@ async def generate_horde_image(
             worker_name = str(gen.get("worker_name") or "horde-worker")
             final_kudos = float(st_data.get("kudos") or kudos_cost or 0.0)
 
-            if tier_used == "priority_sdxl" and not is_owner_or_priv and final_kudos > 0:
+            if tier_used == "priority_sdxl" and not is_owner_or_priv and not using_client_personal_key and final_kudos > 0:
                 record_guest_kudos_spent(user_id, final_kudos, budget_path=budget_path)
 
             logger.info(

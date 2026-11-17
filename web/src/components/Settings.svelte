@@ -22,7 +22,7 @@
   import { localEmbedderStore, setLocalEmbeddingsEnabled } from "../lib/local-embedder.js";
   import { localVisionStore, setLocalVisionEnabled } from "../lib/local-vision.js";
   import { HttpDrive } from "../lib/http-drive.js";
-  import { aiNodeStore, refreshPublicAiNode, setAiNodeChoice, acceptPublicAiAgreement, applyRemotePublicAiAck, publicAiAckPayload, AI_NODE_MODE_AUTO, AI_NODE_MODE_PUBLIC, AI_NODE_MODE_CUSTOM, AI_MODE_LOCAL, AI_MODE_HYBRID, AI_MODE_AGENTIC, setAiMode, setInferenceNode, addCustomAiNode, removeCustomAiNode, mergeCustomAiNodes, connectGuestAiNode } from "../lib/ai-node.js";
+  import { aiNodeStore, refreshPublicAiNode, setAiNodeChoice, acceptPublicAiAgreement, applyRemotePublicAiAck, publicAiAckPayload, AI_NODE_MODE_AUTO, AI_NODE_MODE_PUBLIC, AI_NODE_MODE_HORDE, AI_NODE_MODE_CUSTOM, AI_MODE_LOCAL, AI_MODE_HYBRID, AI_MODE_HORDE, AI_MODE_AGENTIC, isVirtualAiNodeChoice, setAiMode, setInferenceNode, addCustomAiNode, removeCustomAiNode, mergeCustomAiNodes, connectGuestAiNode } from "../lib/ai-node.js";
   import { get as getStoreValue } from "svelte/store";
   import { parseStoragePath, formatStoragePath, persistStoragePath, DEFAULT_STORAGE_PATH, getLocalDevice } from "../lib/storage-path.js";
   import { DEFAULT_JUNE_SYSTEM_PROMPT, DEFAULT_JUNE_FUN_PROMPT, blobToDataUrl } from "../lib/assistant-defaults.js";
@@ -791,6 +791,11 @@
       icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>`,
     },
     {
+      id: "ai_node",
+      label: $_("ai_node", {}, "AI Node"),
+      icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>`,
+    },
+    {
       id: "assistant",
       label: $_("ai_assistant", {}, "AI Assistant"),
       icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`,
@@ -908,6 +913,7 @@
     || null;
   $: isNodeOwner = !isSpecifyingCustomNode &&
     aiNodeChoice !== AI_NODE_MODE_PUBLIC &&
+    aiNodeChoice !== AI_NODE_MODE_HORDE &&
     aiNodeChoice !== AI_NODE_MODE_CUSTOM &&
     !isCurrentCustomNode &&
     ownChatDevices.length > 0 &&
@@ -1047,9 +1053,27 @@
 
   async function persistAiNodeChoice() {
     try {
-      saveAssistantConfig();
+      const key = getSettingsKey();
+      if (!key) return;
+      const store = getChatStore(key);
+      const effectiveProvider = (aiNodeChoice === AI_NODE_MODE_HORDE || aiMode === AI_MODE_HORDE)
+        ? "horde"
+        : (aiMode === AI_MODE_HYBRID ? "hybrid" : (aiMode === AI_MODE_AGENTIC ? "agentic" : "local"));
+      const nodeUpdate = {
+        ai_node: aiNodeChoice,
+        ai_mode: aiMode,
+        ai_provider: effectiveProvider,
+        ai_node_infer: aiMode === AI_MODE_AGENTIC ? inferenceNodeId : "",
+        horde_api_key: hordeApiKey,
+        horde_model: hordeModel,
+        custom_ai_nodes: JSON.stringify($aiNodeStore?.customNodes || []),
+      };
+      if ((aiNodeChoice === AI_NODE_MODE_PUBLIC || aiNodeChoice === AI_NODE_MODE_HORDE) && publicAiAckPayload()) {
+        nodeUpdate.public_ai_ack = publicAiAckPayload();
+      }
+      await store.updateAssistantSettings(nodeUpdate);
     } catch (_) {
-      // saveAssistantConfig sets its own error message; keep going
+      // ignore transient persistence errors
     }
   }
 
@@ -1063,20 +1087,32 @@
     }
     isSpecifyingCustomNode = false;
     const st = getStoreValue(aiNodeStore);
-    if (choice === AI_NODE_MODE_PUBLIC && !st.ack) {
+    const needsPublicAck =
+      (choice === AI_NODE_MODE_PUBLIC || (choice === AI_NODE_MODE_HORDE && ownChatDevices.length === 0)) &&
+      !st.ack;
+    if (needsPublicAck) {
       // Agreement first: hold the previous selection until accepted
       pendingAiNodeChoice = choice;
       publicAiAgreementOpen = true;
-      aiNodeChoice = st.choice || AI_NODE_MODE_AUTO; // revert combо until agreed
+      aiNodeChoice = st.choice || AI_NODE_MODE_AUTO; // revert combo until agreed
       return;
     }
     aiNodeChoice = choice;
     setAiNodeChoice(choice);
+    if (choice === AI_NODE_MODE_HORDE) {
+      if (hordeModels.length <= POPULAR_HORDE_MODELS.length) {
+        fetchHordeModels();
+      }
+      updateHordeSelectionState();
+    }
+    await syncNodeAiSettings(choice === AI_NODE_MODE_HORDE ? AI_MODE_HORDE : aiMode);
     await persistAiNodeChoice();
     aiNodeStatusMsg = choice === AI_NODE_MODE_PUBLIC
       ? $_("ai_node_public_selected", {}, "Connected to AI Assistant Public Node.")
-      : "";
-    setTimeout(() => { aiNodeStatusMsg = ""; }, 3000);
+      : (choice === AI_NODE_MODE_HORDE
+        ? $_("ai_node_horde_selected", {}, "Horde AI mode active: all chat and image generation runs via AI Horde.")
+        : "");
+    setTimeout(() => { aiNodeStatusMsg = ""; }, 3500);
   }
 
   async function handleConnectCustomNode() {
@@ -1132,11 +1168,20 @@
       await executeConnectCustomNode(linkId);
       return;
     }
-    aiNodeChoice = AI_NODE_MODE_PUBLIC;
-    setAiNodeChoice(AI_NODE_MODE_PUBLIC);
+    const chosen = pendingAiNodeChoice === AI_NODE_MODE_HORDE ? AI_NODE_MODE_HORDE : AI_NODE_MODE_PUBLIC;
+    aiNodeChoice = chosen;
+    setAiNodeChoice(chosen);
+    if (chosen === AI_NODE_MODE_HORDE) {
+      if (hordeModels.length <= POPULAR_HORDE_MODELS.length) {
+        fetchHordeModels();
+      }
+      updateHordeSelectionState();
+    }
     await persistAiNodeChoice();
-    aiNodeStatusMsg = $_("ai_node_public_selected", {}, "Connected to AI Assistant Public Node.");
-    setTimeout(() => { aiNodeStatusMsg = ""; }, 3000);
+    aiNodeStatusMsg = chosen === AI_NODE_MODE_HORDE
+      ? $_("ai_node_horde_selected", {}, "Horde AI mode active: all chat and image generation runs via AI Horde.")
+      : $_("ai_node_public_selected", {}, "Connected to AI Assistant Public Node.");
+    setTimeout(() => { aiNodeStatusMsg = ""; }, 3500);
   }
 
   function onPublicAiDecline() {
@@ -1150,7 +1195,7 @@
     const mode = event && event.target ? event.target.value : AI_MODE_LOCAL;
     aiMode = mode;
     setAiMode(mode);
-    if (mode === AI_MODE_HYBRID) {
+    if (mode === AI_MODE_HYBRID || mode === AI_MODE_HORDE) {
       if (hordeModels.length <= POPULAR_HORDE_MODELS.length) {
         fetchHordeModels();
       }
@@ -1160,10 +1205,12 @@
     await persistAiNodeChoice();
     aiNodeStatusMsg = mode === AI_MODE_AGENTIC
       ? $_("ai_mode_agentic_selected", {}, "Agentic mode: knowledge indexing stays local, inference runs on the selected node.")
-      : (mode === AI_MODE_HYBRID
-        ? $_("ai_mode_hybrid_selected", {}, "Hybrid mode: local inference for work, AI Horde for roleplay/fun.")
-        : "");
-    setTimeout(() => { aiNodeStatusMsg = ""; }, 3000);
+      : (mode === AI_MODE_HORDE
+        ? $_("ai_node_horde_selected", {}, "Horde AI mode active: all chat and image generation runs via AI Horde.")
+        : (mode === AI_MODE_HYBRID
+          ? $_("ai_mode_hybrid_selected", {}, "Hybrid mode: local inference for work, AI Horde for roleplay/fun.")
+          : ""));
+    setTimeout(() => { aiNodeStatusMsg = ""; }, 3500);
   }
 
   async function onInferenceNodeChange(event) {
@@ -1178,7 +1225,7 @@
   }
 
   function getPrimaryAiDrive() {
-    if (aiNodeChoice && aiNodeChoice !== AI_NODE_MODE_AUTO && aiNodeChoice !== AI_NODE_MODE_PUBLIC) {
+    if (aiNodeChoice && !isVirtualAiNodeChoice(aiNodeChoice)) {
       const dev = (devices || []).find(d => (d.linkId || d.deviceId) === aiNodeChoice) || deviceRegistry.get(aiNodeChoice);
       if (dev && dev.drive) return dev.drive;
     }
@@ -1196,8 +1243,8 @@
 
   function updateHordeSelectionState() {
     if (!hordeModel) {
-      hordeModel = "aphrodite/TheDrummer/Behemoth-X-123B-v2.1";
-      selectedHordeModel = hordeModel;
+      hordeModel = "auto";
+      selectedHordeModel = "auto";
       isCustomHordeModel = false;
       return;
     }
@@ -1340,6 +1387,7 @@
   }
 
   async function syncNodeAiSettings(modeToSet) {
+    if (!isNodeOwner && aiNodeChoice === AI_NODE_MODE_PUBLIC) return;
     const drv = getPrimaryAiDrive();
     if (!drv || typeof drv.setSettings !== "function") return;
     try {
@@ -1350,12 +1398,14 @@
         }
       } catch (_) {}
 
-      const provider = modeToSet === AI_MODE_HYBRID ? "hybrid" : (modeToSet === AI_MODE_LOCAL ? "local" : (cur.aiProvider || "local"));
+      const provider = (aiNodeChoice === AI_NODE_MODE_HORDE || modeToSet === AI_MODE_HORDE)
+        ? "horde"
+        : (modeToSet === AI_MODE_HYBRID ? "hybrid" : (modeToSet === AI_MODE_LOCAL ? "local" : (cur.aiProvider || "local")));
       await drv.setSettings({
         ...cur,
         aiProvider: provider,
         hordeApiKey: hordeApiKey || "0000000000",
-        hordeModel: hordeModel || "aphrodite/TheDrummer/Behemoth-X-123B-v2.1"
+        hordeModel: hordeModel || "auto"
       });
       console.log("[settings] Synced settings to primary node:", { aiProvider: provider, hordeApiKey, hordeModel });
     } catch (err) {
@@ -1436,7 +1486,7 @@
           } else if (typeof localStorage !== "undefined" && localStorage.getItem("omd_ai_node_choice")) {
             aiNodeChoice = localStorage.getItem("omd_ai_node_choice");
           }
-          if (typeof settings.ai_mode === "string" && [AI_MODE_LOCAL, AI_MODE_HYBRID, AI_MODE_AGENTIC].includes(settings.ai_mode)) {
+          if (typeof settings.ai_mode === "string" && [AI_MODE_LOCAL, AI_MODE_HYBRID, AI_MODE_HORDE, AI_MODE_AGENTIC].includes(settings.ai_mode)) {
             if (typeof localStorage === "undefined" || !localStorage.getItem("omd_ai_mode")) {
               aiMode = settings.ai_mode;
               setAiMode(aiMode);
@@ -1483,7 +1533,7 @@
           }
           assistantLoadedKey = key;
           loadNodeAiSettings();
-          if (aiMode === AI_MODE_HYBRID) {
+          if (aiNodeChoice === AI_NODE_MODE_HORDE || aiMode === AI_MODE_HYBRID || aiMode === AI_MODE_HORDE) {
             fetchHordeModels();
           }
         }
@@ -1637,6 +1687,9 @@
       await persistStoragePath(assistantStorage, identity, key);
 
       const store = getChatStore(key);
+      const effectiveProvider = (aiNodeChoice === AI_NODE_MODE_HORDE || aiMode === AI_MODE_HORDE)
+        ? "horde"
+        : (aiMode === AI_MODE_HYBRID ? "hybrid" : (aiMode === AI_MODE_AGENTIC ? "agentic" : "local"));
       const updatePayload = {
         assistant_name: assistantName,
         title: assistantTitle,
@@ -1649,6 +1702,7 @@
         assistant_appearance: assistantAppearance,
         ai_node: aiNodeChoice,
         ai_mode: aiMode,
+        ai_provider: effectiveProvider,
         ai_node_infer: aiMode === AI_MODE_AGENTIC ? inferenceNodeId : "",
         horde_api_key: hordeApiKey,
         horde_model: hordeModel,
@@ -1691,15 +1745,21 @@
   let lastAssistantLoadedSection = "";
   $: {
     const currentKey = getSettingsKey();
-    if (activeSection === "assistant") {
+    if (activeSection === "assistant" || activeSection === "ai_node") {
       const keyChanged = !!(currentKey && currentKey !== lastAssistantLoadedKey);
-      const sectionChanged = lastAssistantLoadedSection !== "assistant";
+      const sectionChanged = lastAssistantLoadedSection !== activeSection;
       if ((!assistantLoaded || keyChanged || sectionChanged) && !assistantLoading) {
         lastAssistantLoadedKey = currentKey;
-        lastAssistantLoadedSection = "assistant";
+        lastAssistantLoadedSection = activeSection;
         refreshDevices();
         refreshPublicAiNode();
         loadAssistantSettings();
+        if (activeSection === "ai_node" && (aiNodeChoice === AI_NODE_MODE_HORDE || aiMode === AI_MODE_HYBRID || aiMode === AI_MODE_HORDE)) {
+          if (hordeModels.length <= POPULAR_HORDE_MODELS.length) {
+            fetchHordeModels();
+          }
+          updateHordeSelectionState();
+        }
       }
     } else {
       lastAssistantLoadedSection = activeSection;
@@ -1731,7 +1791,7 @@
     return null;
   }
 
-  $: if (activeSection === "assistant" && $aiNodeStore?.info && (!assistantPersonality || !assistantAvatarUrl)) {
+  $: if ((activeSection === "assistant" || activeSection === "ai_node") && $aiNodeStore?.info && (!assistantPersonality || !assistantAvatarUrl)) {
     loadAssistantSettings();
   }
 
@@ -3171,16 +3231,14 @@
             </div>
           </div>
 
-        <!-- 5. AI ASSISTANT -->
-        {:else if activeSection === "assistant"}
-          <!-- 5. AI Node Section -->
+        <!-- 5. AI NODE -->
+        {:else if activeSection === "ai_node"}
           <div class="section-header">
             <h2 class="section-title">{$_("ai_node", {}, "AI Node")}</h2>
-            <p class="section-desc">{$_("ai_node_desc", {}, "Choose the AI node your chats connect to: your own node or the public one.")}</p>
+            <p class="section-desc">{$_("ai_node_desc", {}, "Choose the AI node your chats and Studio connect to: your own node, the public node, or AI Horde.")}</p>
           </div>
 
           <div class="card-group">
-            <!-- 5. AI Node Selection (public vs own device) -->
             <div class="card ai-node-card">
               <div class="field-item">
                 <label class="field-label" for="aiNodeSelect">{$_("ai_node", {}, "AI Node")}:</label>
@@ -3203,6 +3261,7 @@
                       {/each}
                     {/if}
                     <option value="public">{$_("public_ai_node_name", {}, "AI Assistant Public Node")}</option>
+                    <option value={AI_NODE_MODE_HORDE}>{$_("ai_node_horde", {}, "Horde AI")}</option>
                     <option value="custom">{$_("ai_node_custom", {}, "Указанная...")}</option>
                   </select>
                   {#if isCurrentCustomNode}
@@ -3261,123 +3320,124 @@
                   >
                     <option value={AI_MODE_LOCAL}>{$_("ai_mode_local", {}, "Local (all inference on this node)")}</option>
                     <option value={AI_MODE_HYBRID}>{$_("ai_mode_hybrid", {}, "Hybrid (AI Horde for fun mode)")}</option>
+                    <option value={AI_MODE_HORDE}>{$_("ai_mode_horde", {}, "Horde (all inference via AI Horde)")}</option>
                     <option value={AI_MODE_AGENTIC}>{$_("ai_mode_agentic", {}, "Agentic (local index + remote inference)")}</option>
                   </select>
                 </div>
-                {#if aiMode === AI_MODE_HYBRID}
-                  <div class="field-item">
-                    <label class="field-label" for="hordeApiKey">{$_("horde_api_key", {}, "Horde API Key (0000000000 = anonymous)")}:</label>
-                    <div class="token-input-wrap">
-                      <input
-                        id="hordeApiKey"
-                        type={hordeKeyRevealed ? "text" : "password"}
-                        class="text-input-styled token-input"
-                        bind:value={hordeApiKey}
-                        on:change={handleHordeKeyChange}
-                        autocomplete="off"
-                        spellcheck="false"
-                        placeholder="0000000000"
-                      />
-                      <button
-                        class="icon-btn"
-                        type="button"
-                        title={hordeKeyRevealed ? $_("hide_key", {}, "Hide") : $_("show_key", {}, "Show")}
-                        on:click={() => hordeKeyRevealed = !hordeKeyRevealed}
-                      >
-                        {#if hordeKeyRevealed}
-                          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-                        {:else}
-                          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                        {/if}
-                      </button>
-                      <button
-                        class="icon-btn"
-                        type="button"
-                        title={$_("copy", {}, "Copy")}
-                        on:click={copyHordeKey}
-                      >
-                        {#if hordeKeyCopied}
-                          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
-                        {:else}
-                          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v3"/></svg>
-                        {/if}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div class="field-item">
-                    <div class="field-label-row">
-                      <label class="field-label" for="hordeModelSelect">{$_("horde_model", {}, "Horde Model")}:</label>
-                      <button
-                        type="button"
-                        class="refresh-link-btn"
-                        disabled={loadingHordeModels}
-                        on:click={fetchHordeModels}
-                        title="Refresh active models from AI Horde"
-                      >
-                        {#if loadingHordeModels}
-                          <span class="spinner-sm" style="border-width: 1.5px; width: 10px; height: 10px;"></span>
-                          <span>{$_("loading", {}, "Loading...")}</span>
-                        {:else}
-                          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
-                          <span>{$_("refresh_models", {}, "Refresh list")}</span>
-                        {/if}
-                      </button>
-                    </div>
-
-                    <select
-                      id="hordeModelSelect"
-                      value={selectedHordeModel}
-                      on:change={handleHordeModelChange}
-                      class="text-input-styled"
+              {/if}
+              {#if aiNodeChoice === AI_NODE_MODE_HORDE || (isNodeOwner && (aiMode === AI_MODE_HYBRID || aiMode === AI_MODE_HORDE))}
+                <div class="field-item">
+                  <label class="field-label" for="hordeApiKey">{$_("horde_api_key", {}, "Horde API Key (0000000000 = anonymous)")}:</label>
+                  <div class="token-input-wrap">
+                    <input
+                      id="hordeApiKey"
+                      type={hordeKeyRevealed ? "text" : "password"}
+                      class="text-input-styled token-input"
+                      bind:value={hordeApiKey}
+                      on:change={handleHordeKeyChange}
+                      autocomplete="off"
+                      spellcheck="false"
+                      placeholder="0000000000"
+                    />
+                    <button
+                      class="icon-btn"
+                      type="button"
+                      title={hordeKeyRevealed ? $_("hide_key", {}, "Hide") : $_("show_key", {}, "Show")}
+                      on:click={() => hordeKeyRevealed = !hordeKeyRevealed}
                     >
-                      <optgroup label={$_("horde_models_list", {}, "Active & Popular Models")}>
-                        {#each hordeModels as m}
-                          <option value={m.id}>{m.label}</option>
-                        {/each}
-                      </optgroup>
-                      <option value="custom">{$_("horde_model_custom", {}, "Custom model name...")}</option>
-                    </select>
-
-                    {#if isCustomHordeModel}
-                      <input
-                        type="text"
-                        bind:value={hordeModel}
-                        on:change={handleHordeModelCustomChange}
-                        placeholder="e.g. aphrodite/TheDrummer/Behemoth-X-123B-v2.1"
-                        class="text-input-styled"
-                        style="margin-top: 4px;"
-                      />
-                    {/if}
-                  </div>
-                {/if}
-                {#if aiMode === AI_MODE_AGENTIC}
-                  <div class="field-item">
-                    <label class="field-label" for="aiInferNodeSelect">{$_("ai_inference_node", {}, "Inference node")}:</label>
-                    <select
-                      id="aiInferNodeSelect"
-                      class="text-input-styled"
-                      value={inferenceNodeId}
-                      on:change={onInferenceNodeChange}
-                    >
-                      {#if $aiNodeStore.info}
-                        <option value={$aiNodeStore.info.linkID}>{$_("public_ai_node_name", {}, "AI Assistant Public Node")}</option>
+                      {#if hordeKeyRevealed}
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                      {:else}
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                       {/if}
-                      {#each aiNodeDeviceOptions as opt}
-                        <option value={opt.value}>{opt.label}</option>
-                      {/each}
-                    </select>
-                    <p class="card-subtext">{$_("ai_infer_node_desc", {}, "When Agentic is selected, pick the node carrying Ollama and ComfyUI. This node keeps local knowledge indexing on CPU.")}</p>
-                    {#if !$aiNodeStore.info}
-                      <p class="card-subtext">{$_("ai_node_public_unavailable", {}, "The public AI node is currently offline or unreachable.")}</p>
-                    {/if}
+                    </button>
+                    <button
+                      class="icon-btn"
+                      type="button"
+                      title={$_("copy", {}, "Copy")}
+                      on:click={copyHordeKey}
+                    >
+                      {#if hordeKeyCopied}
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                      {:else}
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v3"/></svg>
+                      {/if}
+                    </button>
                   </div>
-                {/if}
+                </div>
+
+                <div class="field-item">
+                  <div class="field-label-row">
+                    <label class="field-label" for="hordeModelSelect">{$_("horde_model", {}, "Horde Model")}:</label>
+                    <button
+                      type="button"
+                      class="refresh-link-btn"
+                      disabled={loadingHordeModels}
+                      on:click={fetchHordeModels}
+                      title="Refresh active models from AI Horde"
+                    >
+                      {#if loadingHordeModels}
+                        <span class="spinner-sm" style="border-width: 1.5px; width: 10px; height: 10px;"></span>
+                        <span>{$_("loading", {}, "Loading...")}</span>
+                      {:else}
+                        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                        <span>{$_("refresh_models", {}, "Refresh list")}</span>
+                      {/if}
+                    </button>
+                  </div>
+
+                  <select
+                    id="hordeModelSelect"
+                    value={selectedHordeModel}
+                    on:change={handleHordeModelChange}
+                    class="text-input-styled"
+                  >
+                    <optgroup label={$_("horde_models_list", {}, "Active & Popular Models")}>
+                      {#each hordeModels as m}
+                        <option value={m.id}>{m.label}</option>
+                      {/each}
+                    </optgroup>
+                    <option value="custom">{$_("horde_model_custom", {}, "Custom model name...")}</option>
+                  </select>
+
+                  {#if isCustomHordeModel}
+                    <input
+                      type="text"
+                      bind:value={hordeModel}
+                      on:change={handleHordeModelCustomChange}
+                      placeholder="e.g. aphrodite/TheDrummer/Behemoth-X-123B-v2.1"
+                      class="text-input-styled"
+                      style="margin-top: 4px;"
+                    />
+                  {/if}
+                </div>
+              {/if}
+              {#if isNodeOwner && aiMode === AI_MODE_AGENTIC}
+                <div class="field-item">
+                  <label class="field-label" for="aiInferNodeSelect">{$_("ai_inference_node", {}, "Inference node")}:</label>
+                  <select
+                    id="aiInferNodeSelect"
+                    class="text-input-styled"
+                    value={inferenceNodeId}
+                    on:change={onInferenceNodeChange}
+                  >
+                    {#if $aiNodeStore.info}
+                      <option value={$aiNodeStore.info.linkID}>{$_("public_ai_node_name", {}, "AI Assistant Public Node")}</option>
+                    {/if}
+                    {#each aiNodeDeviceOptions as opt}
+                      <option value={opt.value}>{opt.label}</option>
+                    {/each}
+                  </select>
+                  <p class="card-subtext">{$_("ai_infer_node_desc", {}, "When Agentic is selected, pick the node carrying Ollama and ComfyUI. This node keeps local knowledge indexing on CPU.")}</p>
+                  {#if !$aiNodeStore.info}
+                    <p class="card-subtext">{$_("ai_node_public_unavailable", {}, "The public AI node is currently offline or unreachable.")}</p>
+                  {/if}
+                </div>
               {/if}
               {#if aiNodeStatusMsg}
                 <div class="save-status-msg success"><span>{aiNodeStatusMsg}</span></div>
               {/if}
-              {#if aiNodeChoice === "public" && !$aiNodeStore.info}
+              {#if (aiNodeChoice === "public" || (aiNodeChoice === AI_NODE_MODE_HORDE && ownChatDevices.length === 0)) && !$aiNodeStore.info}
                 <p class="card-subtext">{$_("ai_node_public_unavailable", {}, "The public AI node is currently offline or unreachable.")}</p>
               {/if}
 
@@ -3445,8 +3505,9 @@
             </div>
           </div>
 
-          <!-- 5a. Assistant Settings Section -->
-          <div class="section-header section-header-spaced">
+        <!-- 6. AI ASSISTANT -->
+        {:else if activeSection === "assistant"}
+          <div class="section-header">
             <h2 class="section-title">{$_("assistant_settings", {}, "AI Assistant Settings")}</h2>
             <p class="section-desc">{$_("assistant_settings_desc", {}, "Configure your private assistant's identity, personality, fun mode, and storage.")}</p>
           </div>

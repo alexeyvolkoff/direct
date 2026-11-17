@@ -15,7 +15,9 @@
     aiNodeStore,
     AI_NODE_MODE_AUTO,
     AI_NODE_MODE_PUBLIC,
+    AI_NODE_MODE_HORDE,
     AI_NODE_MODE_CUSTOM,
+    isVirtualAiNodeChoice,
     setAiNodeChoice,
     acceptPublicAiAgreement,
     refreshPublicAiNode,
@@ -439,9 +441,9 @@
 
   function resolveSelectedAiDrive(effectiveNodeChoice) {
     let targetId = null;
-    if (effectiveNodeChoice && effectiveNodeChoice !== AI_NODE_MODE_AUTO && effectiveNodeChoice !== AI_NODE_MODE_PUBLIC) {
+    if (effectiveNodeChoice && !isVirtualAiNodeChoice(effectiveNodeChoice)) {
       targetId = effectiveNodeChoice;
-    } else if (effectiveNodeChoice === AI_NODE_MODE_AUTO && embeddedDevices.length > 0) {
+    } else if ((effectiveNodeChoice === AI_NODE_MODE_AUTO || effectiveNodeChoice === AI_NODE_MODE_HORDE) && embeddedDevices.length > 0) {
       targetId = embeddedDevices[0].linkId;
     } else if ($aiNodeStore?.info?.linkID) {
       targetId = $aiNodeStore.info.linkID;

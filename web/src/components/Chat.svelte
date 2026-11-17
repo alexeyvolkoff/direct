@@ -31,6 +31,7 @@
   import { searchClientKnowledgeChunks, embedTexts } from "../lib/client-rag.js";
   import { isLocalEmbeddingsEnabled } from "../lib/local-embedder.js";
   import { contentModeStore, hasSensitiveReadmeContent, hasSensitiveTag } from "../lib/content-mode.js";
+  import { getClientHordeSettings } from "../lib/ai-node.js";
 
   marked.use(markedKatex({ throwOnError: false, nonStandard: true }));
   marked.setOptions({ breaks: true, gfm: true });
@@ -2987,7 +2988,11 @@
   // внутри уже ретраи и fallback на localStorage-зеркало (chat-store.js).
   async function loadAssistantSettingsForSend() {
     if (assistantSettingsData && (assistantSettingsData.fun_system_prompt || assistantSettingsData.system_prompt)) {
-      return await applyActivePersonaSettings(assistantSettingsData);
+      const mergedCached = {
+        ...assistantSettingsData,
+        ...getClientHordeSettings(assistantSettingsData),
+      };
+      return await applyActivePersonaSettings(mergedCached);
     }
     if (chatStore && typeof chatStore.getAssistantSettings === "function") {
       try {
@@ -3007,7 +3012,11 @@
       language: $locale || "en",
       ...(resolvedName ? { name: resolvedName } : {})
     };
-    return await applyActivePersonaSettings(assistantSettingsData);
+    const merged = {
+      ...assistantSettingsData,
+      ...getClientHordeSettings(assistantSettingsData),
+    };
+    return await applyActivePersonaSettings(merged);
   }
 
   let mutationObserver = null;

@@ -19,7 +19,7 @@
   import { setSshIdentity, clearSshIdentity } from "./lib/identity/ssh-credentials.js";
   import { setMcpKeysIdentity, clearMcpKeysIdentity } from "./lib/mcp-keys.js";
   import { getSharedGatewayChannel } from "./lib/gateway-channel.js";
-  import { aiNodeStore, hydrateAiNodeState, refreshPublicAiNode, setAiNodeChoice, acceptPublicAiAgreement, applyRemotePublicAiAck, aiOnmychatHeaders, AI_NODE_MODE_AUTO, AI_NODE_MODE_PUBLIC, AI_NODE_AGREEMENT_VERSION } from "./lib/ai-node.js";
+  import { aiNodeStore, hydrateAiNodeState, refreshPublicAiNode, setAiNodeChoice, acceptPublicAiAgreement, applyRemotePublicAiAck, aiOnmychatHeaders, isVirtualAiNodeChoice, AI_NODE_MODE_AUTO, AI_NODE_MODE_PUBLIC, AI_NODE_MODE_HORDE, AI_NODE_AGREEMENT_VERSION } from "./lib/ai-node.js";
   import { ensureAssistantDefaults } from "./lib/assistant-defaults.js";
   import { setOmdKeyIdentity, clearOmdKeyIdentity, getStoredOmdKey, storeOmdKey, getGatewayBase } from "./lib/omd-key.js";
   import PdfViewer from "./components/PdfViewer.svelte";
@@ -2284,7 +2284,7 @@
     acceptPublicAiAgreement();
     const st = $aiNodeStore;
     const ownChatDev = deviceRegistry.list().find((d) => isChatCapableDevice(d) && d.drive?.authLevel === "admin");
-    if (!ownChatDev && st.choice !== AI_NODE_MODE_PUBLIC) {
+    if (!ownChatDev && st.choice !== AI_NODE_MODE_PUBLIC && st.choice !== AI_NODE_MODE_HORDE) {
       setAiNodeChoice(AI_NODE_MODE_PUBLIC);
     }
     showAiPublicAgreement = false;
@@ -2321,7 +2321,7 @@
   function publicAiWanted(st) {
     if (!st || !st.info) return false;
     if (st.choice === AI_NODE_MODE_PUBLIC) return true;
-    if (st.choice === AI_NODE_MODE_AUTO) {
+    if (st.choice === AI_NODE_MODE_AUTO || st.choice === AI_NODE_MODE_HORDE) {
       return !deviceRegistry.list().some((d) => isChatCapableDevice(d) && d.drive?.authLevel === "admin");
     }
     return false;
@@ -2335,7 +2335,7 @@
     if (st.choice && guestAiDevice && guestAiDevice.linkId === st.choice) {
       return guestAiDevice;
     }
-    const chosen = st.choice && st.choice !== AI_NODE_MODE_AUTO && st.choice !== AI_NODE_MODE_PUBLIC
+    const chosen = st.choice && !isVirtualAiNodeChoice(st.choice)
       ? deviceRegistry.get(st.choice)
       : null;
     if (chosen) return chosen;
@@ -2457,7 +2457,7 @@
       device = publicAiDevice;
     } else if (st.choice && guestAiDevice && guestAiDevice.linkId === st.choice) {
       device = guestAiDevice;
-    } else if (st.choice && st.choice !== AI_NODE_MODE_AUTO && st.choice !== AI_NODE_MODE_PUBLIC && deviceRegistry.get(st.choice)) {
+    } else if (st.choice && !isVirtualAiNodeChoice(st.choice) && deviceRegistry.get(st.choice)) {
       device = deviceRegistry.get(st.choice);
     } else {
       device = deviceRegistry.list().find((d) =>
@@ -2476,7 +2476,7 @@
     chatTargetRetries = 0;
     // If chat target is an own node / private device that requires pairing from this browser:
     if (!isSharedRoute && device && device.drive && device.drive.authLevel !== "admin" && !device.isAiNode && device !== publicAiDevice && device !== guestAiDevice) {
-      const isExplicitChoice = st.choice === device.linkId && st.choice !== AI_NODE_MODE_AUTO && st.choice !== AI_NODE_MODE_PUBLIC;
+      const isExplicitChoice = st.choice === device.linkId && !isVirtualAiNodeChoice(st.choice);
       if (isExplicitChoice) {
         if (!device.drive.isConnected) {
           if (chatTargetRetries < 10) {

@@ -86,17 +86,47 @@ def _resolve_horde_api_key(ctx) -> str:
     return HORDE_API_KEY or horde_client.ANONYMOUS_API_KEY
 
 
+def has_personal_horde_key(ctx) -> bool:
+    """Returns True when the caller configured their own non-anonymous AI Horde API key."""
+    settings = getattr(ctx, "settings", None) or {}
+    client_key = str(settings.get("horde_api_key") or "").strip()
+    return bool(client_key and client_key != horde_client.ANONYMOUS_API_KEY)
+
+
+def is_horde_only_mode(ctx) -> bool:
+    """Returns True when the caller explicitly selected Horde AI as node or runtime mode."""
+    settings = getattr(ctx, "settings", None) or {}
+    for k in ("ai_node", "ai_provider", "ai_mode"):
+        v = str(settings.get(k) or "").strip().lower()
+        if v == "horde":
+            return True
+    explicit_other = str(settings.get("ai_provider") or settings.get("ai_mode") or "").strip().lower()
+    if explicit_other in ("local", "hybrid", "agentic"):
+        return False
+    return AI_PROVIDER == "horde"
+
+
+def is_personal_horde_uncensored_allowed(ctx) -> bool:
+    """Allows uncensored Fun mode on AI Horde when user chose Horde AI and supplied their own Horde API key."""
+    if not is_horde_only_mode(ctx) or not has_personal_horde_key(ctx):
+        return False
+    settings = getattr(ctx, "settings", None) or {}
+    if str(settings.get("platform") or "").strip().lower() == "ios":
+        return False
+    return True
+
+
 def _is_horde_chat_request(ctx, fun_mode: bool) -> bool:
     """Determine whether chat generation should route to AI Horde."""
+    if is_horde_only_mode(ctx):
+        return True
     settings = getattr(ctx, "settings", None) or {}
     client_provider = str(settings.get("ai_provider") or settings.get("ai_mode") or "").strip().lower()
-    if client_provider == "horde":
-        return True
     if client_provider == "hybrid":
         return bool(fun_mode)
     if client_provider in ("local", "agentic"):
         return False
-    return (AI_PROVIDER == "horde") or (AI_PROVIDER == "hybrid" and bool(fun_mode))
+    return AI_PROVIDER == "hybrid" and bool(fun_mode)
 LLM_NUM_CTX = int(SETTINGS.get("LLM_NUM_CTX", "32768"))
 # Protection: max output tokens (prevents runaway generation that hangs the system)
 LLM_NUM_PREDICT = int(SETTINGS.get("LLM_NUM_PREDICT", "2048"))
@@ -3190,9 +3220,23 @@ async def is_image_generation_available(ctx=None) -> bool:
 
 async def check_krea_status(ctx=None) -> dict:
     """Checks if Creative Studio engines, AI Horde Express, or local SDXL can be activated on this node."""
+    is_priv = bool(getattr(ctx, "private_mode", False) or getattr(ctx, "trusted_owner", False)) if ctx else True
+    if ctx is not None and is_horde_only_mode(ctx):
+        horde_ok = horde_image_mapper.is_horde_image_enabled()
+        return {
+            "allowed": horde_ok,
+            "tier": "owner" if is_priv else ("horde" if has_personal_horde_key(ctx) else "standard"),
+            "studio_enabled": False,
+            "director_allowed": True,
+            "sdxl_allowed": horde_ok,
+            "krea_allowed": False,
+            "video_allowed": False,
+            "uncensored": bool(is_priv or is_personal_horde_uncensored_allowed(ctx)),
+            "horde_only": True,
+            "krea_notice": "",
+        }
     krea_ok = await is_krea_available(ctx)
     sdxl_ok = await is_comfy_available() or horde_image_mapper.is_horde_image_enabled()
-    is_priv = bool(getattr(ctx, "private_mode", False) or getattr(ctx, "trusted_owner", False)) if ctx else True
     if krea_ok or sdxl_ok:
         return {
             "allowed": True,
@@ -3231,6 +3275,7 @@ def is_effective_fun_mode_sync(ctx=None, sliders: dict | None = None) -> bool:
         getattr(ctx, "private_mode", False)
         or getattr(ctx, "trusted_owner", False)
         or getattr(ctx, "is_unlimited", False)
+        or is_personal_horde_uncensored_allowed(ctx)
     )
 
 
@@ -5675,7 +5720,7 @@ async def generate_krea2_image(
     if not prompt and not persona_prompt and not has_any_ref:
         raise Exception("Укажите промпт или выберите персону для генерации.")
 
-    if isinstance(sliders, dict) and is_sdxl_base_model(sliders.get("base_model")):
+    if is_horde_only_mode(ctx) or (isinstance(sliders, dict) and is_sdxl_base_model(sliders.get("base_model"))):
         return await generate_sdxl_studio_image(
             ctx=ctx,
             prompt=prompt,
@@ -8022,6 +8067,35 @@ async def llm_request(payload: dict, headers: dict = None):
         return None
 
 
+async def llm_or_horde_request(ctx, payload: dict, headers: dict = None):
+    """Routes blocking LLM requests to AI Horde when caller is in full Horde AI mode, else local Ollama."""
+    if ctx is not None and is_horde_only_mode(ctx):
+        settings = getattr(ctx, "settings", None) or {}
+        h_model = settings.get("horde_model") or HORDE_MODEL
+        h_key = _resolve_horde_api_key(ctx)
+        logging.info(f"[HordeOnly] Routing LLM call to AI Horde (model={h_model})")
+        full_content = ""
+        try:
+            async for chunk in horde_client.horde_generate_stream(
+                payload,
+                api_key=h_key,
+                preferred_model=h_model,
+            ):
+                if chunk.get("error"):
+                    logging.warning(f"[HordeOnly] AI Horde LLM error: {chunk['error']}")
+                    return None
+                msg = chunk.get("message") or {}
+                if msg.get("content"):
+                    full_content += msg["content"]
+            if full_content.strip():
+                return {"message": {"role": "assistant", "content": full_content.strip()}}
+        except Exception as e:
+            logging.warning(f"[HordeOnly] AI Horde LLM call failed: {e}")
+            return None
+    return await llm_request(payload, headers=headers)
+
+
+
 
 
 
@@ -9328,7 +9402,7 @@ async def generate_image_prompt(ctx: UserContext, instruction: str, prompt: str,
     logging.info(f"[img_prompt] LLM request system:\n{messages[0]['content'][:500]}")
     logging.info(f"[img_prompt] LLM request user:\n{messages[1]['content'][:500]}")
 
-    data = await llm_request(request_payload)
+    data = await llm_or_horde_request(ctx, request_payload)
 
     if data and "message" in data and "content" in data["message"]:
         response = data["message"]["content"]
@@ -9619,7 +9693,7 @@ async def generate_random_creative_prompt(
     }
 
     try:
-        data = await llm_request(payload)
+        data = await llm_or_horde_request(ctx, payload)
         prompt = ""
         if data and "message" in data and "content" in data["message"]:
             prompt = data["message"]["content"].strip()
@@ -11335,7 +11409,7 @@ async def krea_director_rewrite_prompt(
         },
     }
 
-    data = await llm_request(payload)
+    data = await llm_or_horde_request(ctx, payload)
     raw = ""
     if data and isinstance(data, dict):
         raw = (data.get("message", {}) or {}).get("content", "") or data.get("content", "")
@@ -11485,7 +11559,7 @@ async def krea_director_storyboard(
             )
         u_parts.append(f"USER DIRECTION FOR THIS SCENE:\n{idea or 'Make this scene more expressive and cinematic.'}")
 
-        data = await llm_request({
+        data = await llm_or_horde_request(ctx, {
             "model": model,
             "messages": [{"role": "system", "content": sys_p}, {"role": "user", "content": "\n\n".join(u_parts)}],
             "stream": False,
@@ -11566,7 +11640,7 @@ async def krea_director_storyboard(
             f"{idea or 'Create an intriguing, atmospheric character story set in this world.'}"
         )
 
-    data = await llm_request({
+    data = await llm_or_horde_request(ctx, {
         "model": model,
         "messages": [{"role": "system", "content": sys_p}, {"role": "user", "content": "\n\n".join(u_parts)}],
         "stream": False,
@@ -12334,7 +12408,7 @@ async def _resolve_chat_image_sliders(ctx: UserContext, sliders: dict | None) ->
     """
     eff = dict(sliders or {})
     can_krea = False
-    if is_krea2_persona_chat(ctx, eff):
+    if not is_horde_only_mode(ctx) and is_krea2_persona_chat(ctx, eff):
         try:
             if await is_krea_available(ctx):
                 st = await check_krea_status(ctx)
@@ -13578,6 +13652,28 @@ except ImportError:
     pass
 except Exception as e:
     logging.warning(f"[Extensions] Optional extensions load failed: {e}")
+
+_post_ext_check_krea_status = check_krea_status
+
+
+async def _horde_aware_check_krea_status(ctx=None) -> dict:
+    res = await _post_ext_check_krea_status(ctx)
+    if ctx is not None and is_horde_only_mode(ctx):
+        horde_ok = horde_image_mapper.is_horde_image_enabled()
+        res = dict(res) if isinstance(res, dict) else {}
+        res["allowed"] = bool(res.get("allowed", True) and horde_ok)
+        res["studio_enabled"] = False
+        res["director_allowed"] = True
+        res["sdxl_allowed"] = horde_ok
+        res["krea_allowed"] = False
+        res["video_allowed"] = False
+        res["horde_only"] = True
+        res["uncensored"] = bool(res.get("uncensored") or is_personal_horde_uncensored_allowed(ctx))
+        res["krea_notice"] = ""
+    return res
+
+
+check_krea_status = _horde_aware_check_krea_status
 
 try:
     import horde_dreamer

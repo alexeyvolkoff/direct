@@ -603,4 +603,153 @@ async def test_work_fun_toggle_and_sensitive_tagging():
     assert formatted_vis.endswith("#sensitive")
 
 
+@pytest.mark.asyncio
+async def test_full_horde_ai_mode_exclusive_routing_and_personal_key(monkeypatch, tmp_path):
+    import base64
+    from aiohttp import web
+    import core_service
+
+    # 1. Owner selecting Horde AI routes chat (both Work & Fun) and SDXL image gen exclusively to AI Horde
+    owner_horde = SimpleNamespace(
+        user_id="alexey",
+        private_mode=True,
+        trusted_owner=True,
+        is_unlimited=True,
+        settings={
+            "ai_node": "horde",
+            "ai_mode": "horde",
+            "ai_provider": "horde",
+            "horde_api_key": "personal-horde-key-xyz",
+            "horde_model": "koboldcpp/Cydonia-24B-v4zg-Q4_K_M",
+            "persona_id": "persona_shinylark",
+            "persona_lora": "kate_krea2.safetensors",
+            "persona_render_preset": {"enabled": True, "base_model": "realism"},
+            "content_mode": "work",
+        },
+    )
+    assert core_service.is_horde_only_mode(owner_horde) is True
+    assert core_service._is_horde_chat_request(owner_horde, fun_mode=False) is True
+    assert core_service._is_horde_chat_request(owner_horde, fun_mode=True) is True
+    assert horde_image_mapper.should_use_horde_for_sdxl(owner_horde, comfy_available=True) is True
+
+    # Even with a Krea2 persona, Horde AI mode forces SDXL -> AI Horde (never Modal Krea2)
+    eff_sliders, can_krea = await core_service._resolve_chat_image_sliders(owner_horde, {"base_model": "realism"})
+    assert can_krea is False
+    assert eff_sliders["base_model"] == "sdxl_realistic"
+
+    st = await core_service.check_krea_status(owner_horde)
+    assert st["krea_allowed"] is False
+    assert st["video_allowed"] is False
+    assert st["sdxl_allowed"] is True
+    assert st["horde_only"] is True
+
+    # 2. Non-owner Horde fan with personal Horde API key gets priority key without touching guest Kudos budget
+    fan_fun = SimpleNamespace(
+        user_id="horde_fan_42",
+        private_mode=False,
+        trusted_owner=False,
+        is_unlimited=False,
+        settings={
+            "ai_node": "horde",
+            "ai_mode": "horde",
+            "ai_provider": "horde",
+            "horde_api_key": "my-own-horde-token-999",
+            "horde_model": "auto",
+            "content_mode": "fun",
+        },
+    )
+    assert core_service.is_personal_horde_uncensored_allowed(fan_fun) is True
+    assert await core_service.resolve_effective_fun_mode(fan_fun) is True
+    assert await core_service.resolve_effective_fun_mode(fan_fun, {"content_mode": "work"}) is False
+
+    calls = []
+    import io
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (16, 16), (120, 80, 200)).save(buf, format="PNG")
+    b64_png = base64.b64encode(buf.getvalue()).decode("ascii")
+
+    async def handle_models(_req):
+        return web.json_response([{"name": "AlbedoBase XL (SDXL)", "count": 3, "eta": 4, "performance": "2.5"}])
+
+    async def handle_submit(req):
+        body = await req.json()
+        calls.append((req.headers.get("apikey"), body))
+        return web.json_response({"id": "job-fan"}, status=202)
+
+    async def handle_check(_req):
+        return web.json_response({"done": True, "wait_time": 0})
+
+    async def handle_status(_req):
+        return web.json_response({
+            "done": True,
+            "kudos": 19.5,
+            "generations": [{"img": b64_png, "model": "AlbedoBase XL (SDXL)", "seed": "777", "censored": False}],
+        })
+
+    app = web.Application()
+    app.router.add_get("/api/v2/status/models", handle_models)
+    app.router.add_post("/api/v2/generate/async", handle_submit)
+    app.router.add_get("/api/v2/generate/check/job-fan", handle_check)
+    app.router.add_get("/api/v2/generate/status/job-fan", handle_status)
+
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "127.0.0.1", 0)
+    await site.start()
+    port = site._server.sockets[0].getsockname()[1]
+
+    budget_file = tmp_path / "fan_budget.json"
+    try:
+        monkeypatch.setattr(horde_client, "HORDE_BASE_URL", f"http://127.0.0.1:{port}/api/v2")
+        monkeypatch.setattr(horde_image_mapper, "_image_models_cache", (0.0, {}))
+        monkeypatch.setattr(horde_image_mapper, "_last_submit_monotonic", 0.0)
+        # Even if server guest cap is 0, personal Horde API key works at full SDXL priority!
+        monkeypatch.setitem(horde_image_mapper.SETTINGS, "HORDE_GUEST_DAILY_KUDOS_LIMIT", "0")
+
+        res_fun = await horde_image_mapper.generate_horde_image(
+            ctx=fan_fun,
+            prompt="dramatic portrait in neon rain",
+            sliders={"base_model": "sdxl_realistic"},
+            is_uncensored=await core_service.resolve_effective_fun_mode(fan_fun),
+            poll_interval=0.02,
+            budget_path=str(budget_file),
+        )
+        assert res_fun["image_bytes"].startswith(b"\x89PNG")
+        assert calls[-1][0] == "my-own-horde-token-999"
+        assert calls[-1][1]["nsfw"] is True
+        assert not budget_file.exists()
+
+        # 3. Same Horde fan in Work mode enforces SFW filters (nsfw=False + negative prompts)
+        fan_work = SimpleNamespace(
+            user_id="horde_fan_42",
+            private_mode=False,
+            trusted_owner=False,
+            is_unlimited=False,
+            settings={
+                "ai_node": "horde",
+                "ai_mode": "horde",
+                "ai_provider": "horde",
+                "horde_api_key": "my-own-horde-token-999",
+                "content_mode": "work",
+            },
+        )
+        monkeypatch.setattr(horde_image_mapper, "_last_submit_monotonic", 0.0)
+        await horde_image_mapper.generate_horde_image(
+            ctx=fan_work,
+            prompt="woman in white shirt in office hallway",
+            sliders={"base_model": "sdxl_realistic"},
+            is_uncensored=await core_service.resolve_effective_fun_mode(fan_work),
+            poll_interval=0.02,
+            budget_path=str(budget_file),
+        )
+        assert calls[-1][0] == "my-own-horde-token-999"
+        assert calls[-1][1]["nsfw"] is False
+        assert "pokies" in calls[-1][1]["prompt"]
+        assert not budget_file.exists()
+    finally:
+        await runner.cleanup()
+
+
+
 

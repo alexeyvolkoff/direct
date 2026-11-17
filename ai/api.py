@@ -2622,6 +2622,7 @@ class RandomPromptInput(BaseModel):
     archetypes: str | None = None
     loras: str | None = None
     chat: str = "default"
+    settings: dict | None = None
 
 
 
@@ -4105,6 +4106,62 @@ async def _stream_first_chunk_timeout(agen, timeout=120):
         yield chunk
 
 
+def _apply_request_ai_headers(request: Request, ctx, explicit_settings: dict | None = None):
+    if not ctx or not hasattr(ctx, "settings") or not isinstance(ctx.settings, dict):
+        return
+    hdr_mode = (request.headers.get("X-OMD-Ai-Mode") or "").strip().lower()
+    explicit = explicit_settings if isinstance(explicit_settings, dict) else {}
+    if hdr_mode in ("horde", "hybrid", "local", "agentic"):
+        if "ai_mode" not in explicit:
+            ctx.settings["ai_mode"] = hdr_mode
+        if hdr_mode == "horde":
+            if "ai_provider" not in explicit:
+                ctx.settings["ai_provider"] = "horde"
+            if "ai_node" not in explicit:
+                ctx.settings["ai_node"] = "horde"
+        else:
+            if "ai_node" not in explicit and str(ctx.settings.get("ai_node") or "").strip().lower() == "horde":
+                ctx.settings["ai_node"] = "auto"
+            if "ai_provider" not in explicit:
+                ctx.settings["ai_provider"] = hdr_mode
+    elif explicit:
+        req_node = str(explicit.get("ai_node") or "").strip().lower()
+        req_mode = str(explicit.get("ai_mode") or explicit.get("ai_provider") or "").strip().lower()
+        if req_node and req_node != "horde" and req_mode in ("local", "hybrid", "agentic"):
+            ctx.settings["ai_provider"] = req_mode
+    hdr_horde_model = (request.headers.get("X-OMD-Horde-Model") or "").strip()
+    if hdr_horde_model and "horde_model" not in explicit:
+        ctx.settings["horde_model"] = hdr_horde_model
+
+
+def _can_bypass_guest_prompt_safety(ctx) -> bool:
+    if bool(getattr(ctx, "private_mode", False) or getattr(ctx, "is_unlimited", False)):
+        return True
+    return bool(
+        core_service.is_personal_horde_uncensored_allowed(ctx)
+        and core_service.resolve_requested_content_mode(ctx) == "fun"
+    )
+
+
+async def _check_effective_krea_status(ctx) -> dict:
+    res = await core_service.check_krea_status(ctx)
+    if not isinstance(res, dict):
+        res = {}
+    if core_service.is_horde_only_mode(ctx):
+        horde_ok = core_service.horde_image_mapper.is_horde_image_enabled()
+        res = dict(res)
+        res["allowed"] = bool(res.get("allowed", True) and horde_ok)
+        res["studio_enabled"] = False
+        res["director_allowed"] = True
+        res["sdxl_allowed"] = horde_ok
+        res["krea_allowed"] = False
+        res["video_allowed"] = False
+        res["horde_only"] = True
+        res["uncensored"] = bool(res.get("uncensored") or core_service.is_personal_horde_uncensored_allowed(ctx))
+        res["krea_notice"] = ""
+    return res
+
+
 @app.post("/chat/stream")
 async def chat_stream_post(request: Request, data: ChatStreamInput):
     agentic_tunnel.note_request(request, omd_key=data.omd_key, settings_payload=data.settings)
@@ -4203,8 +4260,9 @@ async def chat_stream(request: Request, prompt: str, omd_key: str | None = Depen
 
     req_pub_tags = _request_public_tags(request)
     ctx.settings["_public_tags"] = req_pub_tags
-    if req_pub_tags and not provided_settings.get("kb_id"):
+    if req_pub_tags and not (provided_settings and provided_settings.get("kb_id")):
         ctx.settings["kb_id"] = req_pub_tags[0]
+    _apply_request_ai_headers(request, ctx, provided_settings)
 
     async def event_generator():
         try:
@@ -4418,7 +4476,7 @@ async def chat_stream(request: Request, prompt: str, omd_key: str | None = Depen
                 else:
                     img_prompt = prompt.strip()
 
-                bypass_safety = ctx.private_mode or ctx.is_unlimited
+                bypass_safety = _can_bypass_guest_prompt_safety(ctx)
                 if not bypass_safety:
                     check_text = img_prompt or prompt
                     logging.info(f"Checking image generation safety: {check_text}")
@@ -4476,7 +4534,7 @@ async def chat_stream(request: Request, prompt: str, omd_key: str | None = Depen
                 raw_prompt = await core_service.generate_character_image_prompt(ctx, prompt, chat, history=history)
                 img_prompt, _ = core_service.extract_title_and_prompt(raw_prompt)
 
-                if not (ctx.private_mode or ctx.is_unlimited):
+                if not _can_bypass_guest_prompt_safety(ctx):
                     safety_result = await core_service.check_prompt_safety(ctx, img_prompt)
                     if safety_result != "SAFE":
                         logging.info(f"Generated character tags safety check failed: {safety_result}")
@@ -4531,7 +4589,7 @@ async def chat_stream(request: Request, prompt: str, omd_key: str | None = Depen
                 raw_prompt = await core_service.generate_general_image_prompt(ctx, prompt, chat, history=provided_history)
                 img_prompt, _ = core_service.extract_title_and_prompt(raw_prompt)
 
-                if not (ctx.private_mode or ctx.is_unlimited):
+                if not _can_bypass_guest_prompt_safety(ctx):
                     safety_result = await core_service.check_prompt_safety(ctx, img_prompt)
                     if safety_result != "SAFE":
                         logging.info(f"Generated general tags safety check failed: {safety_result}")
@@ -4890,9 +4948,10 @@ async def generate_character_image(request: Request, data: GenerateInput):
         ctx.settings.update(clean_settings)
         ctx.storage = ctx.settings.get("defaultStorage", "")
     ctx.mcp_keys = data.mcp_keys or (ctx.settings.get("mcp_keys") if isinstance(ctx.settings, dict) else None) or getattr(ctx, "mcp_keys", None) or {}
+    _apply_request_ai_headers(request, ctx, data.settings)
     try:
         upload_storage_flag = _resolve_upload_storage_flag(request, ctx, data.upload_storage, data.device_push, data.settings)
-        if not (ctx.private_mode or ctx.is_unlimited):
+        if not _can_bypass_guest_prompt_safety(ctx):
             safety = await core_service.check_prompt_safety(ctx, data.prompt)
             if safety != "SAFE":
                 raise HTTPException(status_code=403, detail=safety)
@@ -4946,9 +5005,10 @@ async def generate_general_image(request: Request, data: GenerateInput):
         ctx.settings.update(clean_settings)
         ctx.storage = ctx.settings.get("defaultStorage", "")
     ctx.mcp_keys = data.mcp_keys or (ctx.settings.get("mcp_keys") if isinstance(ctx.settings, dict) else None) or getattr(ctx, "mcp_keys", None) or {}
+    _apply_request_ai_headers(request, ctx, data.settings)
     try:
         upload_storage_flag = _resolve_upload_storage_flag(request, ctx, data.upload_storage, data.device_push, data.settings)
-        if not (ctx.private_mode or ctx.is_unlimited):
+        if not _can_bypass_guest_prompt_safety(ctx):
             safety = await core_service.check_prompt_safety(ctx, data.prompt)
             if safety != "SAFE":
                 raise HTTPException(status_code=403, detail=safety)
@@ -4992,9 +5052,10 @@ async def generate_krea2_endpoint(request: Request, data: KreaGenerateInput):
         ctx.settings.update(clean_settings)
         ctx.storage = ctx.settings.get("defaultStorage", "")
     ctx.mcp_keys = data.mcp_keys or (ctx.settings.get("mcp_keys") if isinstance(ctx.settings, dict) else None) or getattr(ctx, "mcp_keys", None) or {}
+    _apply_request_ai_headers(request, ctx, data.settings)
     try:
         upload_storage_flag = _resolve_upload_storage_flag(request, ctx, data.upload_storage, data.device_push, data.settings)
-        if not (ctx.private_mode or ctx.is_unlimited):
+        if not _can_bypass_guest_prompt_safety(ctx):
             safety = await core_service.check_prompt_safety(ctx, data.prompt)
             if safety != "SAFE":
                 raise HTTPException(status_code=403, detail=safety)
@@ -5013,7 +5074,9 @@ async def generate_krea2_endpoint(request: Request, data: KreaGenerateInput):
         save_locally = bool(is_node_owner and data.save_local)
 
         ref_imgs = data.reference_images or ([data.reference_image] if data.reference_image else None)
-        is_sdxl_req = isinstance(data.sliders, dict) and core_service.is_sdxl_base_model(data.sliders.get("base_model"))
+        is_sdxl_req = core_service.is_horde_only_mode(ctx) or (
+            isinstance(data.sliders, dict) and core_service.is_sdxl_base_model(data.sliders.get("base_model"))
+        )
 
         async def _run_krea2_core() -> dict:
             t_start = time.time()
@@ -5082,7 +5145,7 @@ async def generate_krea2_endpoint(request: Request, data: KreaGenerateInput):
                 "total_time": total_time,
             }
             try:
-                post_status = await core_service.check_krea_status(ctx)
+                post_status = await _check_effective_krea_status(ctx)
                 if isinstance(post_status, dict):
                     for qk in ("tier", "krea_allowed", "credits", "krea_daily_remaining", "krea_daily_limit", "krea_notice"):
                         if qk in post_status:
@@ -5270,7 +5333,7 @@ async def generate_krea_video_endpoint(request: Request, data: KreaVideoGenerate
                 "total_time": total_time,
             }
             try:
-                post_status = await core_service.check_krea_status(ctx)
+                post_status = await _check_effective_krea_status(ctx)
                 if isinstance(post_status, dict):
                     for qk in ("tier", "krea_allowed", "credits", "krea_daily_remaining", "krea_daily_limit", "krea_notice"):
                         if qk in post_status:
@@ -5940,13 +6003,13 @@ async def get_krea_presets_endpoint(request: Request, data: Optional[KreaStatusI
     include_fun = False
     include_krea = False
     try:
-        st = await core_service.check_krea_status(ctx)
+        st = await _check_effective_krea_status(ctx)
         include_fun = bool(st.get("uncensored"))
         include_krea = bool(st.get("krea_allowed"))
     except Exception:
         is_priv = bool(getattr(ctx, "private_mode", False) or getattr(ctx, "trusted_owner", False))
         include_fun = is_priv
-        include_krea = is_priv
+        include_krea = is_priv and not core_service.is_horde_only_mode(ctx)
     if req_mode == "work":
         include_fun = False
     return core_service.get_krea_presets(include_fun=include_fun, include_krea=include_krea)
@@ -5959,7 +6022,7 @@ async def check_krea_status_endpoint(request: Request, data: Optional[KreaStatus
     Delegates to core_service / private extension hook.
     """
     ctx = _build_krea_ctx(request, data)
-    res = await core_service.check_krea_status(ctx)
+    res = await _check_effective_krea_status(ctx)
     if isinstance(res, dict) and res.get("allowed") and res.get("tier") != "guest":
         try:
             res = dict(res)
@@ -6020,9 +6083,11 @@ def _build_krea_ctx(request: Request, data=None):
     ctx = get_ctx(effective_key)
     ctx.private_mode = trusted_private_access(request, ctx)
     ctx.trusted_owner = trusted_owner_access(request)
-    if data and getattr(data, "settings", None):
-        ctx.settings.update(data.settings)
+    explicit_settings = getattr(data, "settings", None) if data else None
+    if explicit_settings:
+        ctx.settings.update(explicit_settings)
         ctx.storage = ctx.settings.get("defaultStorage", "")
+    _apply_request_ai_headers(request, ctx, explicit_settings)
     if data:
         ctx.mcp_keys = getattr(data, "mcp_keys", None) or (ctx.settings.get("mcp_keys") if isinstance(ctx.settings, dict) else None) or getattr(ctx, "mcp_keys", None) or {}
     return ctx
@@ -6032,7 +6097,7 @@ def _build_krea_ctx(request: Request, data=None):
 async def krea_warmup_endpoint(request: Request, data: Optional[KreaStatusInput] = None):
     """Triggers lazy background Cloud GPU warmup right when a Krea/Anima generation begins."""
     ctx = _build_krea_ctx(request, data)
-    status = await core_service.check_krea_status(ctx)
+    status = await _check_effective_krea_status(ctx)
     if not status.get("allowed"):
         raise HTTPException(status_code=403, detail=status.get("error", "Not authorized"))
     req_base = (data.base_model if data else "") or ""
@@ -6058,7 +6123,7 @@ class CivitaiExtractInput(BaseModel):
 async def krea_civitai_extract_endpoint(request: Request, data: CivitaiExtractInput):
     """Extracts prompt, base model, LoRA styles/archetypes & weights, steps, CFG, and aspect ratio from a CivitAI image/post URL."""
     ctx = _build_krea_ctx(request, data)
-    status = await core_service.check_krea_status(ctx)
+    status = await _check_effective_krea_status(ctx)
     if not status.get("allowed"):
         raise HTTPException(status_code=403, detail=status.get("error", "Creative Studio access required"))
     if data.warmup_gpu and status.get("krea_allowed"):
@@ -6160,10 +6225,10 @@ async def krea_autopilot_intake_endpoint(request: Request, data: CivitaiPublishI
 async def krea_director_prompt_endpoint(request: Request, data: DirectorPromptInput):
     """AI Director's Chair — Prompt Co-Pilot (rewrites or creates Krea2/Anima/SDXL prompts in natural language, with CivitAI URL auto-import)."""
     ctx = _build_krea_ctx(request, data)
-    status = await core_service.check_krea_status(ctx)
+    status = await _check_effective_krea_status(ctx)
     if not status.get("allowed"):
         raise HTTPException(status_code=403, detail=status.get("error", "Creative Studio access required"))
-    if not status.get("uncensored"):
+    if not (status.get("uncensored") and (ctx.private_mode or ctx.is_unlimited or core_service.resolve_requested_content_mode(ctx) == "fun")):
         check_text = f"{data.instruction or ''} {data.current_prompt or ''}".strip()
         if check_text:
             safety = await core_service.check_prompt_safety(ctx, check_text)
@@ -6199,10 +6264,10 @@ async def krea_director_prompt_endpoint(request: Request, data: DirectorPromptIn
 async def krea_director_storyboard_endpoint(request: Request, data: DirectorStoryboardInput):
     """AI Director's Chair — Multi-scene Storyboard & Visual Novel Planner."""
     ctx = _build_krea_ctx(request, data)
-    status = await core_service.check_krea_status(ctx)
+    status = await _check_effective_krea_status(ctx)
     if not status.get("allowed"):
         raise HTTPException(status_code=403, detail=status.get("error", "Creative Studio access required"))
-    if not status.get("uncensored"):
+    if not (status.get("uncensored") and (ctx.private_mode or ctx.is_unlimited or core_service.resolve_requested_content_mode(ctx) == "fun")):
         check_text = f"{data.story_title or ''} {data.setting or ''} {data.idea or ''}".strip()
         if check_text:
             safety = await core_service.check_prompt_safety(ctx, check_text)
@@ -6439,6 +6504,9 @@ async def generate_random_prompt_endpoint(
     ctx = get_ctx(effective_key)
     ctx.private_mode = trusted_private_access(request, ctx)
     ctx.trusted_owner = trusted_owner_access(request)
+    if data.settings:
+        ctx.settings.update(data.settings)
+    _apply_request_ai_headers(request, ctx, data.settings)
     try:
         result = await core_service.generate_random_creative_prompt(
             ctx,

@@ -25,6 +25,7 @@
     hasSensitiveTag,
     stripSensitiveHashtags
   } from "../lib/content-mode.js";
+  import { aiNodeStore, aiOnmychatHeaders, getClientHordeSettings } from "../lib/ai-node.js";
   import defaultKreaPresets from "../lib/krea_presets.json";
 
   let civitaiAccounts = [];
@@ -80,6 +81,17 @@
   $: if (statusLoadedOnce && effectiveContentMode && effectiveContentMode !== _lastSyncedPresetsMode) {
     _lastSyncedPresetsMode = effectiveContentMode;
     refreshStudioStatusAndPresets();
+  }
+
+  let _lastSyncedAiNodeSig = "";
+  $: {
+    const sig = `${$aiNodeStore?.choice || ""}:${$aiNodeStore?.aiMode || ""}`;
+    if (statusLoadedOnce && sig !== _lastSyncedAiNodeSig) {
+      _lastSyncedAiNodeSig = sig;
+      refreshStudioStatusAndPresets();
+    } else if (!statusLoadedOnce) {
+      _lastSyncedAiNodeSig = sig;
+    }
   }
 
   function toggleStudioContentMode() {
@@ -330,6 +342,7 @@
     } else {
       h["X-OMD-Private-Mode"] = "1";
     }
+    Object.assign(h, aiOnmychatHeaders($aiNodeStore));
     return h;
   }
 
@@ -3719,7 +3732,13 @@
             persona_prompt: selectedPersonas.map((p) => p.prompt || p.passport || "").join("; "),
             warmup_gpu: !isSdxlModel(sliders.base_model),
             mcp_keys: mcpPayloadPre,
-            settings: { platform: getClientPlatform(), language: $locale || "ru", mcp_keys: mcpPayloadPre }
+            settings: {
+              platform: getClientPlatform(),
+              language: $locale || "ru",
+              content_mode: effectiveContentMode,
+              mcp_keys: mcpPayloadPre,
+              ...getClientHordeSettings()
+            }
           })
         });
         if (!preRes || !preRes.ok) {
@@ -3916,7 +3935,8 @@
         content_mode: effectiveContentMode,
         client: "svar",
         image_delivery: "inline",
-        mcp_keys: getMcpPayload()
+        mcp_keys: getMcpPayload(),
+        ...getClientHordeSettings()
       }
     };
 
@@ -3927,24 +3947,7 @@
 
     try {
       let res = null;
-      const requestHeaders = {
-        "Content-Type": "application/json",
-        "X-Client": "svar"
-      };
-      const activeToken = omdKey || (typeof window !== "undefined" && (window.__omdKey || window.identity?.token)) || "";
-      if (activeToken) {
-        requestHeaders["Token"] = activeToken;
-        requestHeaders["X-OMD-Token"] = activeToken;
-      }
-      const effectiveDid = (httpDrive && httpDrive.didPub) || (typeof window !== "undefined" && (window.identity?.mainPub || window.identity?.pair?.pub)) || "";
-      if (effectiveDid) {
-        requestHeaders["X-OMD-Caller-DID"] = effectiveDid;
-      }
-      if (httpDrive && httpDrive.isPrivateMode !== undefined) {
-        requestHeaders["X-OMD-Private-Mode"] = httpDrive.isPrivateMode ? "1" : "0";
-      } else {
-        requestHeaders["X-OMD-Private-Mode"] = "1";
-      }
+      const requestHeaders = buildAuthHeaders();
 
       // 1. Via P2P tunnel to node (httpDrive)
       if (httpDrive && typeof httpDrive.fetch === "function") {
@@ -4308,17 +4311,22 @@
         persona_prompt: selectedPersonas.length > 0 ? selectedPersonas.map((p) => p.prompt || p.passport || "").join("; ") : "",
         style: stylesStr || ((sliders.style && sliders.style !== "none") ? sliders.style : ""),
         archetypes: archetypesStr,
-        keywords: userKeywords
+        keywords: userKeywords,
+        settings: {
+          content_mode: effectiveContentMode,
+          ...getClientHordeSettings()
+        }
       };
 
       let resp = null;
+      const randHeaders = buildAuthHeaders();
 
       // 1. Try P2P WebRTC data channel directly to OnMyChat API (binds this to httpDrive)
       if (httpDrive && typeof httpDrive.fetch === "function") {
         try {
           resp = await httpDrive.fetch("/generate/prompt/random", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: randHeaders,
             body: JSON.stringify(payload)
           });
         } catch (driveErr) {
@@ -4332,7 +4340,7 @@
           try {
             const r = await fetch(ep, {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: randHeaders,
               body: JSON.stringify(payload)
             });
             if (r.ok) {
@@ -5225,7 +5233,9 @@
           mcp_keys: mcpPayload,
           settings: {
             language: $locale || "ru",
-            mcp_keys: mcpPayload
+            content_mode: effectiveContentMode,
+            mcp_keys: mcpPayload,
+            ...getClientHordeSettings()
           }
         })
       });
@@ -5370,7 +5380,9 @@
           mcp_keys: mcpPayload,
           settings: {
             language: $locale || "ru",
-            mcp_keys: mcpPayload
+            content_mode: effectiveContentMode,
+            mcp_keys: mcpPayload,
+            ...getClientHordeSettings()
           }
         })
       });
@@ -5451,7 +5463,7 @@
           target_scene_index: idx,
           warmup_gpu: false,
           mcp_keys: mcpPayload,
-          settings: { language: $locale || "ru", mcp_keys: mcpPayload }
+          settings: { language: $locale || "ru", content_mode: effectiveContentMode, mcp_keys: mcpPayload, ...getClientHordeSettings() }
         })
       });
       if (!res || !res.ok) throw new Error(res ? `HTTP ${res.status}` : $_("krea_err_network", {}, "Network error"));
@@ -6330,7 +6342,8 @@
           platform: getClientPlatform(),
           language: $locale || "ru",
           content_mode: effectiveContentMode,
-          mcp_keys: mcpPayload
+          mcp_keys: mcpPayload,
+          ...getClientHordeSettings()
         }
       });
       const reqHeaders = {

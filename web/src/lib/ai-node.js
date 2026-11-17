@@ -20,18 +20,31 @@ export const AI_NODE_AGREEMENT_VERSION = "1.0";
 
 export const AI_NODE_MODE_PUBLIC = "public";
 export const AI_NODE_MODE_AUTO = "auto";
+export const AI_NODE_MODE_HORDE = "horde";
 export const AI_NODE_MODE_CUSTOM = "custom";
 
 // Runtime inference mode of the chat node's OnMyChat engine:
 //   local   - everything on the local node (default)
 //   hybrid  - local Ollama for WORK/RAG, AI Horde for FUN/RP
+//   horde   - all chat, prompt, and image inference via AI Horde
 //   agentic - local node only indexes knowledge on CPU (SentenceTransformers +
 //             ChromaDB); LLM (Ollama) and ComfyUI calls are tunneled over the
 //             OMD P2P protocol to the node selected via `inferenceNodeId`.
 //             Sent to OnMyChat as X-OMD-Ai-Mode / X-OMD-Ai-Node headers.
 export const AI_MODE_LOCAL = "local";
 export const AI_MODE_HYBRID = "hybrid";
+export const AI_MODE_HORDE = "horde";
 export const AI_MODE_AGENTIC = "agentic";
+
+export function isVirtualAiNodeChoice(choice) {
+  return (
+    !choice ||
+    choice === AI_NODE_MODE_AUTO ||
+    choice === AI_NODE_MODE_PUBLIC ||
+    choice === AI_NODE_MODE_HORDE ||
+    choice === AI_NODE_MODE_CUSTOM
+  );
+}
 
 const CHOICE_KEY = "omd_ai_node_choice";
 const AI_MODE_KEY = "omd_ai_mode";
@@ -165,7 +178,7 @@ export async function connectGuestAiNode(linkId, didPub) {
 function readAiModeFromStorage() {
   if (typeof localStorage === "undefined") return AI_MODE_LOCAL;
   const stored = (localStorage.getItem(AI_MODE_KEY) || "").trim().toLowerCase();
-  return [AI_MODE_LOCAL, AI_MODE_HYBRID, AI_MODE_AGENTIC].includes(stored) ? stored : AI_MODE_LOCAL;
+  return [AI_MODE_LOCAL, AI_MODE_HYBRID, AI_MODE_HORDE, AI_MODE_AGENTIC].includes(stored) ? stored : AI_MODE_LOCAL;
 }
 
 function readInferenceNodeFromStorage() {
@@ -203,13 +216,59 @@ export function isPublicAiActive(state) {
   return !!state && state.choice === AI_NODE_MODE_PUBLIC && state.ack && !!(state.info && state.info.linkID);
 }
 
-// Agentic routing headers for onmychat requests (empty when not applicable).
+export function isHordeAiActive(state) {
+  return !!state && (state.choice === AI_NODE_MODE_HORDE || state.aiMode === AI_MODE_HORDE);
+}
+
+// Routing headers for onmychat requests.
 export function aiOnmychatHeaders(state) {
-  if (!state || state.aiMode !== AI_MODE_AGENTIC || !state.inferenceNodeId) return {};
-  return {
-    "X-OMD-Ai-Mode": "agentic",
-    "X-OMD-Ai-Node": state.inferenceNodeId,
+  if (!state) return {};
+  if (state.choice === AI_NODE_MODE_HORDE || state.aiMode === AI_MODE_HORDE) {
+    return { "X-OMD-Ai-Mode": "horde" };
+  }
+  if (state.aiMode === AI_MODE_HYBRID) {
+    return { "X-OMD-Ai-Mode": "hybrid" };
+  }
+  if (state.aiMode === AI_MODE_AGENTIC && state.inferenceNodeId) {
+    return {
+      "X-OMD-Ai-Mode": "agentic",
+      "X-OMD-Ai-Node": state.inferenceNodeId,
+    };
+  }
+  return {};
+}
+
+// Effective AI node + Horde credentials merged into chat/studio request settings.
+export function getClientHordeSettings(baseSettings = null) {
+  const st = get_store_value() || {};
+  const base = baseSettings && typeof baseSettings === "object" ? baseSettings : {};
+  const choice = st.choice || base.ai_node || AI_NODE_MODE_AUTO;
+  const aiMode = st.aiMode || base.ai_mode || AI_MODE_LOCAL;
+  const isHordeOnly = choice === AI_NODE_MODE_HORDE || aiMode === AI_MODE_HORDE;
+  const effectiveMode = isHordeOnly ? AI_MODE_HORDE : aiMode;
+  const effectiveProvider = isHordeOnly
+    ? "horde"
+    : (aiMode === AI_MODE_HYBRID ? "hybrid" : (aiMode === AI_MODE_AGENTIC ? "agentic" : "local"));
+
+  let hordeApiKey = "";
+  let hordeModel = "";
+  if (typeof localStorage !== "undefined") {
+    try {
+      hordeApiKey = (localStorage.getItem("omd_horde_api_key") || "").trim();
+      hordeModel = (localStorage.getItem("omd_horde_model") || "").trim();
+    } catch (_) {}
+  }
+  if (!hordeApiKey && base.horde_api_key) hordeApiKey = String(base.horde_api_key).trim();
+  if (!hordeModel && base.horde_model) hordeModel = String(base.horde_model).trim();
+
+  const out = {
+    ai_node: choice,
+    ai_mode: effectiveMode,
+    ai_provider: effectiveProvider,
   };
+  if (hordeApiKey) out.horde_api_key = hordeApiKey;
+  if (hordeModel) out.horde_model = hordeModel;
+  return out;
 }
 
 export function hydrateAiNodeState() {
@@ -232,7 +291,7 @@ export function setAiNodeChoice(choice) {
 }
 
 export function setAiMode(mode) {
-  const m = [AI_MODE_LOCAL, AI_MODE_HYBRID, AI_MODE_AGENTIC].includes(mode) ? mode : AI_MODE_LOCAL;
+  const m = [AI_MODE_LOCAL, AI_MODE_HYBRID, AI_MODE_HORDE, AI_MODE_AGENTIC].includes(mode) ? mode : AI_MODE_LOCAL;
   if (typeof localStorage !== "undefined") {
     localStorage.setItem(AI_MODE_KEY, m);
   }
