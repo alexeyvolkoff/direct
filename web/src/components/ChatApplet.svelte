@@ -791,14 +791,17 @@
   // Если в пути указано конкретное устройство (напр. /MyLaptop/Private/OnMyChat) — используем его.
   // Если общаемся со своей нодой (владелец) — пишем на неё.
   // Если общаемся с удалённой AI-нодой (гость) — пишем на СВОЁ устройство.
-  $: parsedStorage = parseStoragePath($profileStore?.defaultStorage || "");
-  $: userStorageDevice = (parsedStorage?.device && !parsedStorage.device.isAiNode ? parsedStorage.device : null)
-    || (canBrowseOwnFiles(targetDevice) ? targetDevice : null)
-    || deviceRegistry.list().find((d) => d && !d.isAiNode && canBrowseOwnFiles(d))
-    || (ownLinkIds && ownLinkIds.length ? deviceRegistry.list().find((d) => d && !d.isAiNode && ownLinkIds.includes(d.linkId) && d.drive) : null)
-    || deviceRegistry.list().find((d) => d && !d.isAiNode && !d.local && d.drive)
-    || localDeviceEntry()
-    || null;
+  $: registryVersion = $deviceRegistry;
+  $: parsedStorage = (registryVersion, parseStoragePath($profileStore?.defaultStorage || ""));
+  $: userStorageDevice = (
+    registryVersion,
+    (parsedStorage?.device && !parsedStorage.device.isAiNode ? parsedStorage.device : null)
+      || (canBrowseOwnFiles(targetDevice) ? targetDevice : null)
+      || deviceRegistry.list().find((d) => d && !d.isAiNode && canBrowseOwnFiles(d))
+      || (ownLinkIds && ownLinkIds.length ? deviceRegistry.list().find((d) => d && !d.isAiNode && ownLinkIds.includes(d.linkId) && d.drive) : null)
+      || localDeviceEntry()
+      || null
+  );
 
   $: effectiveDeviceDrive = userStorageDevice?.drive || (canBrowseOwnFiles(targetDevice) ? targetDevice?.drive : null);
 

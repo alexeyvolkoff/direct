@@ -1177,6 +1177,7 @@
   let promptsSearchQuery = "";
   let recentPrompts = [];
   let unsubPrompts = null;
+  let unsubDeviceRegistry = null;
 
   $: filteredPrompts = recentPrompts
     .filter((p) => {
@@ -1405,20 +1406,23 @@
       );
       if (match && !match.isAiNode) return match;
     }
+    const isOwnedOrLocal = (d) => Boolean(d && !d.isAiNode && (d.local === true || d.isOwner === true));
     if (deviceDrive) {
       const d = deviceRegistry.list().find((x) => x.drive === deviceDrive && !x.isAiNode);
       if (d) return d;
     }
-    if (targetDevice && !targetDevice.isAiNode) return targetDevice;
+    if (isOwnedOrLocal(targetDevice)) return targetDevice;
     if (targetLinkId) {
       const d = deviceRegistry.get(targetLinkId) || deviceRegistry.getByPrefix(targetLinkId) || deviceRegistry.getByName(targetLinkId);
-      if (d && !d.isAiNode) return d;
+      if (isOwnedOrLocal(d)) return d;
     }
-    const connectedDev = deviceRegistry.list().find((d) => !d.isAiNode && d.drive && (d.drive.isConnected || d.drive.status === "connected"));
-    if (connectedDev) return connectedDev;
+    const connectedOwnedDev = deviceRegistry.list().find((d) => isOwnedOrLocal(d) && d.drive && (d.drive.isConnected || d.drive.status === "connected"));
+    if (connectedOwnedDev) return connectedOwnedDev;
     const local = getLocalDevice();
     if (local) return local;
+    if (targetDevice && !targetDevice.isAiNode) return targetDevice;
     return (
+      deviceRegistry.list().find((d) => isOwnedOrLocal(d)) ||
       deviceRegistry.list().find((d) => !d.isAiNode) ||
       null
     );
@@ -2799,7 +2803,16 @@
 
     const rawStorage = (defaultStorage || "").trim();
     const parsedStorage = parseStoragePath(rawStorage);
-    const hasSpecificDevice = !!(parsedStorage.deviceName && parsedStorage.deviceName.toLowerCase() !== "local");
+    const isLocalOpfsDrive = Boolean(
+      resDev?.local === true ||
+      (activeDrive && typeof activeDrive.sendRPC !== "function" && typeof activeDrive.getFileContent === "function")
+    );
+    const hasSpecificDevice = !!(
+      parsedStorage.deviceName &&
+      parsedStorage.deviceName.toLowerCase() !== "local" &&
+      !isLocalOpfsDrive &&
+      !(parsedStorage.device && parsedStorage.device.local === true)
+    );
 
     // When a specific target device is configured (e.g. /Linux-desktop/Private/OnMyChat),
     // strictly scan ONLY that target folder on that device!
@@ -2843,10 +2856,10 @@
         }
       }
 
-      // ONLY if NO specific device was chosen and no files were found, check other local devices or httpDrive
+      // ONLY if NO specific device was chosen and no files were found, check other owned/local devices or httpDrive
       if (!hasSpecificDevice && (!rawList || rawList.length === 0)) {
         const otherConnected = deviceRegistry.list().filter(
-          (d) => d && !d.isAiNode && d.drive && (d.drive.isConnected || d.drive.status === "connected") && d.drive !== activeDrive
+          (d) => d && !d.isAiNode && (d.local === true || d.isOwner === true) && d.drive && (d.drive.isConnected || d.drive.status === "connected") && d.drive !== activeDrive
         );
         for (const dev of otherConnected) {
           for (const cand of candidateFolders) {
@@ -2938,6 +2951,45 @@
     });
 
     if (loadSeq !== _studioRuntime.creationsLoadSeq || _studioRuntime.isDestroyed) return;
+
+    const finalIsLocalOpfs = Boolean(
+      activeDrive && typeof activeDrive.sendRPC !== "function" && typeof activeDrive.getFileContent === "function"
+    );
+    if (finalIsLocalOpfs && parsedItems.length > 0) {
+      await Promise.all(parsedItems.map(async (it) => {
+        try {
+          if (!it.blobUrl) {
+            const rawBlob = await activeDrive.getFileContent(it.path);
+            if (rawBlob && rawBlob.size > 0) {
+              const mime = it.isVideo
+                ? (it.name.toLowerCase().endsWith(".webm") ? "video/webm" : "video/mp4")
+                : guessImageMime(it.path, rawBlob.type);
+              const typedBlob = rawBlob.type === mime ? rawBlob : new Blob([rawBlob], { type: mime });
+              const objUrl = URL.createObjectURL(typedBlob);
+              it.blobUrl = objUrl;
+              if (!it.isVideo) {
+                it.thumbBlobUrl = objUrl;
+                thumbBlobCache[it.path] = objUrl;
+                thumbBlobCache[it.name] = objUrl;
+              }
+              imageBlobCache[it.path] = objUrl;
+              imageBlobCache[it.name] = objUrl;
+            }
+          }
+          if (it.isVideo && !it.coverBlobUrl) {
+            const covPath = it.path.replace(/\.[^/.]+$/, "") + ".cover.jpg";
+            const covBlob = await activeDrive.getFileContent(covPath).catch(() => null);
+            if (covBlob && covBlob.size > 0) {
+              const covUrl = URL.createObjectURL(covBlob.type === "image/jpeg" ? covBlob : new Blob([covBlob], { type: "image/jpeg" }));
+              it.coverBlobUrl = covUrl;
+              thumbBlobCache[it.path + ":cover"] = covUrl;
+              thumbBlobCache[it.name + ":cover"] = covUrl;
+            }
+          }
+        } catch (_) {}
+      }));
+      if (loadSeq !== _studioRuntime.creationsLoadSeq || _studioRuntime.isDestroyed) return;
+    }
 
     items = sortItemsList(parsedItems, sortOrder);
     isLoadingFiles = false;
@@ -3248,24 +3300,31 @@
     const drive = getTargetDrive();
     if (!drive || !drive.isConnected) return null;
     try {
+      const lowerFp = String(filePath || "").toLowerCase();
+      const fallbackMime = lowerFp.endsWith(".mp4")
+        ? "video/mp4"
+        : (lowerFp.endsWith(".webm")
+            ? "video/webm"
+            : (lowerFp.endsWith(".mov")
+                ? "video/quicktime"
+                : (lowerFp.endsWith(".jpg") || lowerFp.endsWith(".jpeg") ? "image/jpeg" : "image/png")));
       if (typeof drive.sendRPC === "function" && typeof drive.getFileContent === "function") {
         const openRes = await drive.sendRPC("Open", { path: filePath, query });
         if (openRes && openRes.status === "ok" && openRes.result) {
           const totalSize = openRes.result.size || 0;
-          const lowerFp = String(filePath || "").toLowerCase();
-          const fallbackMime = lowerFp.endsWith(".mp4")
-            ? "video/mp4"
-            : (lowerFp.endsWith(".webm")
-                ? "video/webm"
-                : (lowerFp.endsWith(".mov")
-                    ? "video/quicktime"
-                    : (lowerFp.endsWith(".jpg") || lowerFp.endsWith(".jpeg") ? "image/jpeg" : "image/png")));
           const mimeType = openRes.result.mimeType || fallbackMime;
           const rawBlob = await drive.getFileContent(filePath, totalSize, null, 0, query);
           if (rawBlob && rawBlob.size > 0) {
             const typedBlob = new Blob([rawBlob], { type: mimeType });
             return URL.createObjectURL(typedBlob);
           }
+        }
+      } else if (typeof drive.getFileContent === "function") {
+        const rawBlob = await drive.getFileContent(filePath);
+        if (rawBlob && rawBlob.size > 0) {
+          const mimeType = rawBlob.type && rawBlob.type !== "application/octet-stream" ? rawBlob.type : fallbackMime;
+          const typedBlob = rawBlob.type === mimeType ? rawBlob : new Blob([rawBlob], { type: mimeType });
+          return URL.createObjectURL(typedBlob);
         }
       }
     } catch (e) {
@@ -6131,6 +6190,20 @@
 
     await refreshStudioStatusAndPresets();
 
+    if (typeof deviceRegistry.subscribe === "function") {
+      let lastResolvedDrive = getTargetDrive();
+      unsubDeviceRegistry = deviceRegistry.subscribe(() => {
+        if (!_studioRuntime.initialMounted || _studioRuntime.isDestroyed) return;
+        const nextDrive = getTargetDrive();
+        if (nextDrive && (nextDrive !== lastResolvedDrive || items.length === 0)) {
+          lastResolvedDrive = nextDrive;
+          foundDevice = null;
+          loadCreations();
+          loadPersonas();
+        }
+      });
+    }
+
     _studioRuntime.initialMounted = true;
     await loadPersonas();
     await loadCreations();
@@ -6256,6 +6329,7 @@
       _studioRuntime.driveCleanup = null;
     }
     if (unsubPrompts) unsubPrompts();
+    if (unsubDeviceRegistry) unsubDeviceRegistry();
     if (lgPagination) {
       try { lgPagination.cleanup(); } catch (_) {}
       lgPagination = null;

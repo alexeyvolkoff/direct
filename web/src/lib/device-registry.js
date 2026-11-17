@@ -1,10 +1,33 @@
 export class DeviceRegistry {
   constructor() {
     this.devices = new Map();
+    this._listeners = new Set();
+    this._version = 0;
+  }
+
+  _notify() {
+    this._version += 1;
+    for (const fn of this._listeners) {
+      try {
+        fn(this._version);
+      } catch (_) {}
+    }
+  }
+
+  subscribe(fn) {
+    if (typeof fn !== "function") return () => {};
+    this._listeners.add(fn);
+    try {
+      fn(this._version);
+    } catch (_) {}
+    return () => {
+      this._listeners.delete(fn);
+    };
   }
 
   add(deviceId, entry) {
     this.devices.set(deviceId, entry);
+    this._notify();
   }
 
   get(deviceId) {
@@ -109,6 +132,7 @@ export class DeviceRegistry {
     this.devices.delete(deviceId);
     if (device && device.linkId) this.devices.delete(device.linkId);
     if (device && device.prefix) this.devices.delete(device.prefix);
+    this._notify();
   }
 
   list() {
@@ -131,6 +155,11 @@ if (typeof window !== "undefined") {
   const hasRpc = (d) => d && typeof d.sendRPC === "function";
   window.__omdGetDrive = (deviceId) => {
     if (deviceId) {
+      const normId = String(deviceId).toLowerCase();
+      if (normId === "local" || normId === "this device") {
+        const localDev = deviceRegistry.list().find((d) => d && d.local === true && d.drive);
+        if (localDev && localDev.drive) return localDev.drive;
+      }
       const dev = deviceRegistry.getByPrefix(deviceId) || deviceRegistry.get(deviceId) || deviceRegistry.getByName(deviceId);
       if (dev && dev.drive) return dev.drive;
     }

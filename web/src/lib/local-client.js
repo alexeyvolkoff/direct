@@ -698,10 +698,21 @@ export class LocalDrive {
   }
 
   async homeMkDir(virtualPath) {
-    const parts = String(virtualPath || "").split("/").filter(Boolean);
+    let clean = String(virtualPath || "").replace(/^\/+/, "");
+    if (!clean.toLowerCase().startsWith("private/") && (
+      clean.toLowerCase().startsWith("data/") || clean.toLowerCase() === "data" ||
+      clean.toLowerCase().startsWith("onmychat/") || clean.toLowerCase() === "onmychat"
+    )) {
+      clean = "Private/" + clean;
+    }
+    const parts = clean.split("/").filter(Boolean);
     if (parts.length < 2) throw new Error("Invalid path");
     const shareName = parts.shift();
-    const share = await getLocalShare(shareName);
+    let share = await getLocalShare(shareName);
+    if (!share && shareName.toLowerCase() === "private") {
+      await ensureDefaultOpfsShare();
+      share = await getLocalShare("Private");
+    }
     if (!share) throw new Error("Unknown share: " + shareName);
     let dirHandle = await this._getShareRoot(share);
     const newName = parts.pop();
