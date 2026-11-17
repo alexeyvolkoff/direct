@@ -253,10 +253,8 @@ deploy_connector_ota:
 build_direct:
   stage: build
   script:
-  - pushd web
-  - npm i --legacy-peer-deps
-  - npm run build
-  - popd
+  - (cd web && export NODE_OPTIONS="--dns-result-order=ipv4first" && npm i --prefer-offline --legacy-peer-deps && npm run build)
+  - test -f web/dist/index.html
   - rm -rf core/build/Node
   - docker run --rm --user $(id -u):$(id -g) -v "$(pwd)/core":/onmydisk -v "$(pwd)/web":/web onmydisk/omd-builder:latest /onmydisk/omd-tunnel/deploy/setup-libdatachannel.sh || (cd core && ./omd-tunnel/deploy/setup-libdatachannel.sh)
   - docker run -v $(pwd)/core:/onmydisk -v $(pwd)/web:/web --user $(id -u gitlab-runner):$(id -g gitlab-runner) -e buildversion=$CI_PIPELINE_ID -e buildproject=Gateway.pro onmydisk/omd-builder:latest
@@ -277,7 +275,8 @@ deploy_direct:
       - $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "direct"
   dependencies: []
   script:
-    - pushd web && npm i --legacy-peer-deps && npm run build && popd
+    - (cd web && export NODE_OPTIONS="--dns-result-order=ipv4first" && npm i --prefer-offline --legacy-peer-deps && npm run build)
+    - test -f web/dist/index.html
     - rm -rf core/build/Node
     - docker run --rm --user $(id -u):$(id -g) -v "$(pwd)/core":/onmydisk -v "$(pwd)/web":/web onmydisk/omd-builder:latest /onmydisk/omd-tunnel/deploy/setup-libdatachannel.sh || (cd core && ./omd-tunnel/deploy/setup-libdatachannel.sh)
     - docker run --rm --user $(id -u):$(id -g) -v $(pwd)/core:/onmydisk -v $(pwd)/web:/web -e buildversion=$CI_PIPELINE_ID -e buildproject=Gateway.pro onmydisk/omd-builder:latest
@@ -298,7 +297,8 @@ deploy_direct_front:
       - $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "direct"
   dependencies: []
   script:
-    - pushd web && npm i --legacy-peer-deps && npm run build && popd
+    - (cd web && export NODE_OPTIONS="--dns-result-order=ipv4first" && npm i --prefer-offline --legacy-peer-deps && npm run build)
+    - test -f web/dist/index.html
     - ssh -p 30333 -o StrictHostKeyChecking=no $DEPLOY_USER@disk.direct "mkdir -p /root/direct/www"
     - rsync -avzc -e "ssh -p 30333 -o StrictHostKeyChecking=no" --delete web/dist/ $DEPLOY_USER@disk.direct:/root/direct/www/
   tags:
