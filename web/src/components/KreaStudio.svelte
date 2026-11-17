@@ -1092,7 +1092,7 @@
       const w2 = sliders.archetype_weights?.[a2?.id] ?? a2?.strength;
       return `${a1?.name || "1"}${w1 !== undefined ? ` (${w1})` : ""}, ${a2?.name || "2"}${w2 !== undefined ? ` (${w2})` : ""}`;
     }
-    return `${activeArchetypeObjs[0]?.name || $_("krea_archetype_label", {}, "Типаж")} +${list.length - 1} (${list.length})`;
+    return `${activeArchetypeObjs[0]?.name || $_("krea_archetype_label", {}, "Персонаж")} +${list.length - 1} (${list.length})`;
   })();
 
   function getArchetypeToken(id) {
@@ -2037,7 +2037,7 @@
 
   function captureStudioSettingsIntoPersonaForm() {
     personaFormPresetEnabled = true;
-    personaFormBaseModel = sliders.base_model || (canShowStudioTab ? "realism" : "sdxl_realistic");
+    personaFormBaseModel = (canShowStudioTab && studioEngineMode !== "sdxl") ? (sliders.base_model || "realism") : normalizeSdxlModel(sliders.base_model);
     personaFormArchetypes = Array.isArray(sliders.archetypes) ? [...sliders.archetypes.filter(Boolean)] : [];
     personaFormArchetypeWeights = { ...(sliders.archetype_weights || {}) };
     for (const aid of personaFormArchetypes) {
@@ -2097,7 +2097,7 @@
     personaFormAvatarPreview = "";
     personaFormCivitaiAccount = "";
     personaFormPresetEnabled = false;
-    personaFormBaseModel = canShowStudioTab ? (sliders.base_model || "realism") : normalizeSdxlModel(sliders.base_model);
+    personaFormBaseModel = (canShowStudioTab && studioEngineMode !== "sdxl") ? (sliders.base_model || "realism") : normalizeSdxlModel(sliders.base_model);
     personaFormArchetypes = [];
     personaFormArchetypeWeights = {};
     personaFormStyles = [];
@@ -2121,7 +2121,7 @@
     const rp = p.render_preset;
     if (rp && typeof rp === "object") {
       personaFormPresetEnabled = rp.enabled !== false;
-      personaFormBaseModel = rp.base_model || "realism";
+      personaFormBaseModel = (canShowStudioTab && studioEngineMode !== "sdxl") ? (rp.base_model || "realism") : normalizeSdxlModel(rp.base_model || sliders.base_model);
       personaFormArchetypes = Array.isArray(rp.archetypes) ? [...rp.archetypes] : (p.archetype ? [p.archetype] : []);
       personaFormArchetypeWeights = { ...(rp.archetype_weights || {}) };
       personaFormStyles = Array.isArray(rp.styles) ? [...rp.styles] : [];
@@ -2129,7 +2129,7 @@
       personaFormUseFaceRef = rp.use_face_ref !== undefined ? Boolean(rp.use_face_ref) : (personaFormArchetypes.length === 0);
     } else if (p.archetype) {
       personaFormPresetEnabled = true;
-      personaFormBaseModel = "realism";
+      personaFormBaseModel = (canShowStudioTab && studioEngineMode !== "sdxl") ? "realism" : normalizeSdxlModel(sliders.base_model);
       personaFormArchetypes = [p.archetype];
       personaFormArchetypeWeights = { [p.archetype]: 0.8 };
       personaFormStyles = [];
@@ -2137,7 +2137,7 @@
       personaFormUseFaceRef = false;
     } else {
       personaFormPresetEnabled = false;
-      personaFormBaseModel = sliders.base_model || "realism";
+      personaFormBaseModel = (canShowStudioTab && studioEngineMode !== "sdxl") ? (sliders.base_model || "realism") : normalizeSdxlModel(sliders.base_model);
       personaFormArchetypes = [];
       personaFormArchetypeWeights = {};
       personaFormStyles = [];
@@ -2377,7 +2377,7 @@
       const renderPresetObj = personaFormPresetEnabled
         ? {
             enabled: true,
-            base_model: canShowStudioTab ? (personaFormBaseModel || "realism") : normalizeSdxlModel(personaFormBaseModel),
+            base_model: (canShowStudioTab && studioEngineMode !== "sdxl") ? (personaFormBaseModel || "realism") : normalizeSdxlModel(personaFormBaseModel),
             archetypes: [...personaFormArchetypes],
             archetype_weights: { ...personaFormArchetypeWeights },
             styles: [...personaFormStyles],
@@ -6485,7 +6485,7 @@
                   {#if p.render_preset && p.render_preset.enabled !== false && p.render_preset.archetypes && p.render_preset.archetypes.length > 0}
                     <span class="persona-ref-chip" title={$_("krea_persona_native_chip_hint", {}, "Native character LoRA & render preset")}>🎛️ {p.render_preset.archetypes.join(", ")}</span>
                   {:else if p.avatarData || p.avatar}
-                    <span class="persona-ref-chip" title="One-Shot Face Likeness: Krea 2 Identity Edit dual conditioning">📸 One-Shot Ref</span>
+                    <span class="persona-ref-chip" title={studioEngineMode === "sdxl" || !canShowStudioTab ? $_("krea_persona_oneshot_ref_sdxl_hint", {}, "One-Shot Face Likeness: IP-Adapter Plus Face & ReActor FaceSwap") : $_("krea_persona_oneshot_ref_krea_hint", {}, "One-Shot Face Likeness: Identity Edit dual conditioning")}>📸 One-Shot Ref</span>
                   {/if}
                   {#if p.personality}
                     <span class="persona-ref-chip" title={p.personality}>💬 {$_("krea_persona_lore_chip", {}, "Lore")}</span>
@@ -7436,14 +7436,16 @@
             <div class="model-pill-header">
               <span>{$_("krea_base_model", {}, "Базовая модель")}</span>
               <span class="model-pill-hint">
-                {#if sliders.base_model === "sdxl_realistic"}
-                  CyberRealistic XL
-                {:else if sliders.base_model === "sdxl_perfect"}
-                  CyberPony v18
-                {:else if sliders.base_model === "sdxl_fantasy"}
-                  CyberIllustrious V12
-                {:else if sliders.base_model === "sdxl_tooned"}
-                  CyberPony Semi V5
+                {#if studioEngineMode === "sdxl" || !canShowStudioTab}
+                  {#if sliders.base_model === "sdxl_perfect"}
+                    CyberPony v18
+                  {:else if sliders.base_model === "sdxl_fantasy"}
+                    CyberIllustrious V12
+                  {:else if sliders.base_model === "sdxl_tooned"}
+                    CyberPony Semi V5
+                  {:else}
+                    CyberRealistic XL
+                  {/if}
                 {:else if sliders.base_model === "anima"}
                   Anima V1.1
                 {:else if sliders.base_model === "semi_realism"}
@@ -7702,7 +7704,7 @@
         <!-- Card 3: Archetype / Character LoRA (Multi-select with CivitAI thumbnails & inline LoRA sliders) -->
         <div class="param-card archetype-card">
           <div class="dropdown-control archetype-dropdown-control" class:active={showArchetypeDropdown}>
-            <span class="select-label">{$_("krea_archetype_lora", {}, "Character / LoRA:")}</span>
+            <span class="select-label">{$_("krea_archetype_lora", {}, "Character:")}</span>
             <button
               type="button"
               class="dropdown-trigger-btn"
@@ -8039,7 +8041,7 @@
               {#if p.avatarData || p.avatar}
                 <div class="token-row">
                   <span class="token-badge token-badge-ref">📸 One-Shot Face Ref ({p.name})</span>
-                  <span class="token-text">Krea 2 Identity Edit (native dual-conditioning likeness active)</span>
+                  <span class="token-text">{studioEngineMode === "sdxl" || !canShowStudioTab ? $_("krea_sdxl_oneshot_pipeline_desc", {}, "IP-Adapter Plus Face + ReActor FaceSwap (avatar likeness active)") : "Krea 2 Identity Edit (native dual-conditioning likeness active)"}</span>
                 </div>
               {/if}
             {/each}
@@ -8275,7 +8277,7 @@
         </div>
         {#if studioEngineMode !== "video" && studioEngineMode !== "sdxl" && studioEngineMode !== "anima"}
           <div class="sdxl-ref-controls">
-            <div class="sdxl-ref-mode-group" role="tablist" aria-label="Krea reference strength">
+            <div class="sdxl-ref-mode-group" role="tablist" aria-label="Reference strength">
               <button
                 type="button"
                 role="tab"
@@ -9190,7 +9192,7 @@
               bind:value={personaFormPrompt}
               class="modal-textarea"
             ></textarea>
-            <span class="field-hint">{$_("krea_passport_hint", {}, "Krea 2 фиксирует лицо строго по этому паспорту. Фотография лица анализируется Vision-нейросетью для извлечения черт лица.")}</span>
+            <span class="field-hint">{$_("krea_passport_hint", {}, "Фиксирует внешность персонажа во всех генерациях. Фотография лица анализируется Vision-нейросетью для извлечения черт.")}</span>
           </div>
 
           <div class="modal-field">
@@ -9229,7 +9231,7 @@
                       <option value="sdxl_perfect">⚡ Express · Perfect</option>
                       <option value="sdxl_fantasy">⚡ Express · Fantasy</option>
                       <option value="sdxl_tooned">⚡ Express · Tooned</option>
-                      {#if canShowStudioTab}
+                      {#if canShowStudioTab && studioEngineMode !== "sdxl"}
                         <option value="realism">🎬 Studio · Krea 2 Realism</option>
                         <option value="semi_realism">🎬 Studio · Muse Semi-Realism</option>
                         <option value="anima">🎬 Studio · Anima Aesthetic 2D</option>
@@ -9246,7 +9248,7 @@
 
                 <div>
                   <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
-                    <span style="font-size: 11.5px; opacity: 0.85;">{$_("krea_persona_archetypes", {}, "Character LoRAs:")}</span>
+                    <span style="font-size: 11.5px; opacity: 0.85;">{$_("krea_persona_archetypes", {}, "Characters (LoRA):")}</span>
                     {#if personaModalEngineCat === "sdxl"}
                       <button
                         type="button"
@@ -9322,7 +9324,7 @@
                     {/each}
                   </div>
                 </div>
-                <span class="field-hint">{$_("krea_persona_native_preset_hint", {}, "When this persona is selected, Studio automatically applies her model and LoRA weights. For a dedicated character LoRA (e.g. Kate), disable Face Lock.")}</span>
+                <span class="field-hint">{$_("krea_persona_native_preset_hint", {}, "When this persona is selected, Studio automatically applies her model and LoRA weights. For a dedicated character LoRA (e.g. Domi), disable Face Lock.")}</span>
               </div>
             {/if}
           </div>
@@ -9591,7 +9593,7 @@
         <div class="modal-body">
           <div class="modal-field">
             <div class="factory-section-head">
-              <label style="margin: 0;">{$_("krea_select_archetype", {}, "Character LoRA:")}</label>
+              <label style="margin: 0;">{$_("krea_select_archetype", {}, "Character:")}</label>
               {#if !canShowStudioTab || studioEngineMode === "sdxl"}
                 <button
                   type="button"
