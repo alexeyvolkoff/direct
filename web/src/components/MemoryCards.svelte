@@ -304,9 +304,16 @@
       return docId;
     }
     if (docId.startsWith("/")) {
+      const isNodeCard = isDeviceCard(item);
+      const parts = String(docId).split("/").filter(Boolean);
+      if (parts.length > 1 && !isNodeCard) {
+        const d = deviceRegistry.getByPrefix(parts[0]) || deviceRegistry.get(parts[0]) || deviceRegistry.getByName(parts[0]);
+        const online = Boolean(d && (d.local || d.status === "connected" || d.status === "online" || d.online || d.drive?.isConnected));
+        if (!online) return "";
+      }
       const ext = docId.split(".").pop().toLowerCase();
       if (VIDEO_EXTS.has(ext)) {
-        return `/api/device_memory_thumb?path=${encodeURIComponent(docId)}&size=${size}`;
+        return isNodeCard ? `/api/device_memory_thumb?path=${encodeURIComponent(docId)}&size=${size}` : "";
       }
       const { seg, path } = previewSegAndPath(docId);
       return `/p2p/${seg}${encodeURI(path)}?resize=true&width=${size}&height=${size}`;

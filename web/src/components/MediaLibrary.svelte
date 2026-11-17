@@ -6,7 +6,7 @@
   import { setupGalleryPagination, isJustFileName } from "../lib/gallery-pagination.js";
   import { getViewerSettings } from "../lib/viewer-settings.js";
   import { deviceRegistry } from "../lib/device-registry.js";
-  import { LocalDrive } from "../lib/local-client.js";
+  import { getDefaultWebDeviceName, LocalDrive } from "../lib/local-client.js";
   import { isNativeStorageAvailable, NativeStorageDrive } from "../lib/native-drive.js";
   import { indexerStore, clientIndexer } from "../lib/client-indexer.js";
   import { contentModeStore, setGlobalContentMode, hasSensitiveTag, hasSensitiveReadmeContent } from "../lib/content-mode.js";
@@ -84,10 +84,19 @@
     }
   }
 
-  function toggleSortOrder() {
+  let registryTick = 0;
+  const unsubRegistry = deviceRegistry.subscribe((v) => {
+    registryTick = v;
+  });
+
+  async function toggleSortOrder() {
     sortOrder = sortOrder === "desc" ? "asc" : "desc";
     if (typeof localStorage !== "undefined") {
       localStorage.setItem("omd_media_sort", sortOrder);
+    }
+    await tick();
+    if (scrollContainerEl) {
+      scrollContainerEl.scrollTo({ top: 0, behavior: "smooth" });
     }
   }
 
@@ -354,8 +363,103 @@
     return { byPhoto, byName };
   })();
 
+  function isDevConnected(d) {
+    if (!d) return false;
+    return Boolean(
+      d.local === true ||
+      d.status === "connected" ||
+      d.status === "online" ||
+      d.online === true ||
+      d.drive?.isConnected
+    );
+  }
+
+  function matchesPropDevice(dev, seg) {
+    if (!dev || !seg) return false;
+    const low = String(seg).replace(/^\/+/, "").toLowerCase();
+    if (!low) return false;
+    const cands = [
+      dev.prefix ? String(dev.prefix).replace(/^\/+/, "") : "",
+      dev.name || "",
+      dev.linkId || "",
+      dev.peerId || "",
+      dev.shortId || "",
+    ];
+    return cands.some((c) => c && String(c).toLowerCase() === low);
+  }
+
+  function resolveMediaDeviceStatus(k, docId) {
+    const isNodeCard = Boolean(k?.onDevice || k?.source === "device");
+    const cleanDoc = String(docId || "");
+    const parts = cleanDoc.split("/").filter(Boolean);
+    const firstSeg = parts.length > 1 ? parts[0] : "";
+
+    let matchedDev = firstSeg
+      ? (deviceRegistry.getByPrefix(firstSeg) || deviceRegistry.get(firstSeg) || deviceRegistry.getByName(firstSeg))
+      : null;
+
+    if (!matchedDev && firstSeg) {
+      if (matchesPropDevice(targetDevice, firstSeg)) matchedDev = targetDevice;
+      else if (matchesPropDevice(storageDevice, firstSeg)) matchedDev = storageDevice;
+    }
+
+    if (matchedDev) {
+      const onlineViaNodeHttp = Boolean(isNodeCard && httpDrive);
+      const onlineViaOwnerNode = Boolean(matchedDev === targetDevice && httpDrive && isOwner);
+      const isOnline = isDevConnected(matchedDev) || onlineViaNodeHttp || onlineViaOwnerNode;
+      const seg = (matchedDev.prefix || matchedDev.linkId || matchedDev.name || firstSeg).replace(/^\/+|\/+$/g, "");
+      const path = parts.length > 1 ? "/" + parts.slice(1).join("/") : (cleanDoc.startsWith("/") ? cleanDoc : "/" + cleanDoc);
+      return {
+        isNodeCard,
+        isOnline,
+        device: matchedDev,
+        deviceLabel: matchedDev.name || firstSeg,
+        seg: isOnline ? seg : "",
+        path: isOnline ? path : "",
+      };
+    }
+
+    if (isNodeCard) {
+      const isOnline = Boolean(httpDrive || isDevConnected(targetDevice));
+      const fallbackSeg = (
+        targetDevice?.prefix ||
+        targetDevice?.linkId ||
+        targetLinkId ||
+        targetDevice?.name ||
+        ""
+      ).replace(/^\/+|\/+$/g, "") || "local";
+      return {
+        isNodeCard: true,
+        isOnline,
+        device: targetDevice || null,
+        deviceLabel: targetDevice?.name || firstSeg || "",
+        seg: isOnline ? fallbackSeg : "",
+        path: isOnline ? (cleanDoc.startsWith("/") ? cleanDoc : "/" + cleanDoc) : "",
+      };
+    }
+
+    // Personal GunDB card from an unpaired or currently offline device (e.g. /Mobile/DCIM/...)
+    return {
+      isNodeCard: false,
+      isOnline: false,
+      device: null,
+      deviceLabel: firstSeg || "",
+      seg: "",
+      path: "",
+    };
+  }
+
   // Deduplicate and parse all media items from Knowledge Base
   $: parsedAllMedia = (() => {
+    const _regVer = registryTick;
+    const _td = targetDevice;
+    const _sd = storageDevice;
+    const _hd = httpDrive;
+    void _regVer;
+    void _td;
+    void _sd;
+    void _hd;
+
     const byHashOrDoc = new Map();
     const rawOut = [];
     const deviceNamesLower = new Set(
@@ -392,6 +496,7 @@
       const peopleLower = new Set(people.map((p) => p.toLowerCase()));
       const locPartsLower = new Set(locInfo.partsLower);
       const docFirstSeg = docId.split("/").filter(Boolean)[0]?.toLowerCase() || "";
+      const devStatus = resolveMediaDeviceStatus(k, docId);
 
       const semanticTags = [];
       const seenTags = new Set();
@@ -427,6 +532,12 @@
         isVideo: mediaKind === "video",
         isCreation,
         isSensitive,
+        isOffline: !devStatus.isOnline,
+        isNodeCard: devStatus.isNodeCard,
+        deviceLabel: devStatus.deviceLabel,
+        resolvedSeg: devStatus.seg,
+        resolvedPath: devStatus.path,
+        device: devStatus.device,
         takenMs,
         place: locInfo.place,
         city: locInfo.city,
@@ -455,12 +566,21 @@
   // Smart Auto-Albums computed from baseMediaPool
   $: autoAlbums = (() => {
     const sortedDesc = [...baseMediaPool].sort((a, b) => (b.takenMs || 0) - (a.takenMs || 0));
+    const hasAvailThumb = (m) => Boolean(!m.isOffline || m.inlinePreview);
     const pickCoverItem = (arr) => {
       return (
+        arr.find((m) => (!m.isSensitive || effectiveContentMode === "fun") && hasAvailThumb(m)) ||
+        arr.find((m) => hasAvailThumb(m)) ||
         arr.find((m) => !m.isSensitive || effectiveContentMode === "fun") ||
         arr[0] ||
         null
       );
+    };
+    const pickCollageItems = (arr, n = 3) => {
+      const withThumb = arr.filter((m) => hasAvailThumb(m));
+      if (withThumb.length >= n) return withThumb.slice(0, n);
+      const rest = arr.filter((m) => !hasAvailThumb(m));
+      return [...withThumb, ...rest].slice(0, n);
     };
 
     // 1. People albums
@@ -494,7 +614,7 @@
         title: b.title,
         count: b.items.length,
         avatarUrl: b.avatarUrl,
-        coverItems: b.items.slice(0, 3),
+        coverItems: pickCollageItems(b.items, 3),
         coverItem: pickCoverItem(b.items),
         itemIds: new Set(b.items.map((x) => x.id)),
       }));
@@ -523,7 +643,7 @@
         title: b.title,
         subtitle: b.subtitle,
         count: b.items.length,
-        coverItems: b.items.slice(0, 3),
+        coverItems: pickCollageItems(b.items, 3),
         coverItem: pickCoverItem(b.items),
         itemIds: new Set(b.items.map((x) => x.id)),
       }));
@@ -587,7 +707,7 @@
           subtitle: topCity ? dateLabel : "",
           endMs: cl[cl.length - 1].takenMs,
           count: descItems.length,
-          coverItems: descItems.slice(0, 3),
+          coverItems: pickCollageItems(descItems, 3),
           coverItem: pickCoverItem(descItems),
           itemIds: new Set(descItems.map((x) => x.id)),
         };
@@ -614,7 +734,7 @@
         title: `#${tag}`,
         rawTag: tag,
         count: arr.length,
-        coverItems: arr.slice(0, 3),
+        coverItems: pickCollageItems(arr, 3),
         coverItem: pickCoverItem(arr),
         itemIds: new Set(arr.map((x) => x.id)),
       }));
@@ -796,6 +916,9 @@
   // Thumbnail & P2P URL resolution with concurrency-capped lazy queue
   let thumbUrls = {};
   let imgFailed = {};
+  let inlineImgFailed = {};
+  let thumbBlobFailed = {};
+  let personAvatarFailed = {};
   const thumbInFlight = new Set();
   const thumbQueue = [];
   let activeThumbWorkers = 0;
@@ -860,39 +983,83 @@
     }
   }
 
-  function getItemThumbUrl(item, size = 480, thumbsMap = thumbUrls, failedMap = imgFailed) {
+  function getItemThumbUrl(
+    item,
+    size = 480,
+    thumbsMap = thumbUrls,
+    failedMap = imgFailed,
+    inlineFailedMap = inlineImgFailed,
+    blobFailedMap = thumbBlobFailed
+  ) {
     if (!item) return "";
-    if (thumbsMap[item.docId]) return thumbsMap[item.docId];
-    if (failedMap[item.id]) return item.inlinePreview || "";
+    const validInline = item.inlinePreview && !inlineFailedMap[item.id] ? item.inlinePreview : "";
+
+    // Offline device: never attempt to load full/p2p photo over network.
+    // Show embedded base64 preview from DB if available, otherwise offline placeholder.
+    if (item.isOffline) {
+      return validInline;
+    }
+
+    const validBlob = thumbsMap[item.docId] && !blobFailedMap[item.id] ? thumbsMap[item.docId] : "";
+    if (validBlob) return validBlob;
+    if (failedMap[item.id]) return validInline;
+
     if (item.isVideo) {
-      if (item.inlinePreview) return item.inlinePreview;
+      if (validInline) return validInline;
       enqueueThumbFetch(item.docId, size);
-      return `/api/device_memory_thumb?path=${encodeURIComponent(item.docId)}&size=${size}`;
+      return "";
     }
-    if (item.docId.startsWith("/")) {
-      const { seg, path, device } = previewSegAndPath(item.docId);
-      if (device && device.local && item.inlinePreview) {
-        return item.inlinePreview;
-      }
-      return `/p2p/${seg}${encodeURI(path)}?resize=true&width=${size}&height=${size}`;
+
+    if (item.device && item.device.local) {
+      if (validInline) return validInline;
+      enqueueThumbFetch(item.docId, size);
+      return "";
     }
-    return item.inlinePreview || "";
+
+    if (item.resolvedSeg && item.resolvedPath) {
+      return `/p2p/${item.resolvedSeg}${encodeURI(item.resolvedPath)}?resize=true&width=${size}&height=${size}`;
+    }
+
+    if (item.isNodeCard && item.docId) {
+      enqueueThumbFetch(item.docId, size);
+    }
+    return validInline;
   }
 
-  function handleThumbError(item) {
-    if (!item || imgFailed[item.id]) return;
-    imgFailed = { ...imgFailed, [item.id]: true };
-    enqueueThumbFetch(item.docId, 480);
+  function handleThumbError(item, currentUrl = "") {
+    if (!item) return;
+    if (currentUrl && item.inlinePreview && currentUrl === item.inlinePreview) {
+      if (!inlineImgFailed[item.id]) {
+        inlineImgFailed = { ...inlineImgFailed, [item.id]: true };
+      }
+      return;
+    }
+    if (currentUrl && thumbUrls[item.docId] && currentUrl === thumbUrls[item.docId]) {
+      if (!thumbBlobFailed[item.id]) {
+        thumbBlobFailed = { ...thumbBlobFailed, [item.id]: true };
+      }
+      return;
+    }
+    if (!imgFailed[item.id]) {
+      imgFailed = { ...imgFailed, [item.id]: true };
+      if (!item.isOffline) {
+        enqueueThumbFetch(item.docId, 480);
+      }
+    }
   }
 
   function lazyObserveTile(node, item) {
     let obs = null;
-    if (typeof IntersectionObserver !== "undefined") {
+    if (typeof IntersectionObserver !== "undefined" && item && !item.isOffline) {
       obs = new IntersectionObserver(
         (entries) => {
           for (const ent of entries) {
             if (ent.isIntersecting) {
-              if (item && (item.card?.onDevice || item.isVideo || !item.docId.startsWith("/"))) {
+              if (
+                item &&
+                !item.isOffline &&
+                (item.isNodeCard || item.isVideo || (item.device && item.device.local && !item.inlinePreview))
+              ) {
                 enqueueThumbFetch(item.docId, 480);
               }
               if (obs) {
@@ -982,12 +1149,13 @@
   }
 
   function openScopedPhotoGallery(clickedItem, scopeList) {
+    if (!clickedItem || clickedItem.isOffline) return;
     if (isBlurredInCurrentMode(clickedItem)) {
       showSensitiveWorkNotice();
       return;
     }
     const photosInScope = (scopeList || []).filter(
-      (x) => !x.isVideo && !isBlurredInCurrentMode(x)
+      (x) => !x.isVideo && !x.isOffline && !isBlurredInCurrentMode(x)
     );
     if (!photosInScope.length) return;
 
@@ -1109,12 +1277,13 @@
   }
 
   async function openScopedVideoPlayer(clickedItem, scopeList) {
+    if (!clickedItem || clickedItem.isOffline) return;
     if (isBlurredInCurrentMode(clickedItem)) {
       showSensitiveWorkNotice();
       return;
     }
     const videosInScope = (scopeList || []).filter(
-      (x) => x.isVideo && !isBlurredInCurrentMode(x)
+      (x) => x.isVideo && !x.isOffline && !isBlurredInCurrentMode(x)
     );
     if (!videosInScope.length) return;
 
@@ -1139,7 +1308,7 @@
   }
 
   function handleTileClick(item, scopeList) {
-    if (!item) return;
+    if (!item || item.isOffline) return;
     if (isBlurredInCurrentMode(item)) {
       showSensitiveWorkNotice();
       return;
@@ -1170,6 +1339,9 @@
   }
 
   onDestroy(() => {
+    if (unsubRegistry) {
+      try { unsubRegistry(); } catch (_) {}
+    }
     if (searchTimer) clearTimeout(searchTimer);
     if (sensitiveNoticeTimer) clearTimeout(sensitiveNoticeTimer);
     if (lgMediaPagination) {
@@ -1276,33 +1448,37 @@
         </button>
       {/if}
 
-      <button
-        type="button"
-        class="pill-toggle-btn mode-pill"
-        class:fun={effectiveContentMode === "fun"}
-        title="Work / Fun"
-        on:click={toggleContentMode}
-      >
-        <span>{effectiveContentMode === "fun" ? "✨ Fun" : "💼 Work"}</span>
-      </button>
+      {#if includeCreations}
+        <button
+          type="button"
+          class="pill-toggle-btn mode-pill"
+          class:fun={effectiveContentMode === "fun"}
+          title="Work / Fun"
+          on:click={toggleContentMode}
+        >
+          <span>{effectiveContentMode === "fun" ? "✨ Fun" : "💼 Work"}</span>
+        </button>
+      {/if}
 
       <button
         type="button"
-        class="header-icon-btn"
-        title={sortOrder === "desc" ? $_("media_sort_newest", {}, "Newest first") : $_("media_sort_oldest", {}, "Oldest first")}
+        class="header-icon-btn sort-order-btn"
+        class:is-active={sortOrder === "asc"}
+        title={sortOrder === "desc" ? $_("sort_date_desc", {}, "Date (newest first)") : $_("sort_date_asc", {}, "Date (oldest first)")}
+        aria-label={sortOrder === "desc" ? $_("sort_date_desc", {}, "Date (newest first)") : $_("sort_date_asc", {}, "Date (oldest first)")}
         on:click={toggleSortOrder}
       >
-        {#if sortOrder === "desc"}
-          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="12" y1="5" x2="12" y2="19" />
-            <polyline points="19 12 12 19 5 12" />
-          </svg>
-        {:else}
-          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="12" y1="19" x2="12" y2="5" />
-            <polyline points="5 12 12 5 19 12" />
-          </svg>
-        {/if}
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          {#if sortOrder === "desc"}
+            <path d="M4 6h9M4 12h7M4 18h5" />
+            <path d="M16 15l3 3 3-3" />
+            <path d="M19 6v12" />
+          {:else}
+            <path d="M4 6h5M4 12h7M4 18h9" />
+            <path d="M16 9l3-3 3 3" />
+            <path d="M19 18V6" />
+          {/if}
+        </svg>
       </button>
 
       <button
@@ -1465,19 +1641,24 @@
               </div>
               <div class="people-shelf">
                 {#each autoAlbums.people as pAlbum (pAlbum.id)}
-                  {@const fallbackUrl = pAlbum.coverItem ? getItemThumbUrl(pAlbum.coverItem, 360, thumbUrls, imgFailed) : ""}
+                  {@const fallbackUrl = pAlbum.coverItem ? getItemThumbUrl(pAlbum.coverItem, 360, thumbUrls, imgFailed, inlineImgFailed, thumbBlobFailed) : ""}
                   {@const blurredCover = pAlbum.coverItem ? isBlurredInCurrentMode(pAlbum.coverItem) : false}
                   <button type="button" class="person-tile" on:click={() => openAlbum(pAlbum)}>
                     <div class="person-ring">
-                      {#if pAlbum.avatarUrl}
-                        <img src={pAlbum.avatarUrl} alt={pAlbum.title} loading="lazy" />
+                      {#if pAlbum.avatarUrl && !personAvatarFailed[pAlbum.id]}
+                        <img
+                          src={pAlbum.avatarUrl}
+                          alt={pAlbum.title}
+                          loading="lazy"
+                          on:error={() => { personAvatarFailed = { ...personAvatarFailed, [pAlbum.id]: true }; }}
+                        />
                       {:else if fallbackUrl}
                         <img
                           src={fallbackUrl}
                           alt={pAlbum.title}
                           loading="lazy"
                           class:blurred-img={blurredCover}
-                          on:error={() => handleThumbError(pAlbum.coverItem)}
+                          on:error={() => handleThumbError(pAlbum.coverItem, fallbackUrl)}
                         />
                       {:else}
                         <span class="person-placeholder">{pAlbum.title.slice(0, 1).toUpperCase()}</span>
@@ -1503,7 +1684,7 @@
                   <button type="button" class="album-collage-card" on:click={() => openAlbum(mAlbum)}>
                     <div class="collage-cover count-{Math.min(3, mAlbum.coverItems.length)}">
                       {#each mAlbum.coverItems.slice(0, 3) as cItem, idx (cItem.id)}
-                        {@const cUrl = getItemThumbUrl(cItem, idx === 0 ? 480 : 320, thumbUrls, imgFailed)}
+                        {@const cUrl = getItemThumbUrl(cItem, idx === 0 ? 480 : 320, thumbUrls, imgFailed, inlineImgFailed, thumbBlobFailed)}
                         <div class="collage-cell cell-{idx}" use:lazyObserveTile={cItem}>
                           {#if cUrl}
                             <img
@@ -1511,8 +1692,16 @@
                               alt=""
                               loading="lazy"
                               class:blurred-img={isBlurredInCurrentMode(cItem)}
-                              on:error={() => handleThumbError(cItem)}
+                              on:error={() => handleThumbError(cItem, cUrl)}
                             />
+                          {:else if cItem.isOffline}
+                            <div class="tile-fallback offline-placeholder compact" title={$_("media_device_offline", {}, "Device offline")}>
+                              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8">
+                                <line x1="2" y1="2" x2="22" y2="22" />
+                                <path d="M17 17H7a2 2 0 0 1-2-2V5c0-.6.26-1.14.68-1.5" />
+                                <path d="M9 2h8a2 2 0 0 1 2 2v9" />
+                              </svg>
+                            </div>
                           {:else}
                             <div class="tile-fallback">🖼️</div>
                           {/if}
@@ -1539,7 +1728,7 @@
               <div class="album-cards-grid">
                 {#each autoAlbums.places as plAlbum (plAlbum.id)}
                   {@const cItem = plAlbum.coverItem}
-                  {@const cUrl = cItem ? getItemThumbUrl(cItem, 480, thumbUrls, imgFailed) : ""}
+                  {@const cUrl = cItem ? getItemThumbUrl(cItem, 480, thumbUrls, imgFailed, inlineImgFailed, thumbBlobFailed) : ""}
                   <button type="button" class="album-single-card" on:click={() => openAlbum(plAlbum)}>
                     <div class="single-cover" use:lazyObserveTile={cItem}>
                       {#if cUrl}
@@ -1548,8 +1737,17 @@
                           alt={plAlbum.title}
                           loading="lazy"
                           class:blurred-img={isBlurredInCurrentMode(cItem)}
-                          on:error={() => handleThumbError(cItem)}
+                          on:error={() => handleThumbError(cItem, cUrl)}
                         />
+                      {:else if cItem?.isOffline}
+                        <div class="tile-fallback offline-placeholder cover-offline">
+                          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8">
+                            <line x1="2" y1="2" x2="22" y2="22" />
+                            <path d="M17 17H7a2 2 0 0 1-2-2V5c0-.6.26-1.14.68-1.5" />
+                            <path d="M9 2h8a2 2 0 0 1 2 2v9" />
+                          </svg>
+                          <span class="offline-cover-hint">{$_("media_device_offline", {}, "Device offline")}</span>
+                        </div>
                       {:else}
                         <div class="tile-fallback">📍</div>
                       {/if}
@@ -1577,7 +1775,7 @@
               <div class="album-cards-grid tags-cards-grid">
                 {#each autoAlbums.tags as tAlbum (tAlbum.id)}
                   {@const cItem = tAlbum.coverItem}
-                  {@const cUrl = cItem ? getItemThumbUrl(cItem, 360, thumbUrls, imgFailed) : ""}
+                  {@const cUrl = cItem ? getItemThumbUrl(cItem, 360, thumbUrls, imgFailed, inlineImgFailed, thumbBlobFailed) : ""}
                   <button type="button" class="album-single-card compact" on:click={() => openAlbum(tAlbum)}>
                     <div class="single-cover" use:lazyObserveTile={cItem}>
                       {#if cUrl}
@@ -1586,8 +1784,17 @@
                           alt={tAlbum.title}
                           loading="lazy"
                           class:blurred-img={isBlurredInCurrentMode(cItem)}
-                          on:error={() => handleThumbError(cItem)}
+                          on:error={() => handleThumbError(cItem, cUrl)}
                         />
+                      {:else if cItem?.isOffline}
+                        <div class="tile-fallback offline-placeholder cover-offline">
+                          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8">
+                            <line x1="2" y1="2" x2="22" y2="22" />
+                            <path d="M17 17H7a2 2 0 0 1-2-2V5c0-.6.26-1.14.68-1.5" />
+                            <path d="M9 2h8a2 2 0 0 1 2 2v9" />
+                          </svg>
+                          <span class="offline-cover-hint">{$_("media_device_offline", {}, "Device offline")}</span>
+                        </div>
                       {:else}
                         <div class="tile-fallback">#</div>
                       {/if}
@@ -1643,17 +1850,20 @@
 
                 <div class="media-grid" class:contain-mode={gridFit === "contain"}>
                   {#each group.items as item (item.id)}
-                    {@const tUrl = getItemThumbUrl(item, 480, thumbUrls, imgFailed)}
+                    {@const tUrl = getItemThumbUrl(item, 480, thumbUrls, imgFailed, inlineImgFailed, thumbBlobFailed)}
                     {@const isBlurred = isBlurredInCurrentMode(item)}
                     {@const viewerScope = activeAlbum ? filteredMedia : group.items}
+                    {@const offlineTooltip = item.isOffline ? $_("media_offline_preview_only", { device: item.deviceLabel || "" }, "Original file is on an offline device") : ""}
                     <div
                       class="media-tile"
-                      role="button"
-                      tabindex="0"
+                      class:is-offline={item.isOffline}
+                      role={item.isOffline ? "group" : "button"}
+                      tabindex={item.isOffline ? -1 : 0}
+                      title={offlineTooltip}
                       use:lazyObserveTile={item}
                       on:click={() => handleTileClick(item, viewerScope)}
                       on:keydown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
+                        if (!item.isOffline && (e.key === "Enter" || e.key === " ")) {
                           e.preventDefault();
                           handleTileClick(item, viewerScope);
                         }
@@ -1666,8 +1876,20 @@
                           src={tUrl}
                           alt={item.title}
                           loading="lazy"
-                          on:error={() => handleThumbError(item)}
+                          on:error={() => handleThumbError(item, tUrl)}
                         />
+                      {:else if item.isOffline}
+                        <div class="tile-fallback offline-placeholder">
+                          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8">
+                            <line x1="2" y1="2" x2="22" y2="22" />
+                            <path d="M17 17H7a2 2 0 0 1-2-2V5c0-.6.26-1.14.68-1.5" />
+                            <path d="M9 2h8a2 2 0 0 1 2 2v9" />
+                          </svg>
+                          <span class="offline-title">{$_("media_device_offline", {}, "Device offline")}</span>
+                          {#if item.deviceLabel}
+                            <span class="offline-dev">{item.deviceLabel}</span>
+                          {/if}
+                        </div>
                       {:else}
                         <div class="tile-fallback">
                           <span>{item.isVideo ? "🎬" : "🖼️"}</span>
@@ -1688,6 +1910,15 @@
                           {#if item.duration > 0}
                             <span>{formatDuration(item.duration)}</span>
                           {/if}
+                        </div>
+                      {:else if item.isOffline && tUrl}
+                        <div class="offline-badge" title={offlineTooltip}>
+                          <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2">
+                            <line x1="2" y1="2" x2="22" y2="22" />
+                            <path d="M17 17H7a2 2 0 0 1-2-2V5c0-.6.26-1.14.68-1.5" />
+                            <path d="M9 2h8a2 2 0 0 1 2 2v9" />
+                          </svg>
+                          <span>{item.deviceLabel || $_("media_device_offline", {}, "Device offline")}</span>
                         </div>
                       {/if}
 
@@ -1760,14 +1991,15 @@
     <DeviceIndexModal
       show={showDeviceIndexModal}
       {isDarkTheme}
-      drive={localDeviceDrive}
+      deviceDrive={localDeviceDrive}
       {httpDrive}
       {chatStore}
       extraCards={knowledgeList}
+      deviceName={getDefaultWebDeviceName()}
       on:close={() => {
         showDeviceIndexModal = false;
-        dispatch("refresh");
       }}
+      on:indexed={() => dispatch("refresh")}
     />
   {/if}
 </div>
@@ -1971,6 +2203,16 @@
   .header-icon-btn:hover {
     color: var(--ml-text);
     background: var(--ml-surface-hover);
+  }
+
+  .sort-order-btn:hover {
+    color: #ec4899;
+  }
+
+  .sort-order-btn.is-active {
+    color: #ec4899;
+    border-color: rgba(236, 72, 153, 0.45);
+    background: rgba(236, 72, 153, 0.1);
   }
 
   .bg-index-bar {
@@ -2453,7 +2695,11 @@
     object-fit: contain;
   }
 
-  .media-tile:hover .tile-img:not(.blurred-img) {
+  .media-tile.is-offline {
+    cursor: default;
+  }
+
+  .media-tile:not(.is-offline):hover .tile-img:not(.blurred-img) {
     transform: scale(1.03);
   }
 
@@ -2488,6 +2734,67 @@
     justify-content: center;
     font-size: 1.6rem;
     color: var(--ml-muted);
+  }
+
+  .tile-fallback.offline-placeholder {
+    flex-direction: column;
+    gap: 5px;
+    padding: 10px;
+    text-align: center;
+    font-size: 0.75rem;
+    background: repeating-linear-gradient(
+      -45deg,
+      var(--ml-surface),
+      var(--ml-surface) 8px,
+      var(--ml-surface-hover) 8px,
+      var(--ml-surface-hover) 16px
+    );
+    color: var(--ml-muted);
+  }
+
+  .tile-fallback.offline-placeholder.cover-offline {
+    padding-bottom: 34px;
+    gap: 4px;
+  }
+
+  .offline-title,
+  .offline-cover-hint {
+    font-size: 0.73rem;
+    font-weight: 600;
+    line-height: 1.2;
+  }
+
+  .offline-dev {
+    font-size: 0.67rem;
+    opacity: 0.78;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .offline-badge {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    max-width: calc(100% - 40px);
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.68);
+    color: rgba(248, 250, 252, 0.92);
+    font-size: 0.67rem;
+    font-weight: 600;
+    backdrop-filter: blur(4px);
+    pointer-events: none;
+  }
+
+  .offline-badge span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .video-badge {

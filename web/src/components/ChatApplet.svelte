@@ -325,8 +325,10 @@
       let res = null;
       // 1. Пробуем прямой p2p-путь через Service Worker / WebRTC с ресайзом
       const parts = cleanDoc.split("/").filter(Boolean);
+      let matchedPeer = null;
       if (parts.length > 1) {
         const d = (typeof deviceRegistry !== "undefined") ? (deviceRegistry.getByPrefix(parts[0]) || deviceRegistry.get(parts[0]) || deviceRegistry.getByName(parts[0])) : null;
+        matchedPeer = d;
         if (d && d.local && d.drive && typeof d.drive.getThumbnail === "function") {
           try {
             const localDataUrl = await d.drive.getThumbnail("/" + parts.slice(1).join("/"), size, size);
@@ -336,11 +338,14 @@
             }
           } catch (_) {}
         }
-        const seg = (d && ((d.prefix ? d.prefix.replace(/^\/+/, "") : "") || d.linkId || d.name)) || parts[0];
-        const p2pUrl = `/p2p/${seg}${encodeURI("/" + parts.slice(1).join("/"))}?resize=true&width=${size}&height=${size}`;
-        try {
-          res = await fetch(p2pUrl);
-        } catch (_) {}
+        const peerOnline = Boolean(d && (d.local || d.status === "connected" || d.status === "online" || d.online || d.drive?.isConnected));
+        if (peerOnline) {
+          const seg = (d.prefix ? d.prefix.replace(/^\/+/, "") : "") || d.linkId || d.name || parts[0];
+          const p2pUrl = `/p2p/${seg}${encodeURI("/" + parts.slice(1).join("/"))}?resize=true&width=${size}&height=${size}`;
+          try {
+            res = await fetch(p2pUrl);
+          } catch (_) {}
+        }
       }
       if (!res || !res.ok) {
         if (drive && typeof drive.fetch === "function") {
@@ -358,7 +363,16 @@
         thumbCache.set(cacheKey, "");
         return "";
       }
+      const ct = (res.headers && typeof res.headers.get === "function" ? (res.headers.get("content-type") || "") : "").toLowerCase();
+      if (!ct.startsWith("image/")) {
+        thumbCache.set(cacheKey, "");
+        return "";
+      }
       const blob = await res.blob();
+      if (!blob || blob.size === 0) {
+        thumbCache.set(cacheKey, "");
+        return "";
+      }
       const url = URL.createObjectURL(blob);
       thumbCache.set(cacheKey, url);
       return url;

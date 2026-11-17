@@ -152,7 +152,7 @@
       // Показываем превью ТОЛЬКО если карточка действительно картинка или имеет флаг hasIcon/hasPreview/cover
       const canHavePreview = isImage || !!(c.hasIcon || c.has_icon || c.customAttributes?.hasIcon || (isFolder && (c.hasPreview || c.has_preview || c.hasCover || c.customAttributes?.cover)));
       if (canHavePreview) {
-        const highRes = resolveHighResPreview(documentId, 1600);
+        const highRes = resolveHighResPreview(documentId, 1600, Boolean(c.onDevice || c.source === "device"));
         if (highRes) {
           cardPreview = highRes;
         } else {
@@ -194,20 +194,23 @@
     }
   }
 
-  function resolveHighResPreview(docPath, size = 1600) {
+  function resolveHighResPreview(docPath, size = 1600, isNodeCard = false) {
     if (!docPath) return "";
     if (docPath.startsWith("http://") || docPath.startsWith("https://")) return docPath;
     if (docPath.startsWith("/")) {
-      // document_id несёт устройство в себе (/beelink/Data/f.jpg): сегмент /p2p/
-      // и путь внутри шары резолвим по первому сегменту, иначе — old behavior.
       const parts = docPath.split("/").filter(Boolean);
       let seg = "";
       let relPath = docPath;
       if (parts.length > 1) {
-        const d = deviceRegistry.getByPrefix(parts[0]);
+        const d = deviceRegistry.getByPrefix(parts[0]) || deviceRegistry.get(parts[0]) || deviceRegistry.getByName(parts[0]);
         if (d) {
+          const isOnline = Boolean(d.local || d.status === "connected" || d.status === "online" || d.online || d.drive?.isConnected);
+          if (!isOnline && !isNodeCard) return "";
+          if (d.local) return "";
           seg = (d.prefix || d.linkId || d.name || "").replace(/^\/+|\/+$/g, "");
           relPath = "/" + parts.slice(1).join("/");
+        } else if (!isNodeCard) {
+          return "";
         }
       }
       if (!seg) {
