@@ -3130,6 +3130,9 @@ async def check_krea_status(ctx=None) -> dict:
 
 
 async def generate_image_workflow(workflow) -> bytes:
+    if isinstance(workflow, dict):
+        workflow = dict(workflow)
+        workflow.pop("_civitai_token", None)
     client_id = str(uuid.uuid4())
     ws_url = f"{COMFY_API_URL.replace('http', 'ws')}/ws?clientId={client_id}"
     
@@ -4647,6 +4650,7 @@ async def generate_sdxl_studio_image(
 
     # Resolve & cache any predefined or custom CivitAI LoRAs not yet in static flow.json node "103"
     custom_loras_payload = sliders.get("custom_loras") if isinstance(sliders.get("custom_loras"), list) else []
+    user_civ_token = _resolve_civitai_token(ctx)
     dyn_idx = 0
     for cand_id, cand_w in unresolved_civitai_candidates[:5]:
         await emit_generation_progress("generating", phase="loading_models", step=0)
@@ -4654,6 +4658,8 @@ async def generate_sdxl_studio_image(
             cand_id,
             custom_loras=custom_loras_payload,
             allow_nsfw=is_uncensored,
+            ecosystem="sdxl",
+            civitai_token=user_civ_token,
         )
         if resolved_civ and resolved_civ.get("filename"):
             dyn_idx += 1
@@ -5502,6 +5508,41 @@ async def generate_krea2_image(
     style_list = [style_aliases.get(s, s) for s in style_list if s and s != "none"]
     style_weights = sliders.get("style_weights") if isinstance(sliders.get("style_weights"), dict) else {}
 
+    custom_loras_krea = sliders.get("custom_loras") if isinstance(sliders.get("custom_loras"), list) else []
+    user_civitai_token_krea = _resolve_civitai_token(ctx)
+    requested_base_early = (sliders.get("base_model") or sliders.get("model_mode") or "realism").lower() if sliders else "realism"
+    krea_eco = "anima" if requested_base_early in ("anima", "cyberrealistic_anima", "animaturbo", "anime") else "krea2"
+    use_remote_modal_early = bool(str(SETTINGS.get("MODAL_COMFY_URL") or "").strip())
+
+    async def _resolve_krea_civitai_item(cid_raw: str, custom_w=None) -> tuple[str, float] | None:
+        cid_clean = str(cid_raw or "").strip("<> ").lower()
+        if not (cid_clean.startswith("civitai_") or cid_clean.isdigit()):
+            return None
+        if use_remote_modal_early:
+            res_meta = await horde_image_mapper.resolve_civitai_lora_metadata(
+                cid_clean,
+                custom_loras=custom_loras_krea,
+                civitai_token=user_civitai_token_krea,
+            )
+        else:
+            res_meta = await horde_image_mapper.ensure_local_civitai_lora(
+                cid_clean,
+                custom_loras=custom_loras_krea,
+                allow_nsfw=True,
+                ecosystem=krea_eco,
+                civitai_token=user_civitai_token_krea,
+            )
+        if not res_meta or not res_meta.get("filename"):
+            return None
+        for tw in (res_meta.get("trained_words") or [])[:2]:
+            if tw and tw.lower() not in " ".join(full_parts).lower():
+                full_parts.insert(0, tw)
+        try:
+            eff_w = float(custom_w) if custom_w is not None else float(res_meta.get("strength", 0.85))
+        except Exception:
+            eff_w = float(res_meta.get("strength", 0.85))
+        return res_meta["filename"], eff_w
+
     for st_id in style_list:
         if st_id in STYLE_CONFIGS:
             cfg_style = STYLE_CONFIGS[st_id]
@@ -5516,6 +5557,11 @@ async def generate_krea2_image(
                     s_weight = float(cfg_style.get("strength", 0.8))
                 target_loras.append((cfg_style["lora"], s_weight))
                 logging.info(f"[Krea2] Applying Style LoRA: {st_id} ({cfg_style['lora']}, weight={s_weight})")
+        elif str(st_id).lower().startswith("civitai_"):
+            dyn_st = await _resolve_krea_civitai_item(st_id, style_weights.get(st_id))
+            if dyn_st:
+                target_loras.append(dyn_st)
+                logging.info(f"[Krea2] Applying Custom CivitAI Style LoRA: {st_id} ({dyn_st[0]}, weight={dyn_st[1]})")
 
     # 2. Character Archetypes & Likeness LoRAs (Loaded dynamically from krea_presets.json)
     ARCHETYPE_CONFIGS = get_krea_archetype_configs()
@@ -5597,11 +5643,21 @@ async def generate_krea2_image(
                     a_weight = float(cfg_arch.get("strength", 0.8))
                 target_loras.append((cfg_arch["lora"], a_weight))
                 logging.info(f"[Krea2] Applying Character Archetype: {arch_id} ({cfg_arch['lora']}, weight={a_weight})")
+        elif str(arch_id).lower().startswith("civitai_"):
+            dyn_ar = await _resolve_krea_civitai_item(arch_id, archetype_weights.get(arch_id))
+            if dyn_ar:
+                target_loras.append(dyn_ar)
+                logging.info(f"[Krea2] Applying Custom CivitAI Character LoRA: {arch_id} ({dyn_ar[0]}, weight={dyn_ar[1]})")
 
     # Persona LoRA if requested explicitly
     if persona_lora and str(persona_lora).strip():
         plora = str(persona_lora).strip()
-        if not any(t[0].lower() == plora.lower() for t in target_loras):
+        if plora.lower().startswith("civitai_"):
+            dyn_pl = await _resolve_krea_civitai_item(plora)
+            if dyn_pl and not any(t[0].lower() == dyn_pl[0].lower() for t in target_loras):
+                target_loras.append(dyn_pl)
+                logging.info(f"[Krea2] Applying Custom CivitAI Persona LoRA: {plora} ({dyn_pl[0]}, weight={dyn_pl[1]})")
+        elif not any(t[0].lower() == plora.lower() for t in target_loras):
             target_loras.append((plora, 0.8))
             logging.info(f"[Krea2] Applying Persona LoRA: {plora} (weight=0.8)")
 
@@ -5614,6 +5670,7 @@ async def generate_krea2_image(
             logging.info(f"[Krea2] Applying Custom Slider LoRA: {custom_lora} (weight={custom_weight})")
 
     positive_text = ", ".join(full_parts)
+    user_neg_krea = str(sliders.get("negative_prompt") or "").replace("###", ", ").strip(" ,")
     no_signs_krea = (
         "text, english text, print shirt, printed clothes, graphic tee, shirt print, text on clothes, "
         "logo, brand logo, sign, signage, street sign, shop sign, storefront sign, neon sign, poster, "
@@ -5621,6 +5678,8 @@ async def generate_krea2_image(
         "gibberish text, garbled letters, caption, subtitles, speech bubble, label, watermark, signature"
     )
     negative_text = f"{no_signs_krea}, wet skin, blurry, bad anatomy, bad hands, low quality, distorted, extra limbs, artifacts"
+    if user_neg_krea:
+        negative_text = f"{user_neg_krea[:500]}, {negative_text}"
 
     if seed is None:
         seed = random.randint(1, 1125899906842624)
@@ -5712,7 +5771,7 @@ async def generate_krea2_image(
             if lora_file.lower() in str(al).lower():
                 matched = al
                 break
-        resolved_name = matched if matched else (lora_file if not available_loras else None)
+        resolved_name = matched if matched else (lora_file if (not available_loras or str(lora_file).lower().startswith("civitai_")) else None)
         if not resolved_name:
             logging.warning(f"[Krea2] LoRA '{lora_file}' not found in ComfyUI available LoRAs — skipping LoraLoader node.")
             continue
@@ -5847,6 +5906,8 @@ async def generate_krea2_image(
             model_neg = f"{no_signs_krea}, worst quality, low quality, (bad anatomy:1.2), (bad hands:1.2), missing fingers, extra digits, deformed, 3d model render, flat, blurry, bad eyes, crossed eyes, oversaturated"
         else:
             model_neg = f"{no_signs_krea}, worst quality, low quality, (bad anatomy:1.2), (bad hands:1.2), missing fingers, extra digits, deformed, 3d render, cgi, cartoon, anime, illustration, painting, drawing, plastic skin, airbrushed, doll, fake, oversaturated, overexposed, blurry"
+        if user_neg_krea:
+            model_neg = f"{user_neg_krea[:500]}, {model_neg}"
 
         neg_node = {
             "class_type": "CLIPTextEncode",
@@ -5919,6 +5980,8 @@ async def generate_krea2_image(
     }
     krea_workflow.update(lora_nodes)
     krea_workflow.update(face_ref_nodes)
+    if user_civitai_token_krea:
+        krea_workflow["_civitai_token"] = user_civitai_token_krea
 
     clean_user_prompt = (prompt or persona_prompt or "").strip()
     custom_title = str(kwargs.get("custom_title") or "").strip()
@@ -9492,12 +9555,18 @@ def _extract_user_mcp_civitai_entries(ctx: UserContext | None) -> list[tuple[str
 
 
 def _resolve_civitai_token(ctx: UserContext | None = None) -> str:
-    """Resolves CivitAI API token from user's MCP keys, or standard CIVITAI_API_KEY config if set."""
+    """Resolves CivitAI API token from user's MCP keys, or standard CIVITAI_API_KEY / CIVITAI_API_TOKEN config if set."""
     user_entries = _extract_user_mcp_civitai_entries(ctx)
     if user_entries:
         return user_entries[0][2]
 
-    val = (SETTINGS.get("CIVITAI_API_KEY") or os.environ.get("CIVITAI_API_KEY") or "").strip()
+    val = (
+        SETTINGS.get("CIVITAI_API_KEY")
+        or SETTINGS.get("CIVITAI_API_TOKEN")
+        or os.environ.get("CIVITAI_API_KEY")
+        or os.environ.get("CIVITAI_API_TOKEN")
+        or ""
+    ).strip()
     return val
 
 
@@ -11686,6 +11755,7 @@ async def generate_image(ctx: UserContext, prompt, chat: str = 'default', update
         resolved_civ = await horde_image_mapper.ensure_local_civitai_lora(
             cand_clean,
             allow_nsfw=bool(effective_fun or ctx.private_mode),
+            civitai_token=_resolve_civitai_token(ctx),
         )
         if not resolved_civ or not resolved_civ.get("filename"):
             return None

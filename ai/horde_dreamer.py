@@ -2829,21 +2829,217 @@ def _require_owner(request: Request) -> None:
 router = APIRouter()
 
 
+_REGEN_BRIDGE_DATA_PATH = os.environ.get(
+    "DIRECT_REGEN_BRIDGEDATA_PATH",
+    "/home/alexey/projects/horde-worker-reGen/bridgeData.yaml",
+)
+_regen_telemetry_cache: tuple[float, dict[str, Any]] = (0.0, {})
+
+
+def _read_regen_bridgedata() -> dict[str, Any]:
+    if not os.path.isfile(_REGEN_BRIDGE_DATA_PATH):
+        return {}
+    try:
+        import yaml
+        with open(_REGEN_BRIDGE_DATA_PATH, "r", encoding="utf-8") as f:
+            parsed = yaml.safe_load(f)
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
+
+def _check_regen_systemd_active() -> bool:
+    try:
+        import subprocess
+        res = subprocess.run(
+            ["systemctl", "is-active", "horde-regen.service"],
+            capture_output=True,
+            text=True,
+            timeout=2.0,
+        )
+        return res.stdout.strip() == "active"
+    except Exception:
+        return False
+
+
+def _read_recent_regen_telemetry(limit: int = 8) -> list[dict[str, str]]:
+    if not os.path.isfile(_REGEN_BRIDGE_DATA_PATH):
+        return []
+    try:
+        import subprocess
+        res = subprocess.run(
+            ["journalctl", "-u", "horde-regen.service", "-a", "-n", "160", "--no-pager"],
+            capture_output=True,
+            text=True,
+            timeout=2.5,
+        )
+        entries: list[dict[str, str]] = []
+        ansi_re = re.compile(r"\x1b\[[0-9;]*m")
+        for raw_ln in reversed(res.stdout.splitlines()):
+            clean = ansi_re.sub("", raw_ln).strip()
+            if "Total Session Kudos:" in clean or "DirectComfyBridge" in clean or "Popped job" in clean or "Job completed" in clean:
+                parts = clean.split("]: ", 1)
+                ts_part = clean[:15].strip()
+                msg_part = parts[1].strip() if len(parts) > 1 else clean
+                msg_part = re.sub(r"^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d+\s+[+-]\d{2}:\d{2}\s*\|\s*\w+\s*\|\s*[^-]+-\s*", "", msg_part)
+                entries.append({"time": ts_part, "message": msg_part[:220]})
+                if len(entries) >= limit:
+                    break
+        return entries
+    except Exception:
+        return []
+
+
+async def _collect_regen_and_bridge_telemetry(
+    uinfo: dict[str, Any] | None,
+    fallback_api_key: str,
+    force: bool = False,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    global _regen_telemetry_cache
+    now_mono = time.monotonic()
+    if not force and _regen_telemetry_cache[1] and (now_mono - _regen_telemetry_cache[0]) < 12.0:
+        cached_bundle = _regen_telemetry_cache[1]
+        return (
+            cached_bundle.get("regen", {}),
+            cached_bundle.get("comfy_bridge", {}),
+            cached_bundle.get("guest_budget", {}),
+        )
+
+    bd = _read_regen_bridgedata()
+    bd_key = str(bd.get("api_key") or fallback_api_key or "").strip()
+    systemd_active = _check_regen_systemd_active() if bd else False
+
+    regen_info: dict[str, Any] = {
+        "installed": bool(bd),
+        "systemd_active": systemd_active,
+        "worker_name": str(bd.get("dreamer_name") or "Direct-reGen-5070"),
+        "worker_id": "",
+        "online": False,
+        "maintenance_mode": False,
+        "requests_fulfilled": 0,
+        "kudos_rewards": 0.0,
+        "megapixelsteps_generated": 0.0,
+        "performance": "",
+        "uptime_sec": 0,
+        "bridge_agent": "",
+        "nsfw": bool(bd.get("nsfw", True)),
+        "allow_lora": bool(bd.get("allow_lora", False)),
+        "max_power": int(bd.get("max_power", 24) or 24),
+        "models_advertised": list(bd.get("models_to_load") or []),
+        "recent_telemetry": _read_recent_regen_telemetry(8) if bd else [],
+    }
+
+    worker_ids = list((uinfo or {}).get("worker_ids") or [])
+    if bd and worker_ids and bd_key:
+        try:
+            headers = {
+                "apikey": bd_key,
+                "Client-Agent": BRIDGE_AGENT,
+                "User-Agent": "Direct/1.0",
+            }
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5.0), headers=headers) as session:
+                for wid in worker_ids[:3]:
+                    async with session.get(f"{HORDE_API_BASE}/workers/{wid}") as wr:
+                        if wr.status == 200:
+                            wd = await wr.json()
+                            if isinstance(wd, dict):
+                                regen_info.update({
+                                    "worker_name": str(wd.get("name") or regen_info["worker_name"]),
+                                    "worker_id": str(wd.get("id") or wid),
+                                    "online": bool(wd.get("online")),
+                                    "maintenance_mode": bool(wd.get("maintenance_mode")),
+                                    "requests_fulfilled": int(wd.get("requests_fulfilled") or 0),
+                                    "kudos_rewards": round(float(wd.get("kudos_rewards") or 0.0), 1),
+                                    "megapixelsteps_generated": round(float(wd.get("megapixelsteps_generated") or 0.0), 1),
+                                    "performance": str(wd.get("performance") or ""),
+                                    "uptime_sec": int(wd.get("uptime") or 0),
+                                    "bridge_agent": str(wd.get("bridge_agent") or ""),
+                                    "nsfw": bool(wd.get("nsfw", regen_info["nsfw"])),
+                                    "allow_lora": bool(wd.get("lora", regen_info["allow_lora"])),
+                                    "models_advertised": list(wd.get("models") or regen_info["models_advertised"]),
+                                })
+                                if wd.get("online"):
+                                    break
+        except Exception as exc:
+            logger.debug(f"[HordeConsole] Worker telemetry fetch skipped: {exc}")
+
+    comfy_url_base = str(SETTINGS.get("COMFY_API_URL", "http://localhost:8188")).rstrip("/")
+    comfy_bridge: dict[str, Any] = {
+        "available": False,
+        "url": comfy_url_base,
+        "gpu_name": "",
+        "vram_free_gb": 0.0,
+        "vram_total_gb": 0.0,
+        "pytorch_version": "",
+        "studio_checkpoints": [
+            "CyberRealisticXLPlay_V10.safetensors",
+            "cyberrealisticPony_v18.safetensors",
+            "CyberIllustrious_V12.safetensors",
+            "cyberrealisticPonySemi_v50.safetensors",
+        ],
+    }
+    if bd:
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=2.0)) as session:
+                async with session.get(f"{comfy_url_base}/system_stats") as sr:
+                    if sr.status == 200:
+                        sd = await sr.json()
+                        devs = sd.get("devices") or []
+                        dev0 = devs[0] if devs else {}
+                        comfy_bridge.update({
+                            "available": True,
+                            "gpu_name": str(dev0.get("name") or "CUDA GPU").replace("cuda:0 ", "").split(" : ")[0],
+                            "vram_free_gb": round(float(dev0.get("vram_free") or 0.0) / (1024 ** 3), 2),
+                            "vram_total_gb": round(float(dev0.get("vram_total") or 0.0) / (1024 ** 3), 2),
+                            "pytorch_version": str((sd.get("system") or {}).get("pytorch_version") or ""),
+                        })
+        except Exception:
+            pass
+
+    guest_budget: dict[str, Any] = {
+        "date": _utc_today_str(),
+        "spent_kudos": 0.0,
+        "daily_limit": float(SETTINGS.get("HORDE_GUEST_DAILY_KUDOS_LIMIT", 3000) or 3000),
+        "per_user_limit": float(SETTINGS.get("HORDE_PER_USER_DAILY_KUDOS_LIMIT", 250) or 250),
+    }
+    budget_fp = os.path.join(os.path.dirname(os.path.abspath(__file__)), "extensions", "horde_guest_budget.json")
+    if os.path.isfile(budget_fp):
+        try:
+            with open(budget_fp, "r", encoding="utf-8") as bf:
+                bdata = json.load(bf)
+            if isinstance(bdata, dict) and bdata.get("date") == _utc_today_str():
+                guest_budget["spent_kudos"] = round(float(bdata.get("total_spent") or 0.0), 1)
+        except Exception:
+            pass
+
+    bundle = {"regen": regen_info, "comfy_bridge": comfy_bridge, "guest_budget": guest_budget}
+    _regen_telemetry_cache = (now_mono, bundle)
+    return regen_info, comfy_bridge, guest_budget
+
+
 async def _build_state_payload(refresh_user: bool = False) -> dict[str, Any]:
     data = load_dreamer_data()
-    uinfo = await fetch_horde_user_info(data.get("api_key"), force=refresh_user)
-    raw_key = get_effective_api_key(data)
+    bd = _read_regen_bridgedata()
+    eff_lookup_key = data.get("api_key") or bd.get("api_key")
+    uinfo = await fetch_horde_user_info(eff_lookup_key, force=refresh_user)
+    raw_key = get_effective_api_key(data) or str(bd.get("api_key") or "").strip()
     masked_key = (raw_key[:4] + "••••" + raw_key[-4:]) if len(raw_key) > 8 else ("••••" if raw_key else "")
     raw_models = data.get("sdxl_models")
     configured_models = list(raw_models) if isinstance(raw_models, list) else ["CyberRealistic Pony"]
 
+    regen_info, comfy_bridge, guest_budget = await _collect_regen_and_bridge_telemetry(
+        uinfo=uinfo,
+        fallback_api_key=raw_key,
+        force=refresh_user,
+    )
+
     return {
         "config": {
             "enabled": bool(data.get("enabled", False)),
-            "worker_name": data.get("worker_name", "Direct-Dreamer"),
+            "worker_name": regen_info.get("worker_name") if regen_info.get("installed") else data.get("worker_name", "Direct-Dreamer"),
             "has_api_key": bool(raw_key),
             "masked_api_key": masked_key,
-            "nsfw": bool(data.get("nsfw", False)),
+            "nsfw": bool(regen_info.get("nsfw", data.get("nsfw", False))),
             "max_pixels": int(data.get("max_pixels", 1024 * 1024)),
             "poll_interval_idle": float(data.get("poll_interval_idle", 10.0)),
             "poll_interval_busy": float(data.get("poll_interval_busy", 2.0)),
@@ -2900,6 +3096,9 @@ async def _build_state_payload(refresh_user: bool = False) -> dict[str, Any]:
             "worker_ids": (uinfo or {}).get("worker_ids") or [],
             "records": (uinfo or {}).get("records") or {},
         } if uinfo else None,
+        "regen": regen_info,
+        "comfy_bridge": comfy_bridge,
+        "guest_budget": guest_budget,
     }
 
 
@@ -2942,7 +3141,7 @@ async def horde_update_config(request: Request):
             except Exception:
                 pass
         if "sdxl_enabled" in body:
-            data["sdxl_enabled"] = bool(body["sdxl_enabled"])
+            data["sdxl_enabled"] = bool(data.get("sdxl_enabled") if body.get("sdxl_enabled") is None else body["sdxl_enabled"])
         if "sdxl_models" in body:
             if not isinstance(body["sdxl_models"], list):
                 raise HTTPException(status_code=400, detail="sdxl_models must be a list")
@@ -2951,7 +3150,6 @@ async def horde_update_config(request: Request):
                 for m in body["sdxl_models"]
                 if isinstance(m, str) and str(m).strip() in LOCAL_SDXL_MODEL_CATALOG
             ]
-        # Krea remains hard-disabled until reference registration & remote verification exist
         data["krea_enabled"] = False
         if "krea_daily_limit" in body:
             try:
@@ -2961,6 +3159,36 @@ async def horde_update_config(request: Request):
 
     update_dreamer_data(_apply_config)
     _wake_event.set()
+    return JSONResponse(await _build_state_payload(refresh_user=True))
+
+
+@router.post("/horde/api/maintenance")
+async def horde_toggle_regen_maintenance(request: Request):
+    _require_owner(request)
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    state_now = await _build_state_payload(refresh_user=True)
+    regen_now = state_now.get("regen") or {}
+    wid = str(regen_now.get("worker_id") or "").strip()
+    bd = _read_regen_bridgedata()
+    api_key = str(bd.get("api_key") or get_effective_api_key(load_dreamer_data()) or "").strip()
+    if not wid or not api_key:
+        raise HTTPException(status_code=400, detail="No active AI Horde worker ID or API key found")
+    desired = bool(body["maintenance"]) if "maintenance" in body else (not bool(regen_now.get("maintenance_mode")))
+    headers = {
+        "apikey": api_key,
+        "Client-Agent": BRIDGE_AGENT,
+        "User-Agent": "Direct/1.0",
+        "Content-Type": "application/json",
+    }
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=8.0), headers=headers) as session:
+        async with session.put(f"{HORDE_API_BASE}/workers/{wid}", json={"maintenance": desired}) as resp:
+            if resp.status not in (200, 202):
+                err_txt = await resp.text()
+                raise HTTPException(status_code=resp.status, detail=f"AI Horde maintenance update failed: {err_txt[:160]}")
     return JSONResponse(await _build_state_payload(refresh_user=True))
 
 
@@ -2996,31 +3224,46 @@ async def horde_reset_krea_quota(request: Request):
 @router.post("/horde/api/test_local_sdxl")
 async def horde_test_local_sdxl(request: Request):
     _require_owner(request)
+    ckpt_chosen = None
     verified_spec = next(
         (spec for spec in LOCAL_SDXL_MODEL_CATALOG.values() if _verify_reference_checkpoint(spec)),
         None,
     )
-    if not verified_spec:
+    if verified_spec:
+        ckpt_chosen = verified_spec["ckpt"]
+    else:
+        for cand in (
+            "CyberRealisticXLPlay_V10.safetensors",
+            "cyberrealisticPony_v18.safetensors",
+            "cyberrealisticPony_v8.safetensors",
+        ):
+            if os.path.isfile(os.path.join("/home/alexey/models/comfyui_models/checkpoints", cand)):
+                ckpt_chosen = cand
+                break
+    if not ckpt_chosen:
         return JSONResponse(
-            {"ok": False, "error": "No reference-verified SDXL checkpoint installed in ComfyUI/models/checkpoints"},
+            {"ok": False, "error": "No SDXL checkpoint installed in ComfyUI/models/checkpoints"},
             status_code=400,
         )
     t0 = time.time()
     wf = _build_sdxl_horde_workflow(
         positive_prompt="cinematic portrait of a cyberpunk hacker girl in neon rain, masterpiece",
         negative_prompt="blurry, low quality",
-        ckpt_name=verified_spec["ckpt"],
-        width=896,
-        height=1152,
+        ckpt_name=ckpt_chosen,
+        width=832,
+        height=1024,
+        steps=8,
+        cfg=2.0,
         seed=random.randint(1, 2147483646),
     )
     png_bytes = await _run_local_comfy_silent(wf)
     dt = round(time.time() - t0, 2)
     if not png_bytes:
-        return JSONResponse({"ok": False, "error": "Local ComfyUI render failed"}, status_code=500)
+        return JSONResponse({"ok": False, "error": "Embedded ComfyUI (:8188) test render failed"}, status_code=500)
     webp_bytes = _convert_png_to_webp(png_bytes)
     return JSONResponse({
         "ok": True,
+        "checkpoint": ckpt_chosen,
         "duration_sec": dt,
         "png_bytes": len(png_bytes),
         "webp_bytes": len(webp_bytes),
@@ -3033,11 +3276,11 @@ def mount_horde_dreamer(app) -> None:
 
 
 HORDE_CONSOLE_HTML = """<!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI Horde Dreamer Worker</title>
+<title>AI Horde Worker & ComfyUI Bridge</title>
 <style>
   :root {
     color-scheme: dark;
@@ -3050,7 +3293,6 @@ HORDE_CONSOLE_HTML = """<!DOCTYPE html>
     --green: #3fb950;
     --yellow: #d29922;
     --red: #f85149;
-    --purple: #a371f7;
     --scrollbar-thumb: #3b4452;
     --scrollbar-thumb-hover: #525f72;
     --scrollbar-track: transparent;
@@ -3066,39 +3308,18 @@ HORDE_CONSOLE_HTML = """<!DOCTYPE html>
     scrollbar-width: thin;
     scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
   }
-  *::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-  }
-  *::-webkit-scrollbar-track {
-    background: var(--scrollbar-track);
-  }
-  html::-webkit-scrollbar-track,
-  body::-webkit-scrollbar-track {
-    background: var(--bg);
-  }
-  *::-webkit-scrollbar-thumb {
-    background: var(--scrollbar-thumb);
-    border-radius: 4px;
-  }
-  *::-webkit-scrollbar-thumb:hover {
-    background: var(--scrollbar-thumb-hover);
-  }
-  *::-webkit-scrollbar-corner {
-    background: transparent !important;
-  }
   body {
     margin: 0; padding: 24px;
     background: var(--bg); color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   }
-  .wrap { max-width: 1080px; margin: 0 auto; }
+  .wrap { max-width: 1120px; margin: 0 auto; }
   header {
     display: flex; align-items: center; justify-content: space-between;
     flex-wrap: wrap; gap: 12px; margin-bottom: 20px;
     padding-bottom: 16px; border-bottom: 1px solid var(--border);
   }
-  h1 { margin: 0; font-size: 22px; display: flex; align-items: center; gap: 10px; }
+  h1 { margin: 0; font-size: 21px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .badge {
     font-size: 12px; padding: 4px 10px; border-radius: 999px; font-weight: 600;
     background: #21262d; border: 1px solid var(--border);
@@ -3107,26 +3328,25 @@ HORDE_CONSOLE_HTML = """<!DOCTYPE html>
   .badge.warn { color: var(--yellow); border-color: rgba(210,153,34,0.4); }
   .badge.err { color: var(--red); border-color: rgba(248,81,73,0.4); }
   .grid {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(235px, 1fr));
     gap: 14px; margin-bottom: 20px;
   }
   .card {
     background: var(--card); border: 1px solid var(--border);
     border-radius: 10px; padding: 16px;
   }
-  .stat-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
-  .stat-val { font-size: 26px; font-weight: 700; margin-top: 6px; }
-  .stat-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .stat-label { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .stat-val { font-size: 25px; font-weight: 700; margin-top: 6px; }
+  .stat-sub { font-size: 12px; color: var(--muted); margin-top: 5px; line-height: 1.4; }
   .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
-  @media (max-width: 800px) { .row { grid-template-columns: 1fr; } }
-  h2 { margin: 0 0 12px 0; font-size: 16px; }
-  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
-  input[type="text"], input[type="password"], input[type="number"] {
-    width: 100%; padding: 8px 10px; background: #0d1117; border: 1px solid var(--border);
-    color: var(--text); border-radius: 6px; font-size: 14px; margin-bottom: 12px;
-  }
-  .chk-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 14px; }
-  .btns { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+  @media (max-width: 820px) { .row { grid-template-columns: 1fr; } }
+  h2 { margin: 0 0 12px 0; font-size: 15.5px; }
+  .kv-list { display: flex; flex-direction: column; gap: 9px; font-size: 13.5px; }
+  .kv-row { display: flex; justify-content: space-between; gap: 12px; padding-bottom: 8px; border-bottom: 1px solid rgba(48,54,61,0.6); }
+  .kv-row:last-child { border-bottom: none; padding-bottom: 0; }
+  .kv-key { color: var(--muted); }
+  .kv-val { font-weight: 600; text-align: right; }
+  .btns { display: flex; gap: 10px; flex-wrap: wrap; }
   button {
     cursor: pointer; border: 1px solid var(--border); background: #21262d;
     color: var(--text); padding: 8px 14px; border-radius: 6px; font-size: 13px; font-weight: 600;
@@ -3134,14 +3354,22 @@ HORDE_CONSOLE_HTML = """<!DOCTYPE html>
   button.primary { background: #238636; border-color: rgba(240,246,252,0.1); color: #fff; }
   button.accent { background: #1f6feb; border-color: rgba(240,246,252,0.1); color: #fff; }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .pill-grid { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 8px; }
+  .pill {
+    padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600;
+    background: rgba(63,185,80,0.13); color: var(--green); border: 1px solid rgba(63,185,80,0.28);
+  }
+  .pill.studio {
+    background: rgba(88,166,255,0.13); color: var(--accent); border-color: rgba(88,166,255,0.28);
+  }
   .table-wrap { width: 100%; overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
   th { color: var(--muted); font-weight: 600; }
-  .pill { padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; }
-  .pill.sdxl { background: rgba(63,185,80,0.15); color: var(--green); }
-  .pill.krea { background: rgba(163,113,247,0.15); color: var(--purple); }
   .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  .toast { margin-bottom: 14px; padding: 10px 14px; border-radius: 8px; font-size: 13px; display: none; }
+  .toast.ok { display: block; background: rgba(63,185,80,0.14); border: 1px solid rgba(63,185,80,0.4); color: var(--green); }
+  .toast.err { display: block; background: rgba(248,81,73,0.14); border: 1px solid rgba(248,81,73,0.4); color: var(--red); }
 </style>
 </head>
 <body>
@@ -3149,98 +3377,97 @@ HORDE_CONSOLE_HTML = """<!DOCTYPE html>
   <header>
     <div>
       <h1>
-        <span>⚡ AI Horde Dreamer Worker</span>
+        <span>⚡ AI Horde reGen Worker</span>
         <span id="stateBadge" class="badge">Loading...</span>
-        <span id="safetyBadge" class="badge ok">🛡️ horde-safety</span>
+        <span id="comfyBadge" class="badge">ComfyUI :8188</span>
       </h1>
       <div class="stat-sub mono" id="bridgeAgent"></div>
     </div>
     <div class="btns">
-      <button id="toggleBtn" onclick="toggleWorker()">Pause / Resume</button>
-      <button class="accent" id="stepBtn" onclick="runSingleStep()">▶ Run 1 Job Now</button>
+      <button id="maintBtn" onclick="toggleMaintenance()">⏸ Maintenance Mode</button>
+      <button class="accent" id="testBtn" onclick="testComfyBridge()">🧪 Test ComfyUI (:8188)</button>
       <button onclick="loadState(true)">↻ Refresh</button>
     </div>
   </header>
 
+  <div id="toastBox" class="toast"></div>
+
   <div class="grid">
     <div class="card">
       <div class="stat-label">AI Horde Account</div>
-      <div class="stat-val" id="accName">—</div>
-      <div class="stat-sub" id="accKudos">Balance: 0 Kudos</div>
+      <div class="stat-val" id="accName">-</div>
+      <div class="stat-sub" id="accKudos">Account Balance: 0 Kudos</div>
     </div>
     <div class="card">
-      <div class="stat-label">Local SDXL (Unlimited)</div>
-      <div class="stat-val" id="sdxlCount">0</div>
-      <div class="stat-sub">Jobs rendered on local RTX GPU ($0 cost)</div>
+      <div class="stat-label">Worker Jobs Fulfilled</div>
+      <div class="stat-val" id="jobsFulfilled">0</div>
+      <div class="stat-sub" id="workerPerf">Waiting for worker telemetry...</div>
     </div>
     <div class="card">
-      <div class="stat-label">Modal Krea 2 Daily Quota</div>
-      <div class="stat-val" id="kreaQuota">0 / 10</div>
-      <div class="stat-sub" id="kreaSub">Auto-stops Krea2 at limit</div>
-    </div>
-    <div class="card">
-      <div class="stat-label">Session Kudos Earned</div>
-      <div class="stat-val" id="earnedKudos">0</div>
+      <div class="stat-label">Total Kudos Earned</div>
+      <div class="stat-val" id="earnedKudos">+0</div>
       <div class="stat-sub" id="mpsTotal">0 Megapixelsteps</div>
+    </div>
+    <div class="card">
+      <div class="stat-label">Embedded ComfyUI (:8188)</div>
+      <div class="stat-val" id="gpuVram">-</div>
+      <div class="stat-sub" id="gpuName">Shared CUDA engine with Direct Studio</div>
     </div>
   </div>
 
   <div class="row">
     <div class="card">
-      <h2>Worker Settings & Modal Krea 2 Cap</h2>
-      <label>Worker Name</label>
-      <input type="text" id="workerName" placeholder="Direct-Dreamer">
-      <label>AI Horde Worker API Key</label>
-      <input type="password" id="apiKey" placeholder="Leave unchanged or paste new API key">
-      <label>Krea 2 (Modal) Daily Generation Limit (0 = off, 10 = max 10/day)</label>
-      <input type="number" id="kreaLimit" min="0" max="500" value="10">
-      <div class="chk-row">
-        <input type="checkbox" id="kreaEnabled" disabled>
-        <span style="color:var(--muted);">Offer <b>Krea2-Turbo_fp8</b> (excluded pending reference registration)</span>
-      </div>
-      <div class="chk-row">
-        <input type="checkbox" id="nsfwEnabled">
-        <span>Allow NSFW generations</span>
-      </div>
-      <div class="btns">
-        <button class="primary" onclick="saveConfig()">Save Settings</button>
-        <button onclick="resetKreaQuota()">Reset Today's Krea Counter</button>
+      <h2>Worker & Bridge Status</h2>
+      <div class="kv-list">
+        <div class="kv-row">
+          <span class="kv-key">Worker Name</span>
+          <span class="kv-val mono" id="kvWorkerName">-</span>
+        </div>
+        <div class="kv-row">
+          <span class="kv-key">Worker ID</span>
+          <span class="kv-val mono" id="kvWorkerId">-</span>
+        </div>
+        <div class="kv-row">
+          <span class="kv-key">Systemd Service (`horde-regen`)</span>
+          <span class="kv-val" id="kvSystemd">-</span>
+        </div>
+        <div class="kv-row">
+          <span class="kv-key">API Key</span>
+          <span class="kv-val mono" id="kvApiKey">-</span>
+        </div>
+        <div class="kv-row">
+          <span class="kv-key">Capabilities</span>
+          <span class="kv-val" id="kvCaps">-</span>
+        </div>
+        <div class="kv-row">
+          <span class="kv-key">Guest Horde Fallback Today</span>
+          <span class="kv-val mono" id="kvGuestBudget">0 / 3000 Kudos</span>
+        </div>
       </div>
     </div>
 
     <div class="card">
-      <h2>Unlimited Local SDXL Models (`http://localhost:8188`)</h2>
-      <div class="chk-row">
-        <input type="checkbox" id="sdxlEnabled">
-        <span><b>Enable Unlimited Local SDXL Worker (24/7 when idle)</b></span>
-      </div>
-      <div id="sdxlModelsList" style="margin-top:10px;"></div>
-      <div class="stat-sub" style="margin-top:10px;">
-        Active models currently advertised to <code>/v2/generate/pop</code>:
-        <div class="mono" id="activeModels" style="margin-top:4px;color:var(--accent);"></div>
-      </div>
-      <div class="stat-sub" id="lastErrorBox" style="margin-top:8px;color:var(--red);"></div>
+      <h2>Active Models on GPU</h2>
+      <div class="stat-sub">Official AI Horde models advertised by <code>horde-worker-reGen</code>:</div>
+      <div class="pill-grid" id="hordeModelsPills"></div>
+
+      <div class="stat-sub" style="margin-top: 16px;">Direct Studio SDXL + DMD2 checkpoints via cooperative <code>:8188</code> bridge:</div>
+      <div class="pill-grid" id="studioModelsPills"></div>
     </div>
   </div>
 
   <div class="card">
-    <h2>Recent Fulfilled Jobs</h2>
+    <h2>Live `horde-regen` Telemetry</h2>
     <div class="table-wrap">
       <table>
         <thead>
           <tr>
-            <th>Time</th>
-            <th>Job ID</th>
-            <th>Model</th>
-            <th>Backend</th>
-            <th>Size</th>
-            <th>Time</th>
-            <th>Kudos</th>
-            <th>Status</th>
+            <th style="width: 150px;">Time</th>
+            <th>Event</th>
           </tr>
         </thead>
-        <tbody id="jobsTable">
-          <tr><td colspan="8" style="color:var(--muted);">No jobs recorded yet.</td></tr>
+        <tbody id="telemetryTable">
+          <tr><td colspan="2" style="color:var(--muted);">Loading recent worker telemetry...</td></tr>
         </tbody>
       </table>
     </div>
@@ -3248,150 +3475,152 @@ HORDE_CONSOLE_HTML = """<!DOCTYPE html>
 </div>
 
 <script>
-let catalogData = {};
-let formDirty = false;
+function fmtUptime(sec) {
+  const s = Math.max(0, Number(sec || 0));
+  if (!s) return '0m';
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return h > 0 ? (h + 'h ' + m + 'm') : (m + 'm');
+}
+
+function showToast(msg, ok=true) {
+  const el = document.getElementById('toastBox');
+  el.textContent = msg;
+  el.className = 'toast ' + (ok ? 'ok' : 'err');
+  setTimeout(() => { el.className = 'toast'; }, 6000);
+}
 
 async function loadState(refresh=false) {
   const r = await fetch('/horde/api/state' + (refresh ? '?refresh=true' : ''));
   if (!r.ok) return;
-  const d = await r.json();
-  renderState(d);
+  renderState(await r.json());
 }
 
 function renderState(d) {
   const cfg = d.config || {};
-  const st = d.stats || {};
-  const rt = d.runtime || {};
   const acc = d.account || {};
+  const rg = d.regen || {};
+  const cb = d.comfy_bridge || {};
+  const gb = d.guest_budget || {};
 
   const badge = document.getElementById('stateBadge');
-  badge.textContent = (cfg.enabled ? rt.state : 'paused').toUpperCase();
-  badge.className = 'badge ' + (cfg.enabled && rt.state !== 'error' ? 'ok' : (rt.state === 'error' ? 'err' : 'warn'));
-
-  const sBadge = document.getElementById('safetyBadge');
-  if (sBadge) {
-    sBadge.textContent = rt.safety_available ? (rt.safety_loaded ? '🛡️ horde-safety: Active' : '🛡️ horde-safety: Ready') : '⚠️ horde-safety: Missing';
-    sBadge.className = 'badge ' + (rt.safety_available ? 'ok' : 'err');
+  if (rg.online && !rg.maintenance_mode) {
+    badge.textContent = 'ONLINE';
+    badge.className = 'badge ok';
+  } else if (rg.online && rg.maintenance_mode) {
+    badge.textContent = 'MAINTENANCE';
+    badge.className = 'badge warn';
+  } else if (rg.systemd_active) {
+    badge.textContent = 'STARTING';
+    badge.className = 'badge warn';
+  } else {
+    badge.textContent = 'OFFLINE';
+    badge.className = 'badge err';
   }
 
-  document.getElementById('toggleBtn').textContent = cfg.enabled ? '⏸ Pause Worker' : '▶ Resume Worker';
-  document.getElementById('bridgeAgent').textContent = rt.bridge_agent || '';
+  const cBadge = document.getElementById('comfyBadge');
+  if (cb.available) {
+    cBadge.textContent = 'ComfyUI :8188 Ready';
+    cBadge.className = 'badge ok';
+  } else {
+    cBadge.textContent = 'ComfyUI :8188 Offline';
+    cBadge.className = 'badge err';
+  }
 
+  const maintBtn = document.getElementById('maintBtn');
+  maintBtn.disabled = !rg.worker_id;
+  maintBtn.textContent = rg.maintenance_mode ? '▶ Resume Horde Intake' : '⏸ Maintenance Mode';
+
+  document.getElementById('bridgeAgent').textContent = rg.bridge_agent || d.runtime?.bridge_agent || '';
   document.getElementById('accName').textContent = acc.username || 'Not fetched';
   document.getElementById('accKudos').textContent = 'Account Balance: ' + Math.round(acc.kudos || 0).toLocaleString() + ' Kudos';
-  document.getElementById('sdxlCount').textContent = st.sdxl_jobs_completed || 0;
-  document.getElementById('kreaQuota').textContent = (cfg.krea_daily_count || 0) + ' / ' + (cfg.krea_daily_limit ?? 10);
-  document.getElementById('kreaSub').textContent = 'Total Krea jobs: ' + (st.krea_jobs_completed || 0) + ' (' + (cfg.krea_daily_date || '') + ' UTC)';
-  document.getElementById('earnedKudos').textContent = '+' + (st.total_kudos_earned || 0).toLocaleString();
-  document.getElementById('mpsTotal').textContent = (st.total_megapixelsteps || 0).toLocaleString() + ' MPS (' + (st.total_jobs_completed || 0) + ' total jobs)';
 
-  if (!formDirty) {
-    document.getElementById('workerName').value = cfg.worker_name || '';
-    document.getElementById('apiKey').placeholder = cfg.masked_api_key || 'Enter API Key';
-    document.getElementById('kreaLimit').value = cfg.krea_daily_limit ?? 10;
-    document.getElementById('kreaEnabled').checked = !!cfg.krea_enabled;
-    document.getElementById('nsfwEnabled').checked = !!cfg.nsfw;
-    document.getElementById('sdxlEnabled').checked = !!cfg.sdxl_enabled;
+  document.getElementById('jobsFulfilled').textContent = Number(rg.requests_fulfilled || 0).toLocaleString();
+  document.getElementById('workerPerf').textContent =
+    (rg.performance ? rg.performance + ' · ' : '') + 'Uptime: ' + fmtUptime(rg.uptime_sec);
 
-    catalogData = cfg.sdxl_catalog || {};
-    const selected = new Set(cfg.sdxl_models || []);
-    const box = document.getElementById('sdxlModelsList');
-    box.innerHTML = '';
-    Object.keys(catalogData).forEach(mName => {
-      const info = catalogData[mName];
-      const vBadge = info.verified
-        ? '<span style="color:var(--green);font-size:11px;">[✓ SHA256 verified]</span>'
-        : '<span style="color:var(--yellow);font-size:11px;">[✗ missing reference weight]</span>';
-      const div = document.createElement('div');
-      div.className = 'chk-row';
-      div.innerHTML = `<label style="display:flex;align-items:center;gap:8px;color:var(--text);margin:0;cursor:pointer;">
-        <input type="checkbox" class="sdxl-model-chk" value="${mName}" ${selected.has(mName) ? 'checked' : ''}>
-        <span><b>${mName}</b> <span style="color:var(--muted);font-size:12px;">(${info.ckpt})</span> ${vBadge}</span>
-      </label>`;
-      box.appendChild(div);
-    });
-  }
+  document.getElementById('earnedKudos').textContent = '+' + Math.round(rg.kudos_rewards || 0).toLocaleString();
+  document.getElementById('mpsTotal').textContent =
+    Math.round(rg.megapixelsteps_generated || 0).toLocaleString() + ' Megapixelsteps';
 
-  document.getElementById('activeModels').textContent = (rt.active_models_offered || []).join(', ') || 'None';
-  document.getElementById('lastErrorBox').textContent = rt.last_error ? ('Last Error: ' + rt.last_error) : '';
-
-  const tbody = document.getElementById('jobsTable');
-  const jobs = st.recent_jobs || [];
-  if (!jobs.length) {
-    tbody.innerHTML = '<tr><td colspan="8" style="color:var(--muted);">No jobs recorded yet.</td></tr>';
+  if (cb.available) {
+    document.getElementById('gpuVram').textContent = cb.vram_free_gb + ' / ' + cb.vram_total_gb + ' GB free';
+    document.getElementById('gpuName').textContent = cb.gpu_name + (cb.pytorch_version ? ' · Torch ' + cb.pytorch_version : '');
   } else {
-    tbody.innerHTML = jobs.map(j => {
-      const dt = new Date((j.ts || 0) * 1000).toLocaleTimeString();
-      const pillCls = (j.backend || '').includes('Krea') ? 'krea' : 'sdxl';
-      return `<tr>
-        <td class="mono">${dt}</td>
-        <td class="mono">${(j.id || '').slice(0, 8)}</td>
-        <td><b>${j.model || ''}</b></td>
-        <td><span class="pill ${pillCls}">${j.backend || ''}</span></td>
-        <td class="mono">${j.resolution || ''}</td>
-        <td class="mono">${j.duration_sec || 0}s</td>
-        <td class="mono" style="color:var(--green);">+${j.kudos || 0}</td>
-        <td style="color:var(--muted);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${((j.status || '') + (j.error ? ': ' + j.error : '')).replace(/</g,'&lt;')}</td>
-      </tr>`;
-    }).join('');
+    document.getElementById('gpuVram').textContent = 'Offline';
+    document.getElementById('gpuName').textContent = cb.url || 'http://127.0.0.1:8188';
+  }
+
+  document.getElementById('kvWorkerName').textContent = rg.worker_name || cfg.worker_name || '-';
+  document.getElementById('kvWorkerId').textContent = rg.worker_id || '-';
+  document.getElementById('kvSystemd').textContent = rg.systemd_active ? 'active (running)' : 'inactive';
+  document.getElementById('kvApiKey').textContent = cfg.masked_api_key || '-';
+  document.getElementById('kvCaps').textContent =
+    'NSFW: ' + (rg.nsfw ? 'Yes' : 'No') + ' · LoRA: ' + (rg.allow_lora ? 'Yes' : 'No') + ' · Max Power: ' + (rg.max_power || 24);
+  document.getElementById('kvGuestBudget').textContent =
+    (gb.spent_kudos || 0) + ' / ' + (gb.daily_limit || 3000) + ' Kudos (used only if :8188 offline)';
+
+  const hPills = document.getElementById('hordeModelsPills');
+  const adv = rg.models_advertised || [];
+  hPills.innerHTML = adv.length
+    ? adv.map(m => `<span class="pill">✓ ${m.replace(/</g, '&lt;')}</span>`).join('')
+    : '<span style="color:var(--muted);font-size:12px;">No models advertised</span>';
+
+  const sPills = document.getElementById('studioModelsPills');
+  const stModels = cb.studio_checkpoints || [];
+  sPills.innerHTML = stModels.map(m => `<span class="pill studio">⚡ ${m.replace('.safetensors', '')}</span>`).join('');
+
+  const tbody = document.getElementById('telemetryTable');
+  const tel = rg.recent_telemetry || [];
+  if (!tel.length) {
+    tbody.innerHTML = '<tr><td colspan="2" style="color:var(--muted);">No recent telemetry entries.</td></tr>';
+  } else {
+    tbody.innerHTML = tel.map(item => `<tr>
+      <td class="mono" style="color:var(--muted);">${(item.time || '').replace(/</g, '&lt;')}</td>
+      <td class="mono">${(item.message || '').replace(/</g, '&lt;')}</td>
+    </tr>`).join('');
   }
 }
 
-document.addEventListener('input', () => { formDirty = true; });
-
-async function saveConfig() {
-  const models = Array.from(document.querySelectorAll('.sdxl-model-chk:checked')).map(el => el.value);
-  const body = {
-    worker_name: document.getElementById('workerName').value,
-    krea_daily_limit: parseInt(document.getElementById('kreaLimit').value || '10', 10),
-    krea_enabled: document.getElementById('kreaEnabled').checked,
-    nsfw: document.getElementById('nsfwEnabled').checked,
-    sdxl_enabled: document.getElementById('sdxlEnabled').checked,
-    sdxl_models: models
-  };
-  const apiKeyVal = document.getElementById('apiKey').value.trim();
-  if (apiKeyVal) body.api_key = apiKeyVal;
-
-  const r = await fetch('/horde/api/config', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(body)
-  });
-  if (r.ok) {
-    document.getElementById('apiKey').value = '';
-    formDirty = false;
-    renderState(await r.json());
-  }
-}
-
-async function toggleWorker() {
-  const r = await fetch('/horde/api/toggle', {method: 'POST'});
-  if (r.ok) renderState(await r.json());
-}
-
-async function resetKreaQuota() {
-  const r = await fetch('/horde/api/reset_krea_quota', {method: 'POST'});
-  if (r.ok) renderState(await r.json());
-}
-
-async function runSingleStep() {
-  const btn = document.getElementById('stepBtn');
+async function toggleMaintenance() {
+  const btn = document.getElementById('maintBtn');
   btn.disabled = true;
-  btn.textContent = '⏳ Popping & Rendering...';
   try {
-    const r = await fetch('/horde/api/step', {method: 'POST'});
+    const r = await fetch('/horde/api/maintenance', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
     if (r.ok) {
-      const res = await r.json();
-      renderState(res.state);
+      const d = await r.json();
+      renderState(d);
+      showToast(d.regen?.maintenance_mode ? 'Maintenance mode enabled on AI Horde.' : 'Worker resumed on AI Horde.');
+    } else {
+      const err = await r.json().catch(() => ({}));
+      showToast(err.detail || 'Maintenance toggle failed', false);
     }
   } finally {
     btn.disabled = false;
-    btn.textContent = '▶ Run 1 Job Now';
+  }
+}
+
+async function testComfyBridge() {
+  const btn = document.getElementById('testBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Rendering test...';
+  try {
+    const r = await fetch('/horde/api/test_local_sdxl', {method: 'POST'});
+    const d = await r.json().catch(() => ({}));
+    if (r.ok && d.ok) {
+      showToast(`Embedded ComfyUI (:8188) rendered ${d.checkpoint} in ${d.duration_sec}s (${Math.round((d.png_bytes || 0)/1024)} KB)`);
+    } else {
+      showToast(d.error || 'ComfyUI test render failed', false);
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🧪 Test ComfyUI (:8188)';
+    loadState(true);
   }
 }
 
 loadState(true);
-setInterval(() => loadState(false), 6000);
+setInterval(() => loadState(false), 8000);
 </script>
 </body>
 </html>

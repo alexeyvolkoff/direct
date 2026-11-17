@@ -53,7 +53,7 @@ def _configure_comfy_paths_and_nodes() -> None:
     if not hasattr(comfy.samplers, "SCHEDULER_HANDLERS"):
         comfy.samplers.SCHEDULER_HANDLERS = {name: None for name in comfy.samplers.SCHEDULER_NAMES}
 
-    if os.path.isdir(WEB_ROOT_DIR):
+    if os.path.isfile(os.path.join(WEB_ROOT_DIR, "index.html")):
         comfy.cli_args.args.front_end_root = WEB_ROOT_DIR
 
     # Ensure trusted local YOLOv8 .pt detectors are whitelisted for PyTorch 2.6+ safe loading in Impact Subpack
@@ -226,11 +226,45 @@ def patch_regen_classes() -> None:
             loop = _aio.new_event_loop()
             _aio.set_event_loop(loop)
             try:
+                from collections import deque
+                import uuid as _uuid
+                from aiohttp import web as _aweb
                 import comfy.cli_args
-                if os.path.isdir(WEB_ROOT_DIR):
+                if os.path.isfile(os.path.join(WEB_ROOT_DIR, "index.html")):
                     comfy.cli_args.args.front_end_root = WEB_ROOT_DIR
                 srv = server.PromptServer(loop)
                 q = execution.PromptQueue(srv)
+
+                # Ring buffer so P2P Service-Worker iframe clients (/app/<node>/comfyui) can poll WS events over HTTP
+                poll_events: deque[tuple[int, float, str | None, dict]] = deque(maxlen=400)
+                poll_seq = 0
+                orig_send_json = srv.send_json
+
+                async def _patched_send_json(event: str, data: Any, sid: str | None = None) -> None:
+                    nonlocal poll_seq
+                    poll_seq += 1
+                    poll_events.append((poll_seq, time.time(), sid, {"type": event, "data": data}))
+                    await orig_send_json(event, data, sid)
+
+                srv.send_json = _patched_send_json
+
+                @srv.routes.get("/omd_ws_poll")
+                async def _handle_omd_ws_poll(request: Any) -> Any:
+                    sid = request.rel_url.query.get("clientId", "") or _uuid.uuid4().hex
+                    try:
+                        since = int(request.rel_url.query.get("since", "0") or 0)
+                    except Exception:
+                        since = 0
+                    out_evts: list[dict] = []
+                    if since <= 0:
+                        out_evts.append({"type": "status", "data": {"status": srv.get_queue_info(), "sid": sid}})
+                        if srv.client_id == sid and srv.last_node_id is not None:
+                            out_evts.append({"type": "executing", "data": {"node": srv.last_node_id}})
+                    cutoff = time.time() - 120.0
+                    for seq_i, ts_i, ev_sid, payload_i in list(poll_events):
+                        if seq_i > since and ts_i >= cutoff and (ev_sid is None or ev_sid == sid):
+                            out_evts.append(payload_i)
+                    return _aweb.json_response({"seq": poll_seq, "sid": sid, "events": out_evts})
 
                 def _on_prompt(json_data: dict) -> dict:
                     try:

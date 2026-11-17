@@ -311,6 +311,28 @@ function injectAppProxyBootstrap(htmlText, linkId, slug, realPathWithQuery) {
         `var target=R+(location.hash||"");` +
         `history.replaceState(history.state,"",target);` +
         `}}catch(e){}` +
+        `try{if(S==="comfyui"&&typeof WebSocket==="function"){` +
+        `var NativeWS=WebSocket;` +
+        `function PolledWS(url,protos){` +
+        `var u=new URL(String(url),location.href);` +
+        `if(u.host!==location.host||(u.pathname!=="/ws"&&u.pathname!=="/api/ws")){return protos?new NativeWS(url,protos):new NativeWS(url);}` +
+        `var self=new EventTarget();self.url=u.href;self.protocol="";self.extensions="";self.binaryType="arraybuffer";self.bufferedAmount=0;` +
+        `self.CONNECTING=0;self.OPEN=1;self.CLOSING=2;self.CLOSED=3;self.readyState=0;` +
+        `self.onopen=null;self.onmessage=null;self.onerror=null;self.onclose=null;` +
+        `var cid=u.searchParams.get("clientId")||"",since=0,closed=false,timer=null;` +
+        `function emit(t,ev){if(typeof self["on"+t]==="function"){try{self["on"+t](ev);}catch(_){}}self.dispatchEvent(ev);}` +
+        `async function tick(){if(closed)return;try{` +
+        `var r=await fetch("/api/omd_ws_poll?clientId="+encodeURIComponent(cid)+"&since="+since,{cache:"no-store"});` +
+        `if(r.ok){var d=await r.json();if(d.sid&&!cid)cid=d.sid;if(typeof d.seq==="number"&&d.seq>since)since=d.seq;` +
+        `if(self.readyState===0){self.readyState=1;emit("open",new Event("open"));}` +
+        `var evs=d.events||[];for(var i=0;i<evs.length;i++){emit("message",new MessageEvent("message",{data:JSON.stringify(evs[i])}));}}` +
+        `}catch(_){}if(!closed){timer=setTimeout(tick,750);}}` +
+        `self.send=function(){};self.close=function(){if(closed)return;closed=true;if(timer)clearTimeout(timer);self.readyState=3;emit("close",new CloseEvent("close",{wasClean:true,code:1000}));};` +
+        `setTimeout(tick,10);return self;` +
+        `}` +
+        `PolledWS.CONNECTING=0;PolledWS.OPEN=1;PolledWS.CLOSING=2;PolledWS.CLOSED=3;PolledWS.prototype=NativeWS.prototype;` +
+        `window.WebSocket=PolledWS;` +
+        `}}catch(e){}` +
         `function notify(){try{if(window.parent&&window.parent!==window){` +
         `window.parent.postMessage({type:"OMD_APP_PROXY_STATE",linkId:L,appSlug:S,path:location.pathname+location.search+location.hash,title:document.title||""},"*");` +
         `}}catch(e){}}` +

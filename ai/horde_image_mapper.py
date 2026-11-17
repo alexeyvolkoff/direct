@@ -1679,23 +1679,56 @@ def _format_civitai_thumb(url: str) -> str:
     return u
 
 
+ECOSYSTEM_BASE_MODELS: Dict[str, set] = {
+    "sdxl": set(SDXL_COMPATIBLE_BASE_MODELS),
+    "krea2": {"Krea 2"},
+    "anima": {"Anima"},
+}
+
+ECOSYSTEM_QUERY_BASE_MODELS: Dict[str, List[str]] = {
+    "sdxl": ["SDXL 1.0", "Pony", "Illustrious"],
+    "krea2": ["Krea 2"],
+    "anima": ["Anima"],
+}
+
+ECOSYSTEM_MAX_LORA_MB: Dict[str, float] = {
+    "sdxl": 400.0,
+    "krea2": 650.0,
+    "anima": 650.0,
+}
+
+
+def _normalize_ecosystem(ecosystem: str = "sdxl") -> str:
+    raw = str(ecosystem or "sdxl").strip().lower()
+    if raw in ("krea", "krea2", "krea 2", "realism", "semi_realism", "muse", "dit"):
+        return "krea2"
+    if raw in ("anima",):
+        return "anima"
+    return "sdxl"
+
+
 def _extract_civitai_lora_card(
     model_obj: Dict[str, Any],
     version_obj: Dict[str, Any],
     category: str,
     allow_nsfw_thumbs: bool = False,
+    ecosystem: str = "sdxl",
 ) -> Optional[Dict[str, Any]]:
     """
-    Validates a CivitAI model + version against `horde-worker-reGen` (`hordelib`) rules:
-    - SDXL / Pony / Illustrious / NoobAI baseline
-    - Primary `.safetensors` file with SHA256 and `size_mb <= 400`
+    Validates a CivitAI model + version against the target engine ecosystem (`sdxl` | `krea2` | `anima`):
+    - Baseline matches `ECOSYSTEM_BASE_MODELS[ecosystem]`
+    - Primary `.safetensors` file with SHA256 and `size_mb <= max_mb`
     - Not a real-person POI (`poi == False`)
     - Static preview image (`nsfwLevel <= 2` unless `allow_nsfw_thumbs=True`)
     """
     if bool(model_obj.get("poi")):
         return None
+    norm_eco = _normalize_ecosystem(ecosystem)
+    allowed_bases = ECOSYSTEM_BASE_MODELS[norm_eco]
+    max_mb = ECOSYSTEM_MAX_LORA_MB[norm_eco]
+
     base_model = str(version_obj.get("baseModel") or "").strip()
-    if base_model not in SDXL_COMPATIBLE_BASE_MODELS:
+    if base_model not in allowed_bases:
         return None
 
     chosen_file = None
@@ -1713,7 +1746,7 @@ def _extract_civitai_lora_card(
         return None
 
     size_mb = round(float(chosen_file.get("sizeKB") or 0.0) / 1024.0, 1)
-    if size_mb <= 0 or size_mb > 400.0:
+    if size_mb <= 0 or size_mb > max_mb:
         return None
 
     max_nsfw_lvl = 16 if allow_nsfw_thumbs else 2
@@ -1761,10 +1794,10 @@ def _extract_civitai_lora_card(
         "image_url": preview_url,
         "trained_words": trained,
         "tags": tags[:6],
-        "strength": 0.9 if category == "character" else 0.75,
+        "strength": 0.85 if norm_eco in ("krea2", "anima") else (0.9 if category == "character" else 0.75),
         "filename": f"civitai_{vid}.safetensors",
         "trigger": f"<civitai_{vid}>",
-        "models": ["sdxl"],
+        "models": [norm_eco],
         "url": f"https://civitai.com/models/{mid}?modelVersionId={vid}" if mid else "",
         "description": f"{base_model} · {size_mb:.0f} MB" + (f" · trigger: {trained[0]}" if trained else ""),
     }
@@ -1773,18 +1806,27 @@ def _extract_civitai_lora_card(
 _civitai_open_dl_cache: Dict[str, bool] = {}
 
 
-def _get_civitai_api_token() -> str:
-    return str(SETTINGS.get("CIVITAI_API_TOKEN") or os.environ.get("CIVITAI_API_TOKEN") or "").strip()
+def _get_civitai_api_token(explicit_token: str = "") -> str:
+    if explicit_token and str(explicit_token).strip():
+        return str(explicit_token).strip()
+    return str(
+        SETTINGS.get("CIVITAI_API_KEY")
+        or SETTINGS.get("CIVITAI_API_TOKEN")
+        or os.environ.get("CIVITAI_API_KEY")
+        or os.environ.get("CIVITAI_API_TOKEN")
+        or ""
+    ).strip()
 
 
 async def _filter_open_civitai_cards(
     session: aiohttp.ClientSession,
     cards: List[Dict[str, Any]],
     limit: int,
+    civitai_token: str = "",
 ) -> List[Dict[str, Any]]:
     if not cards:
         return []
-    token = _get_civitai_api_token()
+    token = _get_civitai_api_token(civitai_token)
     if token:
         return cards[:limit]
 
@@ -1818,25 +1860,31 @@ async def search_civitai_loras(
     sort: str = "Most Downloaded",
     limit: int = 24,
     allow_nsfw: bool = False,
+    ecosystem: str = "sdxl",
+    civitai_token: str = "",
 ) -> List[Dict[str, Any]]:
     """
-    Searches CivitAI for SDXL-compatible (`<= 400 MB`) LoRAs in two modes:
+    Searches CivitAI for engine-compatible (`sdxl` | `krea2` | `anima`) LoRAs in two modes:
     - `mode="character"`: Companion / fictional characters (`tag=character`, excluding sliders/poses)
     - `mode="style"`: Art styles, aesthetics, lighting, concepts (everything that is NOT a character)
     Also supports pasting a direct CivitAI model/version URL or numeric ID into `query`.
     """
     norm_mode = "character" if str(mode or "").strip().lower().startswith("char") else "style"
+    norm_eco = _normalize_ecosystem(ecosystem)
     q_clean = str(query or "").strip()
     norm_sort = sort if sort in ("Most Downloaded", "Highest Rated", "Newest") else "Most Downloaded"
     lim = max(4, min(36, int(limit or 24)))
+    eff_token = _get_civitai_api_token(civitai_token)
 
-    cache_key = f"{norm_mode}|{q_clean.lower()}|{norm_sort}|{lim}|{int(bool(allow_nsfw))}"
+    cache_key = f"{norm_eco}|{norm_mode}|{q_clean.lower()}|{norm_sort}|{lim}|{int(bool(allow_nsfw))}|{int(bool(eff_token))}"
     now = time.monotonic()
     cached = _civitai_search_cache.get(cache_key)
     if cached and (now - cached[0]) < _CIVITAI_SEARCH_CACHE_TTL:
         return cached[1]
 
-    headers = {"User-Agent": "Direct/1.0"}
+    headers: Dict[str, str] = {"User-Agent": "Direct/1.0"}
+    if eff_token:
+        headers["Authorization"] = f"Bearer {eff_token}"
     timeout = aiohttp.ClientTimeout(total=12.0, connect=6.0)
     results: List[Dict[str, Any]] = []
 
@@ -1857,7 +1905,7 @@ async def search_civitai_loras(
                             async with session.get(f"https://civitai.com/api/v1/models/{mid}") as mr:
                                 if mr.status == 200:
                                     m_data = await mr.json()
-                                    card = _extract_civitai_lora_card(m_data, v_data, norm_mode, allow_nsfw_thumbs=allow_nsfw)
+                                    card = _extract_civitai_lora_card(m_data, v_data, norm_mode, allow_nsfw_thumbs=allow_nsfw, ecosystem=norm_eco)
                                     if card:
                                         results.append(card)
                 else:
@@ -1867,8 +1915,8 @@ async def search_civitai_loras(
                         if mr.status == 200:
                             m_data = await mr.json()
                             if str(m_data.get("type") or "").upper() == "LORA":
-                                for v_data in (m_data.get("modelVersions") or [])[:3]:
-                                    card = _extract_civitai_lora_card(m_data, v_data, norm_mode, allow_nsfw_thumbs=allow_nsfw)
+                                for v_data in (m_data.get("modelVersions") or []):
+                                    card = _extract_civitai_lora_card(m_data, v_data, norm_mode, allow_nsfw_thumbs=allow_nsfw, ecosystem=norm_eco)
                                     if card:
                                         results.append(card)
                                         break
@@ -1880,7 +1928,7 @@ async def search_civitai_loras(
                                 async with session.get(f"https://civitai.com/api/v1/models/{mid}") as mr2:
                                     if mr2.status == 200:
                                         m_data = await mr2.json()
-                                        card = _extract_civitai_lora_card(m_data, v_data, norm_mode, allow_nsfw_thumbs=allow_nsfw)
+                                        card = _extract_civitai_lora_card(m_data, v_data, norm_mode, allow_nsfw_thumbs=allow_nsfw, ecosystem=norm_eco)
                                         if card:
                                             results.append(card)
             except Exception as e:
@@ -1896,10 +1944,9 @@ async def search_civitai_loras(
             ("sort", norm_sort),
             ("limit", str(min(60, lim * 2 + 12))),
             ("nsfw", "true" if allow_nsfw else "false"),
-            ("baseModels", "SDXL 1.0"),
-            ("baseModels", "Pony"),
-            ("baseModels", "Illustrious"),
         ]
+        for bm in ECOSYSTEM_QUERY_BASE_MODELS[norm_eco]:
+            params.append(("baseModels", bm))
         if norm_mode == "character":
             params.append(("tag", "character"))
         elif not q_clean:
@@ -1927,17 +1974,17 @@ async def search_civitai_loras(
                             if tags_low & {"character", "celebrity", "vtuber"}:
                                 continue
 
-                        # Pick first SDXL-compatible version <= 400 MB
-                        for ver in (item.get("modelVersions") or [])[:2]:
-                            card = _extract_civitai_lora_card(item, ver, norm_mode, allow_nsfw_thumbs=allow_nsfw)
+                        # Pick first ecosystem-compatible version within size limit
+                        for ver in (item.get("modelVersions") or []):
+                            card = _extract_civitai_lora_card(item, ver, norm_mode, allow_nsfw_thumbs=allow_nsfw, ecosystem=norm_eco)
                             if card:
                                 results.append(card)
                                 break
                         if len(results) >= (lim + 8):
                             break
-                    results = await _filter_open_civitai_cards(session, results, lim)
+                    results = await _filter_open_civitai_cards(session, results, lim, civitai_token=eff_token)
         except Exception as e:
-            logger.warning(f"[CivitaiSearch] Search failed ({norm_mode}, q={q_clean!r}): {e}")
+            logger.warning(f"[CivitaiSearch] Search failed ({norm_eco}/{norm_mode}, q={q_clean!r}): {e}")
 
     _civitai_search_cache[cache_key] = (now, results)
     return results
@@ -1977,20 +2024,87 @@ def _prune_civitai_lora_cache(loras_dir: str, max_bytes: int = _MAX_CIVITAI_CACH
         logger.debug(f"[CivitaiCache] Cache prune skipped: {e}")
 
 
+async def resolve_civitai_lora_metadata(
+    lora_key: str,
+    custom_loras: Optional[List[Dict[str, Any]]] = None,
+    civitai_token: str = "",
+) -> Optional[Dict[str, Any]]:
+    """
+    Resolves `{filename, strength, trained_words, category, civitai_version_id}` for a `civitai_<vid>`
+    LoRA (using `custom_loras` payload first, falling back to CivitAI API metadata without downloading
+    model weights locally - ideal when dispatching Krea 2 / Anima workflows to Modal Cloud GPU).
+    """
+    custom_lookup: Dict[str, Dict[str, Any]] = {}
+    for cl in (custom_loras or []):
+        if isinstance(cl, dict) and cl.get("civitai_version_id"):
+            vid_s = str(cl["civitai_version_id"]).strip()
+            cid_s = str(cl.get("id") or f"civitai_{vid_s}").strip().lower()
+            entry = {
+                "id": cid_s,
+                "name": str(cl.get("name") or cid_s),
+                "civitai_version_id": vid_s,
+                "category": str(cl.get("category") or "character"),
+                "strength": float(cl.get("strength") or 0.85),
+                "trained_words": list(cl.get("trained_words") or []),
+            }
+            custom_lookup[cid_s] = entry
+            custom_lookup[vid_s] = entry
+
+    spec = _resolve_lora_spec(lora_key, custom_lookup)
+    if not spec:
+        return None
+    vid = str(spec.get("civitai_version_id") or "").strip()
+    if not vid.isdigit():
+        return None
+    trained = list(spec.get("trained_words") or [])
+    if not trained:
+        eff_tok = _get_civitai_api_token(civitai_token)
+        headers: Dict[str, str] = {"User-Agent": "Direct/1.0"}
+        if eff_tok:
+            headers["Authorization"] = f"Bearer {eff_tok}"
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=8.0), headers=headers) as session:
+                async with session.get(f"https://civitai.com/api/v1/model-versions/{vid}") as vr:
+                    if vr.status == 200:
+                        vd = await vr.json()
+                        trained_api = [
+                            re.sub(r"<lora:[^>]+>", "", str(w)).strip(" ,")
+                            for w in (vd.get("trainedWords") or [])
+                            if str(w).strip()
+                        ]
+                        trained = [w for w in trained_api if w][:4]
+        except Exception:
+            pass
+    return {
+        "filename": f"civitai_{vid}.safetensors",
+        "civitai_version_id": vid,
+        "strength": float(spec.get("strength", 0.85)),
+        "trained_words": trained,
+        "category": str(spec.get("category") or "character"),
+    }
+
+
 async def ensure_local_civitai_lora(
     lora_key: str,
     custom_loras: Optional[List[Dict[str, Any]]] = None,
     loras_dir: Optional[str] = None,
     allow_nsfw: bool = False,
+    ecosystem: str = "sdxl",
+    civitai_token: str = "",
 ) -> Optional[Dict[str, Any]]:
     """
-    Ensures a predefined or user-selected CivitAI SDXL LoRA (`<= 400 MB` `.safetensors`)
-    exists in the local ComfyUI `loras/` directory so the embedded `reGen` ComfyUI bridge
-    can load it directly in `flow.json`. Returns `{filename, strength, trained_words, category}`.
+    Ensures a predefined or user-selected CivitAI LoRA `.safetensors` file
+    exists in the local ComfyUI `loras/` directory so the local ComfyUI runner
+    can load it directly. Returns `{filename, strength, trained_words, category}`.
     """
     global _LOCAL_LORA_DL_LOCK
     if _LOCAL_LORA_DL_LOCK is None:
         _LOCAL_LORA_DL_LOCK = asyncio.Lock()
+
+    norm_eco = _normalize_ecosystem(ecosystem)
+    allowed_bases = ECOSYSTEM_BASE_MODELS[norm_eco]
+    max_mb = ECOSYSTEM_MAX_LORA_MB[norm_eco]
+    eff_tok = _get_civitai_api_token(civitai_token)
 
     target_dir = loras_dir or SETTINGS.get("COMFY_LORAS_DIR") or "/home/alexey/models/comfyui_models/loras"
     if not os.path.isdir(target_dir):
@@ -2066,7 +2180,9 @@ async def ensure_local_civitai_lora(
                 "category": str(spec.get("category") or "character"),
             }
 
-        headers = {"User-Agent": "Direct/1.0"}
+        headers: Dict[str, str] = {"User-Agent": "Direct/1.0"}
+        if eff_tok:
+            headers["Authorization"] = f"Bearer {eff_tok}"
         timeout = aiohttp.ClientTimeout(total=180.0, connect=10.0)
         try:
             async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
@@ -2091,8 +2207,8 @@ async def ensure_local_civitai_lora(
                     return None
 
                 base_model = str(v_data.get("baseModel") or "").strip()
-                if base_model and base_model not in SDXL_COMPATIBLE_BASE_MODELS:
-                    logger.warning(f"[CivitaiCache] Rejected non-SDXL baseline '{base_model}' for {vid}")
+                if base_model and base_model not in allowed_bases:
+                    logger.warning(f"[CivitaiCache] Rejected incompatible baseline '{base_model}' for {norm_eco} ({vid})")
                     return None
 
                 chosen_file = None
@@ -2110,19 +2226,19 @@ async def ensure_local_civitai_lora(
                     return None
 
                 size_kb = float(chosen_file.get("sizeKB") or 0.0)
-                if size_kb <= 0 or (size_kb / 1024.0) > 400.0:
-                    logger.warning(f"[CivitaiCache] Rejected LoRA {vid} exceeding 400 MB ({size_kb / 1024.0:.1f} MB)")
+                if size_kb <= 0 or (size_kb / 1024.0) > max_mb:
+                    logger.warning(f"[CivitaiCache] Rejected LoRA {vid} exceeding {max_mb} MB ({size_kb / 1024.0:.1f} MB)")
                     return None
 
                 expected_sha = str((chosen_file.get("hashes") or {}).get("SHA256") or "").strip().lower()
                 dl_url = str(chosen_file["downloadUrl"])
-                civ_tok = _get_civitai_api_token()
-                if civ_tok and "civitai.com" in dl_url and "token=" not in dl_url:
+                if eff_tok and "civitai.com" in dl_url and "token=" not in dl_url:
                     sep = "&" if "?" in dl_url else "?"
-                    dl_url = f"{dl_url}{sep}token={civ_tok}"
+                    dl_url = f"{dl_url}{sep}token={eff_tok}"
                 tmp_fp = f"{cached_fp}.part.{os.getpid()}"
                 hasher = hashlib.sha256()
                 total_read = 0
+                max_dl_bytes = int((max_mb + 20) * 1024 * 1024)
 
                 logger.info(f"[CivitaiCache] Downloading CivitAI LoRA {vid} ({size_kb / 1024.0:.1f} MB) -> {cached_fn}")
                 async with session.get(dl_url, allow_redirects=True) as dl_resp:
@@ -2132,8 +2248,8 @@ async def ensure_local_civitai_lora(
                     with open(tmp_fp, "wb") as out_f:
                         async for chunk in dl_resp.content.iter_chunked(262144):
                             total_read += len(chunk)
-                            if total_read > 420 * 1024 * 1024:
-                                raise RuntimeError("LoRA download exceeded 400 MB limit")
+                            if total_read > max_dl_bytes:
+                                raise RuntimeError(f"LoRA download exceeded {max_mb} MB limit")
                             hasher.update(chunk)
                             out_f.write(chunk)
 

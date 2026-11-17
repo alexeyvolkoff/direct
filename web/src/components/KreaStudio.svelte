@@ -665,6 +665,7 @@
   let showCivitaiLoraModal = false;
   let civitaiModalMode = "character"; // "character" | "style"
   let civitaiModalContext = "toolbar"; // "toolbar" | "factory" | "persona_form"
+  let civitaiModalEcosystem = "sdxl"; // "sdxl" | "krea2" | "anima"
   let civitaiSearchQuery = "";
   let civitaiSearchSort = "Most Downloaded";
   let civitaiSearchResults = [];
@@ -672,22 +673,30 @@
   let civitaiSearchError = "";
   let civitaiSearchSeq = 0;
 
+  $: civitaiModalEcoLabel = civitaiModalEcosystem === "anima"
+    ? "Anima"
+    : (civitaiModalEcosystem === "krea2" ? "Krea 2" : "SDXL");
+
   async function searchCivitaiCatalog() {
     const seq = ++civitaiSearchSeq;
     isSearchingCivitaiLoras = true;
     civitaiSearchError = "";
     try {
       const fetchFn = getKreaFetch();
-      const qs = new URLSearchParams({
-        mode: civitaiModalMode,
-        q: (civitaiSearchQuery || "").trim(),
-        sort: civitaiSearchSort,
-        limit: "24",
-        omd_key: omdKey || ""
-      });
-      const res = await fetchFn(`/horde/civitai/loras?${qs.toString()}`, {
-        method: "GET",
-        headers: buildAuthHeaders()
+      const mcpPayload = getMcpPayload();
+      const res = await fetchFn("/horde/civitai/loras", {
+        method: "POST",
+        headers: { ...buildAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: civitaiModalMode,
+          q: (civitaiSearchQuery || "").trim(),
+          sort: civitaiSearchSort,
+          limit: 24,
+          ecosystem: civitaiModalEcosystem,
+          omd_key: omdKey || "",
+          mcp_keys: mcpPayload,
+          settings: { mcp_keys: mcpPayload }
+        })
       });
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
@@ -709,6 +718,11 @@
   function openCivitaiLoraModal(mode = "character", targetContext = "toolbar") {
     civitaiModalMode = mode === "style" ? "style" : "character";
     civitaiModalContext = targetContext || "toolbar";
+    if (targetContext === "persona_form") {
+      civitaiModalEcosystem = personaModalEngineCat || "sdxl";
+    } else {
+      civitaiModalEcosystem = currentBaseCategory || "sdxl";
+    }
     civitaiSearchQuery = "";
     showStyleDropdown = false;
     showArchetypeDropdown = false;
@@ -722,31 +736,38 @@
     searchCivitaiCatalog();
   }
 
+  function switchCivitaiModalEcosystem(nextEco) {
+    if (!nextEco || civitaiModalEcosystem === nextEco) return;
+    civitaiModalEcosystem = nextEco;
+    searchCivitaiCatalog();
+  }
+
   function isCustomLoraAdded(id) {
     return customCivitaiLoras.some((x) => x.id === id)
-      || (STANDARD_SDXL_PRESETS.archetypes || []).some((x) => x.civitai_version_id && `civitai_${x.civitai_version_id}` === id)
-      || (STANDARD_SDXL_PRESETS.art_styles || []).some((x) => x.civitai_version_id && `civitai_${x.civitai_version_id}` === id);
+      || (effectivePresets.archetypes || []).some((x) => x.civitai_version_id && `civitai_${x.civitai_version_id}` === id)
+      || (effectivePresets.art_styles || []).some((x) => x.civitai_version_id && `civitai_${x.civitai_version_id}` === id);
   }
 
   function addCustomCivitaiLora(card) {
     if (!card || !card.civitai_version_id) return;
+    const targetEco = (Array.isArray(card.models) && card.models[0]) ? card.models[0] : civitaiModalEcosystem;
     const norm = {
       id: card.id || `civitai_${card.civitai_version_id}`,
       name: card.name || `LoRA ${card.civitai_version_id}`,
       civitai_name: card.civitai_name || card.name || "",
       civitai_model_id: String(card.civitai_model_id || ""),
       civitai_version_id: String(card.civitai_version_id),
-      base_model: card.base_model || "SDXL 1.0",
+      base_model: card.base_model || civitaiModalEcoLabel,
       size_mb: card.size_mb || 0,
       category: civitaiModalMode === "style" ? "style" : "character",
       image_url: card.image_url || "",
       trained_words: Array.isArray(card.trained_words) ? card.trained_words : [],
-      description: card.description || `${card.base_model || "SDXL"} LoRA`,
+      description: card.description || `${card.base_model || civitaiModalEcoLabel} LoRA`,
       icon: "",
       filename: `civitai_${card.civitai_version_id}.safetensors`,
       trigger: `<${card.id || `civitai_${card.civitai_version_id}`}>`,
-      strength: civitaiModalMode === "style" ? 0.75 : 0.9,
-      models: ["sdxl"],
+      strength: card.strength ?? (targetEco !== "sdxl" ? 0.85 : (civitaiModalMode === "style" ? 0.75 : 0.9)),
+      models: [targetEco],
       is_custom: true
     };
 
@@ -761,6 +782,13 @@
 
     // Immediately select in the caller context
     if (civitaiModalContext === "factory") {
+      if (targetEco === "anima" && sliders.base_model !== "anima") {
+        setBaseModel("anima");
+      } else if (targetEco === "krea2" && (isSdxlModel(sliders.base_model) || sliders.base_model === "anima")) {
+        setBaseModel("realism");
+      } else if (targetEco === "sdxl" && !isSdxlModel(sliders.base_model)) {
+        setBaseModel(lastSdxlModel || "sdxl_realistic");
+      }
       if (norm.category === "character") {
         aiFactoryArchetype = norm.id;
       } else if (!aiFactoryStyles.includes(norm.id)) {
@@ -769,8 +797,12 @@
       showCivitaiLoraModal = false;
     } else if (civitaiModalContext === "persona_form") {
       personaFormPresetEnabled = true;
-      if (!isSdxlModel(personaFormBaseModel)) {
+      if (targetEco === "sdxl" && !isSdxlModel(personaFormBaseModel)) {
         personaFormBaseModel = "sdxl_realistic";
+      } else if (targetEco === "anima" && personaFormBaseModel !== "anima") {
+        personaFormBaseModel = "anima";
+      } else if (targetEco === "krea2" && (isSdxlModel(personaFormBaseModel) || personaFormBaseModel === "anima")) {
+        personaFormBaseModel = "realism";
       }
       if (norm.category === "character") {
         if (!personaFormArchetypes.includes(norm.id)) {
@@ -787,8 +819,12 @@
       }
       showCivitaiLoraModal = false;
     } else {
-      if (!isSdxlModel(sliders.base_model)) {
+      if (targetEco === "sdxl" && !isSdxlModel(sliders.base_model)) {
         setBaseModel(lastSdxlModel || "sdxl_realistic");
+      } else if (targetEco === "anima" && sliders.base_model !== "anima") {
+        setBaseModel("anima");
+      } else if (targetEco === "krea2" && (isSdxlModel(sliders.base_model) || sliders.base_model === "anima")) {
+        setBaseModel("realism");
       }
       if (norm.category === "character") {
         sliders.archetypes = [norm.id];
@@ -856,28 +892,28 @@
       {
         id: "sdxl_lora_cinematic_shot",
         name: "Cinematic Shot",
-        civitai_name: "Cinematic Shot",
-        civitai_version_id: "481917",
+        civitai_name: "Juggernaut Cinematic XL LoRA",
+        civitai_version_id: "131991",
         base_model: "SDXL 1.0",
         description: "Atmospheric 35mm movie lighting, depth & color grading",
         icon: "",
-        image_url: "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/036d514d-5f82-4beb-8160-38e7f4411b05/width=256/11368089.jpeg",
-        filename: "civitai_481917.safetensors",
+        image_url: "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/60a7446c-62ee-4238-8687-dffa7324f844/width=256/1844260.jpeg",
+        filename: "civitai_131991.safetensors",
         trigger: "<Cinematic Shot>",
         strength: 0.75,
         models: ["sdxl"]
       },
       {
         id: "sdxl_lora_anime_screencap",
-        name: "Anime Screencap XL",
-        civitai_name: "Fine Anime Screencap XL",
-        civitai_version_id: "2553688",
-        base_model: "Illustrious",
+        name: "Anime Aesthetic XL",
+        civitai_name: "Aesthetic Anime LoRA",
+        civitai_version_id: "331598",
+        base_model: "SDXL 1.0",
         description: "Crisp modern anime broadcast aesthetic & cel shading",
         icon: "",
-        image_url: "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/b2bf710e-a946-4df9-bed5-cfb02e7c19a6/width=256/115872395.jpeg",
-        filename: "civitai_2553688.safetensors",
-        trigger: "<Anime Screencap XL>",
+        image_url: "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/7cd96ef0-a9dc-4906-b258-f389ff640a1a/width=256/6328373.jpeg",
+        filename: "civitai_331598.safetensors",
+        trigger: "<Anime Aesthetic XL>",
         strength: 0.8,
         models: ["sdxl"]
       },
@@ -1254,7 +1290,8 @@
       if (!canShowStudioTab || studioEngineMode === "sdxl") {
         return models.includes("sdxl") || models.includes("all");
       }
-      return !models.includes("sdxl") || models.includes("all");
+      const studioCat = sliders.base_model === "anima" ? "anima" : "krea2";
+      return models.includes(studioCat) || models.includes("all");
     })
     .map((a) => {
       const locDesc = $_(`krea_preset_desc_${a.id}`, {}, a.description);
@@ -1279,7 +1316,8 @@
       if (!canShowStudioTab || studioEngineMode === "sdxl") {
         return models.includes("sdxl") || models.includes("all");
       }
-      return !models.includes("sdxl") || models.includes("all");
+      const studioCat = sliders.base_model === "anima" ? "anima" : "krea2";
+      return models.includes(studioCat) || models.includes("all");
     })
     .map((s) => ({
       id: s.id,
@@ -2548,7 +2586,7 @@
         body: JSON.stringify({
           archetype: aiFactoryArchetype,
           styles: aiFactoryStyles,
-          base_model: isSdxlModel(sliders.base_model) ? sliders.base_model : "sdxl_realistic",
+          base_model: (!canShowStudioTab || studioEngineMode === "sdxl") ? (isSdxlModel(sliders.base_model) ? sliders.base_model : "sdxl_realistic") : (sliders.base_model || "realism"),
           custom_loras: factoryCustomLoras,
           omd_key: omdKey || "",
           mcp_keys: mcpPayload,
@@ -7569,15 +7607,13 @@
                 <div class="popup-menu-header">
                   <span>{$_("krea_image_style", {}, "Styles & Concepts (LoRA)")}</span>
                   <div class="popup-header-actions">
-                    {#if currentBaseCategory === "sdxl"}
-                      <button
-                        type="button"
-                        class="civitai-add-inline-btn"
-                        on:click={() => openCivitaiLoraModal("style", "toolbar")}
-                      >
-                        + CivitAI
-                      </button>
-                    {/if}
+                    <button
+                      type="button"
+                      class="civitai-add-inline-btn"
+                      on:click={() => openCivitaiLoraModal("style", "toolbar")}
+                    >
+                      + CivitAI
+                    </button>
                     {#if (sliders.styles || []).length > 0}
                       <button
                         type="button"
@@ -7677,17 +7713,13 @@
                   {/each}
                 </div>
                 <div class="popup-menu-footer">
-                  {#if currentBaseCategory === "sdxl"}
-                    <button
-                      type="button"
-                      class="civitai-footer-btn"
-                      on:click={() => openCivitaiLoraModal("style", "toolbar")}
-                    >
-                      {$_("krea_civitai_add_style_btn", {}, "+ Add Style / Concept from CivitAI")}
-                    </button>
-                  {:else}
-                    <span class="popup-count-hint">{$_("krea_selected_count", { count: (sliders.styles || []).length }, `Выбрано: ${(sliders.styles || []).length}`)}</span>
-                  {/if}
+                  <button
+                    type="button"
+                    class="civitai-footer-btn"
+                    on:click={() => openCivitaiLoraModal("style", "toolbar")}
+                  >
+                    {$_("krea_civitai_add_style_btn", {}, "+ Add Style / Concept from CivitAI")}
+                  </button>
                   <button
                     type="button"
                     class="popup-done-btn"
@@ -7734,15 +7766,13 @@
                 <div class="popup-menu-header">
                   <span>{$_("krea_appearance_lora", {}, "Characters (LoRA)")}</span>
                   <div class="popup-header-actions">
-                    {#if currentBaseCategory === "sdxl"}
-                      <button
-                        type="button"
-                        class="civitai-add-inline-btn"
-                        on:click={() => openCivitaiLoraModal("character", "toolbar")}
-                      >
-                        + CivitAI
-                      </button>
-                    {/if}
+                    <button
+                      type="button"
+                      class="civitai-add-inline-btn"
+                      on:click={() => openCivitaiLoraModal("character", "toolbar")}
+                    >
+                      + CivitAI
+                    </button>
                     {#if (sliders.archetypes || []).length > 0}
                       <button
                         type="button"
@@ -7839,17 +7869,13 @@
                   {/each}
                 </div>
                 <div class="popup-menu-footer">
-                  {#if currentBaseCategory === "sdxl"}
-                    <button
-                      type="button"
-                      class="civitai-footer-btn"
-                      on:click={() => openCivitaiLoraModal("character", "toolbar")}
-                    >
-                      {$_("krea_civitai_add_char_btn", {}, "+ Add Character from CivitAI")}
-                    </button>
-                  {:else}
-                    <span class="popup-count-hint">{$_("krea_selected_count", { count: (sliders.archetypes || []).length }, `Выбрано: ${(sliders.archetypes || []).length}`)}</span>
-                  {/if}
+                  <button
+                    type="button"
+                    class="civitai-footer-btn"
+                    on:click={() => openCivitaiLoraModal("character", "toolbar")}
+                  >
+                    {$_("krea_civitai_add_char_btn", {}, "+ Add Character from CivitAI")}
+                  </button>
                   <button
                     type="button"
                     class="popup-done-btn"
@@ -9249,15 +9275,13 @@
                 <div>
                   <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
                     <span style="font-size: 11.5px; opacity: 0.85;">{$_("krea_persona_archetypes", {}, "Characters (LoRA):")}</span>
-                    {#if personaModalEngineCat === "sdxl"}
-                      <button
-                        type="button"
-                        class="civitai-add-inline-btn"
-                        on:click={() => openCivitaiLoraModal("character", "persona_form")}
-                      >
-                        {$_("krea_civitai_add_char_btn", {}, "+ Add Character from CivitAI")}
-                      </button>
-                    {/if}
+                    <button
+                      type="button"
+                      class="civitai-add-inline-btn"
+                      on:click={() => openCivitaiLoraModal("character", "persona_form")}
+                    >
+                      {$_("krea_civitai_add_char_btn", {}, "+ Add Character from CivitAI")}
+                    </button>
                   </div>
                   <div class="persona-lora-chip-grid">
                     {#each personaModalArchetypes as arch}
@@ -9296,15 +9320,13 @@
                 <div>
                   <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
                     <span style="font-size: 11.5px; opacity: 0.85;">{$_("krea_persona_styles", {}, "Style / Concept LoRAs (optional):")}</span>
-                    {#if personaModalEngineCat === "sdxl"}
-                      <button
-                        type="button"
-                        class="civitai-add-inline-btn"
-                        on:click={() => openCivitaiLoraModal("style", "persona_form")}
-                      >
-                        {$_("krea_civitai_add_style_short", {}, "+ Add Style from CivitAI")}
-                      </button>
-                    {/if}
+                    <button
+                      type="button"
+                      class="civitai-add-inline-btn"
+                      on:click={() => openCivitaiLoraModal("style", "persona_form")}
+                    >
+                      {$_("krea_civitai_add_style_short", {}, "+ Add Style from CivitAI")}
+                    </button>
                   </div>
                   <div class="persona-lora-chip-grid">
                     {#each personaModalStyles as st}
@@ -9594,15 +9616,13 @@
           <div class="modal-field">
             <div class="factory-section-head">
               <label style="margin: 0;">{$_("krea_select_archetype", {}, "Character:")}</label>
-              {#if !canShowStudioTab || studioEngineMode === "sdxl"}
-                <button
-                  type="button"
-                  class="civitai-add-inline-btn"
-                  on:click={() => openCivitaiLoraModal("character", "factory")}
-                >
-                  {$_("krea_civitai_add_char_btn", {}, "+ Add Character from CivitAI")}
-                </button>
-              {/if}
+              <button
+                type="button"
+                class="civitai-add-inline-btn"
+                on:click={() => openCivitaiLoraModal("character", "factory")}
+              >
+                {$_("krea_civitai_add_char_btn", {}, "+ Add Character from CivitAI")}
+              </button>
             </div>
             <div class="archetype-grid visual-lora-grid">
               {#each aiArchetypes as arch}
@@ -9621,17 +9641,15 @@
                   </div>
                 </button>
               {/each}
-              {#if !canShowStudioTab || studioEngineMode === "sdxl"}
-                <button
-                  type="button"
-                  class="archetype-card add-civitai-factory-card"
-                  on:click={() => openCivitaiLoraModal("character", "factory")}
-                >
-                  <span class="add-plus-circle">+</span>
-                  <span class="arch-name">{$_("krea_civitai_add_card_title", {}, "Add from CivitAI")}</span>
-                  <span class="arch-hint">{$_("krea_civitai_add_card_hint", {}, "Browse SDXL character LoRAs")}</span>
-                </button>
-              {/if}
+              <button
+                type="button"
+                class="archetype-card add-civitai-factory-card"
+                on:click={() => openCivitaiLoraModal("character", "factory")}
+              >
+                <span class="add-plus-circle">+</span>
+                <span class="arch-name">{$_("krea_civitai_add_card_title", {}, "Add from CivitAI")}</span>
+                <span class="arch-hint">{currentBaseCategory === "anima" ? "Anima LoRAs" : (currentBaseCategory === "krea2" ? "Krea 2 LoRAs" : $_("krea_civitai_add_card_hint", {}, "Browse SDXL character LoRAs"))}</span>
+              </button>
             </div>
           </div>
 
@@ -9639,15 +9657,13 @@
             <div class="modal-field">
               <div class="factory-section-head">
                 <label style="margin: 0;">{$_("krea_persona_styles", {}, "Style / Concept LoRAs (optional):")}</label>
-                {#if !canShowStudioTab || studioEngineMode === "sdxl"}
-                  <button
-                    type="button"
-                    class="civitai-add-inline-btn"
-                    on:click={() => openCivitaiLoraModal("style", "factory")}
-                  >
-                    {$_("krea_civitai_add_style_short", {}, "+ Add Style from CivitAI")}
-                  </button>
-                {/if}
+                <button
+                  type="button"
+                  class="civitai-add-inline-btn"
+                  on:click={() => openCivitaiLoraModal("style", "factory")}
+                >
+                  {$_("krea_civitai_add_style_short", {}, "+ Add Style from CivitAI")}
+                </button>
               </div>
               <div class="persona-lora-chip-grid">
                 {#each aiStyles as st}
@@ -9738,7 +9754,27 @@
       <div class="persona-modal-card civitai-browser-modal" on:click|stopPropagation>
         <div class="modal-header">
           <div class="civitai-browser-head-left">
-            <h3>{$_("krea_civitai_modal_title", {}, "Add SDXL LoRA from CivitAI")}</h3>
+            <h3>{civitaiModalEcosystem === "sdxl" ? $_("krea_civitai_modal_title", {}, "Add SDXL LoRA from CivitAI") : `${civitaiModalEcoLabel} · CivitAI LoRA`}</h3>
+            {#if canShowStudioTab && studioEngineMode !== "sdxl"}
+              <div class="civitai-mode-pills">
+                <button
+                  type="button"
+                  class="civitai-mode-pill"
+                  class:active={civitaiModalEcosystem === "krea2"}
+                  on:click={() => switchCivitaiModalEcosystem("krea2")}
+                >
+                  Krea 2
+                </button>
+                <button
+                  type="button"
+                  class="civitai-mode-pill"
+                  class:active={civitaiModalEcosystem === "anima"}
+                  on:click={() => switchCivitaiModalEcosystem("anima")}
+                >
+                  Anima
+                </button>
+              </div>
+            {/if}
             <div class="civitai-mode-pills">
               <button
                 type="button"
@@ -9794,7 +9830,7 @@
           {#if isSearchingCivitaiLoras}
             <div class="civitai-browser-empty">
               <div class="spinner"></div>
-              <span>{$_("krea_civitai_searching", {}, "Searching SDXL-compatible CivitAI LoRAs...")}</span>
+              <span>{civitaiModalEcosystem === "sdxl" ? $_("krea_civitai_searching", {}, "Searching SDXL-compatible CivitAI LoRAs...") : `Searching ${civitaiModalEcoLabel} CivitAI LoRAs...`}</span>
             </div>
           {:else if civitaiSearchError}
             <div class="civitai-browser-empty">
@@ -9802,7 +9838,7 @@
             </div>
           {:else if civitaiSearchResults.length === 0}
             <div class="civitai-browser-empty">
-              <span>{$_("krea_civitai_empty", {}, "No matching SDXL LoRAs (under 400 MB) found. Try another keyword or paste a CivitAI link.")}</span>
+              <span>{civitaiModalEcosystem === "sdxl" ? $_("krea_civitai_empty", {}, "No matching SDXL LoRAs (under 400 MB) found. Try another keyword or paste a CivitAI link.") : `No matching ${civitaiModalEcoLabel} LoRAs found. Try another keyword or paste a CivitAI link.`}</span>
             </div>
           {:else}
             <div class="civitai-results-grid">

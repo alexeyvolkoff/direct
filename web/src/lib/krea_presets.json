@@ -3,7 +3,7 @@
     {
       "id": "none",
       "name": "Free",
-      "description": "No style modifiers or LoRAs — pure original prompt",
+      "description": "No style modifiers or LoRAs - pure original prompt",
       "icon": "✨",
       "filename": "",
       "url": "",
@@ -11,7 +11,8 @@
       "strength": 0.0,
       "models": [
         "all"
-      ]
+      ],
+      "image_url": ""
     },
     {
       "id": "photorealistic",
@@ -24,7 +25,8 @@
       "strength": 1.0,
       "models": [
         "krea2"
-      ]
+      ],
+      "image_url": ""
     },
     {
       "id": "semireal",
@@ -37,7 +39,12 @@
       "strength": 0.85,
       "models": [
         "krea2"
-      ]
+      ],
+      "civitai_version_id": "3206634",
+      "civitai_model_id": "2840681",
+      "civitai_name": "EIko - SemiReal [KREA 2]",
+      "base_model": "Krea 2",
+      "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/b02cad29-259d-4f07-aca4-159516e61669/width=256/139101068.jpeg"
     },
     {
       "id": "anime",
@@ -50,7 +57,12 @@
       "strength": 0.85,
       "models": [
         "krea2"
-      ]
+      ],
+      "civitai_version_id": "3395512",
+      "civitai_model_id": "2994089",
+      "civitai_name": "Krea 2 Classic Anime Styles",
+      "base_model": "Krea 2",
+      "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/8cdf71ed-0f89-490e-a3c9-1d5a297acb69/width=256/145193297.jpeg"
     },
     {
       "id": "pinup",
@@ -63,7 +75,12 @@
       "strength": 0.85,
       "models": [
         "krea2"
-      ]
+      ],
+      "civitai_version_id": "3124790",
+      "civitai_model_id": "2629410",
+      "civitai_name": "Technicolor Style | KREA 2 & ZIT",
+      "base_model": "Krea 2",
+      "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/c1939f90-e12d-4426-ae1a-735f776ce58c/width=256/136556532.jpeg"
     },
     {
       "id": "pixar",
@@ -76,12 +93,17 @@
       "strength": 0.85,
       "models": [
         "krea2"
-      ]
+      ],
+      "civitai_version_id": "3374517",
+      "civitai_model_id": "2977241",
+      "civitai_name": "Pure-Pixar 3D | KREA 2 |",
+      "base_model": "Krea 2",
+      "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/3bb1534a-28ef-4d87-a7dc-b6045e7a8870/width=256/144387423.jpeg"
     },
     {
       "id": "nix_comic",
       "name": "Nix Comic",
-      "description": "90s Disney + 2000s Marvel comic art — expressive anatomy & linework",
+      "description": "90s Disney + 2000s Marvel comic art - expressive anatomy & linework",
       "icon": "🦸",
       "filename": "krea2_nix_comic_v2.safetensors",
       "url": "https://civitai.com/api/download/models/3268616",
@@ -89,7 +111,12 @@
       "strength": 0.5,
       "models": [
         "krea2"
-      ]
+      ],
+      "civitai_version_id": "3268616",
+      "civitai_model_id": "2836231",
+      "civitai_name": "Nix Comic [Multiple Styles]",
+      "base_model": "Krea 2",
+      "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/2a07a4aa-893a-47a2-bddb-121abb6c4d07/width=256/147999900.jpeg"
     },
     {
       "id": "comic",
@@ -102,7 +129,12 @@
       "strength": 0.8,
       "models": [
         "krea2"
-      ]
+      ],
+      "civitai_version_id": "3081942",
+      "civitai_model_id": "2597963",
+      "civitai_name": "KreaComics",
+      "base_model": "Krea 2",
+      "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/ebc96b1f-f494-40db-ad01-3c5bce7e4fb5/width=256/135247068.jpeg"
     },
     {
       "id": "midjourney",
@@ -115,7 +147,12 @@
       "strength": 0.8,
       "models": [
         "krea2"
-      ]
+      ],
+      "civitai_version_id": "3095398",
+      "civitai_model_id": "2751419",
+      "civitai_name": "KREA_2_MIDJOURNEY",
+      "base_model": "Krea 2",
+      "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/2070a2f1-54c6-48e6-b295-269837a273ce/width=256/135645476.jpeg"
     },
     {
       "id": "colored_pencil",
@@ -128,7 +165,12 @@
       "strength": 0.85,
       "models": [
         "anima"
-      ]
+      ],
+      "civitai_version_id": "3033029",
+      "civitai_model_id": "1155749",
+      "civitai_name": "Hyperdetailed Colored Pencil",
+      "base_model": "Anima",
+      "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/543539d2-fe8d-4941-bdc9-37f382f307e5/width=256/133772659.jpeg"
     },
     {
       "id": "arcane_violet",
@@ -141,7 +183,12 @@
       "strength": 0.85,
       "models": [
         "anima"
-      ]
+      ],
+      "civitai_version_id": "2965085",
+      "civitai_model_id": "2183167",
+      "civitai_name": "Arcane Violet | Style Lora",
+      "base_model": "Anima",
+      "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/35414722-74f1-4aeb-a4df-40683bfdee40/width=256/131402200.jpeg"
     },
     {
       "id": "niji_sweet",
@@ -154,7 +201,12 @@
       "strength": 0.85,
       "models": [
         "anima"
-      ]
+      ],
+      "civitai_version_id": "3256481",
+      "civitai_model_id": "2554999",
+      "civitai_name": "Niji Sweet Spot",
+      "base_model": "Anima",
+      "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/1e2beabf-054e-48f1-9209-67c5b6d4710c/width=256/140527220.jpeg"
     },
     {
       "id": "niji_semireal",
@@ -167,7 +219,12 @@
       "strength": 0.85,
       "models": [
         "anima"
-      ]
+      ],
+      "civitai_version_id": "3066467",
+      "civitai_model_id": "534506",
+      "civitai_name": "Niji semi realism",
+      "base_model": "Anima",
+      "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/318bf62b-fb35-473a-8d7a-a9d57f27530b/width=256/134790566.jpeg"
     },
     {
       "id": "ri_mix",
@@ -180,7 +237,12 @@
       "strength": 0.85,
       "models": [
         "anima"
-      ]
+      ],
+      "civitai_version_id": "3011920",
+      "civitai_model_id": "996220",
+      "civitai_name": "Ri-mix - Style LORA [ Illustrious + Anima + Krea 2 Turbo]",
+      "base_model": "Anima",
+      "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/79cbaab5-ce1b-4607-941e-7151e1f04880/width=256/133089681.jpeg"
     },
     {
       "id": "dramatic_lighting",
@@ -193,7 +255,12 @@
       "strength": 0.7,
       "models": [
         "anima"
-      ]
+      ],
+      "civitai_version_id": "3126711",
+      "civitai_model_id": "661736",
+      "civitai_name": "S1 Dramatic Lighting",
+      "base_model": "Anima",
+      "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/73e333c1-5911-4f39-a5ae-f01e21504753/width=256/136618912.jpeg"
     },
     {
       "id": "wadustyle",
@@ -206,7 +273,12 @@
       "strength": 0.45,
       "models": [
         "anima"
-      ]
+      ],
+      "civitai_version_id": "3257517",
+      "civitai_model_id": "1019079",
+      "civitai_name": "WaduStyle",
+      "base_model": "Anima",
+      "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/afd82da8-9304-448b-bf30-b639fd711ca9/width=256/140552372.jpeg"
     },
     {
       "id": "anime_in_real",
@@ -219,7 +291,12 @@
       "strength": 0.85,
       "models": [
         "anima"
-      ]
+      ],
+      "civitai_version_id": "3202009",
+      "civitai_model_id": "1979448",
+      "civitai_name": "Anime in real",
+      "base_model": "Anima",
+      "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/3afa0d4d-ff86-4813-b37e-b50870c9a4e5/width=256/138916848.jpeg"
     },
     {
       "id": "gothic_neon",
@@ -232,7 +309,12 @@
       "strength": 0.85,
       "models": [
         "anima"
-      ]
+      ],
+      "civitai_version_id": "3022620",
+      "civitai_model_id": "888231",
+      "civitai_name": "Vixon's Anima/Pony Styles - Gothic Neon",
+      "base_model": "Anima",
+      "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/1065b07e-10e9-4407-933c-abb0bfda4563/width=256/133444534.jpeg"
     },
     {
       "id": "cinematic",
@@ -245,7 +327,8 @@
       "strength": 1.0,
       "models": [
         "all"
-      ]
+      ],
+      "image_url": ""
     },
     {
       "id": "neon",
@@ -258,7 +341,8 @@
       "strength": 1.0,
       "models": [
         "all"
-      ]
+      ],
+      "image_url": ""
     }
   ],
   "archetypes": [
@@ -273,7 +357,12 @@
       "strength": 0.8,
       "models": [
         "krea2"
-      ]
+      ],
+      "civitai_version_id": "3194285",
+      "civitai_model_id": "2795348",
+      "civitai_name": "DomiK4",
+      "base_model": "Krea 2",
+      "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/de8a1d6a-07c8-45e2-b62c-b454ff54c01b/width=256/138638466.jpeg"
     },
     {
       "id": "ada",
@@ -286,7 +375,12 @@
       "strength": 0.8,
       "models": [
         "krea2"
-      ]
+      ],
+      "civitai_version_id": "3345019",
+      "civitai_model_id": "2953261",
+      "civitai_name": "Ada Wong - Krea 2 RAW",
+      "base_model": "Krea 2",
+      "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/db1c3cf5-accf-476c-85f6-123b1b223b34/width=256/143385559.jpeg"
     },
     {
       "id": "brie",
@@ -299,7 +393,12 @@
       "strength": 0.8,
       "models": [
         "krea2"
-      ]
+      ],
+      "civitai_version_id": "3402541",
+      "civitai_model_id": "2997586",
+      "civitai_name": "Brie - Accidentally Sexy Blonde",
+      "base_model": "Krea 2",
+      "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/d75958d5-8b63-4d29-b8ed-1d2aa0435133/width=256/145529729.jpeg"
     },
     {
       "id": "tifa",
@@ -312,7 +411,12 @@
       "strength": 0.8,
       "models": [
         "krea2"
-      ]
+      ],
+      "civitai_version_id": "3095366",
+      "civitai_model_id": "2751382",
+      "civitai_name": "Tifa Lockhart [Krea2] - Improved Likeness",
+      "base_model": "Krea 2",
+      "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/92bcfee3-3900-4e96-911f-7fc3fee5acc4/width=256/135648297.jpeg"
     },
     {
       "id": "alt",
@@ -325,7 +429,12 @@
       "strength": 0.75,
       "models": [
         "krea2"
-      ]
+      ],
+      "civitai_version_id": "3357162",
+      "civitai_model_id": "2757812",
+      "civitai_name": "[BSS] - AJlbTyIIIKu (Alt Girls for Krea2)",
+      "base_model": "Krea 2",
+      "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/f0c23f48-0fbe-4f36-8bf8-73309d68521a/width=256/143788356.jpeg"
     },
     {
       "id": "influencer",
@@ -338,7 +447,12 @@
       "strength": 0.7,
       "models": [
         "krea2"
-      ]
+      ],
+      "civitai_version_id": "3248281",
+      "civitai_model_id": "2088956",
+      "civitai_name": "Famegrid (Krea 2 / Z-Image / Qwen) - Realism LoRA",
+      "base_model": "Krea 2",
+      "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/1bf06e21-f258-48da-a2ef-fd0b1e3e93e0/width=256/140260381.jpeg"
     },
     {
       "id": "luna",
@@ -351,7 +465,12 @@
       "strength": 0.8,
       "models": [
         "krea2"
-      ]
+      ],
+      "civitai_version_id": "3382906",
+      "civitai_model_id": "2983946",
+      "civitai_name": "Luna : Secret Crush",
+      "base_model": "Krea 2",
+      "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/f98d585a-38e8-4af8-ad1f-bf82550b1cc7/width=256/144650643.jpeg"
     },
     {
       "id": "nix_comic_lora",
@@ -364,7 +483,12 @@
       "strength": 0.5,
       "models": [
         "krea2"
-      ]
+      ],
+      "civitai_version_id": "3268616",
+      "civitai_model_id": "2836231",
+      "civitai_name": "Nix Comic [Multiple Styles]",
+      "base_model": "Krea 2",
+      "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/2a07a4aa-893a-47a2-bddb-121abb6c4d07/width=256/147999900.jpeg"
     },
     {
       "id": "maddie",
@@ -377,7 +501,12 @@
       "strength": 0.4,
       "models": [
         "krea2"
-      ]
+      ],
+      "civitai_version_id": "3312963",
+      "civitai_model_id": "3029514",
+      "civitai_name": "Girly-Next-Door Beauties - Maddie",
+      "base_model": "Krea 2",
+      "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/8bdb6b61-3d81-494d-b752-e2cf471dcca6/width=256/142349396.jpeg"
     },
     {
       "id": "kate",
@@ -390,12 +519,17 @@
       "strength": 0.8,
       "models": [
         "krea2"
-      ]
+      ],
+      "civitai_version_id": "3426749",
+      "civitai_model_id": "3018360",
+      "civitai_name": "Kate/Krea2",
+      "base_model": "Krea 2",
+      "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/780a9ee8-b682-421a-905a-219273a25c16/width=256/149215544.jpeg"
     },
     {
       "id": "frieren",
       "name": "Frieren",
-      "description": "Frieren from Sousou no Frieren — elven mage with green eyes",
+      "description": "Frieren from Sousou no Frieren - elven mage with green eyes",
       "icon": "🧝‍♀️",
       "filename": "frieren-s1-anima-lora-nochekaiser.safetensors",
       "url": "https://civitai.com/api/download/models/2983407",
@@ -403,7 +537,12 @@
       "strength": 0.85,
       "models": [
         "anima"
-      ]
+      ],
+      "civitai_version_id": "2983407",
+      "civitai_model_id": "2656922",
+      "civitai_name": "Frieren (フリーレン) - Frieren: Beyond Journey's End (葬送のフリーレン)",
+      "base_model": "Anima",
+      "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/6b774539-b5a1-4be2-be2b-1c22398cc37f/width=256/132063272.jpeg"
     },
     {
       "id": "2b",
@@ -416,7 +555,12 @@
       "strength": 0.85,
       "models": [
         "anima"
-      ]
+      ],
+      "civitai_version_id": "3198999",
+      "civitai_model_id": "1045141",
+      "civitai_name": "2B (YoRHa 2-gou B-gata) - [NieR - Automata Ver1.1a] - Commission",
+      "base_model": "Anima",
+      "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/06efd420-9c0b-4c81-8c93-a680692e1e8f/width=256/138774766.jpeg"
     },
     {
       "id": "makima",
@@ -429,7 +573,12 @@
       "strength": 0.85,
       "models": [
         "anima"
-      ]
+      ],
+      "civitai_version_id": "2980149",
+      "civitai_model_id": "46187",
+      "civitai_name": "Chainsaw Man | Makima (Anima - Chroma - Illustrious - sd1.5)",
+      "base_model": "Anima",
+      "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/fcb7edd0-9f72-4619-9aa3-1c233bf95c64/width=256/131939452.jpeg"
     },
     {
       "id": "lucy",
@@ -442,7 +591,12 @@
       "strength": 0.85,
       "models": [
         "anima"
-      ]
+      ],
+      "civitai_version_id": "3225815",
+      "civitai_model_id": "1154116",
+      "civitai_name": "Lucy from Cyberpunk: Edgerunners [IllustriousXL]",
+      "base_model": "Anima",
+      "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/0ba6d44e-c712-4ddc-b986-971b52523d9d/width=256/139621943.jpeg"
     },
     {
       "id": "asuka",
@@ -455,7 +609,12 @@
       "strength": 0.85,
       "models": [
         "anima"
-      ]
+      ],
+      "civitai_version_id": "3027649",
+      "civitai_model_id": "176811",
+      "civitai_name": "Asuka Langley Soryu - Neon Genesis Evangelion [Commission] - Anima Update",
+      "base_model": "Anima",
+      "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/b91c9a31-10a7-4a7f-a4a1-5f7d94d0fba9/width=256/133598786.jpeg"
     }
   ]
 }

@@ -5285,6 +5285,71 @@ async def generate_krea_video_endpoint(request: Request, data: KreaVideoGenerate
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class CivitaiLoraSearchInput(BaseModel):
+    mode: str = "character"
+    q: str = ""
+    sort: str = "Most Downloaded"
+    limit: int = 24
+    ecosystem: str = "sdxl"
+    omd_key: Optional[str] = None
+    mcp_keys: Optional[dict] = None
+    settings: Optional[dict] = None
+
+
+async def _run_civitai_lora_search(
+    request: Request,
+    mode: str,
+    q: str,
+    sort: str,
+    limit: int,
+    ecosystem: str,
+    omd_key: str | None,
+    mcp_keys: dict | None = None,
+    settings: dict | None = None,
+) -> dict:
+    ctx = get_ctx(omd_key)
+    ctx.private_mode = trusted_private_access(request, ctx)
+    ctx.trusted_owner = trusted_owner_access(request)
+    if isinstance(settings, dict):
+        ctx.settings.update({k: v for k, v in settings.items() if v is not None})
+    req_settings_mcp = settings.get("mcp_keys") if isinstance(settings, dict) else None
+    ctx.mcp_keys = mcp_keys or req_settings_mcp or (ctx.settings.get("mcp_keys") if isinstance(ctx.settings, dict) else None) or getattr(ctx, "mcp_keys", None) or {}
+
+    is_owner = bool(ctx.private_mode or ctx.trusted_owner)
+    allow_nsfw = is_owner
+    norm_eco = str(ecosystem or "sdxl").strip().lower()
+    if norm_eco not in ("sdxl",):
+        try:
+            st = await core_service.check_krea_status(ctx)
+            if isinstance(st, dict):
+                if not st.get("krea_allowed"):
+                    norm_eco = "sdxl"
+                if st.get("uncensored"):
+                    allow_nsfw = True
+        except Exception:
+            if not is_owner:
+                norm_eco = "sdxl"
+    else:
+        try:
+            st = await core_service.check_krea_status(ctx)
+            if isinstance(st, dict) and st.get("uncensored"):
+                allow_nsfw = True
+        except Exception:
+            pass
+
+    civitai_token = core_service._resolve_civitai_token(ctx)
+    items = await core_service.horde_image_mapper.search_civitai_loras(
+        mode=mode,
+        query=q,
+        sort=sort,
+        limit=limit,
+        allow_nsfw=allow_nsfw,
+        ecosystem=norm_eco,
+        civitai_token=civitai_token,
+    )
+    return {"items": items, "mode": mode, "ecosystem": norm_eco}
+
+
 @app.get("/horde/civitai/loras")
 async def search_horde_civitai_loras_endpoint(
     request: Request,
@@ -5292,21 +5357,32 @@ async def search_horde_civitai_loras_endpoint(
     q: str = "",
     sort: str = "Most Downloaded",
     limit: int = 24,
+    ecosystem: str = "sdxl",
     omd_key: str | None = Depends(get_omd_key),
 ):
-    """Searches SDXL-compatible (<= 400 MB) CivitAI LoRAs for AI Horde (`reGen`) in 'character' or 'style' mode."""
-    ctx = get_ctx(omd_key)
-    ctx.private_mode = trusted_private_access(request, ctx)
-    ctx.trusted_owner = trusted_owner_access(request)
-    is_owner = bool(ctx.private_mode or ctx.trusted_owner)
-    items = await core_service.horde_image_mapper.search_civitai_loras(
-        mode=mode,
-        query=q,
-        sort=sort,
-        limit=limit,
-        allow_nsfw=is_owner,
+    """Searches SDXL / Krea 2 / Anima compatible CivitAI LoRAs in 'character' or 'style' mode."""
+    return await _run_civitai_lora_search(request, mode, q, sort, limit, ecosystem, omd_key)
+
+
+@app.post("/horde/civitai/loras")
+async def search_horde_civitai_loras_post_endpoint(
+    request: Request,
+    data: CivitaiLoraSearchInput,
+    header_omd_key: str | None = Depends(get_omd_key),
+):
+    """POST variant accepting E2EE `mcp_keys` in JSON body so user's CivitAI API key authenticates searches."""
+    eff_key = data.omd_key or header_omd_key
+    return await _run_civitai_lora_search(
+        request=request,
+        mode=data.mode,
+        q=data.q,
+        sort=data.sort,
+        limit=data.limit,
+        ecosystem=data.ecosystem,
+        omd_key=eff_key,
+        mcp_keys=data.mcp_keys,
+        settings=data.settings,
     )
-    return {"items": items, "mode": mode}
 
 
 @app.post("/personas/generate")
@@ -5507,28 +5583,49 @@ async def generate_persona_endpoint(request: Request, data: PersonaGenerateInput
     )
     render_preset_out = None
 
-    # Рендерим портрет через Krea 2 (только для владельца/подписчиков на Studio-типажах) или SDXL / AI Horde
+    # Рендерим портрет через Krea 2 / Anima (для владельца/подписчиков на Studio-типажах) или SDXL
     b64_str = ""
     try:
-        is_sdxl_arch = is_custom_civitai_arch or (
-            arch_key in krea_archetypes and "sdxl" in (krea_archetypes[arch_key].get("models") or [])
+        c_arch_models = (custom_arch_map.get(arch_key) or {}).get("models") or []
+        is_krea_or_anima_custom = is_custom_civitai_arch and any(m in c_arch_models for m in ("krea2", "anima"))
+        is_sdxl_arch = (
+            (is_custom_civitai_arch and not is_krea_or_anima_custom)
+            or (arch_key in krea_archetypes and "sdxl" in (krea_archetypes[arch_key].get("models") or []))
         )
         can_use_krea = allow_krea and await core_service.is_krea_available(ctx) and not is_sdxl_arch
         if can_use_krea:
+            is_anima_arch = (
+                "anima" in c_arch_models
+                or (arch_key in krea_archetypes and "anima" in (krea_archetypes[arch_key].get("models") or []))
+                or str(data.base_model or "").lower() == "anima"
+            )
+            eff_studio_base = "anima" if is_anima_arch else (
+                data.base_model if str(data.base_model or "").lower() in ("realism", "semi_realism") else "realism"
+            )
+            render_preset_out = {
+                "enabled": True,
+                "base_model": eff_studio_base,
+                "archetypes": [arch_val] if arch_val else [],
+                "styles": selected_styles,
+                "custom_loras": custom_loras_list,
+                "use_face_ref": False,
+            }
             res = await core_service.generate_krea2_image(
                 ctx=ctx,
                 prompt="close-up headshot portrait, looking directly at camera, soft studio rim light, natural skin detail",
                 persona_prompt=passport,
                 sliders={
+                    "base_model": eff_studio_base,
                     "style": style,
                     "styles": selected_styles,
                     "archetypes": [arch_val] if arch_val else [],
+                    "custom_loras": custom_loras_list,
                     "detail": 0.5,
                 },
                 width=896,
                 height=1152,
-                steps=10,
-                cfg=1.0,
+                steps=25 if is_anima_arch else 12,
+                cfg=3.0 if is_anima_arch else 1.5,
                 upload_storage=False
             )
             img_data = res[3]
