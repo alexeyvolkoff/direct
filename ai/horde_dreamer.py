@@ -8,9 +8,8 @@ Features:
      `karras`/`scheduler`, and `clip_skip`) when local ComfyUI queue is idle.
    - Strict `AI-Horde-image-model-reference` SHA256 & byte-size verification for all
      advertised checkpoints (with zero cross-model fallback).
-   - Optional daily-capped Modal Krea 2 (`Krea2-Turbo_fp8`) generation when reference
-     weights (`qwen_image_fp8_e4m3fn.safetensors` / `qwen3vl_4b_fp8_scaled.safetensors` /
-     `qwen_image_vae.safetensors`) are verified.
+   - Live telemetry & Maintenance Mode management for dedicated `horde-worker-reGen`
+     runners paired with the cooperative `:8188` ComfyUI bridge (`regen_comfy_bridge`).
 2. AI Horde Image Generation Client (`horde_generate_image`) & `ai_mode` normalization hook.
 3. Owner-only management console at `/horde` and JSON endpoints under `/horde/api/*`
    and `/assistant/horde_worker`.
@@ -3286,7 +3285,9 @@ HORDE_CONSOLE_HTML = """<!DOCTYPE html>
     color-scheme: dark;
     --bg: #0d1117;
     --card: #161b22;
+    --btn-bg: #21262d;
     --border: #30363d;
+    --row-border: rgba(48,54,61,0.6);
     --text: #e6edf3;
     --muted: #8b949e;
     --accent: #58a6ff;
@@ -3297,9 +3298,26 @@ HORDE_CONSOLE_HTML = """<!DOCTYPE html>
     --scrollbar-thumb-hover: #525f72;
     --scrollbar-track: transparent;
   }
+  @media (prefers-color-scheme: light) {
+    :root:not(.dark) {
+      color-scheme: light;
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --btn-bg: #f1f5f9;
+      --border: #e2e8f0;
+      --row-border: #f1f5f9;
+      --text: #0f172a;
+      --muted: #64748b;
+      --accent: #2563eb;
+      --green: #16a34a;
+      --yellow: #ca8a04;
+      --red: #dc2626;
+      --scrollbar-thumb: #cbd5e1;
+      --scrollbar-thumb-hover: #94a3b8;
+    }
+  }
   html {
     background: var(--bg);
-    color-scheme: dark;
     scrollbar-width: thin;
     scrollbar-color: var(--scrollbar-thumb) var(--bg);
   }
@@ -3322,7 +3340,7 @@ HORDE_CONSOLE_HTML = """<!DOCTYPE html>
   h1 { margin: 0; font-size: 21px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .badge {
     font-size: 12px; padding: 4px 10px; border-radius: 999px; font-weight: 600;
-    background: #21262d; border: 1px solid var(--border);
+    background: var(--btn-bg); border: 1px solid var(--border);
   }
   .badge.ok { color: var(--green); border-color: rgba(63,185,80,0.4); }
   .badge.warn { color: var(--yellow); border-color: rgba(210,153,34,0.4); }
@@ -3342,13 +3360,13 @@ HORDE_CONSOLE_HTML = """<!DOCTYPE html>
   @media (max-width: 820px) { .row { grid-template-columns: 1fr; } }
   h2 { margin: 0 0 12px 0; font-size: 15.5px; }
   .kv-list { display: flex; flex-direction: column; gap: 9px; font-size: 13.5px; }
-  .kv-row { display: flex; justify-content: space-between; gap: 12px; padding-bottom: 8px; border-bottom: 1px solid rgba(48,54,61,0.6); }
+  .kv-row { display: flex; justify-content: space-between; gap: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--row-border); }
   .kv-row:last-child { border-bottom: none; padding-bottom: 0; }
   .kv-key { color: var(--muted); }
   .kv-val { font-weight: 600; text-align: right; }
   .btns { display: flex; gap: 10px; flex-wrap: wrap; }
   button {
-    cursor: pointer; border: 1px solid var(--border); background: #21262d;
+    cursor: pointer; border: 1px solid var(--border); background: var(--btn-bg);
     color: var(--text); padding: 8px 14px; border-radius: 6px; font-size: 13px; font-weight: 600;
   }
   button.primary { background: #238636; border-color: rgba(240,246,252,0.1); color: #fff; }
@@ -3428,7 +3446,7 @@ HORDE_CONSOLE_HTML = """<!DOCTYPE html>
           <span class="kv-val mono" id="kvWorkerId">-</span>
         </div>
         <div class="kv-row">
-          <span class="kv-key">Systemd Service (`horde-regen`)</span>
+          <span class="kv-key">Systemd Service (<code>horde-regen</code>)</span>
           <span class="kv-val" id="kvSystemd">-</span>
         </div>
         <div class="kv-row">
@@ -3457,7 +3475,7 @@ HORDE_CONSOLE_HTML = """<!DOCTYPE html>
   </div>
 
   <div class="card">
-    <h2>Live `horde-regen` Telemetry</h2>
+    <h2>Live <code>horde-regen</code> Telemetry</h2>
     <div class="table-wrap">
       <table>
         <thead>

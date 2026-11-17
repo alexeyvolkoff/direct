@@ -24,8 +24,8 @@ Turn your storage into an intelligent, privacy-preserving workspace powered by *
 * **[Semantic Search](/searchnode/)**: Search documents, photos, and people by meaning across 50+ languages using the unified multimodal vector index.
 * **[Storage as Knowledge (RAG)](/rag/)**: Browse multimodal **Memory Cards** right from the sidebar, find specific people and photos with on-device facial & vision recognition, and chat with your private documents.
 * **[Agentic Loop & MCP](/mcp/)**: Automate multi-step tasks and Office document creation (`WordCraft`, `GridCraft`, `DeckCraft`) in chat or connect external MCP agents.
-* **[Image Generation (Creations)](/creations/)** *(Optional)*: Render artworks in **Creations** (`Express`, `Studio`, and `Video`) via local or P2P-tunneled **ComfyUI**.
-* **[AI Horde & Dreamer Worker](/horde/)**: Tap into crowdsourced **AI Horde** (`aihorde.net`) 70B–123B creative models and turn your idle local **ComfyUI** GPU into a 24/7 **Dreamer Worker** (`/horde`) to earn Kudos automatically.
+* **[Image Generation (Creations)](/creations/)** *(Optional)*: Render artworks in **Creations** (`Express` SDXL + DMD2, CivitAI LoRAs, one-shot face/reference conditioning, plus optional cloud `Studio` & `Video`) via local or P2P-tunneled **ComfyUI**.
+* **[AI Horde & Worker Bridge](/horde/)**: Tap into crowdsourced **AI Horde** (`aihorde.net`) 70B-123B creative models and contribute idle GPU cycles via the built-in **SDXL Dreamer Worker** or cooperative **`horde-worker-reGen` ComfyUI Bridge** (`/horde`).
 * **[Terminal & Coding](/coding/)**: Access your nodes via the in-browser P2P SSH terminal and run any autonomous TUI coding harness (**OpenCode**, **Claude Code**, **Codex**, **Aider**, **Hermes**) or connect desktop IDEs via `omd-tunnel` and **MCP**.
 * **[P2P App Proxy](/apps/)**: Launch any localhost web application (`127.0.0.1:<port>` — **ComfyUI**, **GenVault**, **Memos**, **DocuSeal**, **Gitea**, **Home Assistant**, and more) directly inside **Disk Direct** over encrypted WebRTC DataChannels with zero open firewall ports.
 

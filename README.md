@@ -33,8 +33,8 @@
        │ & sync   │ & ICE negotiation                    │ (LinkMessage)              ┌──────────────────────────┐
        ▼          └───────────────┬──────────────────────┘                            │ Local Compute & Horde    │
   ┌─────────────────────────┐  ┌──┴─────────────────────────┐                         │ • Ollama / RKLLAMA (LLM) │
-  │ services/gun-hub        │  │ core/Gateway.pro           │                         │ • ComfyUI (SDXL / Krea2) │
-  │ GunDB DID relay, chats, │  │ Signaling coordinator &    │                         │ • AI Horde Dreamer       │
+  │ services/gun-hub        │  │ core/Gateway.pro           │                         │ • ComfyUI (SDXL + DMD2)  │
+  │ GunDB DID relay, chats, │  │ Signaling coordinator &    │                         │ • AI Horde Worker/Bridge │
   │ device cert authority   │  │ TURN fallback (coturn)     │                         └──────────────────────────┘
   └─────────────────────────┘  └────────────────────────────┘
 ```

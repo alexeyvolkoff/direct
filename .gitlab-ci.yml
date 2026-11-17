@@ -319,6 +319,19 @@ deploy_onmychat:
   tags:
     - linux
 
+deploy_docs:
+  stage: deploy
+  dependencies: []
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - docs/site/**/*
+  script:
+    - ssh -p 30333 -o StrictHostKeyChecking=no $DEPLOY_USER@disk.direct "mkdir -p /root/direct/docs/site"
+    - rsync -avzc -e "ssh -p 30333 -o StrictHostKeyChecking=no" --exclude '_site' --exclude '.jekyll-cache' --exclude 'Gemfile.lock' --delete docs/site/ $DEPLOY_USER@disk.direct:/root/direct/docs/site/
+  tags:
+    - linux
+
 deploy_github:
   stage: deploy
   only:

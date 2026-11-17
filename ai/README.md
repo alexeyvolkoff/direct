@@ -16,9 +16,9 @@
 - **Private Multilingual RAG & Photo Indexing** — Indexes local documents (`PDF`, `DOCX`, `XLSX`, `PPTX`, `MD`, code) and photos directly from your folders using ChromaDB and CPU-friendly `paraphrase-multilingual-MiniLM-L12-v2` embeddings. Bare photos are automatically captioned and OCR-indexed via Ollama vision models (e.g. `gemma4`) without uploading files to third-party clouds.
 - **Mobile & PWA Remote Access (Zero Port Forwarding)** — Connect to your home Ollama node from any phone or browser at [**aiassistant.direct**](https://aiassistant.direct) or [**disk.direct**](https://disk.direct) over encrypted P2P WebRTC DataChannels. No static IP, router setup, or VPN required.
 - **Passwordless Cryptographic Identity (DID)** — Access control is based on W3C-style Decentralized Identifiers (`DID` keypairs with portable `.json` keyfiles) and P2P device pairing (`LinkID` / QR) — **no static API tokens in `config.ini`**.
-- **Creative Studio & Prompt Assistant** — Includes an Ollama-powered **AI Art Director** that writes and surgically refines visual prompts, plans multi-scene storyboards, manages character Personas, and drives local **ComfyUI** pipelines (SDXL DMD2, IP-Adapter Plus Face + ReActor FaceSwap, Auto-Inpaint retouch, Krea 2, Anima, video generation, and 1-click CivitAI publishing).
-- **Flexible Runtime Modes (`local` · `agentic` · `hybrid` · `horde`)** — Run everything on a single GPU box (`local`), keep lightweight CPU indexing on an always-on NAS/SBC while tunneling Ollama & ComfyUI over P2P to a desktop GPU (`agentic`), tap into the crowdsourced [**AI Horde**](https://aihorde.net) cluster (`horde` / `hybrid`), or run on Rockchip RK3588/RK3576 NPUs via `RKLLAMA`.
-- **Built-in AI Horde Client & ComfyUI Dreamer Worker (`/horde`)** — Includes both an **AI Horde text & image generation client** (`horde_client.py`, `horde_dreamer.py`) and an idle-aware **AI Horde Image Worker ("Dreamer")** with a live management console at `http://localhost:4000/horde` that contributes idle ComfyUI GPU cycles (`SDXL` / `Krea 2`) to the Horde and earns Kudos automatically.
+- **Creative Studio & Prompt Assistant** - Includes an Ollama-powered **AI Art Director** that writes and surgically refines visual prompts, plans multi-scene storyboards, manages character Personas, browses and caches **CivitAI LoRAs** (with personal `mcp_keys` CivitAI API token support), and drives local **ComfyUI** pipelines (8-step SDXL + DMD2, IP-Adapter Plus Face + ReActor FaceSwap, Impact Auto-Inpaint retouch, plus optional serverless cloud `Krea 2` / `Anima` & video generation).
+- **Flexible Runtime Modes (`local` · `agentic` · `hybrid` · `horde`)** - Run everything on a single GPU box (`local`), keep lightweight CPU indexing on an always-on NAS/SBC while tunneling Ollama & ComfyUI over P2P to a desktop GPU (`agentic`), tap into the crowdsourced [**AI Horde**](https://aihorde.net) cluster (`horde` / `hybrid`), or run on Rockchip RK3588/RK3576 NPUs via `RKLLAMA`.
+- **Built-in AI Horde Client, SDXL Dreamer Worker & `reGen` Bridge (`/horde`)** - Includes an **AI Horde text & image client** (`horde_client.py`, `horde_image_mapper.py`), a built-in idle-aware **SDXL Dreamer Worker** (`horde_dreamer.py`) for standalone ComfyUI, and a zero-copy **Cooperative ComfyUI Bridge** (`regen_comfy_bridge/`) for sharing a single GPU with `horde-worker-reGen` - all monitored from the owner console at `http://localhost:4000/horde`.
 - **MCP Tools, Voice & Push Notifications** — Native Model Context Protocol (`MCP`) server & client integrations, WordCraft / GridCraft / DeckCraft document tools, local neural TTS (`Kokoro-82M`), and Web/mobile push notifications when background tasks or renders complete.
 
 ---
@@ -157,26 +157,30 @@ COMFY_INPUT_DIR = /opt/ComfyUI/input
 
 If you run the AI node on a low-power always-on NAS or mini-PC without a discrete GPU, set `AI_PROVIDER = agentic` (or switch to **Agentic** directly in the web UI under **Settings → AI Assistant**). Knowledge indexing and ChromaDB stay local on CPU, while Ollama and ComfyUI calls are transparently tunneled over Disk Direct P2P to a paired desktop GPU node (`agentic_tunnel.py`).
 
-### AI Horde Client & Built-in ComfyUI Dreamer Worker (`/horde`)
+### AI Horde Client, SDXL Dreamer Worker & Cooperative `reGen` Bridge (`/horde`)
 
-**AI Assistant Direct** integrates natively with [**AI Horde**](https://aihorde.net) both as a **Client** (`horde_client.py`, `horde_dreamer.py`) and as an **Idle-Aware ComfyUI Image Worker ("Dreamer")**:
+**AI Assistant Direct** integrates natively with [**AI Horde**](https://aihorde.net) both as a **Client** (`horde_client.py`, `horde_image_mapper.py`, `horde_dreamer.py`) and as an **AI Horde Image Worker**:
 
 - **Dual Work & Fun (Roleplay) Modes (`AI_PROVIDER = hybrid` / `horde`):**
-  - **Work Mode:** Serious private productivity — local multilingual RAG over your documents (`PDF`, `DOCX`, `XLSX`, `PPTX`, `MD`, code), semantic search, and MCP tools powered by your local Ollama model.
-  - **Fun / RP Mode:** Switch seamlessly to crowdsourced **AI Horde** 70B–123B roleplay models (or local models) with **1-click SillyTavern Character Card (`.png` / `.json`) import**, custom Personas, appearance & avatar generation, and neural voice (`Kokoro-82M`).
-- **Built-in Dreamer Worker (`HORDE_WORKER_ENABLED = true`):** Contribute your idle local ComfyUI GPU cycles (`hordelib`-compatible SDXL text-to-image pipeline honoring the requester's `steps`, `cfg_scale`, `sampler_name`, `karras`/`scheduler`, and `clip_skip`, plus optional daily-capped `Krea 2`) to AI Horde and earn Kudos automatically whenever your local ComfyUI queue is empty. Manage models, quotas, and live telemetry in the built-in web console at `http://localhost:4000/horde` (or via the **AI Horde** Node App inside **Disk Direct**).
-- **Mandatory `horde-safety` (NSFW & CSAM) Scanning & Maintenance Compliance:** Every generated image is scanned via [`horde-safety`](https://github.com/Haidra-Org/horde-safety) (`NSFWChecker` with `CLIP ViT-L/14` + `DeepDanbooru`) before R2 upload and `/v2/generate/submit` (fail-closed if `horde_safety` is unavailable, replacing flagged CSAM/SFW-censored images with official AI Horde censor placeholders and reporting `state: "csam"` / `"censored"` and `gen_metadata`). If the worker is placed into **Maintenance Mode** on AI Horde, it automatically pauses polling and never auto-clears the maintenance flag.
+  - **Work Mode:** Private productivity - local multilingual RAG over your documents (`PDF`, `DOCX`, `XLSX`, `PPTX`, `MD`, code), semantic search, and MCP tools powered by your local Ollama model.
+  - **Fun / RP & Studio Fallback:** Switch seamlessly to crowdsourced **AI Horde** 70B-123B roleplay models and SDXL image generation (with automatic CivitAI LoRA mapping, configurable daily Kudos budgets, **1-click SillyTavern Character Card (`.png` / `.json`) import**, custom Personas, and neural voice via `Kokoro-82M`).
+- **Standard Setup - Built-in SDXL Dreamer Worker (`HORDE_WORKER_ENABLED = true`):** Connects to a classic standalone **ComfyUI** (`127.0.0.1:8188`), verifies exact `AI-Horde-image-model-reference` SHA256 digests (`CyberRealistic Pony`, `Pony Realism`, `AlbedoBase XL (SDXL)`, `SDXL 1.0`, `WAI-NSFW-illustrious-SDXL`), and renders single-image SDXL jobs in RAM via `SaveImageWebsocket` whenever your local ComfyUI queue is idle.
+- **Advanced Single-GPU Setup - `horde-worker-reGen` + `regen_comfy_bridge`:** Operators running dedicated `horde-worker-reGen` (`SDXL`, `Pony`, `Flux.1-Schnell`, LoRAs, ControlNet) can prepend `PYTHONPATH=/opt/direct/ai/regen_comfy_bridge` to expose `hordelib`'s embedded ComfyUI on `127.0.0.1:8188` and run Direct Creative Studio (`flow.json` SDXL + DMD2, CivitAI LoRAs, IP-Adapter + ReActor + Impact Auto-Inpaint) cooperatively on the same CUDA context, plus access the live ComfyUI web UI via the **ComfyUI** P2P Node App.
+- **Mandatory `horde-safety` Scanning & Owner `/horde` Console:** Every built-in worker output is scanned via [`horde-safety`](https://github.com/Haidra-Org/horde-safety) (`NSFWChecker`) with zero prompt/image disk retention and automatic **Maintenance Mode** compliance. Monitor live Kudos, MPS, `:8188` VRAM stats, and Maintenance Mode from `http://localhost:4000/horde` (or the **AI Horde** Node App inside **Disk Direct**).
 
 ![AI Horde Hybrid Mode & Character Import](docs/horde_assistant.png)
 
-![AI Horde Dreamer Worker Console](docs/horde_worker.png)
+![AI Horde Worker & ComfyUI Bridge Console](docs/horde_worker.png)
 
 ```ini
-HORDE_WORKER_ENABLED = true
+HORDE_API_KEY = your_aihorde_api_key
+HORDE_WORKER_ENABLED = false
 HORDE_WORKER_API_KEY = your_aihorde_api_key
 HORDE_WORKER_NAME = Direct-Dreamer
-HORDE_WORKER_MODELS = Juggernaut XL
+HORDE_WORKER_MODELS = CyberRealistic Pony
 ```
+
+See the full **[AI Horde & Worker Bridge Guide](https://docs.disk.direct/horde/)** for architecture details and `regen_comfy_bridge` setup.
 
 ---
 
