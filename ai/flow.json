@@ -73,7 +73,7 @@
     "inputs": {
       "text": "positive",
       "clip": [
-        "127",
+        "103",
         1
       ]
     },
@@ -161,6 +161,7 @@
         "strength": 1
       },
       "lora_11": {
+        "on": false,
         "name": "Minerva",
         "type": "character",
         "lora": "MINERVA-XSTAR-XL-FINAL.safetensors",
@@ -210,8 +211,8 @@
   "126": {
     "inputs": {
       "lora_name": "dmd2_sdxl_4step_lora.safetensors",
-      "strength_model": 1,
-      "strength_clip": 1,
+      "strength_model": 0.85,
+      "strength_clip": 0,
       "model": [
         "127",
         0

@@ -372,3 +372,40 @@ async def test_local_comfy_preferred_when_available_and_local_lora_resolved(tmp_
     assert resolved["filename"] == "XLDomiv2.safetensors"
     assert "Domi" in resolved["trained_words"]
     assert resolved["strength"] == 1.0
+
+
+def test_character_signature_traits_and_flow_clip_wiring():
+    import json
+    import os
+
+    flow_path = os.path.join(os.path.dirname(__file__), "..", "flow.json")
+    with open(flow_path, "r", encoding="utf-8") as f:
+        flow = json.load(f)
+
+    # Positive CLIPTextEncode (node 85) must receive CLIP from Power Lora Loader (node 103)
+    assert flow["85"]["inputs"]["clip"] == ["103", 1]
+    assert flow["103"]["inputs"]["lora_11"]["on"] is False
+    assert flow["126"]["inputs"]["strength_clip"] == 0
+
+    # Without explicit hair color, signature_traits differentiate each companion LoRA
+    mapped_vera = horde_image_mapper.map_ui_to_horde_request(
+        prompt="Girl wearing denim jeans and white blouse walks down the hallway",
+        sliders={"base_model": "sdxl_perfect", "archetypes": ["sdxl_vera"]},
+        is_uncensored=False,
+        use_sdxl=True,
+    )
+    pos_vera, _ = mapped_vera["prompt"].split(" ### ", 1)
+    assert "V3r0t1k4" in pos_vera
+    assert "vibrant fiery red hair" in pos_vera
+
+    # Explicit hair color from user overrides default signature hair trait
+    mapped_custom_hair = horde_image_mapper.map_ui_to_horde_request(
+        prompt="brunette girl wearing denim jeans and white blouse walks down the hallway",
+        sliders={"base_model": "sdxl_perfect", "archetypes": ["sdxl_vera"]},
+        is_uncensored=False,
+        use_sdxl=True,
+    )
+    pos_custom, _ = mapped_custom_hair["prompt"].split(" ### ", 1)
+    assert "V3r0t1k4" in pos_custom
+    assert "vibrant fiery red hair" not in pos_custom
+

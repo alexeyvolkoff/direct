@@ -66,8 +66,9 @@ SDXL_CIVITAI_LORA_REGISTRY: Dict[str, Dict[str, Any]] = {
         "category": "character",
         "strength": 1.0,
         "trained_words": ["JudithCB"],
+        "signature_traits": "sleek blonde hair, emerald green eyes, subtle freckles",
         "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/ac70cb91-ccd3-4601-8754-f1d5ea5b77d3/width=256/108221436.jpeg",
-        "description": "Expressive companion character LoRA (Judith B)",
+        "description": "Sleek blonde companion LoRA with green eyes & freckles (Judith B)",
     },
     "sdxl_domi": {
         "id": "sdxl_domi",
@@ -80,8 +81,9 @@ SDXL_CIVITAI_LORA_REGISTRY: Dict[str, Dict[str, Any]] = {
         "category": "character",
         "strength": 1.0,
         "trained_words": ["Domi"],
+        "signature_traits": "blonde hair, blue eyes",
         "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/2dd69f45-69f3-4b25-9f02-67c0610765c5/width=256/56075413.jpeg",
-        "description": "Charismatic companion character LoRA (SLDomi)",
+        "description": "Charismatic blonde companion LoRA with blue eyes (SLDomi)",
     },
     "sdxl_lana": {
         "id": "sdxl_lana",
@@ -94,8 +96,9 @@ SDXL_CIVITAI_LORA_REGISTRY: Dict[str, Dict[str, Any]] = {
         "category": "character",
         "strength": 1.0,
         "trained_words": ["Svetlana"],
+        "signature_traits": "copper auburn hair, light green-blue eyes",
         "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/c060b0ae-6f46-4968-a61a-5565df48d27d/width=256/117559750.jpeg",
-        "description": "Radiant Slavic companion character LoRA (Svetlana)",
+        "description": "Radiant Slavic auburn-haired companion LoRA (Svetlana)",
     },
     "sdxl_oriana": {
         "id": "sdxl_oriana",
@@ -108,8 +111,9 @@ SDXL_CIVITAI_LORA_REGISTRY: Dict[str, Dict[str, Any]] = {
         "category": "character",
         "strength": 1.0,
         "trained_words": ["OR14N4"],
+        "signature_traits": "long honey blonde hair, blue eyes",
         "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/e9f4420d-87a8-4314-937a-063324438379/width=256/129028954.jpeg",
-        "description": "Glamorous magnetic companion LoRA (ORIANA-XSTAR-XL)",
+        "description": "Glamorous honey-blonde companion LoRA (ORIANA-XSTAR-XL)",
     },
     "sdxl_vera": {
         "id": "sdxl_vera",
@@ -122,8 +126,9 @@ SDXL_CIVITAI_LORA_REGISTRY: Dict[str, Dict[str, Any]] = {
         "category": "character",
         "strength": 1.0,
         "trained_words": ["V3r0t1k4"],
+        "signature_traits": "vibrant fiery red hair, blue eyes",
         "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/b98edfe9-1294-4c4a-8814-2d3ffb1f068a/width=256/43775214.jpeg",
-        "description": "Elegant dark-haired companion LoRA (VEROTIKA-XSTAR-XL)",
+        "description": "Striking fiery redhead companion LoRA (VEROTIKA-XSTAR-XL)",
     },
     "sdxl_bianca": {
         "id": "sdxl_bianca",
@@ -136,8 +141,9 @@ SDXL_CIVITAI_LORA_REGISTRY: Dict[str, Dict[str, Any]] = {
         "category": "character",
         "strength": 1.0,
         "trained_words": ["B1anc4"],
+        "signature_traits": "short platinum blonde bob hair, blue eyes",
         "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/5981dc82-5c87-494d-8bca-a12822a9117a/width=256/47386274.jpeg",
-        "description": "Poised blonde companion LoRA (BIANCA-XSTAR-XL)",
+        "description": "Edgy short platinum-blonde companion LoRA (BIANCA-XSTAR-XL)",
     },
     "sdxl_beatrice": {
         "id": "sdxl_beatrice",
@@ -150,8 +156,9 @@ SDXL_CIVITAI_LORA_REGISTRY: Dict[str, Dict[str, Any]] = {
         "category": "character",
         "strength": 1.0,
         "trained_words": ["B3ATR1C3"],
+        "signature_traits": "warm golden blonde wavy hair, arched eyebrows, blue eyes",
         "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/8cce104f-1c65-465d-b609-b4abebcc778b/width=256/118088057.jpeg",
-        "description": "Classic European companion LoRA (BEATRICE-XSTAR-XL)",
+        "description": "Glamorous golden-blonde European companion LoRA (BEATRICE-XSTAR-XL)",
     },
     "sdxl_minerva": {
         "id": "sdxl_minerva",
@@ -164,8 +171,9 @@ SDXL_CIVITAI_LORA_REGISTRY: Dict[str, Dict[str, Any]] = {
         "category": "character",
         "strength": 1.0,
         "trained_words": ["MINERVA"],
+        "signature_traits": "icy platinum blonde hair, blue eyes, subtle freckles",
         "image_url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/c0161468-55af-4384-8cbb-10305f57e099/width=256/125529679.jpeg",
-        "description": "Mystical raven-haired companion LoRA (MINERVA-XSTAR-XL)",
+        "description": "Icy platinum-blonde freckled companion LoRA (MINERVA-XSTAR-XL)",
     },
     # --- Predefined Style / Concept LoRAs ---
     "sdxl_lora_real_humans": {
@@ -470,23 +478,23 @@ UI_STYLE_MAP: Dict[str, Tuple[str, str]] = {
 
 # Verbal fallback descriptions (used on anonymous SD 1.5 fallback or for non-SDXL archetypes)
 ARCHETYPE_VISUAL_TRAITS: Dict[str, Tuple[str, Optional[str]]] = {
-    "judith": ("expressive young woman with warm wavy hair, bright eyes, charming friendly smile", None),
-    "sdxl_judith": ("expressive young woman with warm wavy hair, bright eyes, charming friendly smile", None),
+    "judith": ("expressive young woman with sleek blonde hair, emerald green eyes, subtle freckles, charming smile", None),
+    "sdxl_judith": ("expressive young woman with sleek blonde hair, emerald green eyes, subtle freckles, charming smile", None),
     "june": ("pretty young woman with long wavy auburn hair, bright emerald-green eyes, subtle freckles across nose", None),
-    "domi": ("charismatic stylish woman with layered blonde-chestnut hair, expressive blue-hazel eyes, modern chic look", None),
-    "sdxl_domi": ("charismatic stylish woman with layered blonde-chestnut hair, expressive blue-hazel eyes, modern chic look", None),
-    "lana": ("radiant Slavic young woman with soft honey-blonde hair, expressive light eyes, warm natural beauty", None),
-    "sdxl_lana": ("radiant Slavic young woman with soft honey-blonde hair, expressive light eyes, warm natural beauty", None),
-    "oriana": ("glamorous confident woman with sculpted features, luminous dark eyes, poised magnetic presence", None),
-    "sdxl_oriana": ("glamorous confident woman with sculpted features, luminous dark eyes, poised magnetic presence", None),
-    "vera": ("elegant dark-haired woman with striking deep gaze, classic refined features", None),
-    "sdxl_vera": ("elegant dark-haired woman with striking deep gaze, classic refined features", None),
-    "bianca": ("elegant poised blonde woman with refined classic features, bright eyes, graceful demeanor", None),
-    "sdxl_bianca": ("elegant poised blonde woman with refined classic features, bright eyes, graceful demeanor", None),
-    "beatrice": ("classic European beauty with chestnut hair, refined cheekbones, warm intelligent gaze", None),
-    "sdxl_beatrice": ("classic European beauty with chestnut hair, refined cheekbones, warm intelligent gaze", None),
-    "minerva": ("striking woman with dark raven hair, sculpted cheekbones, mystical piercing gaze", None),
-    "sdxl_minerva": ("striking woman with dark raven hair, sculpted cheekbones, mystical piercing gaze", None),
+    "domi": ("charismatic stylish woman with layered blonde hair, expressive blue eyes, modern chic look", None),
+    "sdxl_domi": ("charismatic stylish woman with layered blonde hair, expressive blue eyes, modern chic look", None),
+    "lana": ("radiant Slavic young woman with copper auburn hair, expressive green-blue eyes, warm natural beauty", None),
+    "sdxl_lana": ("radiant Slavic young woman with copper auburn hair, expressive green-blue eyes, warm natural beauty", None),
+    "oriana": ("glamorous confident woman with long honey blonde hair, bright blue eyes, sculpted features", None),
+    "sdxl_oriana": ("glamorous confident woman with long honey blonde hair, bright blue eyes, sculpted features", None),
+    "vera": ("striking elegant woman with vibrant fiery red hair, piercing blue eyes, refined features", None),
+    "sdxl_vera": ("striking elegant woman with vibrant fiery red hair, piercing blue eyes, refined features", None),
+    "bianca": ("edgy poised woman with short platinum blonde bob hair, striking blue eyes, refined features", None),
+    "sdxl_bianca": ("edgy poised woman with short platinum blonde bob hair, striking blue eyes, refined features", None),
+    "beatrice": ("glamorous European woman with warm golden blonde wavy hair, arched eyebrows, blue eyes", None),
+    "sdxl_beatrice": ("glamorous European woman with warm golden blonde wavy hair, arched eyebrows, blue eyes", None),
+    "minerva": ("striking young woman with icy platinum blonde hair, blue eyes, subtle freckles, full sculpted lips", None),
+    "sdxl_minerva": ("striking young woman with icy platinum blonde hair, blue eyes, subtle freckles, full sculpted lips", None),
     "ada": ("confident woman with short black bob hair, elegant crimson dress, poised gaze", None),
     "ada_wong": ("confident woman with short black bob hair, elegant crimson dress, poised gaze", None),
     "brie": ("cheerful blonde woman, bright blue eyes, warm radiant smile", None),
@@ -544,6 +552,21 @@ _PRIVATE_TRIGGER_RE = re.compile(
 )
 _ANGLE_TAG_RE = re.compile(r"<[^>]+>")
 _CIVITAI_CUSTOM_ID_RE = re.compile(r"^(?:civitai[_:])?(\d{4,12})$", flags=re.IGNORECASE)
+_EXPLICIT_HAIR_CUE_RE = re.compile(
+    r"\b(?:"
+    r"blond|blonde|brunette|redhead|ginger|auburn|raven[- ]hair|jet[- ]black hair|"
+    r"(?:black|brown|dark|red|pink|blue|purple|green|silver|white|grey|gray|platinum|chestnut|golden|copper)[- ]hair(?:ed)?|"
+    r"hair\s+(?:is\s+)?(?:black|brown|dark|blonde?|red|pink|blue|silver|white|short|long)|"
+    r"short\s+hair|pixie\s+cut|bob\s+cut|buzz\s*cut|bald|"
+    r"блондин\w*|брюнет\w*|шатен\w*|рыж\w*|черноволос\w*|темноволос\w*|светловолос\w*|русы\w*|каштанов\w*|пепельн\w*|седы\w*|седовлас\w*"
+    r")\b",
+    flags=re.IGNORECASE,
+)
+
+
+def has_explicit_hair_cue(text: str) -> bool:
+    """Returns True if the user/persona prompt already specifies a hair color or haircut."""
+    return bool(_EXPLICIT_HAIR_CUE_RE.search(str(text or "")))
 
 # Caches for AI Horde online image models, live worker capabilities, and CivitAI searches
 _IMAGE_MODELS_CACHE_TTL = 60.0
@@ -1122,6 +1145,10 @@ def map_ui_to_horde_request(
                             lora_trigger_words.append(tw)
                 elif spec.get("inject_any"):
                     lora_entry["inject_trigger"] = "any"
+                sig_traits = str(spec.get("signature_traits") or "").strip()
+                if sig_traits and not has_explicit_hair_cue(f"{clean_scene} {clean_persona}"):
+                    if sig_traits.lower() not in f"{clean_scene} {clean_persona}".lower() and sig_traits not in lora_trigger_words:
+                        lora_trigger_words.append(sig_traits)
                 horde_loras.append(lora_entry)
                 seen_version_ids.add(vid)
         else:
@@ -1154,6 +1181,10 @@ def map_ui_to_horde_request(
                             lora_trigger_words.append(tw)
                 elif spec.get("inject_any"):
                     lora_entry["inject_trigger"] = "any"
+                sig_traits = str(spec.get("signature_traits") or "").strip()
+                if sig_traits and not has_explicit_hair_cue(f"{clean_scene} {clean_persona}"):
+                    if sig_traits.lower() not in f"{clean_scene} {clean_persona}".lower() and sig_traits not in lora_trigger_words:
+                        lora_trigger_words.append(sig_traits)
                 horde_loras.append(lora_entry)
                 seen_version_ids.add(vid)
 

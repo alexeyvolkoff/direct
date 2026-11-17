@@ -3779,14 +3779,14 @@ def _load_sdxl_flow_template() -> dict:
 
 
 _SDXL_ARCHETYPE_META = {
-    "judith": ("✨", "Natural beauty & expressive muse (Judith / June LoRA)"),
-    "domi": ("💎", "Charismatic brunette with piercing hazel gaze"),
-    "lana": ("🌸", "Radiant Slavic beauty with expressive features"),
-    "oriana": ("🔥", "Glamorous star with bold magnetic presence"),
-    "vera": ("🌹", "Sultry dark-haired allure"),
-    "bianca": ("👑", "Elegant poised blonde beauty"),
-    "beatrice": ("🎭", "Classic European charm & refined features"),
-    "minerva": ("🌙", "Mystical striking gaze & sculpted features"),
+    "judith": ("✨", "Sleek blonde muse with emerald-green eyes & subtle freckles"),
+    "domi": ("💎", "Charismatic blonde with expressive blue eyes"),
+    "lana": ("🌸", "Radiant Slavic beauty with copper-auburn hair"),
+    "oriana": ("🔥", "Glamorous star with honey-blonde hair & magnetic presence"),
+    "vera": ("🌹", "Striking fiery redhead with piercing blue eyes"),
+    "bianca": ("👑", "Edgy poised beauty with short platinum-blonde bob"),
+    "beatrice": ("🎭", "Glamorous golden-blonde European charm & arched brows"),
+    "minerva": ("🌙", "Icy platinum-blonde beauty with freckles & piercing gaze"),
 }
 
 _SDXL_STYLE_LORA_META = {
@@ -4684,17 +4684,24 @@ async def generate_sdxl_studio_image(
                     full_parts.insert(0, tw)
                     combined_raw_text = ", ".join(full_parts)
 
-    # Inject trained trigger tokens for active built-in character/style LoRAs (e.g. Domi, JudithCB, OR14N4)
+    # Inject trained trigger tokens and signature traits for active character/style LoRAs
+    user_has_hair_cue = horde_image_mapper.has_explicit_hair_cue(f"{prompt or ''} {persona_prompt or ''}")
+    char_prefix_cues: list[str] = []
     for key in list(active_lora_strengths.keys()):
         node_item = lora_nodes.get(key) or {}
         lfn_low = str(node_item.get("lora") or "").lower()
         alias_id = horde_image_mapper.LORA_ALIAS_MAP.get(lfn_low) or horde_image_mapper.LORA_ALIAS_MAP.get(str(node_item.get("name") or "").lower())
         reg_meta = horde_image_mapper.SDXL_CIVITAI_LORA_REGISTRY.get(alias_id or "")
         if reg_meta:
+            sig_traits = str(reg_meta.get("signature_traits") or "").strip()
+            if sig_traits and not user_has_hair_cue and sig_traits.lower() not in combined_raw_text.lower():
+                char_prefix_cues.append(sig_traits)
             for tw in (reg_meta.get("trained_words") or [])[:2]:
                 if tw and tw.lower() not in combined_raw_text.lower():
-                    full_parts.insert(0, tw)
-                    combined_raw_text = ", ".join(full_parts)
+                    char_prefix_cues.insert(0, tw)
+    if char_prefix_cues:
+        full_parts = char_prefix_cues + full_parts
+        combined_raw_text = ", ".join(full_parts)
 
     # Wire Detail slider (`0.0..1.0`, neutral `0.5`) to local `add-detail-xl.safetensors`
     if abs(detail_val - 0.5) >= 0.1 and os.path.isfile("/home/alexey/models/comfyui_models/loras/add-detail-xl.safetensors"):
@@ -4712,6 +4719,32 @@ async def generate_sdxl_studio_image(
             lora_nodes["lora_detail_xl"] = det_entry
             active_lora_strengths["lora_detail_xl"] = det_strength
 
+    ckpt_low = str(ckpt_model or "").lower()
+    is_pony_ckpt = "pony" in ckpt_low
+    is_illus_ckpt = "illustrious" in ckpt_low
+    has_active_char_lora = any(
+        str((lora_nodes.get(k) or {}).get("type") or "").lower() == "character"
+        for k in active_lora_strengths
+    )
+
+    # Balance DMD2 distillation LoRA vs character/style LoRAs so Pony/Illustrious do not flatten faces
+    if "126" in workflow_json and "inputs" in workflow_json["126"]:
+        workflow_json["126"]["inputs"]["strength_clip"] = 0.0
+        if has_active_char_lora:
+            workflow_json["126"]["inputs"]["strength_model"] = 0.76 if (is_pony_ckpt or is_illus_ckpt) else 0.85
+        else:
+            workflow_json["126"]["inputs"]["strength_model"] = 0.85 if (is_pony_ckpt or is_illus_ckpt) else 0.95
+
+    if has_active_char_lora:
+        for k in list(active_lora_strengths.keys()):
+            ltype = str((lora_nodes.get(k) or {}).get("type") or "").lower()
+            w_cur = float(active_lora_strengths[k])
+            if ltype == "character" and (is_pony_ckpt or is_illus_ckpt) and 0.90 <= w_cur <= 1.0:
+                active_lora_strengths[k] = 1.05
+            elif ltype == "style" and k != "lora_detail_xl" and w_cur <= 0.80:
+                # Prevent co-active SDXL 1.0 style LoRA (e.g. Cinematic Shot) from washing out character face
+                active_lora_strengths[k] = round(min(w_cur, 0.52), 2)
+
     for key, val in lora_nodes.items():
         if key in active_lora_strengths:
             val["on"] = True
@@ -4723,8 +4756,6 @@ async def generate_sdxl_studio_image(
     # Убираем служебные <теги> из положительного промпта перед CLIPTextEncode
     clean_positive = re.sub(r"<[^>]+>", "", combined_raw_text)
     clean_positive = re.sub(r"\s*,\s*,+", ", ", clean_positive).strip(" ,")
-    # Для DMD2 (1-CFG дистиллят) позитивные токены в 10 раз сильнее негативных:
-    # если пользователь явно не просил текст/принт/логотип, якорим однотонную ткань без принтов и чистые поверхности
     wants_explicit_text = bool(
         re.search(
             r"\b(text|logo|sign|signage|print|printed|slogan|inscription|graffiti|poster|banner|надпис|принт|вывеск|лого|текст)\b",
@@ -4734,12 +4765,23 @@ async def generate_sdxl_studio_image(
     )
     if clean_positive and not wants_explicit_text:
         clean_positive = f"{clean_positive}, plain unprinted clothing, solid unadorned fabric, clean background surfaces"
-    if not is_uncensored and clean_positive:
-        clean_positive = f"{clean_positive}, modest buttoned outfit, covered chest, sfw"
+    if not is_uncensored:
+        negative_prompt = "(nsfw, nude, topless, cleavage, unbuttoned shirt, open shirt, bare chest, nipples:1.6), " + negative_prompt
+        if clean_positive:
+            clean_positive = f"modest buttoned outfit, covered chest, {clean_positive}, sfw"
+
+    if is_pony_ckpt:
+        pony_head = "score_9, score_8_up, score_7_up" + (", rating_safe" if not is_uncensored else "")
+        final_positive = f"{pony_head}, {clean_positive}, detailed face, sharp focus" if clean_positive else f"{pony_head}, {IMPROVEMENT_PROMPT}"
+    elif is_illus_ckpt:
+        illus_head = "masterpiece, best quality" + (", safe" if not is_uncensored else "")
+        final_positive = f"{illus_head}, {clean_positive}, detailed face, sharp focus" if clean_positive else f"{illus_head}, detailed face, sharp focus"
+    else:
+        sdxl_tail = "photorealistic, detailed face, natural skin texture, sharp focus, highres"
+        final_positive = f"{clean_positive}, {sdxl_tail}" if clean_positive else sdxl_tail
+
     workflow_json["4"]["inputs"]["text"] = negative_prompt
-    workflow_json["85"]["inputs"]["text"] = (
-        f"{clean_positive}, {IMPROVEMENT_PROMPT}" if clean_positive else IMPROVEMENT_PROMPT
-    )
+    workflow_json["85"]["inputs"]["text"] = final_positive
     workflow_json["85"]["inputs"]["clip"] = ["103", 1]
 
     # Разрешение и параметры сэмплера (DMD2 ускоритель работает оптимально на 4..12 шагах и cfg 1.0..2.0)
@@ -4750,15 +4792,19 @@ async def generate_sdxl_studio_image(
         workflow_json["6"]["inputs"]["height"] = h_clamped
 
     eff_seed = int(seed) if (seed is not None and int(seed) > 0) else random.randint(1, 1125899906842624)
-    raw_steps_val = int(steps or 7)
-    eff_steps = 7 if raw_steps_val > 12 else max(4, raw_steps_val)
-    raw_cfg_val = float(cfg or 1.45)
-    # При cfg <= 1.05 ComfyUI пропускает negative_prompt; cfg 1.45 для DMD2 даёт уверенный отпор принтам/надписям без пережога
+    default_steps = 8 if has_active_char_lora else 7
+    raw_steps_val = int(steps or default_steps)
+    eff_steps = default_steps if raw_steps_val > 12 else max(4, raw_steps_val)
+    if has_active_char_lora and eff_steps == 7:
+        eff_steps = 8
+    raw_cfg_val = float(cfg or (1.55 if has_active_char_lora else 1.45))
     if raw_cfg_val <= 1.05 or raw_cfg_val > 2.2:
-        eff_cfg = 1.45
-        eff_steps = max(7, eff_steps)
+        eff_cfg = 1.55 if has_active_char_lora else 1.45
+        eff_steps = max(default_steps, eff_steps)
     else:
         eff_cfg = raw_cfg_val
+        if has_active_char_lora and abs(eff_cfg - 1.45) < 0.02:
+            eff_cfg = 1.55
     if "5" in workflow_json and "inputs" in workflow_json["5"]:
         workflow_json["5"]["inputs"]["seed"] = eff_seed
         workflow_json["5"]["inputs"]["steps"] = eff_steps
@@ -11848,20 +11894,29 @@ async def generate_image(ctx: UserContext, prompt, chat: str = 'default', update
 
     # Inject trained trigger words for active LoRAs
     chat_trig_words = []
+    chat_has_hair_cue = horde_image_mapper.has_explicit_hair_cue(prompt)
     for k in active_lora_keys:
         node_item = lora_nodes.get(k) or {}
         t_words = list(node_item.get("trained_words") or [])
-        if not t_words:
-            lfn_low = str(node_item.get("lora") or "").lower()
-            alias_id = horde_image_mapper.LORA_ALIAS_MAP.get(lfn_low) or horde_image_mapper.LORA_ALIAS_MAP.get(str(node_item.get("name") or "").lower())
-            reg_meta = horde_image_mapper.SDXL_CIVITAI_LORA_REGISTRY.get(alias_id or "")
-            if reg_meta:
+        sig_traits = ""
+        lfn_low = str(node_item.get("lora") or "").lower()
+        alias_id = horde_image_mapper.LORA_ALIAS_MAP.get(lfn_low) or horde_image_mapper.LORA_ALIAS_MAP.get(str(node_item.get("name") or "").lower())
+        reg_meta = horde_image_mapper.SDXL_CIVITAI_LORA_REGISTRY.get(alias_id or "")
+        if reg_meta:
+            if not t_words:
                 t_words = list(reg_meta.get("trained_words") or [])
+            sig_traits = str(reg_meta.get("signature_traits") or "").strip()
         for tw in t_words[:2]:
             if tw and tw.lower() not in prompt.lower() and tw not in chat_trig_words:
                 chat_trig_words.append(tw)
+        if sig_traits and not chat_has_hair_cue and sig_traits.lower() not in prompt.lower() and sig_traits not in chat_trig_words:
+            chat_trig_words.append(sig_traits)
     if chat_trig_words:
         workflow_json["85"]["inputs"]["text"] = ", ".join(chat_trig_words) + ", " + workflow_json["85"]["inputs"]["text"]
+    workflow_json["85"]["inputs"]["clip"] = ["103", 1]
+    if "126" in workflow_json and "inputs" in workflow_json["126"]:
+        workflow_json["126"]["inputs"]["strength_clip"] = 0.0
+        workflow_json["126"]["inputs"]["strength_model"] = 0.78 if ("pony" in model.lower() or "illustrious" in model.lower()) else 0.85
 
     # Reset all loras to off, then activate active ones
     for key, val in lora_nodes.items():
