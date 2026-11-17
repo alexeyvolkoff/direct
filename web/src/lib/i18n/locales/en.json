@@ -67,6 +67,8 @@
   "ai_node_horde": "Horde AI",
   "ai_node_horde_selected": "Horde AI mode active: all chat and image generation runs via AI Horde.",
   "ai_node_public_selected": "Connected to AI Assistant Public Node.",
+  "ai_node_saved_success": "AI Node settings saved.",
+  "save_ai_node_settings": "Save AI Node Settings",
   "ai_node_public_unavailable": "The public AI node is currently offline or unreachable.",
   "ai_not_available": "AI assistant is not available at the moment. Please, try later.",
   "ai_provider": "AI Inference Provider",

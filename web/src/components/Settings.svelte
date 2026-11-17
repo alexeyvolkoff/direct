@@ -1001,6 +1001,9 @@
   let publicAiAgreementOpen = false;
   let pendingAiNodeChoice = aiNodeChoice;
   let aiNodeStatusMsg = "";
+  let aiNodeSaving = false;
+  let aiNodeSaveMessage = "";
+  let aiNodeSaveType = "success";
 
   const POPULAR_HORDE_MODELS = [
     { id: "auto", label: "⚡ Auto (Best Online Streaming Model)" },
@@ -1097,6 +1100,37 @@
       await store.updateAssistantSettings(nodeUpdate);
     } catch (_) {
       // ignore transient persistence errors
+    }
+  }
+
+  async function saveAiNodeConfig() {
+    aiNodeSaving = true;
+    aiNodeSaveMessage = "";
+    try {
+      hordeApiKey = (hordeApiKey || "").trim() || "0000000000";
+      hordeModel = (hordeModel || "").trim() || "auto";
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem("omd_horde_api_key", hordeApiKey);
+        localStorage.setItem("omd_horde_model", hordeModel);
+      }
+      setAiNodeChoice(aiNodeChoice || AI_NODE_MODE_AUTO);
+      setAiMode(aiMode || AI_MODE_LOCAL);
+      if (aiMode === AI_MODE_AGENTIC) {
+        setInferenceNode(inferenceNodeId);
+      }
+      await persistAiNodeChoice();
+      await syncNodeAiSettings(aiNodeChoice === AI_NODE_MODE_HORDE ? AI_MODE_HORDE : aiMode);
+      aiNodeSaveType = "success";
+      aiNodeSaveMessage = $_("ai_node_saved_success", {}, "AI Node settings saved.");
+      setTimeout(() => {
+        if (aiNodeSaveMessage) aiNodeSaveMessage = "";
+      }, 4000);
+    } catch (err) {
+      console.error("[settings] saveAiNodeConfig error:", err);
+      aiNodeSaveType = "error";
+      aiNodeSaveMessage = err.message || $_("failed_to_save", {}, "Failed to save settings");
+    } finally {
+      aiNodeSaving = false;
     }
   }
 
@@ -3530,6 +3564,43 @@
                   {/if}
                 {/if}
               </div>
+            </div>
+
+            <div class="assistant-save-bar">
+              {#if aiNodeSaveMessage}
+                <div class="save-status-msg {aiNodeSaveType}">
+                  {#if aiNodeSaveType === "success"}
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  {:else}
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                      <circle cx="12" cy="12" r="10" />
+                      <line x1="12" y1="8" x2="12" y2="12" />
+                      <line x1="12" y1="16" x2="12.01" y2="16" />
+                    </svg>
+                  {/if}
+                  <span>{aiNodeSaveMessage}</span>
+                </div>
+              {/if}
+              <button
+                type="button"
+                class="btn-primary-lg"
+                on:click={saveAiNodeConfig}
+                disabled={aiNodeSaving}
+              >
+                {#if aiNodeSaving}
+                  <span class="spinner-inline"></span>
+                  {$_("saving", {}, "Saving...")}
+                {:else}
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                    <polyline points="17 21 17 13 7 13 7 21" />
+                    <polyline points="7 3 7 8 15 8" />
+                  </svg>
+                  {$_("save_ai_node_settings", {}, "Save AI Node Settings")}
+                {/if}
+              </button>
             </div>
           </div>
 

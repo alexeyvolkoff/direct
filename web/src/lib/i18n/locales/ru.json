@@ -67,6 +67,8 @@
   "ai_node_horde": "Horde AI",
   "ai_node_horde_selected": "Активен режим Horde AI: чат и генерация работают полностью через сеть AI Horde.",
   "ai_node_public_selected": "Подключено к публичной ноде AI Assistant.",
+  "ai_node_saved_success": "Настройки AI-ноды сохранены.",
+  "save_ai_node_settings": "Сохранить настройки ноды",
   "ai_node_public_unavailable": "Публичная AI-нода сейчас офлайн или недоступна.",
   "ai_not_available": "ИИ ассистент в данный момент недоступен. Попробуйте позже.",
   "ai_provider": "Провайдер инференса ИИ",
