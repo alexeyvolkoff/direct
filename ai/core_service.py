@@ -3208,6 +3208,84 @@ async def check_krea_status(ctx=None) -> dict:
     return {"allowed": False, "error": "Creative Studio requires ComfyUI on this node."}
 
 
+def resolve_requested_content_mode(ctx=None, sliders: dict | None = None) -> str:
+    """Returns requested content_mode ('work' or 'fun'), prioritizing per-request sliders over ctx.settings."""
+    if isinstance(sliders, dict):
+        s_mode = str(sliders.get("content_mode") or "").strip().lower()
+        if s_mode in ("work", "fun"):
+            return s_mode
+    if ctx and isinstance(getattr(ctx, "settings", None), dict):
+        c_mode = str(ctx.settings.get("content_mode") or "").strip().lower()
+        if c_mode in ("work", "fun"):
+            return c_mode
+    return "work"
+
+
+def is_effective_fun_mode_sync(ctx=None, sliders: dict | None = None) -> bool:
+    """Synchronous check: True ONLY when user has uncensored entitlement AND Work/Fun toggle is set to 'fun'."""
+    if resolve_requested_content_mode(ctx, sliders) != "fun":
+        return False
+    if not ctx:
+        return False
+    return bool(
+        getattr(ctx, "private_mode", False)
+        or getattr(ctx, "trusted_owner", False)
+        or getattr(ctx, "is_unlimited", False)
+    )
+
+
+async def resolve_effective_fun_mode(ctx=None, sliders: dict | None = None) -> bool:
+    """Async check: True ONLY when Work/Fun toggle is 'fun' AND user has uncensored entitlement (Owner / Club / Pass)."""
+    if resolve_requested_content_mode(ctx, sliders) != "fun":
+        return False
+    if is_effective_fun_mode_sync(ctx, sliders):
+        return True
+    if not ctx:
+        return False
+    try:
+        st = await check_krea_status(ctx)
+        if isinstance(st, dict) and st.get("uncensored"):
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def build_companion_readme(title: str, description: str, prompt: str = "", sensitive: bool = False) -> str:
+    """Formats companion <image>.Readme.md with mandatory #sensitive tag (when NSFW) and hidden <!-- prompt -->."""
+    clean_title = (title or "AI Creation").strip()
+    clean_desc = re.sub(r"(?:^|\s)#sensitive\b", "", (description or "")).strip()
+    readme_content = f"# {clean_title}\n\n{clean_desc}\n"
+    if sensitive:
+        readme_content += "\n#sensitive\n"
+    clean_prompt = (prompt or "").strip()
+    if clean_prompt:
+        readme_content += f"\n<!-- prompt: {clean_prompt} -->\n"
+    return readme_content
+
+
+def detect_generation_sensitive(
+    prompt: str = "",
+    persona_prompt: str = "",
+    active_lora_entries: list | None = None,
+    llm_sensitive: bool = False,
+) -> bool:
+    """Determines whether a generated image should be marked #sensitive based on LLM classifier, prompt, and active LoRAs."""
+    if llm_sensitive:
+        return True
+    if unified_memory.has_sensitive_markers(f"{prompt or ''} {persona_prompt or ''}"):
+        return True
+    for entry in (active_lora_entries or []):
+        if isinstance(entry, dict):
+            if str(entry.get("mode") or "").strip().lower() == "fun":
+                return True
+            lname = f"{entry.get('name') or ''} {entry.get('lora') or ''}"
+            if re.search(r"\b(busty|seductive|nsfw|nude|erotic|topless|lingerie)\b", lname, re.I):
+                return True
+    return False
+
+
+
 async def generate_image_workflow(workflow) -> bytes:
     if isinstance(workflow, dict):
         workflow = dict(workflow)
@@ -3930,19 +4008,29 @@ def get_krea_presets(include_fun: bool = False, include_krea: bool = True) -> di
     """
     base = _load_base_krea_presets()
     if include_krea:
-        art_styles = list(base.get("art_styles") or [])
-        archetypes = list(base.get("archetypes") or [])
+        art_styles = [
+            s for s in (base.get("art_styles") or [])
+            if isinstance(s, dict) and (include_fun or str(s.get("mode") or "work").lower() != "fun")
+        ]
+        archetypes = [
+            a for a in (base.get("archetypes") or [])
+            if isinstance(a, dict) and (include_fun or str(a.get("mode") or "work").lower() != "fun")
+        ]
     else:
         art_styles = [
             s for s in (base.get("art_styles") or [])
-            if isinstance(s, dict) and (
+            if isinstance(s, dict)
+            and (include_fun or str(s.get("mode") or "work").lower() != "fun")
+            and (
                 s.get("id") == "none"
                 or ("sdxl" in (s.get("models") or []))
             )
         ]
         archetypes = [
             a for a in (base.get("archetypes") or [])
-            if isinstance(a, dict) and ("sdxl" in (a.get("models") or []))
+            if isinstance(a, dict)
+            and (include_fun or str(a.get("mode") or "work").lower() != "fun")
+            and ("sdxl" in (a.get("models") or []))
         ]
     existing_style_ids = {str(s.get("id")) for s in art_styles if isinstance(s, dict)}
     existing_arch_ids = {str(a.get("id")) for a in archetypes if isinstance(a, dict)}
@@ -4450,9 +4538,21 @@ async def generate_horde_mapped_image(
         words = [w for w in neutral_description.replace("<", "").replace(">", "").split() if not w.startswith("<")]
         img_title = _clean_fallback_title(words, max_words=4) or "AI Creation"
 
-    readme_content = f"# {img_title}\n\n{neutral_description}\n"
-    if clean_user_prompt:
-        readme_content += f"\n<!-- prompt: {clean_user_prompt} -->\n"
+    is_sens = detect_generation_sensitive(
+        clean_user_prompt,
+        persona_prompt,
+        None,
+        bool(getattr(ctx, "_last_desc_sensitive", False)),
+    )
+    if ctx is not None:
+        ctx._last_image_sensitive = is_sens
+
+    readme_content = build_companion_readme(
+        img_title,
+        neutral_description,
+        clean_user_prompt,
+        sensitive=is_sens,
+    )
 
     is_node_owner = bool(ctx and (getattr(ctx, "trusted_owner", False) or getattr(ctx, "private_mode", False)))
     is_p2p = bool(getattr(ctx, "private_mode", False))
@@ -4523,13 +4623,11 @@ async def generate_sdxl_studio_image(
     if not prompt and not persona_prompt and not raw_refs:
         raise Exception("Укажите промпт или выберите персону для генерации.")
 
-    is_uncensored = bool(getattr(ctx, "private_mode", False) or getattr(ctx, "trusted_owner", False))
-    try:
-        st = await check_krea_status(ctx)
-        if isinstance(st, dict) and "uncensored" in st:
-            is_uncensored = bool(st.get("uncensored"))
-    except Exception:
-        pass
+    if ctx is not None:
+        ctx._last_desc_sensitive = False
+        ctx._last_image_sensitive = False
+
+    is_uncensored = await resolve_effective_fun_mode(ctx, sliders)
 
     comfy_ok = await is_comfy_available()
     if horde_image_mapper.should_use_horde_for_sdxl(ctx, comfy_available=comfy_ok):
@@ -4576,7 +4674,8 @@ async def generate_sdxl_studio_image(
     if user_neg_sdxl:
         negative_prompt = user_neg_sdxl[:500] + ", " + negative_prompt
     if not is_uncensored:
-        negative_prompt = NEGATIVE_PROMPTS["fun"] + ", " + negative_prompt
+        sfw_guard_neg = NEGATIVE_PROMPTS.get("sfw_guard") or NEGATIVE_PROMPTS["fun"]
+        negative_prompt = sfw_guard_neg + ", " + negative_prompt
     if "print_shirt" not in negative_prompt[:180]:
         negative_prompt = no_signs_neg + ", " + negative_prompt
 
@@ -4853,15 +4952,22 @@ async def generate_sdxl_studio_image(
     if clean_positive and not wants_explicit_text:
         clean_positive = f"{clean_positive}, plain unprinted clothing, solid unadorned fabric, clean background surfaces"
     if not is_uncensored:
-        negative_prompt = "(nsfw, nude, topless, cleavage, unbuttoned shirt, open shirt, bare chest, nipples:1.6), " + negative_prompt
-        if clean_positive:
-            clean_positive = f"modest buttoned outfit, covered chest, {clean_positive}, sfw"
+        is_pure_scenery_sdxl = bool(
+            re.search(r"\b(landscape|mountain|ocean|forest|architecture|building|interior|empty room|no humans)\b", clean_positive, re.I)
+            and not has_active_char_lora
+            and not persona_prompt
+            and not re.search(r"\b(woman|girl|lady|female|man|person|portrait|she|her)\b", clean_positive, re.I)
+        )
+        if clean_positive and not is_pure_scenery_sdxl:
+            clean_positive = f"modest opaque buttoned outfit, covered chest, wholesome attire, {clean_positive}, sfw"
+        elif clean_positive:
+            clean_positive = f"{clean_positive}, sfw"
 
     if is_pony_ckpt:
         pony_head = "score_9, score_8_up, score_7_up" + (", rating_safe" if not is_uncensored else "")
         final_positive = f"{pony_head}, {clean_positive}, detailed face, sharp focus" if clean_positive else f"{pony_head}, {IMPROVEMENT_PROMPT}"
     elif is_illus_ckpt:
-        illus_head = "masterpiece, best quality" + (", safe" if not is_uncensored else "")
+        illus_head = "masterpiece, best quality" + (", safe, general" if not is_uncensored else "")
         final_positive = f"{illus_head}, {clean_positive}, detailed face, sharp focus" if clean_positive else f"{illus_head}, detailed face, sharp focus"
     else:
         sdxl_tail = "photorealistic, detailed face, natural skin texture, sharp focus, highres"
@@ -4892,6 +4998,8 @@ async def generate_sdxl_studio_image(
         eff_cfg = raw_cfg_val
         if has_active_char_lora and abs(eff_cfg - 1.45) < 0.02:
             eff_cfg = 1.55
+    if not is_uncensored and eff_cfg < 1.55:
+        eff_cfg = 1.55
     if "5" in workflow_json and "inputs" in workflow_json["5"]:
         workflow_json["5"]["inputs"]["seed"] = eff_seed
         workflow_json["5"]["inputs"]["steps"] = eff_steps
@@ -5496,9 +5604,22 @@ async def generate_sdxl_studio_image(
         words = [w for w in neutral_description.replace("<", "").replace(">", "").split() if not w.startswith("<")]
         img_title = _clean_fallback_title(words, max_words=4) or "SDXL Creation"
 
-    readme_content = f"# {img_title}\n\n{neutral_description}\n"
-    if clean_user_prompt:
-        readme_content += f"\n<!-- prompt: {clean_user_prompt} -->\n"
+    active_lora_list = [lora_nodes[k] for k in active_lora_strengths if k in lora_nodes]
+    is_sens = detect_generation_sensitive(
+        clean_user_prompt,
+        persona_prompt,
+        active_lora_list,
+        bool(getattr(ctx, "_last_desc_sensitive", False)),
+    )
+    if ctx is not None:
+        ctx._last_image_sensitive = is_sens
+
+    readme_content = build_companion_readme(
+        img_title,
+        neutral_description,
+        clean_user_prompt,
+        sensitive=is_sens,
+    )
 
     is_sdxl_owner = bool(ctx and (getattr(ctx, "trusted_owner", False) or getattr(ctx, "private_mode", False)))
     should_save_sdxl_local = bool(is_sdxl_owner and (save_local or bool(kwargs.get("upload_storage", False))))
@@ -5574,6 +5695,12 @@ async def generate_krea2_image(
             upload_storage=upload_storage,
             **kwargs,
         )
+
+    if ctx is not None:
+        ctx._last_desc_sensitive = False
+        ctx._last_image_sensitive = False
+    sliders = sliders or {}
+    is_uncensored_krea = await resolve_effective_fun_mode(ctx, sliders)
 
     # Разрешаем список референсных изображений (до 2 штук)
     raw_refs = []
@@ -5663,7 +5790,7 @@ async def generate_krea2_image(
             res_meta = await horde_image_mapper.ensure_local_civitai_lora(
                 cid_clean,
                 custom_loras=custom_loras_krea,
-                allow_nsfw=True,
+                allow_nsfw=is_uncensored_krea,
                 ecosystem=krea_eco,
                 civitai_token=user_civitai_token_krea,
             )
@@ -5681,6 +5808,8 @@ async def generate_krea2_image(
     for st_id in style_list:
         if st_id in STYLE_CONFIGS:
             cfg_style = STYLE_CONFIGS[st_id]
+            if not is_uncensored_krea and str(cfg_style.get("mode") or "work").lower() == "fun":
+                continue
             if cfg_style.get("trigger") and cfg_style["trigger"] not in full_parts:
                 full_parts.append(cfg_style["trigger"])
             if cfg_style.get("lora"):
@@ -5764,6 +5893,8 @@ async def generate_krea2_image(
     for arch_id in archetype_list:
         cfg_arch = ARCHETYPE_CONFIGS.get(arch_id) or (STYLE_CONFIGS.get("nix_comic") if arch_id == "nix_comic_lora" else None)
         if cfg_arch:
+            if not is_uncensored_krea and str(cfg_arch.get("mode") or "work").lower() == "fun":
+                continue
             arch_trigger = cfg_arch.get("trigger") or ""
             if arch_trigger and is_wide_scene:
                 arch_trigger = re.sub(r"\s*,\s*,+", ", ", _FACIAL_DETAIL_CLAUSE_RE.sub("", arch_trigger)).strip(" ,.")
@@ -5804,6 +5935,18 @@ async def generate_krea2_image(
             target_loras.append((custom_lora, custom_weight))
             logging.info(f"[Krea2] Applying Custom Slider LoRA: {custom_lora} (weight={custom_weight})")
 
+    if not is_uncensored_krea:
+        combined_krea_check = " ".join(full_parts)
+        is_pure_scenery_krea = bool(
+            re.search(r"\b(landscape|mountain|ocean|forest|architecture|building|interior|empty room|no humans)\b", combined_krea_check, re.I)
+            and not target_loras
+            and not persona_prompt
+            and not comfy_ref_names
+            and not re.search(r"\b(woman|girl|lady|female|man|person|portrait|she|her)\b", combined_krea_check, re.I)
+        )
+        if not is_pure_scenery_krea:
+            full_parts.append("modest opaque buttoned clothing, covered chest, wholesome safe attire")
+
     positive_text = ", ".join(full_parts)
     user_neg_krea = str(sliders.get("negative_prompt") or "").replace("###", ", ").strip(" ,")
     no_signs_krea = (
@@ -5812,7 +5955,15 @@ async def generate_krea2_image(
         "placard, billboard, banner, graffiti, advertisement, lettering, typography, written words, inscription, "
         "gibberish text, garbled letters, caption, subtitles, speech bubble, label, watermark, signature"
     )
+    krea_sfw_neg = (
+        "rating_explicit, rating_questionable, nsfw, explicit, questionable, nude, naked, topless, "
+        "nipples, pokies, erect nipples, nipples through clothes, visible nipples, areola, no bra, braless, "
+        "underboob, sideboob, deep cleavage, plunging neckline, open shirt, unbuttoned shirt, "
+        "sheer clothing, see-through, transparent clothes, lingerie, underwear, micro bikini, erotic, suggestive"
+    )
     negative_text = f"{no_signs_krea}, wet skin, blurry, bad anatomy, bad hands, low quality, distorted, extra limbs, artifacts"
+    if not is_uncensored_krea:
+        negative_text = f"{krea_sfw_neg}, {negative_text}"
     if user_neg_krea:
         negative_text = f"{user_neg_krea[:500]}, {negative_text}"
 
@@ -6041,6 +6192,8 @@ async def generate_krea2_image(
             model_neg = f"{no_signs_krea}, worst quality, low quality, (bad anatomy:1.2), (bad hands:1.2), missing fingers, extra digits, deformed, 3d model render, flat, blurry, bad eyes, crossed eyes, oversaturated"
         else:
             model_neg = f"{no_signs_krea}, worst quality, low quality, (bad anatomy:1.2), (bad hands:1.2), missing fingers, extra digits, deformed, 3d render, cgi, cartoon, anime, illustration, painting, drawing, plastic skin, airbrushed, doll, fake, oversaturated, overexposed, blurry"
+        if not is_uncensored_krea:
+            model_neg = f"{krea_sfw_neg}, {model_neg}"
         if user_neg_krea:
             model_neg = f"{user_neg_krea[:500]}, {model_neg}"
 
@@ -6175,9 +6328,22 @@ async def generate_krea2_image(
         words = [w for w in neutral_description.replace("<", "").replace(">", "").split() if not w.startswith("<")]
         img_title = _clean_fallback_title(words, max_words=4) or "Krea Creation"
 
-    readme_content = f"# {img_title}\n\n{neutral_description}\n"
-    if clean_user_prompt:
-        readme_content += f"\n<!-- prompt: {clean_user_prompt} -->\n"
+    krea_lora_entries = [{"name": ln} for ln, _ in resolved_lora_chain]
+    is_sens = detect_generation_sensitive(
+        clean_user_prompt,
+        persona_prompt,
+        krea_lora_entries,
+        bool(getattr(ctx, "_last_desc_sensitive", False)),
+    )
+    if ctx is not None:
+        ctx._last_image_sensitive = is_sens
+
+    readme_content = build_companion_readme(
+        img_title,
+        neutral_description,
+        clean_user_prompt,
+        sensitive=is_sens,
+    )
 
     # Случай 1: Владелец ноды выбрал сохранение на этой ноде (save_local=True или upload_storage=True для владельца)
     is_node_owner = bool(ctx and (getattr(ctx, "trusted_owner", False) or getattr(ctx, "private_mode", False)))
@@ -9009,7 +9175,7 @@ async def check_prompt_safety(ctx: UserContext, prompt: str) -> str:
 
 async def generate_image_prompt(ctx: UserContext, instruction: str, prompt: str, chat = "default", history: list = None) -> str:
     chat = chat or "default"
-    is_fun = ctx.settings.get("content_mode", "work") == "fun"
+    is_fun = await resolve_effective_fun_mode(ctx)
     if is_fun and callable(ensure_fun_auth):
         await ensure_fun_auth(ctx)
     is_custom_persona = has_custom_persona(ctx)
@@ -9114,6 +9280,12 @@ async def generate_image_prompt(ctx: UserContext, instruction: str, prompt: str,
 
     if is_fun:
         system_parts.append(get_image_fun(ctx) if callable(get_image_fun) else IMAGE_PROMPT_FUN)
+    else:
+        system_parts.append(
+            "WORK MODE (SFW): Keep all outfits modest, opaque, and properly buttoned/covered. "
+            "Never generate nudity, toplessness, visible nipples/pokies, deep cleavage, unbuttoned shirts, "
+            "sheer/transparent clothes, lingerie, underwear, or erotic poses."
+        )
     system_prompt = "\n".join(system_parts)
 
     # Format history as a structured text block instead of active chat messages to prevent model roleplay priming
@@ -11664,7 +11836,9 @@ def _clean_fallback_title(words_or_text, max_words: int = 4) -> str:
 
 
 async def generate_neutral_description_and_title(ctx: UserContext, prompt: str) -> tuple[str, str]:
-    """Generate a safe, neutral title and description for the image prompt."""
+    """Generate a safe, neutral title and description for the image prompt, plus Sensitive: yes/no flag on ctx."""
+    if ctx is not None:
+        ctx._last_desc_sensitive = unified_memory.has_sensitive_markers(prompt)
     mode = ctx.settings.get("content_mode", "work") if ctx and getattr(ctx, "settings", None) else "work"
     if mode == "fun" and callable(ensure_fun_auth):
         await ensure_fun_auth(ctx)
@@ -11685,7 +11859,7 @@ async def generate_neutral_description_and_title(ctx: UserContext, prompt: str) 
         "model": model,
         "stream": False,
         "think": False,
-        "options": {"temperature": 0.3, "num_predict": 150}
+        "options": {"temperature": 0.3, "num_predict": 160}
     }
     
     try:
@@ -11697,6 +11871,18 @@ async def generate_neutral_description_and_title(ctx: UserContext, prompt: str) 
             desc_lines = []
             for line in lines:
                 cleaned_line = re.sub(r"^[\s#*>\-\"']+", "", line).strip()
+                m_sens_inline = re.search(r"\bsensitive\s*\**\s*:\s*(yes|no|true|false)\b\s*$", cleaned_line, flags=re.IGNORECASE)
+                if m_sens_inline and not re.match(r"^sensitive\s*\**\s*:", cleaned_line, flags=re.IGNORECASE):
+                    if ctx is not None and m_sens_inline.group(1).lower() in ("yes", "true"):
+                        ctx._last_desc_sensitive = True
+                    cleaned_line = cleaned_line[:m_sens_inline.start()].strip()
+                    line = re.sub(r"\bsensitive\s*\**\s*:\s*(yes|no|true|false)\b\s*$", "", line, flags=re.IGNORECASE).strip()
+                m_sens = re.match(r"^sensitive\s*\**\s*:\s*(.*)$", cleaned_line, flags=re.IGNORECASE)
+                if m_sens:
+                    sens_val = m_sens.group(1).strip(' "*#:-.').lower()
+                    if ctx is not None and sens_val.startswith(("yes", "true", "1", "nsfw", "sensitive")):
+                        ctx._last_desc_sensitive = True
+                    continue
                 m_inline = re.match(
                     r"^title\s*\**\s*:\s*(.+?)\s+description\s*\**\s*:\s*(.+)$",
                     cleaned_line,
@@ -11718,7 +11904,8 @@ async def generate_neutral_description_and_title(ctx: UserContext, prompt: str) 
                     if candidate_desc:
                         desc_lines.append(candidate_desc)
                     continue
-                desc_lines.append(line.strip(' "'))
+                if line.strip(' "'):
+                    desc_lines.append(line.strip(' "'))
 
             # Fallback if LLM emitted two bare lines (<Title>\n<Description>) without "Title:" prefix
             if not title and len(desc_lines) >= 2:
@@ -11802,26 +11989,29 @@ async def generate_image(ctx: UserContext, prompt, chat: str = 'default', update
     if not prompt:
         raise Exception("Please explain what do you want to see.")
 
+    if ctx is not None:
+        ctx._last_desc_sensitive = False
+        ctx._last_image_sensitive = False
+    effective_fun = await resolve_effective_fun_mode(ctx)
+
     comfy_ok = await is_comfy_available()
     if horde_image_mapper.should_use_horde_for_sdxl(ctx, comfy_available=comfy_ok):
         clean_p, p_prompt, mapped_sliders = extract_krea2_prompt_and_params(ctx, prompt, is_character=use_default_lora)
-        is_uncensored = bool(getattr(ctx, "private_mode", False) or getattr(ctx, "trusted_owner", False))
         return await generate_horde_mapped_image(
             ctx=ctx,
             prompt=prompt,
             persona_prompt=p_prompt if use_default_lora else "",
             sliders=mapped_sliders,
-            is_uncensored=is_uncensored,
+            is_uncensored=effective_fun,
             upload_storage=upload_storage,
         )
 
     user_id = ctx.user_id
 
-    effective_fun = ctx.private_mode and ctx.settings.get("content_mode", "work") == "fun"
-
     negative_prompt = NEGATIVE_PROMPTS["base"]
-    if effective_fun:
-        negative_prompt = NEGATIVE_PROMPTS["fun"] + "," + negative_prompt
+    if not effective_fun:
+        sfw_guard_neg = NEGATIVE_PROMPTS.get("sfw_guard") or NEGATIVE_PROMPTS["fun"]
+        negative_prompt = sfw_guard_neg + ", " + negative_prompt
 
 
     logging.info(f"Prompt: {prompt[:500]}")
@@ -11830,7 +12020,10 @@ async def generate_image(ctx: UserContext, prompt, chat: str = 'default', update
 
     # Промпт для генерации
     workflow_json["4"]["inputs"]["text"] = negative_prompt
-    workflow_json["85"]["inputs"]["text"] =  prompt + ", " + IMPROVEMENT_PROMPT
+    pos_chat_text = prompt + ", " + IMPROVEMENT_PROMPT
+    if not effective_fun:
+        pos_chat_text = f"modest opaque buttoned outfit, covered chest, {pos_chat_text}, sfw"
+    workflow_json["85"]["inputs"]["text"] = pos_chat_text
     
     # Randomize seed
     seed = random.randint(1, 1125899906842624)
@@ -11889,7 +12082,7 @@ async def generate_image(ctx: UserContext, prompt, chat: str = 'default', update
             return None
         resolved_civ = await horde_image_mapper.ensure_local_civitai_lora(
             cand_clean,
-            allow_nsfw=bool(effective_fun or ctx.private_mode),
+            allow_nsfw=bool(effective_fun),
             civitai_token=_resolve_civitai_token(ctx),
         )
         if not resolved_civ or not resolved_civ.get("filename"):
@@ -12007,7 +12200,12 @@ async def generate_image(ctx: UserContext, prompt, chat: str = 'default', update
         workflow_json["126"]["inputs"]["strength_clip"] = 0.0
         workflow_json["126"]["inputs"]["strength_model"] = 0.78 if ("pony" in model.lower() or "illustrious" in model.lower()) else 0.85
 
-    # Reset all loras to off, then activate active ones
+    # Reset all loras to off, then activate active ones (blocking fun LoRAs in Work mode)
+    if not effective_fun:
+        active_lora_keys = {
+            k for k in active_lora_keys
+            if str((lora_nodes.get(k) or {}).get("mode") or "work").lower() != "fun"
+        }
     for key, val in lora_nodes.items():
         val.pop("trained_words", None)
         if key in active_lora_keys:
@@ -12044,7 +12242,15 @@ async def generate_image(ctx: UserContext, prompt, chat: str = 'default', update
     else:
         img_title = await generate_title_from_prompt(ctx, neutral_description or img_prompt)
         
-    formatted_readme = f"#{img_title}\n\n{neutral_description}"
+    is_sens = detect_generation_sensitive(
+        img_prompt,
+        "",
+        [lora_nodes[k] for k in active_lora_keys if k in lora_nodes],
+        bool(getattr(ctx, "_last_desc_sensitive", False)),
+    )
+    if ctx is not None:
+        ctx._last_image_sensitive = is_sens
+    formatted_readme = build_companion_readme(img_title, neutral_description, img_prompt, sensitive=is_sens)
     
     # Create unique filename by appending timestamp to index
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -12315,7 +12521,10 @@ async def recognize_image_annotation(ctx: UserContext, img: bytes, prompt: str =
         "You are a meticulous vision assistant. Analyze the image and produce a concise "
         "factual annotation for a knowledge card. Include: the main subject, key objects "
         "and their arrangement, any visible text (OCR), colors, and notable details. "
-        "Write in clean plain prose, 2-5 sentences, no markdown, no preamble."
+        "Write in clean plain prose, 2-5 sentences, no markdown, no preamble. "
+        "Mandatory safety tagging: if the image visibly depicts nudity, toplessness, exposed breasts/chest/buttocks/genitalia, "
+        "visible nipples (including pokies through tight/sheer clothing), deep revealing cleavage, unbuttoned/open shirt exposing chest, "
+        "sheer/transparent clothes, underwear/lingerie/micro-bikini, or sexually suggestive/erotic poses, append `#sensitive` on a new line at the very end."
     )
     user_content = prompt.strip() if (prompt or "").strip() else "Describe this image."
 
@@ -12627,13 +12836,18 @@ def prepare_image_for_vision(img_bytes: bytes, max_side: int = 1600) -> tuple[by
 
 
 def format_readme_description(response: str, fallback_title: str = "") -> str:
-    """Форматирует описание по правилам Readme.md: # Заголовок\n\n2-3 предложения фактологии."""
+    """Форматирует описание по правилам Readme.md: # Заголовок\n\n2-3 предложения фактологии (+ #sensitive при NSFW)."""
     text = (response or "").strip()
     if not text:
         return ""
-    lines = [line.strip() for line in text.split("\n") if line.strip()]
+    is_sensitive = unified_memory.has_sensitive_markers(text)
+    cleaned_lines_raw = [
+        re.sub(r"(?:^|\s)#(?:sensitive|nsfw|18plus|explicit)\b", "", line, flags=re.IGNORECASE).strip()
+        for line in text.split("\n")
+    ]
+    lines = [line for line in cleaned_lines_raw if line]
     if not lines:
-        return ""
+        return f"# {fallback_title or 'Photo Description'}\n\n#sensitive" if is_sensitive else ""
 
     title = ""
     body_lines = []
@@ -12657,7 +12871,10 @@ def format_readme_description(response: str, fallback_title: str = "") -> str:
         body = " ".join(sentences[:3]).strip()
 
     title_clean = title.replace("\n", " ").strip()
-    return f"# {title_clean}\n\n{body}"
+    out = f"# {title_clean}\n\n{body}"
+    if is_sensitive:
+        out += "\n\n#sensitive"
+    return out
 
 
 async def recognize_image_readme(

@@ -89,6 +89,8 @@
   import lgFullscreen from 'lightgallery/plugins/fullscreen';
   import { setupGalleryPagination, getGalleryCaption } from "./lib/gallery-pagination.js";
   import { initGalleryCaptionAutoHide } from "./lib/gallery-caption-autohide.js";
+  import { get } from "svelte/store";
+  import { contentModeStore, hasSensitiveReadmeContent, hasSensitiveTag } from "./lib/content-mode.js";
   import 'lightgallery/css/lightgallery.css';
   import 'lightgallery/css/lg-fullscreen.css';
 
@@ -98,6 +100,125 @@
   let fmApi = null;
   let lgInstance = null;
   let lgPagination = null;
+  const _sensitivePathCache = new Map();
+
+  function _isMediaFileItem(f) {
+    if (!f || f.isDir || f.type === "folder") return false;
+    const m = String(f.mimeType || f.type || "").toLowerCase();
+    const nm = String(f.name || f.value || "");
+    const ext = nm.includes(".") ? nm.split(".").pop().toLowerCase() : "";
+    return (
+      m.startsWith("image/") ||
+      m.startsWith("video/") ||
+      ["jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "svg", "mp4", "webm", "mkv", "mov", "avi"].includes(ext)
+    );
+  }
+
+  function enrichFolderSensitiveFlags(itemsList, folderId, devPrefixRaw, isSharedFolder = false) {
+    if (!Array.isArray(itemsList) || itemsList.length === 0) return;
+    const cleanPrefix = devPrefixRaw
+      ? (devPrefixRaw.startsWith("/") ? devPrefixRaw : "/" + devPrefixRaw)
+      : "";
+    const readmeByStem = new Map();
+    for (const f of itemsList) {
+      if (!f || f.isDir || f.type === "folder") continue;
+      const nm = String(f.name || f.value || "");
+      if (/\.readme\.md$/i.test(nm)) {
+        readmeByStem.set(nm.replace(/\.readme\.md$/i, "").toLowerCase(), f);
+      }
+    }
+    if (readmeByStem.size === 0) return;
+
+    const shouldPreBlur = isSharedFolder || get(contentModeStore) !== "fun";
+    const pending = [];
+    for (const f of itemsList) {
+      if (!_isMediaFileItem(f)) continue;
+      if (hasSensitiveTag(f)) {
+        f.isSensitive = true;
+        continue;
+      }
+      const nm = String(f.name || f.value || "");
+      const stemNoExt = nm.replace(/\.[^.]+$/, "").toLowerCase();
+      const rItem = readmeByStem.get(stemNoExt) || readmeByStem.get(nm.toLowerCase());
+      if (!rItem) {
+        f.isSensitive = false;
+        continue;
+      }
+      const rawRPath = String(rItem.realPath || rItem.id || "");
+      const relRPath = cleanPrefix && rawRPath.startsWith(cleanPrefix + "/")
+        ? rawRPath.slice(cleanPrefix.length)
+        : rawRPath;
+      const cacheKey = `${cleanPrefix}:${relRPath}`;
+      if (_sensitivePathCache.has(cacheKey)) {
+        f.isSensitive = _sensitivePathCache.get(cacheKey);
+        f._checkingSensitive = false;
+      } else {
+        if (shouldPreBlur) {
+          f._checkingSensitive = true;
+        }
+        pending.push({ mediaItem: f, relRPath, cacheKey });
+      }
+    }
+
+    if (pending.length > 0) {
+      (async () => {
+        await Promise.all(
+          pending.map(async ({ mediaItem, relRPath, cacheKey }) => {
+            try {
+              const p2pMdUrl = `/p2p${cleanPrefix}` + encodeURI(relRPath.startsWith("/") ? relRPath : "/" + relRPath);
+              const res = await fetch(p2pMdUrl);
+              if (res.ok) {
+                const md = await res.text();
+                const isSens = hasSensitiveReadmeContent(md);
+                _sensitivePathCache.set(cacheKey, isSens);
+                mediaItem.isSensitive = isSens;
+              } else {
+                _sensitivePathCache.set(cacheKey, false);
+                mediaItem.isSensitive = false;
+              }
+            } catch (_) {
+              mediaItem.isSensitive = false;
+            } finally {
+              mediaItem._checkingSensitive = false;
+            }
+          })
+        );
+        if (fmApi) {
+          try {
+            fmApi.exec("provide-data", {
+              id: folderId,
+              data: itemsList.map((it) => ({ ...it }))
+            });
+          } catch (_) {}
+        }
+      })();
+    }
+  }
+
+  async function checkSingleFileSensitive(fileObj, devPrefix, cleanRealId) {
+    if (!fileObj) return false;
+    if (fileObj.isSensitive === true || hasSensitiveTag(fileObj)) return true;
+    const noExt = cleanRealId.replace(/\.[^./]+$/, "");
+    const cacheKey = `${devPrefix}:${noExt}.Readme.md`;
+    if (_sensitivePathCache.has(cacheKey)) {
+      return Boolean(_sensitivePathCache.get(cacheKey));
+    }
+    try {
+      let res = await fetch(`/p2p${devPrefix}` + encodeURI(noExt) + ".Readme.md");
+      if (!res.ok && noExt !== cleanRealId) {
+        res = await fetch(`/p2p${devPrefix}` + encodeURI(cleanRealId) + ".Readme.md");
+      }
+      if (res.ok) {
+        const md = await res.text();
+        const isSens = hasSensitiveReadmeContent(md);
+        _sensitivePathCache.set(cacheKey, isSens);
+        fileObj.isSensitive = isSens;
+        return isSens;
+      }
+      _sensitivePathCache.set(cacheKey, false);
+    } catch (_) {}
+    return false;
+  }
   let viewerJustClosed = false; // set before history.back() from any viewer close
   let viewerFile = null; // { url, type, name }
   // WordCraft editor state: remember where the user clicked a document so the
@@ -3467,6 +3588,12 @@
           });
 
         if (!window._folderItems) window._folderItems = {};
+        enrichFolderSensitiveFlags(
+          remapped,
+          id,
+          device.prefix || device.linkId || "",
+          String(id || "").startsWith("/shared-to-me")
+        );
         window._folderItems[id] = remapped;
         fmApi.exec("provide-data", { id: id, data: remapped });
       }
@@ -4140,6 +4267,7 @@
                 updateRootFilesData();
                 refreshDeviceNodeApps(device);
               }
+              enrichFolderSensitiveFlags(finalItems, fullId, device.prefix || device.linkId || "", false);
               window._folderItems[fullId] = finalItems;
               fmApi.exec("provide-data", { id: fullId, data: finalItems });
             }
@@ -5861,18 +5989,61 @@ async function blobToBase64(blob) {
         return;
       }
 
+      const isSharedLockedFile = Boolean(
+        file.isShared ||
+          String(file.id || "").startsWith("/shared-to-me") ||
+          String(parentPath || "").startsWith("/shared-to-me")
+      );
+      const shouldEnforceSensitiveLock = isSharedLockedFile || get(contentModeStore) !== "fun";
+
       if (mime.startsWith("image/") || ["jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "svg"].includes(ext)) {
+        if (shouldEnforceSensitiveLock) {
+          const clickedSensitive = await checkSingleFileSensitive(file, devPrefix, cleanRealId);
+          if (clickedSensitive) {
+            showToast(
+              isSharedLockedFile
+                ? $_("shared_sensitive_desc", {}, "Preview is permanently blurred on shared links. Download the file locally to view it.")
+                : $_("sensitive_work_mode_blur", {}, "Sensitive preview hidden in Work mode")
+            );
+            return;
+          }
+        }
         // Use LightGallery for images
         try {
             isGalleryLoading = true;
             const folderData = await device.drive.getFiles(realParent);
-            const images = folderData.filter(f => {
+            const readmeStemsInFolder = new Set(
+              folderData
+                .filter((x) => x && !x.isDir && /\.readme\.md$/i.test(x.name || x.value || ""))
+                .map((x) => String(x.name || x.value || "").replace(/\.readme\.md$/i, "").toLowerCase())
+            );
+            let images = folderData.filter(f => {
                 if (f.isDir || f.type === "folder") return false;
                 const fMime = (f.mimeType || f.type || "").toLowerCase();
                 const fName = f.name || f.value || "";
                 const fExt = fName.includes('.') ? fName.split('.').pop().toLowerCase() : "";
                 return fMime.startsWith("image/") || ["jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "svg"].includes(fExt);
             });
+            if (shouldEnforceSensitiveLock && readmeStemsInFolder.size > 0) {
+              const checked = await Promise.all(
+                images.map(async (imgF) => {
+                  const nm = String(imgF.name || imgF.value || "");
+                  const stem = nm.replace(/\.[^.]+$/, "").toLowerCase();
+                  if (!readmeStemsInFolder.has(stem) && !readmeStemsInFolder.has(nm.toLowerCase())) {
+                    return imgF;
+                  }
+                  const rawP = imgF.realPath || imgF.id || (realParent.endsWith("/") ? realParent + nm : realParent + "/" + nm);
+                  const cleanP = rawP.startsWith("/") ? rawP : "/" + rawP;
+                  const sens = await checkSingleFileSensitive(imgF, devPrefix, cleanP);
+                  return sens ? null : imgF;
+                })
+              );
+              images = checked.filter(Boolean);
+              if (images.length === 0) {
+                isGalleryLoading = false;
+                return;
+              }
+            }
             
             // Match current File Manager panel order if open, else natural sort by name
             let fmOrderMap = new Map();
@@ -6095,6 +6266,17 @@ async function blobToBase64(blob) {
           });
         })();
       } else if (mime.startsWith("video/") || ["mp4", "webm", "mkv", "avi", "mov"].includes(ext)) {
+        if (shouldEnforceSensitiveLock) {
+          const clickedVidSens = await checkSingleFileSensitive(file, devPrefix, cleanRealId);
+          if (clickedVidSens) {
+            showToast(
+              isSharedLockedFile
+                ? $_("shared_sensitive_desc", {}, "Preview is permanently blurred on shared links. Download the file locally to view it.")
+                : $_("sensitive_work_mode_blur", {}, "Sensitive preview hidden in Work mode")
+            );
+            return;
+          }
+        }
         try {
           _beginFolderFetch();
           const folderData = await device.drive.getFiles(realParent);

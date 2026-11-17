@@ -765,13 +765,17 @@ async def _rag_recognize_payload(
             logging.error(f"[rag/recognize] vision error: {e}")
             annotation = ""
             ai_tags = []
+        if annotation and annotation.strip():
+            auto_ann_tags = unified_memory.auto_extract_tags(annotation, filename)
+            ai_tags = sorted(set(ai_tags or []) | set(auto_ann_tags))
         if annotation and annotation.strip() and content_hash:
             _save_cached_annotation(content_hash, annotation, sorted(set(ai_tags or []) | set(geo_tags)))
 
     if not annotation or not annotation.strip():
         raise HTTPException(status_code=422, detail="could not recognize the image (vision returned empty annotation)")
 
-    all_tags = sorted(set(tags) | set(ai_tags or []) | set(geo_tags))
+    auto_cached_tags = unified_memory.auto_extract_tags(annotation, filename)
+    all_tags = sorted(set(tags) | set(ai_tags or []) | set(geo_tags) | set(auto_cached_tags))
 
     # Аннотационный эмбеддинг (теги активно участвуют)
     annotation_text = annotation + " " + " ".join(all_tags)
@@ -1362,7 +1366,7 @@ async def rag_index_endpoint(request: Request, background_tasks: BackgroundTasks
                             "error": f"{fn}: companion file {target} not found on node"}
                 try:
                     with open(full, "rb") as f:
-                        raw = unified_memory.convert_bytes_to_text(f.read(), fn)
+                        raw = f.read().decode("utf-8", errors="replace")
                 except Exception as e:
                     return {"action": "error", "doc_id": orig_doc_id, "error": f"{fn}: {e}"}
                 if not raw or not raw.strip():
@@ -1410,14 +1414,15 @@ async def rag_index_endpoint(request: Request, background_tasks: BackgroundTasks
                         raw = raw_with_tags
                     except Exception as e_w:
                         logging.warning(f"[rag/index] failed to write tags to companion {full}: {e_w}")
+                clean_for_index = re.sub(r"<!--[\s\S]*?-->", "", raw_with_tags).strip() or raw_with_tags
                 try:
                     n = unified_memory.chunk_and_index_document(
-                        raw, document_id=orig_doc_id, owner=owner, tags=merged_tags,
+                        clean_for_index, document_id=orig_doc_id, owner=owner, tags=merged_tags,
                         title=target, source_stamp=last_modified, image_preview=image_preview,
                     )
                     try:
                         unified_memory.upsert_memory_card(
-                            raw_with_tags, document_id=orig_doc_id, owner=owner, tags=merged_tags,
+                            clean_for_index, document_id=orig_doc_id, owner=owner, tags=merged_tags,
                             title=target, relevance="permanent", image_preview=image_preview,
                         )
                     except Exception as e_mem:
@@ -1566,6 +1571,7 @@ async def rag_index_endpoint(request: Request, background_tasks: BackgroundTasks
                     place_tokens = [t for t in place_tokens if len(t) >= 3 and t.replace(" ", "").isalpha()]
                     place_tokens += core_service.geo_place_localized(geo_place)
                     ai_tags = sorted(set(ai_tags) | set(place_tokens))
+                ai_tags = sorted(set(ai_tags) | set(unified_memory.auto_extract_tags(annotation, fn)))
                 _save_cached_annotation(content_hash, annotation, ai_tags)
             try:
                 readme_path = base_full + ".Readme.md"
@@ -1587,7 +1593,12 @@ async def rag_index_endpoint(request: Request, background_tasks: BackgroundTasks
             doc_id = _doc_id_of(full, rel)
             parent_folder_id = os.path.dirname(doc_id)
             folder_inherited = folder_tags_cache.get(parent_folder_id) or unified_memory.get_inherited_folder_tags(doc_id)
-            merged_tags = sorted(set(tags) | set(folder_inherited) | set(ai_tags or []))
+            merged_tags = sorted(
+                set(tags)
+                | set(folder_inherited)
+                | set(ai_tags or [])
+                | set(unified_memory.auto_extract_tags(annotation, fn))
+            )
             annotation_with_tags = unified_memory.append_tags_to_card_text(annotation, merged_tags)
             if annotation_with_tags.strip() != annotation.strip():
                 try:
@@ -4485,11 +4496,16 @@ async def chat_stream(request: Request, prompt: str, omd_key: str | None = Depen
                     yield f"data: {json.dumps({'delta': msg, 'role': 'assistant', 'done': True})}\n\n"
                     return
                 path, title, description = res[0], res[1], res[2]
+                is_sens = bool(getattr(ctx, "_last_image_sensitive", False) or unified_memory.has_sensitive_markers(img_prompt))
                 if len(res) > 3 and res[3]:
                     store_ephemeral_image(path, res[3])
-                    schedule_generated_image_push(omd_key, device_push, path, res[3], title, description, ctx=ctx)
+                    store_ephemeral_image(
+                        os.path.splitext(path)[0] + ".Readme.md",
+                        core_service.build_companion_readme(title, description, img_prompt, sensitive=is_sens).encode("utf-8"),
+                    )
+                    schedule_generated_image_push(omd_key, device_push, path, res[3], title, description, ctx=ctx, prompt=img_prompt, sensitive=is_sens)
                 image_url = f"/chat/image/{path}"
-                img_payload = {'path': path, 'title': title, 'description': description, 'url': image_url, 'prompt': img_prompt}
+                img_payload = {'path': path, 'title': title, 'description': description, 'url': image_url, 'prompt': img_prompt, 'sensitive': is_sens}
                 yield f"data: {json.dumps({'prompt': img_prompt, 'prompt_id': prompt_id, 'image': img_payload, 'tokens_consumed': ctx.tokens_consumed})}\n\n"
                 await asyncio.sleep(0.05)
                 yield f"data: {json.dumps({'status': 'typing'})}\n\n"
@@ -4535,11 +4551,16 @@ async def chat_stream(request: Request, prompt: str, omd_key: str | None = Depen
                     yield f"data: {json.dumps({'delta': msg, 'role': 'assistant', 'done': True})}\n\n"
                     return
                 path, title, description = res[0], res[1], res[2]
+                is_sens = bool(getattr(ctx, "_last_image_sensitive", False) or unified_memory.has_sensitive_markers(img_prompt))
                 if len(res) > 3 and res[3]:
                     store_ephemeral_image(path, res[3])
-                    schedule_generated_image_push(omd_key, device_push, path, res[3], title, description, ctx=ctx)
+                    store_ephemeral_image(
+                        os.path.splitext(path)[0] + ".Readme.md",
+                        core_service.build_companion_readme(title, description, img_prompt, sensitive=is_sens).encode("utf-8"),
+                    )
+                    schedule_generated_image_push(omd_key, device_push, path, res[3], title, description, ctx=ctx, prompt=img_prompt, sensitive=is_sens)
                 image_url = f"/chat/image/{path}"
-                img_payload = {'path': path, 'title': title, 'description': description, 'url': image_url, 'prompt': img_prompt}
+                img_payload = {'path': path, 'title': title, 'description': description, 'url': image_url, 'prompt': img_prompt, 'sensitive': is_sens}
                 yield f"data: {json.dumps({'prompt': img_prompt, 'prompt_id': prompt_id, 'image': img_payload, 'tokens_consumed': ctx.tokens_consumed})}\n\n"
                 await asyncio.sleep(0.05)
                 yield f"data: {json.dumps({'status': 'typing'})}\n\n"
@@ -4653,11 +4674,16 @@ async def chat_stream(request: Request, prompt: str, omd_key: str | None = Depen
                     yield f"data: {json.dumps({'delta': msg, 'role': 'assistant', 'done': True})}\n\n"
                     return
                 path, title, description = res[0], res[1], res[2]
+                is_sens = bool(getattr(ctx, "_last_image_sensitive", False) or unified_memory.has_sensitive_markers(img_prompt))
                 if len(res) > 3 and res[3]:
                     store_ephemeral_image(path, res[3])
-                    schedule_generated_image_push(omd_key, device_push, path, res[3], title, description, ctx=ctx, prompt=img_prompt)
+                    store_ephemeral_image(
+                        os.path.splitext(path)[0] + ".Readme.md",
+                        core_service.build_companion_readme(title, description, img_prompt, sensitive=is_sens).encode("utf-8"),
+                    )
+                    schedule_generated_image_push(omd_key, device_push, path, res[3], title, description, ctx=ctx, prompt=img_prompt, sensitive=is_sens)
                 image_url = f"/chat/image/{path}"
-                img_payload = {'path': path, 'title': title, 'description': description, 'url': image_url, 'prompt': img_prompt}
+                img_payload = {'path': path, 'title': title, 'description': description, 'url': image_url, 'prompt': img_prompt, 'sensitive': is_sens}
                 yield f"data: {json.dumps({'prompt': img_prompt, 'prompt_id': prompt_id, 'image': img_payload, 'tokens_consumed': ctx.tokens_consumed, 'done': True})}\n\n"
                 await asyncio.sleep(0.05)
                 
@@ -4874,9 +4900,14 @@ async def generate_character_image(request: Request, data: GenerateInput):
         is_new = data.message_nonce is None and data.message_index is None
         res = await core_service.generate_character_image(ctx, data.prompt, data.chat, update_history=is_new, prompt_id=data.prompt_id, upload_storage=upload_storage_flag)
         filename, title, description = res[0], res[1], res[2]
+        is_sens = bool(getattr(ctx, "_last_image_sensitive", False) or unified_memory.has_sensitive_markers(data.prompt))
         if len(res) > 3 and res[3]:
             store_ephemeral_image(filename, res[3])
-            schedule_generated_image_push(data.omd_key, data.device_push, filename, res[3], title, description, ctx=ctx)
+            store_ephemeral_image(
+                os.path.splitext(filename)[0] + ".Readme.md",
+                core_service.build_companion_readme(title, description, data.prompt, sensitive=is_sens).encode("utf-8"),
+            )
+            schedule_generated_image_push(data.omd_key, data.device_push, filename, res[3], title, description, ctx=ctx, prompt=data.prompt, sensitive=is_sens)
         
         # [LEGACY HISTORY] Load history removed
         history = []
@@ -4892,6 +4923,7 @@ async def generate_character_image(request: Request, data: GenerateInput):
             "url": f"/chat/image/{filename}",
             "title": title,
             "description": description,
+            "sensitive": is_sens,
             "tokens_consumed": ctx.tokens_consumed
         }
     except HTTPException:
@@ -4923,15 +4955,21 @@ async def generate_general_image(request: Request, data: GenerateInput):
         # generate_general_image returns (filename, title, description, img_data)
         res = await core_service.generate_general_image(ctx, data.prompt, data.chat, prompt_id=data.prompt_id, upload_storage=upload_storage_flag)
         filename, title, description = res[0], res[1], res[2]
+        is_sens = bool(getattr(ctx, "_last_image_sensitive", False) or unified_memory.has_sensitive_markers(data.prompt))
         if len(res) > 3 and res[3]:
             store_ephemeral_image(filename, res[3])
-            schedule_generated_image_push(data.omd_key, data.device_push, filename, res[3], title, description, ctx=ctx)
+            store_ephemeral_image(
+                os.path.splitext(filename)[0] + ".Readme.md",
+                core_service.build_companion_readme(title, description, data.prompt, sensitive=is_sens).encode("utf-8"),
+            )
+            schedule_generated_image_push(data.omd_key, data.device_push, filename, res[3], title, description, ctx=ctx, prompt=data.prompt, sensitive=is_sens)
         return {
             "image": filename,
             "path": filename,
             "url": f"/chat/image/{filename}",
             "title": title,
             "description": description,
+            "sensitive": is_sens,
             "tokens_consumed": ctx.tokens_consumed
         }
     except HTTPException:
@@ -5015,15 +5053,17 @@ async def generate_krea2_endpoint(request: Request, data: KreaGenerateInput):
 
             filename, title, description, img_data = res[0], res[1], res[2], res[3]
             raw_prompt = (data.prompt or data.persona_prompt or "").strip()
+            is_sens = bool(getattr(ctx, "_last_image_sensitive", False) or unified_memory.has_sensitive_markers(raw_prompt))
             if img_data:
                 store_ephemeral_image(filename, img_data)
                 readme_filename = os.path.splitext(filename)[0] + ".Readme.md"
-                readme_text = f"# {title}\n\n{description}\n"
-                if raw_prompt:
-                    readme_text += f"\n<!-- prompt: {raw_prompt} -->\n"
+                readme_text = core_service.build_companion_readme(title, description, raw_prompt, sensitive=is_sens)
                 store_ephemeral_image(readme_filename, readme_text.encode("utf-8"))
                 if data.device_push:
-                    schedule_generated_image_push(data.omd_key, data.device_push, filename, img_data, title, description, ctx=ctx, prompt=raw_prompt)
+                    schedule_generated_image_push(
+                        data.omd_key, data.device_push, filename, img_data, title, description,
+                        ctx=ctx, prompt=raw_prompt, sensitive=is_sens,
+                    )
 
             safe_subfolder = core_service.sanitize_story_slug(data.subfolder) if data.subfolder else ""
             out_payload = {
@@ -5034,6 +5074,8 @@ async def generate_krea2_endpoint(request: Request, data: KreaGenerateInput):
                 "title": title,
                 "description": description,
                 "prompt": raw_prompt,
+                "sensitive": is_sens,
+                "tags": ["sensitive"] if is_sens else [],
                 "persona": data.persona_name or data.persona_id or "",
                 "saved_locally": save_locally,
                 "gpu_time": gpu_time,
@@ -5889,6 +5931,12 @@ class KreaStatusInput(BaseModel):
 async def get_krea_presets_endpoint(request: Request, data: Optional[KreaStatusInput] = None):
     """Отдает реестр стилей и LoRA для Creative Studio. Для гостей креевские LoRA исключаются."""
     ctx = _build_krea_ctx(request, data)
+    req_mode = (
+        request.query_params.get("content_mode")
+        or (data.settings.get("content_mode") if data and isinstance(data.settings, dict) else None)
+        or (ctx.settings.get("content_mode") if ctx and isinstance(getattr(ctx, "settings", None), dict) else None)
+        or ""
+    ).strip().lower()
     include_fun = False
     include_krea = False
     try:
@@ -5899,6 +5947,8 @@ async def get_krea_presets_endpoint(request: Request, data: Optional[KreaStatusI
         is_priv = bool(getattr(ctx, "private_mode", False) or getattr(ctx, "trusted_owner", False))
         include_fun = is_priv
         include_krea = is_priv
+    if req_mode == "work":
+        include_fun = False
     return core_service.get_krea_presets(include_fun=include_fun, include_krea=include_krea)
 
 

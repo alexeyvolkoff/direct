@@ -3,6 +3,7 @@
 	import { dateToString } from "@svar-ui/lib-dom";
 	import { formatSize } from "../store/index.js";
 	import Icon from "./ui/Icon.svelte";
+	import { contentModeStore, hasSensitiveTag } from "../../content-mode.js";
 
 	const { preview, icon } = getContext("filemanager-store").templates;
 
@@ -150,6 +151,19 @@
 		};
 	});
 
+	const shouldBlurInfoPreview = $derived.by(() => {
+		const it = basic.item;
+		if (!it) return false;
+		const isSens = Boolean(it.isSensitive || it._checkingSensitive || hasSensitiveTag(it));
+		if (!isSens) return false;
+		const isSharedLocked = Boolean(
+			it.isShared ||
+				String(it.id || "").startsWith("/shared-to-me") ||
+				String(it.parent || "").startsWith("/shared-to-me")
+		);
+		return isSharedLocked || $contentModeStore !== "fun";
+	});
+
 	async function getExtraInfo(item) {
 		if (!extraInfo || !item) return null;
 		try {
@@ -178,8 +192,9 @@
 				</div>
 			</div>
 			{#if basic.previewSrc}
-				<div class="wx-img-wrapper">
+				<div class="wx-img-wrapper" class:wx-info-sensitive-wrap={shouldBlurInfoPreview}>
 					<img
+						class:wx-info-sensitive-blur={shouldBlurInfoPreview}
 						src={basic.previewSrc}
 						alt={_("A miniature file preview")}
 					/>
@@ -254,8 +269,9 @@
 			<div class="wx-no-info-wrapper">
 				<div class="wx-no-info">
 					{#if basic.previewSrc}
-						<div class="wx-img-wrapper">
+						<div class="wx-img-wrapper" class:wx-info-sensitive-wrap={shouldBlurInfoPreview}>
 							<img
+								class:wx-info-sensitive-blur={shouldBlurInfoPreview}
 								src={basic.previewSrc}
 								alt={_("A miniature file preview")}
 							/>
@@ -441,5 +457,16 @@
 		line-height: var(--wx-line-height);
 		font-weight: var(--wx-font-weight-md);
 		text-align: center;
+	}
+	.wx-info-sensitive-wrap {
+		overflow: hidden;
+		position: relative;
+		border-radius: 8px;
+	}
+	.wx-info-sensitive-blur {
+		filter: blur(26px) saturate(0.72) !important;
+		transform: scale(1.14) !important;
+		pointer-events: none;
+		user-select: none;
 	}
 </style>

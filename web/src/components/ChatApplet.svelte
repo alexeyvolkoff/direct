@@ -20,6 +20,7 @@
   import { unreadCount, openNotificationsModal } from "../lib/notification-inbox.js";
   import { gatewayConfig } from "../lib/gateway-config.js";
   import { resolveAppMode, APP_MODE_CHAT } from "../lib/app-mode.js";
+  import { contentModeStore, setGlobalContentMode } from "../lib/content-mode.js";
   import {
     loadAvailablePersonas,
     compactPersonaForChat,
@@ -110,12 +111,12 @@
   let contentMode = typeof localStorage !== "undefined"
     ? localStorage.getItem("onmychat_mode") || "work"
     : "work";
+  $: if ($contentModeStore && $contentModeStore !== contentMode) {
+    contentMode = $contentModeStore;
+  }
 
   function toggleMode() {
-    contentMode = contentMode === "work" ? "fun" : "work";
-    if (typeof localStorage !== "undefined") {
-      localStorage.setItem("onmychat_mode", contentMode);
-    }
+    contentMode = setGlobalContentMode(contentMode === "work" ? "fun" : "work");
   }
 
 
@@ -1661,6 +1662,7 @@
         <MemoryCards
           knowledgeList={allKnowledgeCards}
           {isDarkTheme}
+          {contentMode}
           {isOverlayHeader}
           {sidebarOpen}
           isOwner={computedPrivateMode}
@@ -1736,6 +1738,7 @@
       targetLinkId={targetLinkId || targetDevice?.linkId || ""}
       isPrivateMode={computedPrivateMode}
       {isDarkTheme}
+      {contentMode}
       thumbFetcher={fetchDeviceThumb}
       on:open-file={(e) => forwardOpenFile(e.detail)}
       on:open-folder={(e) => handleOpenFolder(e.detail)}

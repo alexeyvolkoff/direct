@@ -21,3 +21,6 @@ Guidelines:
    - Separate the '# Title' from the body with exactly one blank line.
    - No bullet points, no numbered lists, no conversational filler (never say "This photo shows" or "In the image").
    - Strictly 2-3 sentences in the body.
+5. Sensitive / NSFW tagging (mandatory):
+   - If the image visibly depicts nudity, toplessness, exposed breasts/chest/buttocks/genitalia, visible nipples (including pokies through tight/sheer fabric), deep revealing cleavage, unbuttoned/open shirt exposing chest, sheer/transparent clothing, underwear/lingerie/micro-bikini, or sexually suggestive/erotic poses, append `#sensitive` on a new line at the very end after the body.
+   - Do NOT add `#sensitive` for ordinary clothed everyday, travel, family, or landscape photos.

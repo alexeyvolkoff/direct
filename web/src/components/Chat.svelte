@@ -30,6 +30,7 @@
   import { compactPersonaForChat, isCustomPersona } from "../lib/personas-loader.js";
   import { searchClientKnowledgeChunks, embedTexts } from "../lib/client-rag.js";
   import { isLocalEmbeddingsEnabled } from "../lib/local-embedder.js";
+  import { contentModeStore, hasSensitiveReadmeContent, hasSensitiveTag } from "../lib/content-mode.js";
 
   marked.use(markedKatex({ throwOnError: false, nonStandard: true }));
   marked.setOptions({ breaks: true, gfm: true });
@@ -155,6 +156,17 @@
   export let chatStore = null;
   export let isDarkTheme = true;
   export let contentMode = "work"; // 'work' | 'fun'
+  $: effectiveContentMode = $contentModeStore || contentMode || "work";
+
+  function isSensitiveChatImage(imgObj) {
+    if (!imgObj) return false;
+    return Boolean(
+      imgObj.sensitive === true ||
+      hasSensitiveTag(imgObj.tags) ||
+      hasSensitiveReadmeContent(imgObj.prompt || "") ||
+      hasSensitiveTag(imgObj.description || "")
+    );
+  }
   export let currentChatTitle = "";
   export let userName = "";
   export let isOverlayHeader = false;
@@ -3783,7 +3795,14 @@ function lastFreshTitle(messages) {
 
       const title = imgObj.title || "Generated Image";
       const desc = imgObj.description || imgObj.prompt || "";
-      const readmeContent = `# ${title}\n\n${desc}\n`;
+      const isSensImg = isSensitiveChatImage(imgObj);
+      let readmeContent = `# ${title}\n\n${desc}\n`;
+      if (isSensImg) {
+        readmeContent += `\n#sensitive\n`;
+      }
+      if (imgObj.prompt) {
+        readmeContent += `\n<!-- prompt: ${imgObj.prompt} -->\n`;
+      }
       const readmeB64 = btoa(unescape(encodeURIComponent(readmeContent)));
       const readmeFilename = filename.replace(/\.[^/.]+$/, "") + ".Readme.md";
       const fullImagePath = `${folder}/${filename}`;
@@ -3929,6 +3948,7 @@ function lastFreshTitle(messages) {
     for (const m of chat?.messages || []) {
       for (const p of m.parts || []) {
         if (p.type === "data-image" && p.data && (p.data.path || p.data.url || p.data.data)) {
+          if (effectiveContentMode !== "fun" && isSensitiveChatImage(p.data)) continue;
           const path = (p.data.path || "").replace(/^\/+/, "");
           const key = p.data.path || p.data.url;
           const rawTitle = (p.data.title || "").trim();
@@ -3974,6 +3994,7 @@ function lastFreshTitle(messages) {
             subHtml,
           });
         } else if (p.type === "data-imported" && p.data?.docId) {
+          if (effectiveContentMode !== "fun" && hasSensitiveTag(p.data)) continue;
           // Распознанная/приаттаченная картинка тоже участвует в общей галерее чата:
           // файл с устройства — тот же /p2p+ресайз, гость/фолбэк — base64-превью.
           const deviceImg = isDeviceImageCard(p.data);
@@ -5676,17 +5697,19 @@ function lastFreshTitle(messages) {
                       {@const imgKey = block.data.path || block.data.url}
                       {@const isFailed = (imgLoadingState[imgKey] === 'error' || (p2pImgFailed[imgKey] && !imageBlobCache[imgKey] && imgLoadingState[imgKey] !== 'loading')) && !regeneratingImages[imgKey]}
                       {@const imgSrc = !isFailed ? getImageSrc(block.data, imgLoadingState, p2pImgFailed, imageBlobCache) : ""}
+                      {@const isSensChatImg = effectiveContentMode !== "fun" && isSensitiveChatImage(block.data)}
                       <div class="chat-image-card">
                         <div
                           class="chat-image-wrap"
                           class:has-error={isFailed}
+                          class:is-sensitive-chat-wrap={isSensChatImg}
                           role="button"
                           tabindex="0"
                           on:click={() => {
-                            if (!isFailed) openChatGallery(block.data.path || block.data.url);
+                            if (!isFailed && !isSensChatImg) openChatGallery(block.data.path || block.data.url);
                           }}
                           on:keydown={(e) => {
-                            if (e.key === "Enter" && !isFailed) openChatGallery(block.data.path || block.data.url);
+                            if (e.key === "Enter" && !isFailed && !isSensChatImg) openChatGallery(block.data.path || block.data.url);
                           }}
                         >
                           {#if imgSrc && !isFailed && !regeneratingImages[imgKey]}
@@ -5694,14 +5717,16 @@ function lastFreshTitle(messages) {
                               src={imgSrc}
                               alt={block.data.title || "Generated image"}
                               class="chat-generated-img"
+                              class:sensitive-blur={isSensChatImg}
                               on:error={(e) => handleImageSrcError(block.data, e)}
                               on:load={(e) => {
-                                // /p2p-путь означает: файл реально лежит на
-                                // устройстве — hint о временной картинке снимаем.
                                 const src = e?.target?.src || "";
                                 if (src.includes("/p2p/")) markImageSaved(block.data);
                               }}
                             />
+                            {#if isSensChatImg}
+                              <span class="chat-sensitive-badge">🔞 Sensitive</span>
+                            {/if}
                           {:else}
                             <div class="chat-image-placeholder" class:has-error={isFailed}>
                               {#if isFailed}
@@ -10078,5 +10103,40 @@ function lastFreshTitle(messages) {
     color: inherit;
     cursor: pointer;
     font-size: 13px;
+  }
+
+  .chat-image-wrap.is-sensitive-chat-wrap {
+    position: relative;
+    overflow: hidden;
+    cursor: default;
+  }
+
+  .chat-generated-img.sensitive-blur {
+    filter: blur(26px) saturate(0.72);
+    transform: scale(1.12);
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .chat-sensitive-badge {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 3;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    background: rgba(15, 23, 42, 0.82);
+    color: #f8fafc;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(8px);
+    pointer-events: none;
+  }
+
+  .chat-container.light-theme .chat-sensitive-badge {
+    background: rgba(255, 255, 255, 0.92);
+    color: #1e293b;
+    border-color: rgba(15, 23, 42, 0.18);
   }
 </style>

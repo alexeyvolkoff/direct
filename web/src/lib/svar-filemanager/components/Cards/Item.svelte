@@ -1,6 +1,7 @@
 <script>
 	import { getContext } from "svelte";
 	import { setID } from "@svar-ui/lib-dom";
+	import { contentModeStore, hasSensitiveTag } from "../../../content-mode.js";
 
 	let { item } = $props();
 
@@ -65,6 +66,19 @@
 			!item.isRootSection
 	);
 	let isShared = $derived(item.isShared);
+	let isSharedLocked = $derived(
+		Boolean(
+			item.isShared ||
+				String(item.id || "").startsWith("/shared-to-me") ||
+				String(item.parent || "").startsWith("/shared-to-me")
+		)
+	);
+	let isSensitiveMedia = $derived(
+		Boolean(item.isSensitive || item._checkingSensitive || hasSensitiveTag(item))
+	);
+	let shouldBlurSensitive = $derived(
+		Boolean(isSensitiveMedia && (isSharedLocked || $contentModeStore !== "fun"))
+	);
 	let typeLabel = $derived.by(() => {
 		if (item.typeLabel) {
 			return _(item.typeLabel);
@@ -152,7 +166,7 @@
 	>
 		<div class="wx-preview-wrapper">
 			{#if preview && !previewError}
-				<div class="wx-preview wx-file-preview">
+				<div class="wx-preview wx-file-preview" class:wx-sensitive-preview-wrap={shouldBlurSensitive}>
 					{#if !previewLoaded}
 						<div class="wx-card-placeholder">
 							{#if icon}
@@ -165,6 +179,7 @@
 					<img
 						class="wx-card-preview"
 						class:wx-card-preview-hidden={!previewLoaded}
+						class:wx-sensitive-blur={shouldBlurSensitive}
 						alt={_("Preview")}
 						loading="lazy"
 						src={preview}
@@ -178,6 +193,9 @@
 							}, 5000);
 						}}
 					/>
+					{#if shouldBlurSensitive && (item.isSensitive || hasSensitiveTag(item))}
+						<span class="wx-sensitive-badge">{isSharedLocked ? "🔒 Sensitive" : "🔞 Sensitive"}</span>
+					{/if}
 				</div>
 			{:else if icon}
 				<div class="wx-preview wx-file-icon">
@@ -640,5 +658,36 @@
 			line-height: 1;
 			display: block;
 		}
+	}
+
+	.wx-sensitive-preview-wrap {
+		position: relative;
+		overflow: hidden;
+	}
+	.wx-card-preview.wx-sensitive-blur {
+		filter: blur(24px) saturate(0.72) !important;
+		transform: scale(1.14) !important;
+		pointer-events: none;
+		user-select: none;
+	}
+	.wx-sensitive-badge {
+		position: absolute;
+		top: 8px;
+		left: 8px;
+		z-index: 3;
+		padding: 3px 8px;
+		border-radius: 999px;
+		font-size: 10.5px;
+		font-weight: 600;
+		background: rgba(15, 23, 42, 0.82);
+		color: #f8fafc;
+		border: 1px solid rgba(255, 255, 255, 0.2);
+		backdrop-filter: blur(6px);
+		pointer-events: none;
+	}
+	:global(.light-theme) .wx-sensitive-badge {
+		background: rgba(255, 255, 255, 0.9);
+		color: #1e293b;
+		border-color: rgba(15, 23, 42, 0.16);
 	}
 </style>

@@ -18,6 +18,7 @@ import {
   computeContentHash,
 } from "./client-rag.js";
 import { isLocalVisionEnabled, recognizeImageLocal, recognizeImageNative } from "./local-vision.js";
+import { hasSensitiveReadmeContent, hasSensitiveTag } from "./content-mode.js";
 
 const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "webp"]);
 const MANIFEST_KEY = "omd_indexed_manifest_v1";
@@ -345,7 +346,7 @@ export async function scanDeviceForIndexable(drive, {
         continue;
       }
 
-      if (includeDocs && bucket !== "photos" && isSupportedDocumentExt(name)) {
+      if (includeDocs && bucket !== "photos" && isSupportedDocumentExt(name) && !/\.readme\.md$/i.test(name)) {
         if (size <= 15 * 1024 * 1024) {
           docs.push({ kind: "doc", name, path: itemPath, docId, size, mtimeMs });
         }
@@ -657,11 +658,47 @@ class ClientIndexerRunner {
               data = await res.json();
             }
 
+            const companionPath = item.path.replace(/\.[^/.]+$/, "") + ".Readme.md";
+            let companionReadme = "";
+            try {
+              const mdBytes = await readDriveFileBytes(drive, companionPath, 0);
+              if (mdBytes && mdBytes.length > 0) {
+                companionReadme = new TextDecoder("utf-8").decode(mdBytes);
+              }
+            } catch (_) {}
+
+            const baseTags = Array.isArray(data.tags) ? [...data.tags] : ["photo"];
+            const isSensitivePhoto =
+              hasSensitiveTag(baseTags) ||
+              hasSensitiveReadmeContent(data.annotation || "") ||
+              hasSensitiveReadmeContent(companionReadme);
+            if (isSensitivePhoto && !hasSensitiveTag(baseTags)) {
+              baseTags.push("sensitive");
+            }
+            let cardText = data.annotation || "";
+            if (isSensitivePhoto && !hasSensitiveTag(cardText)) {
+              cardText = cardText ? `${cardText.trim()}\n\n#sensitive` : "#sensitive";
+            }
+            if (isSensitivePhoto && typeof drive.writeFile === "function") {
+              try {
+                if (companionReadme && !hasSensitiveTag(companionReadme)) {
+                  const mPrompt = companionReadme.match(/(\n*<!--\s*prompt:[\s\S]*?-->\s*)$/i);
+                  const updatedReadme = mPrompt
+                    ? `${companionReadme.slice(0, mPrompt.index).trim()}\n\n#sensitive\n\n${mPrompt[1].trim()}\n`
+                    : `${companionReadme.trim()}\n\n#sensitive\n`;
+                  await drive.writeFile(companionPath, new TextEncoder().encode(updatedReadme));
+                } else if (!companionReadme && cardText) {
+                  const newReadme = `# ${data.title || item.name}\n\n${cardText.trim()}\n`;
+                  await drive.writeFile(companionPath, new TextEncoder().encode(newReadme));
+                }
+              } catch (_) {}
+            }
+
             await chatStore.addKnowledge({
               document_id: item.docId,
               title: data.title || item.name,
-              text: data.annotation || "",
-              tags: Array.isArray(data.tags) ? data.tags : ["photo"],
+              text: cardText,
+              tags: baseTags,
               collection: "user",
               content_hash: contentHash || data.content_hash || "",
               imagePreview: previewDataUrl || data.imagePreview || "",

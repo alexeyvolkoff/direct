@@ -516,3 +516,91 @@ async def test_owner_chat_uses_sdxl_except_for_krea2_personas(monkeypatch):
     assert can_krea_manual is True
 
 
+@pytest.mark.asyncio
+async def test_work_fun_toggle_and_sensitive_tagging():
+    import core_service
+    import unified_memory
+
+    # 1. Node Owner in Work mode MUST get SFW guardrails (effective fun = False)
+    owner_work = SimpleNamespace(
+        user_id="alexey",
+        private_mode=True,
+        trusted_owner=True,
+        is_unlimited=True,
+        settings={"content_mode": "work"},
+    )
+    assert await core_service.resolve_effective_fun_mode(owner_work, {"content_mode": "work"}) is False
+    assert await core_service.resolve_effective_fun_mode(owner_work) is False
+
+    # 2. Node Owner in Fun mode gets uncensored mode (effective fun = True)
+    owner_fun = SimpleNamespace(
+        user_id="alexey",
+        private_mode=True,
+        trusted_owner=True,
+        is_unlimited=True,
+        settings={"content_mode": "fun"},
+    )
+    assert await core_service.resolve_effective_fun_mode(owner_fun) is True
+    # Slider override to work still forces SFW even if settings had fun
+    assert await core_service.resolve_effective_fun_mode(owner_fun, {"content_mode": "work"}) is False
+
+    # 3. Guest cannot bypass SFW even if passing content_mode="fun"
+    guest_spoof = SimpleNamespace(
+        user_id="guest_123",
+        private_mode=False,
+        trusted_owner=False,
+        is_unlimited=False,
+        settings={"content_mode": "fun"},
+    )
+    assert await core_service.resolve_effective_fun_mode(guest_spoof, {"content_mode": "fun"}) is False
+
+    # 4. Pony / shirt prompts in Work/Guest mode still get modest opaque buttoned clothing + rating_explicit/pokies negative
+    mapped_shirt = horde_image_mapper.map_ui_to_horde_request(
+        prompt="woman in white shirt walking in office hallway",
+        sliders={"base_model": "sdxl_perfect", "archetypes": ["sdxl_oriana"]},
+        is_uncensored=False,
+        use_sdxl=True,
+    )
+    pos_s, neg_s = mapped_shirt["prompt"].split(" ### ", 1)
+    assert "modest opaque buttoned outfit" in pos_s
+    assert "covered chest" in pos_s
+    assert "rating_explicit" in neg_s
+    assert "pokies" in neg_s
+    assert "unbuttoned shirt" in neg_s
+
+    # 5. Mandatory #sensitive tagging at generation & indexing without polluting <!-- prompt -->
+    nsfw_readme = core_service.build_companion_readme(
+        "Midnight Silhouette",
+        "An intimate artistic portrait in soft lighting.",
+        prompt="1girl, topless, lace lingerie, bedroom",
+        sensitive=core_service.detect_generation_sensitive("1girl, topless, lace lingerie, bedroom"),
+    )
+    assert "\n#sensitive\n" in nsfw_readme
+    assert "<!-- prompt: 1girl, topless, lace lingerie, bedroom -->" in nsfw_readme
+
+    # Indexing extracts 'sensitive' tag and preserves <!-- prompt --> at the very end
+    legacy_nsfw_readme = "# Hallway Portrait\n\nSoft corridor lighting.\n\n<!-- prompt: woman, unbuttoned shirt, bare breasts, nsfw -->\n"
+    extracted_tags = unified_memory.auto_extract_tags(legacy_nsfw_readme, "KREA_001.png")
+    assert "sensitive" in extracted_tags
+    updated_readme = unified_memory.append_tags_to_card_text(legacy_nsfw_readme, extracted_tags)
+    assert "#sensitive" in updated_readme
+    assert updated_readme.strip().endswith("<!-- prompt: woman, unbuttoned shirt, bare breasts, nsfw -->")
+
+    # SFW prompt never false-triggers #sensitive
+    sfw_readme = core_service.build_companion_readme(
+        "Autumn Park Walk",
+        "A woman in a warm trench coat walking among golden leaves.",
+        prompt="modest opaque buttoned outfit, covered chest, woman in trench coat walking in autumn park",
+        sensitive=core_service.detect_generation_sensitive("woman in trench coat walking in autumn park"),
+    )
+    assert "#sensitive" not in sfw_readme
+    assert "sensitive" not in unified_memory.auto_extract_tags(sfw_readme, "KREA_002.png")
+
+    # Vision recognition formatter preserves #sensitive
+    formatted_vis = core_service.format_readme_description(
+        "# Studio Portrait\n\nA woman posing in sheer lingerie in a dimly lit room.\n#sensitive"
+    )
+    assert formatted_vis.endswith("#sensitive")
+
+
+

@@ -1,10 +1,12 @@
-Rewrite the input prompt into a short, vivid, and human-like gallery title and description in English.
+Rewrite the input prompt into a short, vivid, and human-like gallery title and description in English, and classify whether the prompt is sensitive (NSFW).
 Make the description sound like a natural gallery note or story about the image.
-Keep it safe for work (SFW) and engaging, limited to 1-2 sentences.
+Keep the Title and Description safe for work (SFW) and engaging, limited to 1-2 sentences.
 CRITICAL: Always write BOTH the Title and Description strictly in English (even if the input prompt contains Russian or another language).
-Reply using ONLY these exact two lines (include the "Title:" and "Description:" prefixes, no quotes, no markdown, no extra text):
+Set Sensitive to 'yes' if the input prompt requests or implies nudity, toplessness, exposed breasts/cleavage/genitalia/buttocks, lingerie/underwear/bikini, sheer/see-through/unbuttoned revealing clothing, or erotic/sexual/NSFW themes in any language; otherwise set Sensitive to 'no'.
+Reply using ONLY these exact three lines (include the prefixes, no quotes, no markdown, no extra text):
 Title: <short English title, 2-5 words>
 Description: <1-2 sentence English gallery description>
+Sensitive: <yes or no>
 
 Input Prompt: {prompt}
 

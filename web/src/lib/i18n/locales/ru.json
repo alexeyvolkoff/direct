@@ -1941,5 +1941,10 @@
   "krea_civitai_select_btn": "✓ Выбрать",
   "krea_civitai_add_select_btn": "+ Добавить и выбрать",
   "krea_persona_oneshot_ref_sdxl_hint": "Перенос лица с аватара: IP-Adapter Plus Face + ReActor FaceSwap",
-  "krea_sdxl_oneshot_pipeline_desc": "IP-Adapter Plus Face + ReActor FaceSwap (активно сходство с аватаром)"
+  "krea_sdxl_oneshot_pipeline_desc": "IP-Adapter Plus Face + ReActor FaceSwap (активно сходство с аватаром)",
+  "shared_sensitive_title": "Деликатный контент (#sensitive)",
+  "shared_sensitive_desc": "Предпросмотр по расшаренной ссылке скрыт. Скачайте файл локально для просмотра.",
+  "sensitive_work_mode_blur": "Деликатное превью скрыто в режиме Work (#sensitive)",
+  "work_mode_active": "Режим Work: активны безопасные фильтры и блюр #sensitive",
+  "fun_mode_active": "Режим Fun: ограничения и блюр #sensitive отключены"
 }

@@ -520,8 +520,11 @@ BASE_NEGATIVE_PROMPT = (
 )
 
 GUEST_SFW_NEGATIVE_PROMPT = (
-    "nsfw, nude, naked, explicit, topless, nipples, genitalia, areola, deep cleavage, "
-    "underwear, lingerie, sexual, erotic, suggestive, uncensored, fetishes, gore"
+    "rating_explicit, rating_questionable, nsfw, nude, naked, explicit, questionable, topless, "
+    "nipples, pokies, erect nipples, nipples through clothes, visible nipples, areola, no bra, braless, "
+    "genitalia, underboob, sideboob, deep cleavage, plunging neckline, open shirt, unbuttoned shirt, "
+    "sheer clothing, see-through, transparent clothes, wet clothes, microskirt, upskirt, "
+    "underwear, lingerie, bikini slip, sexual, erotic, lewd, suggestive, uncensored, fetishes, gore"
 )
 
 PONY_MODEL_NAMES = {
@@ -1319,10 +1322,16 @@ def map_ui_to_horde_request(
     if use_sdxl and not re.search(r"\b(text|logo|sign|print|printed|banner|надпис|принт|лого)\b", clean_scene, re.I):
         prompt_parts.append("plain unprinted clothing")
 
-    # Gentle SFW clothing guard when guest runs Pony or NSFW-trained CivitAI character LoRA
-    if not is_uncensored and use_sdxl and (uses_pony or has_char_civitai_lora):
-        if not re.search(r"\b(shirt|dress|jacket|blazer|sweater|coat|suit|armor|hoodie|top|blouse|outfit)\b", clean_scene, re.I):
-            prompt_parts.append("stylish modest outfit")
+    # SFW clothing guard when running in SFW mode (Guest or Work mode) with Pony or character subjects
+    if not is_uncensored and use_sdxl:
+        is_pure_scenery = bool(
+            re.search(r"\b(landscape|mountain|ocean|forest|architecture|building|interior|empty room|no humans)\b", clean_scene, re.I)
+            and not has_char_civitai_lora
+            and not persona_prompt
+            and not re.search(r"\b(woman|girl|lady|female|man|person|portrait|she|her)\b", clean_scene, re.I)
+        )
+        if not is_pure_scenery:
+            prompt_parts.append("modest opaque buttoned outfit, covered chest, sfw")
 
     positive_prompt = ", ".join(p.strip(" ,") for p in prompt_parts if p and p.strip(" ,"))
     if not positive_prompt:

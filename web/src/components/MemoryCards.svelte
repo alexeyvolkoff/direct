@@ -7,6 +7,7 @@
   import { getDefaultWebDeviceName, LocalDrive } from "../lib/local-client.js";
   import { isNativeStorageAvailable, NativeStorageDrive } from "../lib/native-drive.js";
   import { indexerStore, clientIndexer } from "../lib/client-indexer.js";
+  import { contentModeStore, hasSensitiveTag } from "../lib/content-mode.js";
   import DeviceIndexModal from "./DeviceIndexModal.svelte";
 
   let innerWidth = typeof window !== "undefined" ? window.innerWidth : 1024;
@@ -14,6 +15,8 @@
 
   export let knowledgeList = [];
   export let isDarkTheme = true;
+  export let contentMode = "";
+  $: effectiveContentMode = contentMode || $contentModeStore || "work";
   export let isOverlayHeader = false;
   export let sidebarOpen = true;
   export let isOwner = false;
@@ -545,7 +548,12 @@
   }
 
   function handleCardOpenFile(item) {
-    if (isFolderCard(item) || item.readOnly || (!isOwner && item.onDevice)) {
+    if (
+      isFolderCard(item) ||
+      item.readOnly ||
+      (!isOwner && item.onDevice) ||
+      (effectiveContentMode !== "fun" && hasSensitiveTag(item))
+    ) {
       openEdit(item);
       return;
     }
@@ -1094,6 +1102,8 @@
         {#each displayedKnowledge as item (item._id || item.memory_id)}
           {@const isFolderItem = isFolderCard(item)}
           {@const isImageItem = isImageCard(item)}
+          {@const isSensitiveCard = hasSensitiveTag(item)}
+          {@const shouldBlurCard = effectiveContentMode !== "fun" && isSensitiveCard}
           {@const isDoc = item.document_id && !item.document_id.startsWith("user:note:") && !item.document_id.startsWith("http") && !isFolderItem && !isImageItem}
           {@const isLink = item.document_id && (item.document_id.startsWith("http://") || item.document_id.startsWith("https://"))}
           {@const kind = isFolderItem ? "folder" : isImageItem ? "image" : isDoc ? "doc" : isLink ? "link" : "note"}
@@ -1176,14 +1186,18 @@
             <div class="memory-card-body">
               {#if isFolderItem}
                 {#if hasCardImage(item)}
-                  <div class="card-image-preview-wrap card-folder-cover-wrap">
+                  <div class="card-image-preview-wrap card-folder-cover-wrap" class:is-sensitive-wrap={shouldBlurCard}>
                     <img
                       class="card-image-preview"
+                      class:sensitive-blur={shouldBlurCard}
                       src={cardPreview(item, 360, cardImgFailed, thumbUrls)}
                       alt={item.title || item.document_id || "Folder cover"}
                       loading="lazy"
                       on:error={() => markCardImageFailed(item)}
                     />
+                    {#if shouldBlurCard}
+                      <span class="sensitive-card-badge">🔞 Sensitive</span>
+                    {/if}
                   </div>
                 {:else}
                   <div class="card-image-preview-wrap card-folder-wrap">
@@ -1198,14 +1212,18 @@
                     <span class="another-device-hint">{$_("on_another_device", {}, "(on another device)")}</span>
                   </div>
                 {:else}
-                  <div class="card-image-preview-wrap">
+                  <div class="card-image-preview-wrap" class:is-sensitive-wrap={shouldBlurCard}>
                     <img
                       class="card-image-preview"
+                      class:sensitive-blur={shouldBlurCard}
                       src={cardPreview(item, 480, cardImgFailed, thumbUrls)}
                       alt={item.title || item.document_id || "Image"}
                       loading="lazy"
                       on:error={() => markCardImageFailed(item)}
                     />
+                    {#if shouldBlurCard}
+                      <span class="sensitive-card-badge">🔞 Sensitive</span>
+                    {/if}
                   </div>
                 {/if}
               {/if}
@@ -3025,5 +3043,36 @@
     padding: 4px 10px;
     font-size: 12px;
     cursor: pointer;
+  }
+  .card-image-preview-wrap.is-sensitive-wrap {
+    position: relative;
+    overflow: hidden;
+  }
+  .card-image-preview.sensitive-blur {
+    filter: blur(24px) saturate(0.75);
+    transform: scale(1.12);
+    pointer-events: none;
+    user-select: none;
+  }
+  .sensitive-card-badge {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    z-index: 2;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    background: rgba(15, 23, 42, 0.78);
+    color: #f8fafc;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    backdrop-filter: blur(6px);
+    pointer-events: none;
+  }
+  :global(.light-theme) .sensitive-card-badge {
+    background: rgba(255, 255, 255, 0.88);
+    color: #1e293b;
+    border-color: rgba(15, 23, 42, 0.16);
   }
 </style>

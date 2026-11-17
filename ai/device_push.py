@@ -339,8 +339,9 @@ def schedule_generated_image_push(
     description: str = "",
     ctx: Any = None,
     prompt: str = "",
+    sensitive: bool = False,
 ) -> bool:
-    """Chat image → `<folder>/IMG_x.png` + companion Readme (legacy habit)."""
+    """Chat image -> `<folder>/IMG_x.png` + companion Readme (legacy habit)."""
     if is_local_target(device_push, ctx):
         log.info(
             "device_push: target %s is the local generation node itself; skipping P2P push",
@@ -350,7 +351,10 @@ def schedule_generated_image_push(
     files: List[FileSpec] = [(filename, image_data)]
     base = os.path.splitext(_safe_name(filename))[0]
     if base and title:
-        readme_text = f"# {title}\n\n{description or ''}\n"
+        clean_desc = (description or "").strip()
+        readme_text = f"# {title}\n\n{clean_desc}\n" if clean_desc else f"# {title}\n"
+        if sensitive and not re.search(r"(?:^|\s)#sensitive\b", readme_text, flags=re.IGNORECASE):
+            readme_text += "\n#sensitive\n"
         if prompt:
             readme_text += f"\n<!-- prompt: {prompt} -->\n"
         readme = readme_text.encode("utf-8")

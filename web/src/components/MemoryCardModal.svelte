@@ -4,6 +4,7 @@
   import { _ } from "../lib/i18n/index.js";
   import { importUploadedFile, FILE_INPUT_ACCEPT } from "../lib/document-text.js";
   import { deviceRegistry } from "../lib/device-registry.js";
+  import { contentModeStore, hasSensitiveTag } from "../lib/content-mode.js";
   import DocumentPicker from "./DocumentPicker.svelte";
 
   export let open = false;
@@ -14,11 +15,16 @@
   export let targetLinkId = "";
   export let isPrivateMode = undefined;
   export let isDarkTheme = true;
+  export let contentMode = "";
+  $: effectiveContentMode = contentMode || $contentModeStore || "work";
   export let kindIntent = "note"; // используем при создании новой карточки (note|document|link)
   export let thumbFetcher = null; // async (document_id, size) => objectURL|"" для ленивого превью on-device
   export let readOnly = false;
 
   $: isViewOnly = readOnly || card?.readOnly || (isPrivateMode === false && card?.onDevice);
+
+  $: isSensitiveModalCard = hasSensitiveTag({ tags, text, sensitive: card?.sensitive });
+  $: shouldBlurModalPreview = effectiveContentMode !== "fun" && isSensitiveModalCard;
 
   function cleanDisplayPath(p) {
     if (!p) return "";
@@ -902,10 +908,10 @@
               {/if}
             </div>
 
-            <div class="card-preview-wrap">
+            <div class="card-preview-wrap" class:is-sensitive-modal-wrap={shouldBlurModalPreview}>
               <div
                 class="image-stage-wrap"
-                class:drawing-mode={isDrawingMode}
+                class:drawing-mode={isDrawingMode && !shouldBlurModalPreview}
                 bind:this={stageEl}
                 on:mousedown={startDrawBox}
                 on:mousemove={moveDrawBox}
@@ -917,15 +923,21 @@
                 <img
                   bind:this={previewImgEl}
                   class="card-preview-img"
+                  class:sensitive-blur={shouldBlurModalPreview}
                   src={cardPreview}
                   alt={title || "Image"}
                   loading="lazy"
                   on:load={onImageLoaded}
                   on:error={onPreviewImgError}
                 />
+                {#if shouldBlurModalPreview}
+                  <div class="modal-sensitive-overlay">
+                    <span>🔞 {$_("sensitive_work_mode_blur", {}, "Sensitive preview hidden in Work mode")}</span>
+                  </div>
+                {/if}
 
                 <!-- Face Overlay Layer -->
-                {#if markPeopleActive}
+                {#if markPeopleActive && !shouldBlurModalPreview}
                   <div class="face-overlay-layer">
                     {#each detectedFaces as face, idx}
                       {@const effW = face.img_width || imgNaturalW || (stageEl?.clientWidth || 1)}
@@ -1973,5 +1985,44 @@
   .btn-delete:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .card-preview-wrap.is-sensitive-modal-wrap .image-stage-wrap {
+    overflow: hidden;
+    position: relative;
+  }
+
+  .card-preview-img.sensitive-blur {
+    filter: blur(28px) saturate(0.75);
+    transform: scale(1.12);
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .modal-sensitive-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 3;
+  }
+
+  .modal-sensitive-overlay span {
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    background: rgba(15, 23, 42, 0.8);
+    color: #f8fafc;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(8px);
+  }
+
+  .memory-modal-backdrop.light-theme .modal-sensitive-overlay span {
+    background: rgba(255, 255, 255, 0.9);
+    color: #1e293b;
+    border-color: rgba(15, 23, 42, 0.16);
   }
 </style>

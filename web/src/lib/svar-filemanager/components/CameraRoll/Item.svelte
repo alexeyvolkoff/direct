@@ -2,6 +2,7 @@
 	import { getContext } from "svelte";
 	import { setID } from "@svar-ui/lib-dom";
 	import { isVideoFile, formatDuration } from "./media-utils.js";
+	import { contentModeStore, hasSensitiveTag } from "../../../content-mode.js";
 
 	let { item } = $props();
 
@@ -52,6 +53,19 @@
 	const displayName = $derived(item.name || item.value || "");
 	const isSharedToMe = $derived(item.id === "/shared-to-me" || item.name === "shared-to-me");
 	const isSharedByMe = $derived(item.id === "/shared-by-me" || item.name === "shared-by-me");
+	const isSharedLocked = $derived(
+		Boolean(
+			item.isShared ||
+				String(item.id || "").startsWith("/shared-to-me") ||
+				String(item.parent || "").startsWith("/shared-to-me")
+		)
+	);
+	const isSensitiveMedia = $derived(
+		Boolean(item.isSensitive || item._checkingSensitive || hasSensitiveTag(item))
+	);
+	const shouldBlurSensitive = $derived(
+		Boolean(isSensitiveMedia && (isSharedLocked || $contentModeStore !== "fun"))
+	);
 </script>
 
 <div
@@ -77,6 +91,7 @@
 					use:initImg
 					class="wx-cr-img"
 					class:wx-cr-img-hidden={!previewLoaded}
+					class:wx-cr-sensitive-blur={shouldBlurSensitive}
 					alt={displayName}
 					loading="lazy"
 					src={preview}
@@ -90,6 +105,9 @@
 						}, 5000);
 					}}
 				/>
+				{#if shouldBlurSensitive && (item.isSensitive || hasSensitiveTag(item))}
+					<span class="wx-cr-sensitive-badge">{isSharedLocked ? "🔒 Sensitive" : "🔞 Sensitive"}</span>
+				{/if}
 			</div>
 		{:else if icon}
 			<div class="wx-cr-fallback">
@@ -362,5 +380,32 @@
 			opacity: 1;
 			transform: scale(1);
 		}
+	}
+
+	.wx-cr-img.wx-cr-sensitive-blur {
+		filter: blur(26px) saturate(0.72) !important;
+		transform: scale(1.15) !important;
+		pointer-events: none;
+		user-select: none;
+	}
+	.wx-cr-sensitive-badge {
+		position: absolute;
+		top: 8px;
+		left: 8px;
+		z-index: 3;
+		padding: 3px 8px;
+		border-radius: 999px;
+		font-size: 10.5px;
+		font-weight: 600;
+		background: rgba(15, 23, 42, 0.82);
+		color: #f8fafc;
+		border: 1px solid rgba(255, 255, 255, 0.2);
+		backdrop-filter: blur(6px);
+		pointer-events: none;
+	}
+	:global(.light-theme) .wx-cr-sensitive-badge {
+		background: rgba(255, 255, 255, 0.9);
+		color: #1e293b;
+		border-color: rgba(15, 23, 42, 0.16);
 	}
 </style>

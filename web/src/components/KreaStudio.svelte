@@ -18,6 +18,13 @@
   import { mcpKeysStore, getMcpPayload, saveMcpAppKey } from "../lib/mcp-keys.js";
   import { setDidStudioEnabled } from "../lib/identity/persistent.js";
   import { getClientPlatform, isNativeMobile, isPrimaryWebGateway, sanitizeExternalCheckoutText } from "../lib/platform.js";
+  import {
+    contentModeStore,
+    setGlobalContentMode,
+    hasSensitiveReadmeContent,
+    hasSensitiveTag,
+    stripSensitiveHashtags
+  } from "../lib/content-mode.js";
   import defaultKreaPresets from "../lib/krea_presets.json";
 
   let civitaiAccounts = [];
@@ -65,6 +72,20 @@
   let kreaAllowed = false;
   let videoAllowed = false;
   let directorAllowed = false;
+  let uncensoredEntitled = false;
+  $: effectiveContentMode = $contentModeStore || contentMode || "work";
+  $: canToggleWorkFun = Boolean(isPrivateMode || uncensoredEntitled || canShowStudioTab);
+
+  let _lastSyncedPresetsMode = "";
+  $: if (statusLoadedOnce && effectiveContentMode && effectiveContentMode !== _lastSyncedPresetsMode) {
+    _lastSyncedPresetsMode = effectiveContentMode;
+    refreshStudioStatusAndPresets();
+  }
+
+  function toggleStudioContentMode() {
+    const next = effectiveContentMode === "fun" ? "work" : "fun";
+    contentMode = setGlobalContentMode(next);
+  }
   let kreaDailyRemaining = null;
   let kreaDailyLimit = null;
   let memberCredits = null;
@@ -3110,7 +3131,10 @@
           if (promptMatch) {
             item.prompt = promptMatch[1].trim();
           }
-          const descText = txt.replace(/<!--\s*prompt:[\s\S]*?-->/gi, "").replace(/^#\s*[^\n]+\n+/, "").trim();
+          item.sensitive = hasSensitiveReadmeContent(txt);
+          const descText = stripSensitiveHashtags(
+            txt.replace(/<!--\s*prompt:[\s\S]*?-->/gi, "").replace(/^#\s*[^\n]+\n+/, "").trim()
+          );
           item.description = descText;
           if (!item.prompt) {
             item.prompt = descText;
@@ -3856,7 +3880,8 @@
               face_restore_visibility: typeof sliders.face_restore_visibility === "number" ? sliders.face_restore_visibility : 0.30,
               inpaint_denoise: typeof sliders.inpaint_denoise === "number" ? sliders.inpaint_denoise : 0.94
             }
-          : {})
+          : {}),
+        content_mode: effectiveContentMode
       },
       width,
       height,
@@ -3884,6 +3909,7 @@
       mcp_keys: getMcpPayload(),
       settings: {
         defaultStorage: baseStorage,
+        content_mode: effectiveContentMode,
         client: "svar",
         image_delivery: "inline",
         mcp_keys: getMcpPayload()
@@ -4077,9 +4103,16 @@
       const resolvedTitle = (data.title && !isJustFileName(data.title, filename, fullImagePath))
         ? data.title.trim()
         : (customTitle || "");
-      const resolvedDesc = (data.description && !isJustFileName(data.description, filename, fullImagePath))
-        ? data.description.trim()
-        : (customDescription || "");
+      const resolvedDesc = stripSensitiveHashtags(
+        (data.description && !isJustFileName(data.description, filename, fullImagePath))
+          ? data.description.trim()
+          : (customDescription || "")
+      );
+      const itemSensitive = Boolean(
+        data.sensitive ||
+        hasSensitiveTag(data.tags) ||
+        hasSensitiveReadmeContent(cleanPrompt)
+      );
 
       const newItem = {
         id: filename,
@@ -4091,6 +4124,7 @@
         title: resolvedTitle || resolvedDesc || cleanPrompt.slice(0, 48),
         description: resolvedDesc,
         prompt: cleanPrompt,
+        sensitive: itemSensitive,
         blobUrl: localBlobUrl,
         coverBlobUrl: localCoverBlobUrl,
         imageBlob,
@@ -4145,8 +4179,11 @@
             try {
               await ensureFolderRecursive(targetDrive, destFolder);
               const title = data.title || customTitle || cleanPrompt.slice(0, 30) || "";
-              const desc = data.description || customDescription || "";
+              const desc = stripSensitiveHashtags(data.description || customDescription || "");
               let readmeContent = `# ${title}\n\n${desc}\n`;
+              if (itemSensitive) {
+                readmeContent += `\n#sensitive\n`;
+              }
               if (cleanPrompt) {
                 readmeContent += `\n<!-- prompt: ${cleanPrompt} -->\n`;
               }
@@ -4864,13 +4901,22 @@
   }
 
   async function openGallery(activeItem) {
+    if (activeItem && effectiveContentMode !== "fun" && activeItem.sensitive) {
+      return;
+    }
     if (activeItem && activeItem.isVideo) {
       await ensureItemPromptAndTitle(activeItem);
       shareImage(activeItem);
       return;
     }
 
-    const validItems = items.filter((it) => it && !it.isVideo && (it.blobUrl || it.url || it.path || it.id));
+    const validItems = items.filter(
+      (it) =>
+        it &&
+        !it.isVideo &&
+        (effectiveContentMode === "fun" || !it.sensitive) &&
+        (it.blobUrl || it.url || it.path || it.id)
+    );
     if (!validItems.length) return;
 
     if (activeItem) {
@@ -6267,7 +6313,12 @@
       const reqBody = JSON.stringify({
         omd_key: omdKey || (typeof window !== "undefined" && window.__omdKey) || "",
         mcp_keys: mcpPayload,
-        settings: { platform: getClientPlatform(), language: $locale || "ru", mcp_keys: mcpPayload }
+        settings: {
+          platform: getClientPlatform(),
+          language: $locale || "ru",
+          content_mode: effectiveContentMode,
+          mcp_keys: mcpPayload
+        }
       });
       const reqHeaders = {
         ...buildAuthHeaders(),
@@ -6275,7 +6326,7 @@
         "X-OMD-Platform": getClientPlatform()
       };
 
-      fetchFn("/krea/presets", {
+      fetchFn(`/krea/presets?content_mode=${encodeURIComponent(effectiveContentMode)}`, {
         method: "POST",
         headers: reqHeaders,
         body: reqBody
@@ -6296,7 +6347,9 @@
       if (res && res.ok) {
         const data = await res.json();
         statusLoadedOnce = true;
+        _lastSyncedPresetsMode = effectiveContentMode;
         if (data && data.tier) studioTier = data.tier;
+        uncensoredEntitled = Boolean((data && data.uncensored === true) || isPrivateMode);
         kreaAllowed = Boolean(data && data.krea_allowed === true);
         videoAllowed = (data && typeof data.video_allowed === "boolean") ? data.video_allowed : kreaAllowed;
         const serverStudioEnabled = Boolean(
@@ -6521,6 +6574,20 @@
     </div>
 
     <div class="header-right">
+      {#if canToggleWorkFun}
+        <button
+          type="button"
+          class="studio-mode-toggle-btn"
+          class:is-fun={effectiveContentMode === "fun"}
+          title={effectiveContentMode === "fun"
+            ? $_("fun_mode_active", {}, "Режим Fun: фильтры отключены")
+            : $_("work_mode_active", {}, "Режим Work: безопасные фильтры и блюр #sensitive")}
+          on:click={toggleStudioContentMode}
+        >
+          <span>{effectiveContentMode === "fun" ? "✨ Fun" : "💼 Work"}</span>
+        </button>
+      {/if}
+
       <!-- AI Director's Chair Toggle -->
       {#if canShowDirector}
         <button
@@ -6821,17 +6888,19 @@
             {/if}
             {#each items as item (item.id)}
               {@const itemRefIdx = getGalleryItemRefIndex(item, attachedReferences)}
-              <div class="gallery-card" class:is-attached-ref={itemRefIdx >= 0}>
+              {@const itemShouldBlur = effectiveContentMode !== "fun" && Boolean(item.sensitive)}
+              <div class="gallery-card" class:is-attached-ref={itemRefIdx >= 0} class:is-sensitive-card={itemShouldBlur}>
                 <!-- svelte-ignore a11y-click-events-have-key-events -->
                 <!-- svelte-ignore a11y-no-static-element-interactions -->
                 <div
                   class="gallery-card-thumb-wrap"
+                  class:is-sensitive-thumb-wrap={itemShouldBlur}
                   role="button"
                   tabindex="0"
                   on:click={() => openGallery(item)}
                   on:keydown={(e) => e.key === "Enter" && openGallery(item)}
                   on:mouseenter={() => {
-                    if (item.isVideo) hoveredVideoId = item.id;
+                    if (item.isVideo && !itemShouldBlur) hoveredVideoId = item.id;
                   }}
                   on:mouseleave={() => {
                     if (item.isVideo && hoveredVideoId === item.id) {
@@ -6846,10 +6915,11 @@
                       alt={item.title || item.prompt}
                       use:lazyLoad={(activeDevSegment, getVideoPosterUrl(item))}
                       class="gallery-thumb"
+                      class:sensitive-blur={itemShouldBlur}
                       loading="lazy"
                       on:error={(e) => handleVideoPosterError(item, e)}
                     />
-                    {#if hoveredVideoId === item.id}
+                    {#if hoveredVideoId === item.id && !itemShouldBlur}
                       <video
                         src={(activeDevSegment, getFullImageUrl(item))}
                         autoplay
@@ -6877,6 +6947,7 @@
                       alt={item.title || item.prompt}
                       use:lazyLoad={(activeDevSegment, getThumbnailUrl(item))}
                       class="gallery-thumb"
+                      class:sensitive-blur={itemShouldBlur}
                       loading="lazy"
                       on:error={(e) => handleImageError(item, e)}
                     />
@@ -6889,6 +6960,9 @@
                           : `📎 #${itemRefIdx + 1}`}
                       </div>
                     {/if}
+                  {/if}
+                  {#if itemShouldBlur}
+                    <div class="sensitive-gallery-badge">🔞 Sensitive</div>
                   {/if}
                   {#if item.persona || item.totalTime}
                     <div class="card-thumb-badges">
@@ -16844,5 +16918,75 @@
     background: #ecfdf5;
     border-color: #34d399;
     color: #065f46;
+  }
+
+  .studio-mode-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 32px;
+    padding: 0 11px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.06);
+    color: #e2e8f0;
+    transition: all 0.16s ease;
+    white-space: nowrap;
+  }
+  .studio-mode-toggle-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+  }
+  .studio-mode-toggle-btn.is-fun {
+    background: linear-gradient(135deg, rgba(236, 72, 153, 0.24), rgba(139, 92, 246, 0.28));
+    border-color: rgba(236, 72, 153, 0.55);
+    color: #fbcfe8;
+  }
+  .krea-studio-root.light-theme .studio-mode-toggle-btn {
+    background: rgba(15, 23, 42, 0.05);
+    border-color: rgba(15, 23, 42, 0.15);
+    color: #1e293b;
+  }
+  .krea-studio-root.light-theme .studio-mode-toggle-btn:hover {
+    background: rgba(15, 23, 42, 0.1);
+  }
+  .krea-studio-root.light-theme .studio-mode-toggle-btn.is-fun {
+    background: linear-gradient(135deg, rgba(236, 72, 153, 0.16), rgba(139, 92, 246, 0.18));
+    border-color: rgba(219, 39, 119, 0.45);
+    color: #9d174d;
+  }
+
+  .gallery-card-thumb-wrap.is-sensitive-thumb-wrap {
+    overflow: hidden;
+    cursor: default;
+  }
+  .gallery-thumb.sensitive-blur {
+    filter: blur(26px) saturate(0.72);
+    transform: scale(1.12);
+    pointer-events: none;
+    user-select: none;
+  }
+  .sensitive-gallery-badge {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 4;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    background: rgba(15, 23, 42, 0.82);
+    color: #f8fafc;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(8px);
+    pointer-events: none;
+  }
+  .krea-studio-root.light-theme .sensitive-gallery-badge {
+    background: rgba(255, 255, 255, 0.92);
+    color: #1e293b;
+    border-color: rgba(15, 23, 42, 0.18);
   }
 </style>

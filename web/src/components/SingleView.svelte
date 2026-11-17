@@ -21,6 +21,7 @@
   import { isCameraRollFolder, isImageOrVideo, isVideoFile, formatDuration, isIgnoredFile } from "../lib/svar-filemanager/components/CameraRoll/media-utils.js";
   import { resolveAppMode, APP_MODE_CHAT } from "../lib/app-mode.js";
   import { gatewayConfig } from "../lib/gateway-config.js";
+  import { hasSensitiveReadmeContent, hasSensitiveTag } from "../lib/content-mode.js";
 
   $: isChatDomain = resolveAppMode() === APP_MODE_CHAT;
   $: brandName = isChatDomain
@@ -70,8 +71,60 @@
   marked.setOptions({ gfm: true, breaks: false, async: false });
   let imgLoaded = false;
   let imgFailed = false;
+  let singleItemSensitive = false;
+  let checkingSingleSensitive = false;
+  let _singleSensSeq = 0;
+
+  async function verifySingleMediaSensitive(targetUrl, itemObj) {
+    const mySeq = ++_singleSensSeq;
+    if (!targetUrl) {
+      singleItemSensitive = false;
+      checkingSingleSensitive = false;
+      return;
+    }
+    if (itemObj?.isSensitive === true || hasSensitiveTag(itemObj) || hasSensitiveTag(shareData)) {
+      singleItemSensitive = true;
+      checkingSingleSensitive = false;
+      return;
+    }
+    if (itemObj && itemObj !== shareData && itemObj.isSensitive === false && itemObj._checkingSensitive === false) {
+      singleItemSensitive = false;
+      checkingSingleSensitive = false;
+      return;
+    }
+    checkingSingleSensitive = true;
+    singleItemSensitive = false;
+    try {
+      const cleanBase = targetUrl.split("?")[0];
+      const noExt = cleanBase.replace(/\.[^./]+$/, "");
+      let res = await fetch(`${noExt}.Readme.md`);
+      if (!res.ok && noExt !== cleanBase) {
+        res = await fetch(`${cleanBase}.Readme.md`);
+      }
+      if (mySeq !== _singleSensSeq) return;
+      if (res && res.ok) {
+        const md = await res.text();
+        if (mySeq !== _singleSensSeq) return;
+        singleItemSensitive = hasSensitiveReadmeContent(md);
+      }
+    } catch (_) {
+      // If no companion Readme exists, treat as non-sensitive
+    } finally {
+      if (mySeq === _singleSensSeq) {
+        checkingSingleSensitive = false;
+      }
+    }
+  }
 
   $: activeItem = previewingFile || (shareData && !shareData.isDir ? shareData : null);
+  $: isLockedSensitivePreview = Boolean(
+    (isImage || isVideo) &&
+    (singleItemSensitive || activeItem?.isSensitive || activeItem?._checkingSensitive || checkingSingleSensitive)
+  );
+  $: isConfirmedSensitivePreview = Boolean(
+    (isImage || isVideo) &&
+    (singleItemSensitive || activeItem?.isSensitive)
+  );
 
   $: p2pUrl = activeItem ? getItemP2pUrl(activeItem) : (shareData ? getItemP2pUrl(shareData) : "");
   $: videoPoster = (() => {
@@ -94,6 +147,13 @@
 
     imgLoaded = false;
     imgFailed = false;
+
+    if (isImage || isVideo) {
+      verifySingleMediaSensitive(p2pUrl, activeItem || shareData);
+    } else {
+      singleItemSensitive = false;
+      checkingSingleSensitive = false;
+    }
 
     if (isMarkdown) {
       loadMarkdownText();
@@ -122,7 +182,7 @@
       return [];
     }
     const list = folderItems.filter(f => {
-      if (f.isDir) return false;
+      if (f.isDir || f.isSensitive || f._checkingSensitive) return false;
       const m = (f.mimeType || "").toLowerCase();
       const ext = getItemExt(f);
       return m.startsWith("video/") || ["mp4", "webm", "mkv", "mov", "avi"].includes(ext);
@@ -159,7 +219,7 @@
       return [];
     }
     const list = folderItems.filter(f => {
-      if (f.isDir) return false;
+      if (f.isDir || f.isSensitive || f._checkingSensitive) return false;
       const m = (f.mimeType || "").toLowerCase();
       const ext = getItemExt(f);
       return m.startsWith("audio/") || ["mp3", "wav", "ogg", "flac", "m4a", "aac", "wma"].includes(ext);
@@ -229,7 +289,7 @@
         }
       }
 
-      folderItems = (items || []).map(item => {
+      const mappedItems = (items || []).map(item => {
         const isDir = !!(item.isDir || item.type === "folder");
         const name = item.name || item.value || (item.id ? item.id.split("/").filter(Boolean).pop() : "Item");
         const itemSubPath = (subPath.endsWith("/") ? subPath.slice(0, -1) : subPath) + "/" + name;
@@ -238,9 +298,63 @@
           name,
           isDir,
           type: isDir ? "folder" : "file",
-          subPath: itemSubPath
+          subPath: itemSubPath,
+          isSensitive: hasSensitiveTag(item),
+          _checkingSensitive: false
         };
       });
+
+      const readmeByStem = new Map();
+      for (const it of mappedItems) {
+        if (!it.isDir && /\.readme\.md$/i.test(it.name || "")) {
+          const stem = it.name.replace(/\.readme\.md$/i, "").toLowerCase();
+          readmeByStem.set(stem, it);
+        }
+      }
+
+      const toVerify = [];
+      for (const it of mappedItems) {
+        if (it.isDir || /\.readme\.md$/i.test(it.name || "")) continue;
+        if (it.isSensitive) continue;
+        if (!isImageItem(it)) continue;
+        const stemNoExt = (it.name || "").replace(/\.[^.]+$/, "").toLowerCase();
+        const stemFull = (it.name || "").toLowerCase();
+        const rItem = readmeByStem.get(stemNoExt) || readmeByStem.get(stemFull);
+        if (rItem) {
+          it._checkingSensitive = true;
+          toVerify.push({ mediaItem: it, readmeItem: rItem });
+        } else {
+          it.isSensitive = false;
+        }
+      }
+
+      folderItems = mappedItems;
+
+      if (toVerify.length > 0) {
+        (async () => {
+          await Promise.all(
+            toVerify.map(async ({ mediaItem, readmeItem }) => {
+              try {
+                const mdUrl = getItemP2pUrl(readmeItem);
+                if (mdUrl) {
+                  const r = await fetch(mdUrl);
+                  if (r.ok) {
+                    const md = await r.text();
+                    mediaItem.isSensitive = hasSensitiveReadmeContent(md);
+                  } else {
+                    mediaItem.isSensitive = false;
+                  }
+                }
+              } catch (_) {
+                mediaItem.isSensitive = false;
+              } finally {
+                mediaItem._checkingSensitive = false;
+              }
+            })
+          );
+          folderItems = [...folderItems];
+        })();
+      }
     } catch (e) {
       console.error("[SingleView] Error loading folder items:", e);
       folderError = "Failed to load folder content";
@@ -372,9 +486,16 @@
   }
 
   function openImageGallery(file) {
+    if (file && (file.isSensitive || file._checkingSensitive)) {
+      previewingFile = file;
+      return;
+    }
     if (!folderItems || folderItems.length === 0) return;
-    const images = folderItems.filter(f => isImageItem(f));
-    if (images.length === 0) images.push(file);
+    const images = folderItems.filter(f => isImageItem(f) && !f.isSensitive && !f._checkingSensitive);
+    if (images.length === 0) {
+      previewingFile = file;
+      return;
+    }
 
     let startIndex = images.findIndex(f => f.name === file.name || f.subPath === file.subPath);
     if (startIndex < 0) startIndex = 0;
@@ -451,6 +572,11 @@
     const mime = (item.mimeType || "").toLowerCase();
     const ext = getItemExt(item);
     const isImg = mime.startsWith("image/") || ["jpg", "jpeg", "png", "gif", "webp", "svg"].includes(ext);
+
+    if (item.isSensitive || item._checkingSensitive) {
+      previewingFile = item;
+      return;
+    }
 
     if (isImg) {
       openImageGallery(item);
@@ -719,7 +845,7 @@
     <div class="viewer-card">
       <!-- Media Preview -->
       <div class="preview-stage" bind:this={stageElement} class:is-fullscreen={isFullscreen} class:is-audio-stage={isAudio}>
-        {#if (isImage || isMarkdown) && !isPdf && !isVideo}
+        {#if (isImage || isMarkdown) && !isPdf && !isVideo && !isLockedSensitivePreview}
           <button
             class="fullscreen-toggle-btn"
             on:click={toggleFullscreen}
@@ -844,13 +970,14 @@
                             title={item.name}
                             on:click={() => handleItemClick(item)}
                           >
-                            <div class="wx-cr-preview-wrapper">
+                            <div class="wx-cr-preview-wrapper" class:is-sensitive-thumb={item.isSensitive || item._checkingSensitive}>
                               {#if getItemThumbnail(item) && !item._imgFailed}
                                 <img
                                   src={getItemThumbnail(item)}
                                   alt={item.name}
                                   loading="lazy"
                                   class="wx-cr-img"
+                                  class:shared-sensitive-blur={item.isSensitive || item._checkingSensitive}
                                   on:error={() => {
                                     item._imgFailed = true;
                                     folderItems = folderItems;
@@ -860,6 +987,10 @@
                                 <div class="wx-cr-fallback">
                                   <i class="wxi-{isVideoFile(item) ? 'video' : 'image'}"></i>
                                 </div>
+                              {/if}
+
+                              {#if item.isSensitive}
+                                <div class="shared-sensitive-pill">🔒 Sensitive</div>
                               {/if}
 
                               {#if isVideoFile(item)}
@@ -899,7 +1030,7 @@
                       class="svar-like-card {item.isDir ? 'is-folder-card' : 'is-file-card'}"
                       on:click={() => handleItemClick(item)}
                     >
-                      <div class="card-thumb-area">
+                      <div class="card-thumb-area" class:is-sensitive-thumb={item.isSensitive || item._checkingSensitive}>
                         {#if item.isDir}
                           <div class="card-icon-area">
                             <img src={getItemIconUrl(item, "big")} alt="" class="card-mime-img is-folder" />
@@ -909,11 +1040,15 @@
                             src={getItemThumbnail(item)}
                             alt={item.name}
                             class="card-cover-img"
+                            class:shared-sensitive-blur={item.isSensitive || item._checkingSensitive}
                             on:error={() => {
                               item._imgFailed = true;
                               folderItems = folderItems;
                             }}
                           />
+                          {#if item.isSensitive}
+                            <div class="shared-sensitive-pill">🔒 Sensitive</div>
+                          {/if}
                         {:else}
                           <div class="card-icon-area">
                             <img src={getItemIconUrl(item, "big")} alt="" class="card-mime-img" />
@@ -993,21 +1128,47 @@
           {/if}
 
           {#if isImage}
-            <div class="image-container">
+            <div class="image-container" class:is-sensitive-stage={isLockedSensitivePreview}>
               <img
                 src={p2pUrl}
                 alt={activeItem?.name || shareData?.name}
                 referrerpolicy="no-referrer"
+                draggable="false"
                 class="preview-img {imgLoaded ? 'loaded' : ''}"
+                class:is-sensitive-locked={isLockedSensitivePreview}
+                on:contextmenu={(e) => { if (isLockedSensitivePreview) e.preventDefault(); }}
                 on:load={() => { imgLoaded = true; }}
                 on:error={() => { imgFailed = true; }}
               />
-              {#if !imgLoaded && !imgFailed}
+              {#if isConfirmedSensitivePreview}
+                <div class="shared-sensitive-lock-overlay">
+                  <div class="shared-sensitive-lock-card">
+                    <div class="lock-icon-badge">🔒</div>
+                    <h3>{$_("shared_sensitive_title", {}, "Sensitive Content (#sensitive)")}</h3>
+                    <p>
+                      {$_(
+                        "shared_sensitive_desc",
+                        {},
+                        "Preview is permanently blurred on shared links. Download the file locally to view it."
+                      )}
+                    </p>
+                    <button type="button" class="nav-btn primary lock-dl-btn" on:click={handleDownload}>
+                      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="7 10 12 15 17 10" />
+                        <line x1="12" y1="15" x2="12" y2="3" />
+                      </svg>
+                      <span>{$_("download", {}, "Download")} ({formatBytes(activeItem?.size || shareData?.size)})</span>
+                    </button>
+                  </div>
+                </div>
+              {/if}
+              {#if !imgLoaded && !imgFailed && !isConfirmedSensitivePreview}
                 <div class="preview-loading">
                   <div class="spinner"></div>
                 </div>
               {/if}
-              {#if imgFailed}
+              {#if imgFailed && !isConfirmedSensitivePreview}
                 <div class="preview-fallback-icon">
                   <svg viewBox="0 0 24 24" width="64" height="64" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                   <p>{$_("failed_load_image", {}, "Failed to load image preview")}</p>
@@ -1015,25 +1176,62 @@
               {/if}
             </div>
           {:else if isVideo}
-            <div class="video-viewer-wrapper">
-              <VideoViewer
-                url={p2pUrl}
-                poster={videoPoster}
-                filename={activeItem?.name || shareData?.name}
-                title={activeItem?.title || activeItem?.customAttributes?.title || shareData?.title || shareData?.customAttributes?.title || activeItem?.name || shareData?.name}
-                description={activeItem?.description || activeItem?.customAttributes?.description || shareData?.description || shareData?.customAttributes?.description || ''}
-                playlist={videoPlaylist}
-                currentIndex={videoPlaylistIndex}
-                showClose={!!(shareData?.isDir || previewingFile)}
-                showInfo={false}
-                on:change={(e) => {
-                  if (e.detail?.video?.rawItem) {
-                    previewingFile = e.detail.video.rawItem;
-                  }
-                }}
-                on:close={() => { previewingFile = null; }}
-              />
-            </div>
+            {#if isLockedSensitivePreview}
+              <div class="image-container is-sensitive-stage">
+                {#if videoPoster}
+                  <img
+                    src={videoPoster}
+                    alt={activeItem?.name || shareData?.name}
+                    draggable="false"
+                    class="preview-img loaded is-sensitive-locked"
+                    on:contextmenu|preventDefault
+                  />
+                {/if}
+                {#if isConfirmedSensitivePreview}
+                  <div class="shared-sensitive-lock-overlay">
+                    <div class="shared-sensitive-lock-card">
+                      <div class="lock-icon-badge">🔒</div>
+                      <h3>{$_("shared_sensitive_title", {}, "Sensitive Content (#sensitive)")}</h3>
+                      <p>
+                        {$_(
+                          "shared_sensitive_desc",
+                          {},
+                          "Preview is permanently blurred on shared links. Download the file locally to view it."
+                        )}
+                      </p>
+                      <button type="button" class="nav-btn primary lock-dl-btn" on:click={handleDownload}>
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                          <polyline points="7 10 12 15 17 10" />
+                          <line x1="12" y1="15" x2="12" y2="3" />
+                        </svg>
+                        <span>{$_("download", {}, "Download")} ({formatBytes(activeItem?.size || shareData?.size)})</span>
+                      </button>
+                    </div>
+                  </div>
+                {/if}
+              </div>
+            {:else}
+              <div class="video-viewer-wrapper">
+                <VideoViewer
+                  url={p2pUrl}
+                  poster={videoPoster}
+                  filename={activeItem?.name || shareData?.name}
+                  title={activeItem?.title || activeItem?.customAttributes?.title || shareData?.title || shareData?.customAttributes?.title || activeItem?.name || shareData?.name}
+                  description={activeItem?.description || activeItem?.customAttributes?.description || shareData?.description || shareData?.customAttributes?.description || ''}
+                  playlist={videoPlaylist}
+                  currentIndex={videoPlaylistIndex}
+                  showClose={!!(shareData?.isDir || previewingFile)}
+                  showInfo={false}
+                  on:change={(e) => {
+                    if (e.detail?.video?.rawItem) {
+                      previewingFile = e.detail.video.rawItem;
+                    }
+                  }}
+                  on:close={() => { previewingFile = null; }}
+                />
+              </div>
+            {/if}
           {:else if isAudio}
             <div class="audio-viewer-wrapper">
               <AudioViewer
@@ -2711,5 +2909,123 @@
     .card-hover-dl-btn {
       opacity: 1;
     }
+  }
+
+  .is-sensitive-thumb {
+    overflow: hidden;
+    position: relative;
+  }
+
+  .shared-sensitive-blur {
+    filter: blur(28px) brightness(0.75) saturate(0.7) !important;
+    transform: scale(1.15) !important;
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-drag: none;
+  }
+
+  .shared-sensitive-pill {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 4;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    background: rgba(15, 23, 42, 0.85);
+    color: #f8fafc;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    backdrop-filter: blur(8px);
+    pointer-events: none;
+  }
+
+  .light-theme .shared-sensitive-pill {
+    background: rgba(255, 255, 255, 0.92);
+    color: #1e293b;
+    border-color: rgba(15, 23, 42, 0.18);
+  }
+
+  .image-container.is-sensitive-stage {
+    position: relative;
+    overflow: hidden;
+    min-height: 360px;
+  }
+
+  .preview-img.is-sensitive-locked {
+    filter: blur(38px) brightness(0.62) saturate(0.68) !important;
+    transform: scale(1.18) !important;
+    opacity: 1 !important;
+    pointer-events: none !important;
+    user-select: none !important;
+    -webkit-user-drag: none;
+  }
+
+  .shared-sensitive-lock-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+
+  .shared-sensitive-lock-card {
+    max-width: 420px;
+    width: 100%;
+    padding: 26px 24px;
+    border-radius: 18px;
+    text-align: center;
+    background: rgba(15, 23, 42, 0.84);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    color: #f8fafc;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.42);
+    backdrop-filter: blur(14px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .light-theme .shared-sensitive-lock-card {
+    background: rgba(255, 255, 255, 0.92);
+    border-color: rgba(15, 23, 42, 0.14);
+    color: #0f172a;
+    box-shadow: 0 16px 40px rgba(15, 23, 42, 0.16);
+  }
+
+  .lock-icon-badge {
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+  }
+
+  .light-theme .lock-icon-badge {
+    background: rgba(15, 23, 42, 0.06);
+    border-color: rgba(15, 23, 42, 0.12);
+  }
+
+  .shared-sensitive-lock-card h3 {
+    margin: 2px 0 0;
+    font-size: 1.05rem;
+    font-weight: 700;
+  }
+
+  .shared-sensitive-lock-card p {
+    margin: 0;
+    font-size: 0.88rem;
+    line-height: 1.48;
+    opacity: 0.86;
+  }
+
+  .lock-dl-btn {
+    margin-top: 8px;
   }
 </style>

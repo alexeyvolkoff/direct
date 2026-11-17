@@ -166,12 +166,46 @@ def _tags_meta(tags: list) -> dict:
     return meta
 
 
+SENSITIVE_CONTENT_RE = re.compile(
+    r"(?:"
+    r"(?:^|[\s\(\[\{<])#(?:sensitive|nsfw|18plus|explicit)\b|"
+    r"\b(?:"
+    r"nsfw|nude|nudity|naked|topless|nipples?|areolas?|underboob|sideboob|"
+    r"exposed\s+(?:breasts?|chest|buttocks?|genitals?|genitalia)|bare\s+(?:breasts?|chest|buttocks?)|"
+    r"deep\s+cleavage|unbuttoned\s+(?:shirt|blouse)|open\s+(?:shirt|blouse)\s+exposing|"
+    r"sheer\s+(?:lingerie|transparent|see[- ]through)|see[- ]through\s+(?:top|blouse|lingerie|dress|bra)|"
+    r"lingerie|thong|panties|micro[- ]?bikini|pussy|vagina|penis|cock|dick|anus|anal|"
+    r"blowjob|fellatio|cunnilingus|masturbat\w*|orgasm|cumshot|erotic|sexually\s+explicit|hentai|ecchi|bdsm|bondage|"
+    r"обнажен\w*|голая|голый|голые|топлес|соски|сосков|сиськ\w*|голая\s+грудь|обнаженн\w+\s+грудь|"
+    r"интимн\w+\s+мест\w*|пизд\w*|влагалищ\w*|пенис\w*|член|хуй|минет|оргазм|мастурб\w*|"
+    r"сексуальн\w+\s+откровен\w*|эротич\w+|эротик\w*|кружевн\w+\s+бель\w*|нижне\w+\s+бель\w*|стринг\w*|трусик\w*"
+    r")\b"
+    r")",
+    flags=re.IGNORECASE,
+)
+
+
+def has_sensitive_markers(text: str) -> bool:
+    """Returns True if text (including Readme body, hashtags, or HTML prompt comments) indicates NSFW/sensitive content."""
+    if not text:
+        return False
+    # Strip our own SFW positive guardrail phrases before matching so SFW guardrails never self-trigger
+    cleaned = re.sub(
+        r"\b(?:modest\s+(?:opaque\s+)?buttoned\s+outfit|modest\s+opaque\s+clothing|covered\s+chest|wholesome\s+(?:safe\s+)?attire|plain\s+unprinted\s+clothing|rating_safe|sfw)\b",
+        " ",
+        str(text),
+        flags=re.IGNORECASE,
+    )
+    return bool(SENSITIVE_CONTENT_RE.search(cleaned))
+
+
 def auto_extract_tags(text: str, filename: str = "", extra_tags: list = None) -> list[str]:
     """
     Автоматически извлекает теги:
-    1. Хештеги из текста: #tag (например, #omd, #architecture, #rag, #docs)
-    2. Ключевые слова из имени файла или текста
-    3. Дополнительные переданные теги (extra_tags, например унаследованные от папки)
+    1. Хештеги из текста: #tag (например, #omd, #architecture, #rag, #docs, #sensitive)
+    2. Авто-детекция NSFW/деликатного контента -> 'sensitive'
+    3. Ключевые слова из имени файла или текста
+    4. Дополнительные переданные теги (extra_tags, например унаследованные от папки)
     """
     tags = set(_normalize_tag(t) for t in (extra_tags or []) if _normalize_tag(t))
 
@@ -181,6 +215,8 @@ def auto_extract_tags(text: str, filename: str = "", extra_tags: list = None) ->
             norm = _normalize_tag(t)
             if norm and not norm.isdigit():
                 tags.add(norm)
+        if has_sensitive_markers(text):
+            tags.add("sensitive")
 
     if filename:
         clean_fn = os.path.splitext(os.path.basename(filename))[0]
@@ -198,26 +234,35 @@ def auto_extract_tags(text: str, filename: str = "", extra_tags: list = None) ->
 
 def append_tags_to_card_text(text: str, tags: list[str]) -> str:
     """
-    Добавляет недостающие теги в виде #хештегов в конец тела карточки,
-    чтобы они отображались в UI карточки и сохранялись в тексте.
+    Добавляет недостающие теги в виде #хештегов в конец тела карточки
+    (перед trailing HTML-комментарием <!-- prompt: ... -->, если он есть),
+    чтобы они отображались в UI карточки и сохранялись в Readme.md.
     """
     clean_tags = sorted(set(_normalize_tag(t) for t in (tags or []) if _normalize_tag(t)))
     if not clean_tags:
         return text or ""
-    clean_text = (text or "").strip()
+    raw_text = (text or "").strip()
+
+    prompt_comment = ""
+    m_comment = re.search(r"(\n*<!--\s*prompt:[\s\S]*?-->\s*)$", raw_text, flags=re.IGNORECASE)
+    if m_comment:
+        prompt_comment = m_comment.group(1).strip()
+        clean_text = raw_text[: m_comment.start()].strip()
+    else:
+        clean_text = raw_text
 
     existing_hashtags = set(
         _normalize_tag(t)
         for t in re.findall(r'(?:^|[\s\(\[\{<])#([a-zA-Zа-яА-ЯёЁ0-9_-]{2,30})\b', clean_text)
     )
     missing = [t for t in clean_tags if t not in existing_hashtags]
-    if not missing:
-        return clean_text
+    if missing:
+        tags_line = " ".join(f"#{t}" for t in missing)
+        clean_text = f"{clean_text}\n\n{tags_line}" if clean_text else tags_line
 
-    tags_line = " ".join(f"#{t}" for t in missing)
-    if not clean_text:
-        return tags_line
-    return f"{clean_text}\n\n{tags_line}"
+    if prompt_comment:
+        return f"{clean_text}\n\n{prompt_comment}" if clean_text else prompt_comment
+    return clean_text
 
 
 def _tags_match_filter(tags_filter: list) -> dict:
