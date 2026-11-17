@@ -409,3 +409,110 @@ def test_character_signature_traits_and_flow_clip_wiring():
     assert "V3r0t1k4" in pos_custom
     assert "vibrant fiery red hair" not in pos_custom
 
+
+@pytest.mark.asyncio
+async def test_owner_chat_uses_sdxl_except_for_krea2_personas(monkeypatch):
+    import core_service
+
+    async def fake_krea_avail(ctx=None):
+        return True
+
+    async def fake_krea_status(ctx):
+        return {"allowed": True, "krea_allowed": True, "tier": "owner"}
+
+    monkeypatch.setattr(core_service, "is_krea_available", fake_krea_avail)
+    monkeypatch.setattr(core_service, "check_krea_status", fake_krea_status)
+
+    # 1. Owner in default assistant chat -> SDXL (not Krea 2), Domi maps to sdxl_domi, no avatar faceswap
+    owner_default = SimpleNamespace(
+        user_id="alexey",
+        private_mode=True,
+        trusted_owner=True,
+        is_unlimited=True,
+        settings={"style": "perfect", "assistant_name": "June", "assistant_model": "Domi"},
+    )
+    assert core_service.is_krea2_persona_chat(owner_default) is False
+    _, _, sliders_def = core_service.extract_krea2_prompt_and_params(owner_default, "smiling in the kitchen", is_character=True)
+    assert sliders_def["archetypes"] == ["sdxl_domi"]
+    eff_def, can_krea_def = await core_service._resolve_chat_image_sliders(owner_default, sliders_def)
+    assert can_krea_def is False
+    assert eff_def["base_model"] == "sdxl_perfect"
+    ref_av, _, _, _ = core_service._resolve_character_ref_avatar(owner_default, eff_def)
+    assert ref_av is None
+
+    # 2. Owner in chat with SDXL persona -> SDXL
+    owner_sdxl_persona = SimpleNamespace(
+        user_id="alexey",
+        private_mode=True,
+        trusted_owner=True,
+        is_unlimited=True,
+        settings={
+            "persona_id": "persona_sdxl_minerva_1",
+            "persona_name": "Minerva",
+            "persona_archetype": "sdxl_minerva",
+            "persona_lora": "MINERVA-XSTAR-XL-FINAL.safetensors",
+            "persona_render_preset": {"enabled": True, "base_model": "sdxl_fantasy", "archetypes": ["sdxl_minerva"]},
+        },
+    )
+    assert core_service.is_krea2_persona_chat(owner_sdxl_persona) is False
+    _, _, sliders_sdxl_p = core_service.extract_krea2_prompt_and_params(owner_sdxl_persona, "portrait", is_character=True)
+    eff_sdxl_p, can_krea_sdxl_p = await core_service._resolve_chat_image_sliders(owner_sdxl_persona, sliders_sdxl_p)
+    assert can_krea_sdxl_p is False
+    assert eff_sdxl_p["base_model"] == "sdxl_fantasy"
+
+    # 3. Owner in chat with plain text-only persona (no Krea2 preset/LoRA) -> SDXL
+    owner_plain_persona = SimpleNamespace(
+        user_id="alexey",
+        private_mode=True,
+        trusted_owner=True,
+        is_unlimited=True,
+        settings={
+            "persona_id": "persona_1793725073722",
+            "persona_name": "Dana",
+            "persona_personality": "Warm artist",
+            "persona_render_preset": None,
+        },
+    )
+    assert core_service.is_krea2_persona_chat(owner_plain_persona) is False
+    eff_plain, can_krea_plain = await core_service._resolve_chat_image_sliders(owner_plain_persona, {})
+    assert can_krea_plain is False
+    assert eff_plain["base_model"] == "sdxl_realistic"
+
+    # 4. Owner in chat with Krea 2 persona (e.g. Lark / Kate Krea2) -> Krea 2 enabled!
+    owner_krea_persona = SimpleNamespace(
+        user_id="alexey",
+        private_mode=True,
+        trusted_owner=True,
+        is_unlimited=True,
+        settings={
+            "persona_id": "persona_shinylark",
+            "persona_name": "Lark",
+            "persona_archetype": "kate",
+            "persona_lora": "kate_krea2.safetensors",
+            "persona_render_preset": {"enabled": True, "base_model": "realism", "archetypes": ["kate"]},
+        },
+    )
+    assert core_service.is_krea2_persona_chat(owner_krea_persona) is True
+    _, _, sliders_krea_p = core_service.extract_krea2_prompt_and_params(owner_krea_persona, "walking in the rain", is_character=True)
+    eff_krea_p, can_krea_p = await core_service._resolve_chat_image_sliders(owner_krea_persona, sliders_krea_p)
+    assert can_krea_p is True
+    assert eff_krea_p["base_model"] == "realism"
+
+    # 5. Owner in chat with manual Krea 2 persona marked via persona_engine="krea2" -> Krea 2 enabled!
+    owner_manual_krea = SimpleNamespace(
+        user_id="alexey",
+        private_mode=True,
+        trusted_owner=True,
+        is_unlimited=True,
+        settings={
+            "persona_id": "persona_manual_k2",
+            "persona_name": "Chloe",
+            "persona_engine": "krea2",
+            "persona_render_preset": None,
+        },
+    )
+    assert core_service.is_krea2_persona_chat(owner_manual_krea) is True
+    _, can_krea_manual = await core_service._resolve_chat_image_sliders(owner_manual_krea, {})
+    assert can_krea_manual is True
+
+

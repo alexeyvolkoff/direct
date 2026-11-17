@@ -110,6 +110,7 @@ export function compactPersonaForChat(persona) {
     personality: persona.personality || "",
     archetype: persona.archetype || "",
     lora: persona.lora || "",
+    engine: persona.engine || "",
     render_preset: persona.render_preset || null,
     avatar_url: avatarUrl,
   };

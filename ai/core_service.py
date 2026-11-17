@@ -276,6 +276,85 @@ def has_custom_persona(ctx: UserContext | None) -> bool:
         return True
     return False
 
+
+_KREA_CLOUD_BASE_MODELS = frozenset({
+    "realism",
+    "semi_realism",
+    "semirealism",
+    "semi-realism",
+    "muse",
+    "yogi",
+    "krea",
+    "krea2",
+    "anima",
+    "cyberrealistic_anima",
+    "animaturbo",
+})
+
+
+def is_krea2_persona_chat(ctx: UserContext | None, sliders: dict | None = None) -> bool:
+    """
+    Returns True ONLY when the active chat is bound to a custom Persona that was
+    created for Krea 2 / Anima Cloud Studio (rather than default chat, general chat,
+    or an Express SDXL / text-only persona).
+    """
+    if not has_custom_persona(ctx):
+        return False
+    settings = ctx.settings if isinstance(getattr(ctx, "settings", None), dict) else {}
+    rp = settings.get("persona_render_preset")
+    active_rp = rp if (isinstance(rp, dict) and rp.get("enabled", True) is not False) else None
+
+    explicit_engine = (
+        str(settings.get("persona_engine") or (active_rp.get("engine") if active_rp else "") or "")
+        .strip()
+        .lower()
+    )
+    if explicit_engine in ("sdxl", "express"):
+        return False
+    if explicit_engine in ("krea2", "krea", "anima", "studio"):
+        return True
+
+    if active_rp:
+        rp_base = str(active_rp.get("base_model") or "").strip().lower()
+        if rp_base:
+            if is_sdxl_base_model(rp_base):
+                return False
+            if rp_base in _KREA_CLOUD_BASE_MODELS:
+                return True
+        for cl in active_rp.get("custom_loras") or []:
+            if isinstance(cl, dict):
+                cl_models = [str(m).lower() for m in (cl.get("models") or [])]
+                cl_base = str(cl.get("base_model") or "").lower()
+                if any(m in ("krea2", "anima") for m in cl_models) or "krea" in cl_base or "anima" in cl_base:
+                    return True
+
+    # Fallback for older custom personas without render_preset.base_model: check preset registry
+    base_presets = _load_base_krea_presets()
+    krea_arch_ids: set[str] = set()
+    krea_lora_files: set[str] = set()
+    for item in base_presets.get("archetypes") or []:
+        if not isinstance(item, dict):
+            continue
+        mods = [str(m).lower() for m in (item.get("models") or [])]
+        if any(m in ("krea2", "anima") for m in mods) and "sdxl" not in mods:
+            aid = str(item.get("id") or "").strip().lower()
+            fn = str(item.get("filename") or "").strip().lower()
+            if aid:
+                krea_arch_ids.add(aid)
+            if fn:
+                krea_lora_files.add(fn)
+
+    p_arch = str(settings.get("persona_archetype") or "").strip().lower().strip("<> ")
+    if p_arch and not p_arch.startswith("sdxl_") and p_arch in krea_arch_ids:
+        return True
+
+    p_lora = str(settings.get("persona_lora") or "").strip().lower()
+    if p_lora:
+        if p_lora in krea_lora_files or any(tok in p_lora for tok in ("krea2", "krea_2", "krea-2", "anima")):
+            return True
+
+    return False
+
 DEFAULT_MCP_INSTRUCTIONS = get_prompt("mcp_instructions.txt")
 IMAGE_NEUTRAL_DESC_PROMPT = get_prompt("image_neutral_desc.txt")
 
@@ -3317,15 +3396,23 @@ def extract_krea2_prompt_and_params(ctx: UserContext, prompt: str, is_character:
         "midjourney": "midjourney",
         "fantasy": "midjourney",
         "photorealistic": "photorealistic",
-        "realistic": "photorealistic",
+        "realistic": "realistic",
+        "sdxl_realistic": "sdxl_realistic",
+        "perfect": "perfect",
+        "sdxl_perfect": "sdxl_perfect",
+        "sdxl_fantasy": "sdxl_fantasy",
+        "tooned": "tooned",
+        "sdxl_tooned": "sdxl_tooned",
         "cinematic": "cinematic",
         "neon": "neon",
         "cyberpunk": "neon",
         "goth": "alt"
     }
 
+    use_krea_persona = is_krea2_persona_chat(ctx)
     ARCHETYPE_ALIASES = {
-        "domi": "sdxl_domi" if not (ctx and (getattr(ctx, "private_mode", False) or getattr(ctx, "trusted_owner", False))) else "domi",
+        "domi": "domi" if use_krea_persona else "sdxl_domi",
+        "june": "sdxl_domi",
         "sdxl_domi": "sdxl_domi",
         "judith": "sdxl_judith",
         "sdxl_judith": "sdxl_judith",
@@ -5414,7 +5501,8 @@ async def generate_sdxl_studio_image(
         readme_content += f"\n<!-- prompt: {clean_user_prompt} -->\n"
 
     is_sdxl_owner = bool(ctx and (getattr(ctx, "trusted_owner", False) or getattr(ctx, "private_mode", False)))
-    if save_local and is_sdxl_owner:
+    should_save_sdxl_local = bool(is_sdxl_owner and (save_local or bool(kwargs.get("upload_storage", False))))
+    if should_save_sdxl_local:
         try:
             rel_gen = f"generated/{safe_subfolder}" if safe_subfolder else "generated"
             target_dir = resolve_local_target_dir(ctx, rel_gen)
@@ -5483,6 +5571,7 @@ async def generate_krea2_image(
             cfg=cfg,
             seed=seed,
             save_local=save_local,
+            upload_storage=upload_storage,
             **kwargs,
         )
 
@@ -12033,40 +12122,50 @@ async def generate_image(ctx: UserContext, prompt, chat: str = 'default', update
 
 async def _resolve_chat_image_sliders(ctx: UserContext, sliders: dict | None) -> tuple[dict, bool]:
     """
-    Checks whether `ctx` is entitled to Cloud GPU Krea 2 (`krea_allowed`).
-    When `krea_allowed` is False (e.g. Guest or depleted Krea quota), maps `sliders`
-    to local Express SDXL (`sdxl_realistic` / `sdxl_tooned` / `sdxl_fantasy`) so chat
-    image creation works seamlessly in Express mode without hitting Studio gating.
+    Routes chat image generation to SDXL by default (even for the Node Owner),
+    EXCEPT when the active chat is bound to a custom Persona created with Krea 2 / Anima
+    and the user has Krea 2 entitlement (`krea_allowed`).
     """
     eff = dict(sliders or {})
     can_krea = False
-    try:
-        if await is_krea_available(ctx):
-            st = await check_krea_status(ctx)
-            can_krea = bool(isinstance(st, dict) and st.get("krea_allowed"))
-    except Exception as e:
-        logging.debug(f"[ExpressFallback] check_krea_status failed: {e}")
-        can_krea = False
+    if is_krea2_persona_chat(ctx, eff):
+        try:
+            if await is_krea_available(ctx):
+                st = await check_krea_status(ctx)
+                can_krea = bool(isinstance(st, dict) and st.get("krea_allowed"))
+        except Exception as e:
+            logging.debug(f"[ExpressFallback] check_krea_status failed: {e}")
+            can_krea = False
 
     if can_krea:
         return eff, True
 
-    style_key = str(eff.get("style") or "").strip().lower()
-    if style_key in ("anime", "pixar", "3d", "comic"):
+    existing_base = str(eff.get("base_model") or "").strip().lower()
+    style_key = str(
+        eff.get("style")
+        or (ctx.settings.get("style") if ctx and isinstance(getattr(ctx, "settings", None), dict) else "")
+        or ""
+    ).strip().lower()
+    if is_sdxl_base_model(existing_base):
+        eff["base_model"] = existing_base if existing_base.startswith("sdxl_") else f"sdxl_{existing_base}"
+    elif style_key in ("perfect", "sdxl_perfect"):
+        eff["base_model"] = "sdxl_perfect"
+    elif style_key in ("anime", "pixar", "3d", "comic", "tooned", "sdxl_tooned"):
         eff["base_model"] = "sdxl_tooned"
-    elif style_key in ("midjourney", "fantasy"):
+    elif style_key in ("midjourney", "fantasy", "sdxl_fantasy"):
         eff["base_model"] = "sdxl_fantasy"
     else:
         eff["base_model"] = "sdxl_realistic"
-    eff.setdefault("steps", 7)
-    eff.setdefault("cfg", 1.45)
+    eff.setdefault("steps", 8)
+    eff.setdefault("cfg", 1.55)
     return eff, False
 
 
 def _resolve_character_ref_avatar(ctx: UserContext, sliders: dict | None = None) -> tuple[str | None, str | None, str | None, str | None]:
     """
     Resolves (ref_avatar, persona_id, persona_name, persona_lora) for character image generation.
-    Never falls back to global default assistant avatar when a custom Studio Persona is active.
+    Never falls back to global default assistant avatar when a custom Studio Persona is active,
+    nor overwrites active SDXL character LoRA faces with the static assistant avatar.
     """
     if has_custom_persona(ctx):
         p_id = str(ctx.settings.get("persona_id") or "").strip() or None
@@ -12088,6 +12187,13 @@ def _resolve_character_ref_avatar(ctx: UserContext, sliders: dict | None = None)
             or (f"/personas/{p_id}/avatar" if p_id else None)
         )
         return ref_avatar, p_id, p_name, p_lora
+
+    default_has_char_lora = bool(
+        isinstance(sliders, dict)
+        and (sliders.get("archetypes") or sliders.get("lora"))
+    )
+    if default_has_char_lora and not (isinstance(sliders, dict) and sliders.get("use_face_ref") is True):
+        return None, None, None, None
     ref_avatar = ctx.settings.get("assistant_avatar") or get_assistant_avatar_path(ctx)
     return ref_avatar, None, None, None
 

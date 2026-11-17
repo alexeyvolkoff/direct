@@ -5403,7 +5403,7 @@ async def generate_persona_endpoint(request: Request, data: PersonaGenerateInput
     sdxl_verbal_passports = {
         "sdxl_judith": (
             ["Джудит", "Judith", "Джуна", "June"],
-            "Natural expressive young woman with warm wavy hair, bright expressive eyes, charming friendly smile, soft natural daylight",
+            "JudithCB, sleek expressive young woman with blonde hair, bright emerald-green eyes, subtle freckles across nose, sculpted cheekbones, soft natural daylight",
         ),
         "sdxl_domi": (
             ["Доминика", "Domi", "Ника", "Dominika"],
@@ -5411,27 +5411,27 @@ async def generate_persona_endpoint(request: Request, data: PersonaGenerateInput
         ),
         "sdxl_lana": (
             ["Лана", "Светлана", "Lana", "Claire"],
-            "Radiant Slavic young woman with soft honey-blonde hair, expressive light eyes, warm natural beauty, gentle poised expression",
+            "Svetlana, radiant Slavic young woman with copper-auburn wavy hair, expressive green-blue eyes, warm natural beauty, gentle poised expression",
         ),
         "sdxl_oriana": (
             ["Ориана", "Oriana", "Диана", "Diana"],
-            "Glamorous confident woman with sculpted facial features, luminous dark eyes, glossy dark waves, magnetic poised presence",
+            "OR14N4, glamorous confident woman with long honey-blonde hair, bright blue eyes, sculpted facial features, magnetic poised presence",
         ),
         "sdxl_vera": (
             ["Вера", "Вероника", "Vera", "Veronika"],
-            "Elegant dark-haired woman with striking deep brown eyes, classic refined features, subtle confident smile, warm studio lighting",
+            "V3r0t1k4, striking elegant woman with vibrant fiery red hair, piercing blue eyes, sharp refined features, confident subtle smile",
         ),
         "sdxl_bianca": (
             ["Бьянка", "Bianca", "Белла", "Alice"],
-            "Elegant poised blonde woman with refined classic features, bright expressive eyes, graceful serene demeanor, tailored modern attire",
+            "B1anc4, edgy poised woman with short platinum-blonde side-swept bob hair, striking blue eyes, refined features, tailored modern attire",
         ),
         "sdxl_beatrice": (
             ["Беатрис", "Beatrice", "Ева", "Eva"],
-            "Classic European beauty with warm chestnut hair, refined cheekbones, intelligent warm gaze, timeless effortless style",
+            "B3ATR1C3, glamorous European beauty with warm golden-blonde wavy hair, defined arched eyebrows, blue eyes, timeless effortless style",
         ),
         "sdxl_minerva": (
             ["Минерва", "Minerva", "Мира", "Mira"],
-            "Striking woman with sleek raven-dark hair, sculpted cheekbones, mystical piercing gaze, refined enigmatic aura",
+            "MINERVA, striking young woman with icy platinum-blonde hair, bright blue eyes, subtle freckles, full sculpted lips, enigmatic aura",
         ),
     }
 
@@ -5582,6 +5582,7 @@ async def generate_persona_endpoint(request: Request, data: PersonaGenerateInput
         else "sdxl_realistic"
     )
     render_preset_out = None
+    persona_engine_out = "sdxl"
 
     # Рендерим портрет через Krea 2 / Anima (для владельца/подписчиков на Studio-типажах) или SDXL
     b64_str = ""
@@ -5602,8 +5603,10 @@ async def generate_persona_endpoint(request: Request, data: PersonaGenerateInput
             eff_studio_base = "anima" if is_anima_arch else (
                 data.base_model if str(data.base_model or "").lower() in ("realism", "semi_realism") else "realism"
             )
+            persona_engine_out = "anima" if is_anima_arch else "krea2"
             render_preset_out = {
                 "enabled": True,
+                "engine": persona_engine_out,
                 "base_model": eff_studio_base,
                 "archetypes": [arch_val] if arch_val else [],
                 "styles": selected_styles,
@@ -5643,6 +5646,7 @@ async def generate_persona_endpoint(request: Request, data: PersonaGenerateInput
             }
             render_preset_out = {
                 "enabled": True,
+                "engine": "sdxl",
                 "base_model": chosen_sdxl_base,
                 "archetypes": [arch_val] if arch_val else [],
                 "styles": selected_styles,
@@ -5677,6 +5681,7 @@ async def generate_persona_endpoint(request: Request, data: PersonaGenerateInput
         "archetype": arch_key,
         "lora": arch_lora,
         "style": style,
+        "engine": persona_engine_out,
         "render_preset": render_preset_out,
         "avatar": b64_str,
         "avatarData": b64_str

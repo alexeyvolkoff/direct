@@ -2753,6 +2753,7 @@
       persona_personality: activeChatPersona.personality || "",
       persona_archetype: activeChatPersona.archetype || "",
       persona_lora: activeChatPersona.lora || "",
+      persona_engine: activeChatPersona.engine || "",
       persona_render_preset: activeChatPersona.render_preset || null,
       ...(pAvatar ? { persona_avatar: pAvatar } : {}),
     };

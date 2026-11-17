@@ -2449,10 +2449,19 @@
       const relevantCustomLoras = personaFormPresetEnabled
         ? customCivitaiLoras.filter((cl) => personaFormArchetypes.includes(cl.id) || personaFormStyles.includes(cl.id))
         : [];
+      const resolvedFormBase = (canShowStudioTab && studioEngineMode !== "sdxl")
+        ? (personaFormBaseModel || "realism")
+        : normalizeSdxlModel(personaFormBaseModel);
+      const resolvedPersonaEngine = personaFormPresetEnabled
+        ? (isSdxlModel(resolvedFormBase) ? "sdxl" : (resolvedFormBase === "anima" ? "anima" : "krea2"))
+        : (editingPersonaId && existingPersona.engine
+            ? existingPersona.engine
+            : ((canShowStudioTab && studioEngineMode !== "sdxl") ? "krea2" : "sdxl"));
       const renderPresetObj = personaFormPresetEnabled
         ? {
             enabled: true,
-            base_model: (canShowStudioTab && studioEngineMode !== "sdxl") ? (personaFormBaseModel || "realism") : normalizeSdxlModel(personaFormBaseModel),
+            engine: resolvedPersonaEngine,
+            base_model: resolvedFormBase,
             archetypes: [...personaFormArchetypes],
             archetype_weights: { ...personaFormArchetypeWeights },
             styles: [...personaFormStyles],
@@ -2477,6 +2486,7 @@
         personality: personaFormPersonality.trim(),
         archetype: primaryArchId,
         lora: primaryArchPreset?.filename || existingPersona.lora || "",
+        engine: resolvedPersonaEngine,
         render_preset: renderPresetObj,
         avatar: personaFormAvatarPreview || "",
         avatarData: personaFormAvatarData || "",
@@ -2653,6 +2663,9 @@
   async function saveAiGeneratedPersona(startChatAfter = false) {
     if (!generatedAiPersona) return null;
     const shouldStartChat = startChatAfter === true;
+    const aiPresetBase = generatedAiPersona.render_preset?.base_model || "";
+    const resolvedAiEngine = generatedAiPersona.engine
+      || (aiPresetBase ? (isSdxlModel(aiPresetBase) ? "sdxl" : (aiPresetBase === "anima" ? "anima" : "krea2")) : ((canShowStudioTab && studioEngineMode !== "sdxl") ? "krea2" : "sdxl"));
     const pObj = {
       id: generatedAiPersona.id || ("persona_" + Date.now()),
       name: generatedAiPersona.name,
@@ -2661,6 +2674,7 @@
       personality: generatedAiPersona.personality || "",
       archetype: generatedAiPersona.archetype || aiFactoryArchetype || "",
       lora: generatedAiPersona.lora || "",
+      engine: resolvedAiEngine,
       render_preset: generatedAiPersona.render_preset || null,
       avatar: generatedAiPersona.avatar || "",
       avatarData: generatedAiPersona.avatarData || generatedAiPersona.avatar || "",
