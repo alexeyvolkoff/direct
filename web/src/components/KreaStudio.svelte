@@ -224,6 +224,37 @@
   let promptUndoStack = [];
   let directorInputEl = null;
   let directorFeedEl = null;
+  let studioMainEl = null;
+  let composerHeight = 200;
+
+  function trackComposerHeight(node) {
+    const updateHeight = () => {
+      const nextH = Math.ceil(node.getBoundingClientRect().height || node.offsetHeight || 0);
+      if (nextH > 0 && nextH !== composerHeight) {
+        const delta = nextH - composerHeight;
+        const wasNearBottom = studioMainEl
+          ? (studioMainEl.scrollHeight - studioMainEl.scrollTop - studioMainEl.clientHeight <= 80)
+          : false;
+        composerHeight = nextH;
+        if (delta > 4 && wasNearBottom && studioMainEl) {
+          requestAnimationFrame(() => {
+            if (studioMainEl) studioMainEl.scrollTop += delta;
+          });
+        }
+      }
+    };
+    updateHeight();
+    let ro = null;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(updateHeight);
+      ro.observe(node);
+    }
+    return {
+      destroy() {
+        if (ro) ro.disconnect();
+      }
+    };
+  }
 
   // Storyboard & Multi-scene Series State
   let storyTitle = "";
@@ -6546,8 +6577,8 @@
 
   <!-- Main Workspace + AI Director Split -->
   <div class="studio-body-split">
-  <div class="studio-canvas-col">
-  <main class="studio-main">
+  <div class="studio-canvas-col" style={`--composer-h: ${Math.max(composerHeight, 130)}px;`}>
+  <main class="studio-main" bind:this={studioMainEl}>
     {#if activeTab === "personas"}
       <!-- PERSONAS VIEW -->
       <section class="personas-section" in:fade={{ duration: 150 }}>
@@ -7041,7 +7072,7 @@
   </main>
 
   <!-- Sticky Bottom Generation Composer with Sliders -->
-  <footer class="studio-composer">
+  <footer class="studio-composer" use:trackComposerHeight>
     {#if autopilotToastMsg}
       <div class="studio-notice-banner" style="background: rgba(16, 185, 129, 0.14); border-color: rgba(16, 185, 129, 0.35);" transition:fade={{ duration: 120 }}>
         <div class="studio-notice-text" style="color: #6ee7b7;">{autopilotToastMsg}</div>
@@ -10222,7 +10253,8 @@
   .studio-main {
     flex: 1;
     overflow-y: auto;
-    padding: 20px 24px 220px 24px;
+    padding: 20px 24px calc(var(--composer-h, 220px) + 28px) 24px;
+    scroll-padding-bottom: calc(var(--composer-h, 220px) + 28px);
   }
 
   /* Personas View */
@@ -10602,7 +10634,7 @@
     flex-direction: column;
     transition: border-color 0.2s ease, transform 0.2s ease;
     content-visibility: auto;
-    contain-intrinsic-size: 240px 360px;
+    contain-intrinsic-size: auto 240px auto 360px;
   }
 
   .gallery-card.placeholder-card {
@@ -14364,7 +14396,8 @@
     }
 
     .studio-main {
-      padding: 10px 10px 240px 10px;
+      padding: 10px 10px calc(var(--composer-h, 240px) + 24px) 10px;
+      scroll-padding-bottom: calc(var(--composer-h, 240px) + 24px);
     }
 
     .gallery-grid {
