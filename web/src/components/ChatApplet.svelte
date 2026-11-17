@@ -8,6 +8,7 @@
   import Chat from "./Chat.svelte";
   import KreaStudio from "./KreaStudio.svelte";
   import MemoryCards from "./MemoryCards.svelte";
+  import MediaLibrary from "./MediaLibrary.svelte";
   import MemoryCardModal from "./MemoryCardModal.svelte";
   import FolderPicker from "./FolderPicker.svelte";
   import {
@@ -55,6 +56,7 @@
   export let isChatLoading = false;
   let userSelectedChatManually = false;
   let creationsCount = 0;
+  let mediaLibraryCount = 0;
   let drive = null;
   let chatSidebarOpen = true;
   let sidebarOpen = activeView === "chat";
@@ -325,6 +327,15 @@
       const parts = cleanDoc.split("/").filter(Boolean);
       if (parts.length > 1) {
         const d = (typeof deviceRegistry !== "undefined") ? (deviceRegistry.getByPrefix(parts[0]) || deviceRegistry.get(parts[0]) || deviceRegistry.getByName(parts[0])) : null;
+        if (d && d.local && d.drive && typeof d.drive.getThumbnail === "function") {
+          try {
+            const localDataUrl = await d.drive.getThumbnail("/" + parts.slice(1).join("/"), size, size);
+            if (localDataUrl) {
+              thumbCache.set(cacheKey, localDataUrl);
+              return localDataUrl;
+            }
+          } catch (_) {}
+        }
         const seg = (d && ((d.prefix ? d.prefix.replace(/^\/+/, "") : "") || d.linkId || d.name)) || parts[0];
         const p2pUrl = `/p2p/${seg}${encodeURI("/" + parts.slice(1).join("/"))}?resize=true&width=${size}&height=${size}`;
         try {
@@ -364,15 +375,15 @@
     _abortDeviceMemoryFetch();
   }
 
-  // Грузим знания девайса когда пользователь открыл раздел Memory Cards:
+  // Грузим знания девайса когда пользователь открыл раздел Memory Cards или Медиатеку:
   // Для владельца приходят все знания ноды, для гостей — только публичные (#omd)
-  $: if (drive && activeView === "memory") {
+  $: if (drive && (activeView === "memory" || activeView === "media")) {
     loadDeviceMemory();
   }
 
   // Ушли из раздела пораньше — убиваем недогруженные страницы,
   // чтобы фоновая догрузка не забивала P2P-туннель во время чата.
-  $: if (activeView && activeView !== "memory") {
+  $: if (activeView && activeView !== "memory" && activeView !== "media") {
     _abortDeviceMemoryFetch();
   }
 
@@ -1454,6 +1465,29 @@
             {/if}
           </button>
 
+          <button
+            class="nav-link-btn"
+            class:active={activeView === "media"}
+            on:click={() => {
+              if (activeView === "media") {
+                activeView = "chat";
+              } else {
+                activeView = "media";
+                sidebarOpen = false;
+              }
+            }}
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="4" width="20" height="16" rx="2" />
+              <path d="m22 15-5-5L6 20" />
+              <circle cx="8" cy="9" r="1.5" />
+            </svg>
+            <span>{$_("media_library", {}, "Media Library")}</span>
+            {#if mediaLibraryCount > 0}
+              <span class="nav-count-badge">{mediaLibraryCount}</span>
+            {/if}
+          </button>
+
           {#if $unreadCount > 0}
             <button
               class="nav-link-btn"
@@ -1681,6 +1715,31 @@
           on:delete={(e) => handleDeleteKnowledge(e.detail.id)}
           on:open-file={(e) => handleCardOpenFile(e.detail)}
           on:open-folder={(e) => handleOpenFolder(e.detail)}
+          on:refresh={() => loadDeviceMemory(true)}
+          on:toggle-sidebar={toggleSidebar}
+          on:close={closeApp}
+        />
+      {:else if activeView === "media"}
+        <MediaLibrary
+          knowledgeList={allKnowledgeCards}
+          {isDarkTheme}
+          {contentMode}
+          {isOverlayHeader}
+          {sidebarOpen}
+          isOwner={computedPrivateMode}
+          {hasOwnHardwareNode}
+          loading={deviceMemoryLoading}
+          thumbFetcher={fetchDeviceThumb}
+          httpDrive={drive}
+          deviceDrive={effectiveDeviceDrive}
+          storageDevice={userStorageDevice}
+          {chatStore}
+          {targetDevice}
+          targetLinkId={targetLinkId || targetDevice?.linkId || ""}
+          defaultStorage={$profileStore.defaultStorage || ""}
+          on:count-change={(e) => (mediaLibraryCount = e.detail)}
+          on:edit={(e) => openEditMemoryCard(e.detail.card)}
+          on:index-folder={openIndexFolderPicker}
           on:refresh={() => loadDeviceMemory(true)}
           on:toggle-sidebar={toggleSidebar}
           on:close={closeApp}

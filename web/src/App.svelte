@@ -816,7 +816,8 @@
         hashPath === "/creations" ||
         hashPath === "/generator" ||
         hashPath === "/memory" ||
-        hashPath === "/knowledge"
+        hashPath === "/knowledge" ||
+        hashPath === "/media"
       ) {
         if (showAddDevicePanel) showAddDevicePanel = false;
         if (isRealFileManagerFolder(currentFolderId)) {
@@ -840,10 +841,12 @@
           chatActiveView = "creations";
         } else if (hashPath === "/chat/memory" || hashPath === "/memory" || hashPath === "/knowledge") {
           chatActiveView = "memory";
+        } else if (hashPath === "/chat/media" || hashPath === "/media") {
+          chatActiveView = "media";
         } else {
           chatActiveView = "chat";
           const maybeChatId = hashPath.replace(/^\/chat\/?/, "");
-          if (maybeChatId && maybeChatId !== "chat" && maybeChatId !== "chats" && maybeChatId !== "creations" && maybeChatId !== "memory") {
+          if (maybeChatId && maybeChatId !== "chat" && maybeChatId !== "chats" && maybeChatId !== "creations" && maybeChatId !== "memory" && maybeChatId !== "media") {
             chatActiveChatId = maybeChatId;
           }
         }
@@ -1575,6 +1578,7 @@
         const viewHash =
           chatActiveView === "creations" ? "#/chat/creations"
           : chatActiveView === "memory" ? "#/chat/memory"
+          : chatActiveView === "media" ? "#/chat/media"
           : (chatActiveChatId ? `#/chat/${chatActiveChatId}` : "#/chat");
         updateUrlHash(viewHash);
       }
@@ -2433,7 +2437,7 @@
   })();
 
   function openChatsApp(initialView = "chat") {
-    const targetView = (initialView === "creations" || initialView === "memory" || initialView === "chat")
+    const targetView = (initialView === "creations" || initialView === "memory" || initialView === "media" || initialView === "chat")
       ? initialView
       : "chat";
     if (isRealFileManagerFolder(currentFolderId)) {
@@ -2501,7 +2505,9 @@
       ? "#/chat/creations"
       : targetView === "memory"
         ? "#/chat/memory"
-        : "#/chat";
+        : targetView === "media"
+          ? "#/chat/media"
+          : "#/chat";
     updateUrlHash(viewHash);
   }
 

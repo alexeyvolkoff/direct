@@ -4166,12 +4166,14 @@ function lastFreshTitle(messages) {
   // этого блока, а не все фото папки, в которой лежит выбранная.
   function openSourcesGallery(activeSrc, msg) {
     let sources = (msg ? (getMessageSources(msg) || []).filter(isImageSource) : []);
+    if (effectiveContentMode !== "fun") {
+      sources = sources.filter((s) => !hasSensitiveTag(s));
+    }
     const activeKey = (activeSrc && (activeSrc.fullPath || activeSrc.path || activeSrc.document_id || activeSrc.url || "")) || "";
-    if (activeSrc && !sources.some((s) => (s.fullPath || s.path || s.document_id || s.url || "") === activeKey)) {
+    if (activeSrc && (effectiveContentMode === "fun" || !hasSensitiveTag(activeSrc)) && !sources.some((s) => (s.fullPath || s.path || s.document_id || s.url || "") === activeKey)) {
       sources = [activeSrc, ...sources];
     }
     if (!sources.length) {
-      if (activeSrc) dispatch("open-file", { source: activeSrc });
       return;
     }
 
@@ -4689,6 +4691,11 @@ function lastFreshTitle(messages) {
     const cleanSrc = typeof src === "object"
       ? { ...src, path, fullPath: path }
       : { path, fullPath: path, document_id: path, title: path.split("/").pop() };
+    if (isImageSource(cleanSrc)) {
+      if (effectiveContentMode !== "fun" && hasSensitiveTag(cleanSrc)) return;
+      openSourcesGallery(cleanSrc, msg);
+      return;
+    }
     dispatch("open-file", { source: cleanSrc });
   }
 

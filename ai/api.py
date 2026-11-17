@@ -384,6 +384,39 @@ IMAGE_EXTS = {
     "tif", "tiff", "svg", "avif", "heic", "heif",
 }
 
+VIDEO_EXTS = {
+    "mp4", "mov", "webm", "m4v", "mkv", "avi",
+}
+
+
+def _extract_video_poster_jpeg(video_path: str) -> Optional[bytes]:
+    """Extracts a representative poster JPEG frame from a video file using ffmpeg."""
+    if not video_path or not os.path.isfile(video_path):
+        return None
+    for seek_sec in ("0.8", "0.0"):
+        try:
+            proc = subprocess.run(
+                [
+                    "ffmpeg", "-nostdin", "-y",
+                    "-ss", seek_sec,
+                    "-i", video_path,
+                    "-frames:v", "1",
+                    "-vf", "scale='min(960,iw)':-2",
+                    "-q:v", "4",
+                    "-f", "image2",
+                    "-c:v", "mjpeg",
+                    "pipe:1",
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                timeout=12,
+            )
+            if proc.returncode == 0 and proc.stdout and len(proc.stdout) > 256:
+                return proc.stdout
+        except Exception:
+            continue
+    return None
+
 FOLDER_COVER_NAMES = {
     "folder.jpg", "folder.jpeg", "folder.png",
     "cover.jpg", "cover.jpeg", "cover.png",
@@ -1533,16 +1566,35 @@ async def rag_index_endpoint(request: Request, background_tasks: BackgroundTasks
             if _readme_target(fn) is not None:
                 return None
             ext = os.path.splitext(fn)[1].lower().lstrip(".")
-            if ext not in IMAGE_EXTS:
+            is_video_media = ext in VIDEO_EXTS
+            if ext not in IMAGE_EXTS and not is_video_media:
                 return None
             base_full = os.path.splitext(full)[0]
             if os.path.isfile(base_full + ".Readme.md") or os.path.isfile(base_full + ".readme.md") or os.path.isfile(full + ".Readme.md") or os.path.isfile(full + ".readme.md"):
                 return None
-            try:
-                with open(full, "rb") as f:
-                    img_bytes = f.read()
-            except Exception as e:
-                return {"action": "error", "doc_id": _doc_id_of(full, rel), "error": f"{fn}: {e}"}
+            img_bytes = None
+            if is_video_media:
+                cover_jpg = base_full + ".cover.jpg"
+                if os.path.isfile(cover_jpg):
+                    try:
+                        with open(cover_jpg, "rb") as cf:
+                            img_bytes = cf.read()
+                    except Exception:
+                        img_bytes = None
+                if not img_bytes:
+                    img_bytes = await asyncio.to_thread(_extract_video_poster_jpeg, full)
+                    if img_bytes:
+                        try:
+                            with open(cover_jpg, "wb") as cf:
+                                cf.write(img_bytes)
+                        except Exception:
+                            pass
+            else:
+                try:
+                    with open(full, "rb") as f:
+                        img_bytes = f.read()
+                except Exception as e:
+                    return {"action": "error", "doc_id": _doc_id_of(full, rel), "error": f"{fn}: {e}"}
             if not img_bytes:
                 return None
             content_hash = _compute_content_hash(img_bytes)
@@ -1572,6 +1624,8 @@ async def rag_index_endpoint(request: Request, background_tasks: BackgroundTasks
                     place_tokens += core_service.geo_place_localized(geo_place)
                     ai_tags = sorted(set(ai_tags) | set(place_tokens))
                 ai_tags = sorted(set(ai_tags) | set(unified_memory.auto_extract_tags(annotation, fn)))
+                if is_video_media:
+                    ai_tags = sorted(set(ai_tags) | {"video"})
                 _save_cached_annotation(content_hash, annotation, ai_tags)
             try:
                 readme_path = base_full + ".Readme.md"
@@ -3574,6 +3628,29 @@ async def device_memory_thumb_endpoint(
             raise HTTPException(status_code=404, detail="No folder cover")
 
     ext = os.path.splitext(real)[1].lower().lstrip(".")
+    if ext in VIDEO_EXTS:
+        base_no_ext = os.path.splitext(real)[0]
+        for c_ext in (".cover.jpg", ".cover.png", ".cover.jpeg"):
+            if os.path.isfile(base_no_ext + c_ext):
+                real = base_no_ext + c_ext
+                ext = c_ext.lstrip(".").split(".")[-1]
+                break
+        else:
+            cache_dir = "/tmp/omc_video_thumbs"
+            os.makedirs(cache_dir, exist_ok=True)
+            st_m = int(os.path.getmtime(real)) if os.path.isfile(real) else 0
+            cache_jpg = os.path.join(cache_dir, f"{core_service.hash_string(f'{real}:{st_m}')}.jpg")
+            if not os.path.isfile(cache_jpg):
+                poster_bytes = await asyncio.to_thread(_extract_video_poster_jpeg, real)
+                if poster_bytes:
+                    try:
+                        with open(cache_jpg, "wb") as vf:
+                            vf.write(poster_bytes)
+                    except Exception:
+                        pass
+            if os.path.isfile(cache_jpg):
+                real = cache_jpg
+                ext = "jpg"
     if ext not in IMAGE_EXTS:
         raise HTTPException(status_code=404, detail="Not an image")
 

@@ -304,6 +304,10 @@
       return docId;
     }
     if (docId.startsWith("/")) {
+      const ext = docId.split(".").pop().toLowerCase();
+      if (VIDEO_EXTS.has(ext)) {
+        return `/api/device_memory_thumb?path=${encodeURIComponent(docId)}&size=${size}`;
+      }
       const { seg, path } = previewSegAndPath(docId);
       return `/p2p/${seg}${encodeURI(path)}?resize=true&width=${size}&height=${size}`;
     }
@@ -401,6 +405,7 @@
   })();
 
   const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "webp", "gif", "avif", "heic", "heif", "svg", "bmp", "tiff"]);
+  const VIDEO_EXTS = new Set(["mp4", "mov", "webm", "m4v", "mkv", "avi"]);
   const NON_IMAGE_EXTS = new Set([
     "pdf", "docx", "doc", "odt", "rtf", "xlsx", "xls", "csv", "pptx", "ppt",
     "txt", "md", "markdown", "html", "htm", "css", "js", "ts", "json", "xml",
@@ -418,10 +423,10 @@
 
   function isImageCard(item) {
     if (!item || isFolderCard(item)) return false;
-    if (item.contentType === "image" || (item.mimeType && item.mimeType.startsWith("image/"))) return true;
+    if (item.contentType === "image" || item.contentType === "video" || (item.mimeType && (item.mimeType.startsWith("image/") || item.mimeType.startsWith("video/")))) return true;
     const path = (item.document_id || item.title || "").toLowerCase();
     const ext = path.split(".").pop();
-    if (IMAGE_EXTS.has(ext)) return true;
+    if (IMAGE_EXTS.has(ext) || VIDEO_EXTS.has(ext)) return true;
     if (NON_IMAGE_EXTS.has(ext)) return false;
     if (item.hasIcon || item.has_icon || item.customAttributes?.hasIcon) return true;
     return !!(item.imagePreview || item.image_preview);

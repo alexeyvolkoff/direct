@@ -21,6 +21,7 @@ import { isLocalVisionEnabled, recognizeImageLocal, recognizeImageNative } from 
 import { hasSensitiveReadmeContent, hasSensitiveTag } from "./content-mode.js";
 
 const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "webp"]);
+const VIDEO_EXTS = new Set(["mp4", "mov", "webm", "m4v", "mkv"]);
 const MANIFEST_KEY = "omd_indexed_manifest_v1";
 
 const initialState = {
@@ -45,6 +46,26 @@ function isImageFile(name = "") {
   const dot = clean.lastIndexOf(".");
   if (dot < 0) return false;
   return IMAGE_EXTS.has(clean.slice(dot + 1).toLowerCase());
+}
+
+function isVideoFile(name = "") {
+  const clean = String(name || "").split("?")[0].split("#")[0];
+  const dot = clean.lastIndexOf(".");
+  if (dot < 0) return false;
+  return VIDEO_EXTS.has(clean.slice(dot + 1).toLowerCase());
+}
+
+function guessMediaMime(name = "", isVideo = false) {
+  const ext = String(name || "").split(".").pop().toLowerCase();
+  if (isVideo) {
+    if (ext === "webm") return "video/webm";
+    if (ext === "mov") return "video/quicktime";
+    if (ext === "mkv") return "video/x-matroska";
+    return "video/mp4";
+  }
+  if (ext === "png") return "image/png";
+  if (ext === "webp") return "image/webp";
+  return "image/jpeg";
 }
 
 function loadManifest() {
@@ -200,6 +221,76 @@ async function resizeBlobToJpeg(blob, maxSide = 1024, quality = 0.78) {
   }
 }
 
+async function extractVideoPosterFromBlob(videoBlob) {
+  if (typeof document === "undefined" || !videoBlob) return null;
+  const objUrl = URL.createObjectURL(videoBlob);
+  const video = document.createElement("video");
+  video.muted = true;
+  video.playsInline = true;
+  video.preload = "metadata";
+  try {
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("video metadata timeout")), 6000);
+      video.onloadeddata = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+      video.onerror = () => {
+        clearTimeout(timer);
+        reject(new Error("video decode error"));
+      };
+      video.src = objUrl;
+    });
+    const dur = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
+    const seekTarget = dur > 0.4 ? Math.min(1.0, dur * 0.15) : 0;
+    if (seekTarget > 0) {
+      await new Promise((resolve) => {
+        const timer = setTimeout(resolve, 2500);
+        video.onseeked = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+        try {
+          video.currentTime = seekTarget;
+        } catch (_) {
+          clearTimeout(timer);
+          resolve();
+        }
+      });
+    }
+    const vw = video.videoWidth || 640;
+    const vh = video.videoHeight || 360;
+    const bigScale = Math.min(1, 960 / Math.max(vw, vh));
+    const bw = Math.max(1, Math.round(vw * bigScale));
+    const bh = Math.max(1, Math.round(vh * bigScale));
+    const canvas = document.createElement("canvas");
+    canvas.width = bw;
+    canvas.height = bh;
+    canvas.getContext("2d").drawImage(video, 0, 0, bw, bh);
+    const bigBlob = await new Promise((r) => canvas.toBlob(r, "image/jpeg", 0.78));
+    const uploadBytes = bigBlob ? new Uint8Array(await bigBlob.arrayBuffer()) : null;
+
+    const smScale = Math.min(1, 240 / Math.max(vw, vh));
+    const sw = Math.max(1, Math.round(vw * smScale));
+    const sh = Math.max(1, Math.round(vh * smScale));
+    const smCanvas = document.createElement("canvas");
+    smCanvas.width = sw;
+    smCanvas.height = sh;
+    smCanvas.getContext("2d").drawImage(video, 0, 0, sw, sh);
+    const previewDataUrl = smCanvas.toDataURL("image/jpeg", 0.65);
+
+    return { uploadBytes, previewDataUrl, duration: Math.round(dur) };
+  } catch (_) {
+    return null;
+  } finally {
+    try {
+      video.removeAttribute("src");
+      video.load();
+    } catch (_) {}
+    URL.revokeObjectURL(objUrl);
+  }
+}
+
 async function dataUrlToBytes(dataUrl) {
   const res = await fetch(dataUrl);
   return new Uint8Array(await res.arrayBuffer());
@@ -316,8 +407,8 @@ export async function scanDeviceForIndexable(drive, {
         if (depth === 0) {
           visited = 0; // Give each root (DCIM, Pictures, Documents, Downloads) its own budget
           if (lower === "documents" || lower === "downloads") nextBucket = "docs";
-          else if (lower === "camera" || lower === "pictures" || lower === "dcim") nextBucket = "photos";
-          else if (drive.isNative) continue; // On mobile, focus on Documents/Downloads/Camera/Pictures
+          else if (lower === "camera" || lower === "pictures" || lower === "dcim" || lower === "movies" || lower === "videos") nextBucket = "photos";
+          else if (drive.isNative) continue; // On mobile, focus on Documents/Downloads/Camera/Pictures/Movies
         }
         await walk(itemPath, depth + 1, nextBucket);
         continue;
@@ -350,9 +441,9 @@ export async function scanDeviceForIndexable(drive, {
         if (size <= 15 * 1024 * 1024) {
           docs.push({ kind: "doc", name, path: itemPath, docId, size, mtimeMs });
         }
-      } else if (includePhotos && bucket !== "docs" && isImageFile(name)) {
+      } else if (includePhotos && bucket !== "docs" && (isImageFile(name) || isVideoFile(name))) {
         if (!cutoffMs || !mtimeMs || mtimeMs >= cutoffMs) {
-          photos.push({ kind: "photo", name, path: itemPath, docId, size, mtimeMs });
+          photos.push({ kind: isVideoFile(name) ? "video" : "photo", name, path: itemPath, docId, size, mtimeMs });
         }
       }
     }
@@ -526,7 +617,8 @@ class ClientIndexerRunner {
             }
           }
         } else {
-          // Photo pipeline: EXIF + contentHash + <=1024px JPEG + local 320px thumbnail + /rag/recognize/raw
+          // Photo & Video pipeline: EXIF/poster + contentHash + <=1024px JPEG + local 240px thumbnail + vision
+          const isVid = item.kind === "video";
           let exif = { takenAt: "", gpsString: "" };
           let headBytes = null;
           let tailBytes = null;
@@ -535,7 +627,7 @@ class ClientIndexerRunner {
             try {
               const headRes = await drive.readRange(item.path, 0, 131072);
               headBytes = headRes?.bytes || null;
-              if (headBytes) exif = extractJpegExif(headBytes);
+              if (headBytes && !isVid) exif = extractJpegExif(headBytes);
               const totalSz = Number(headRes?.totalSize || item.size || 0);
               if (totalSz > 65536) {
                 const tailOff = Math.max(0, totalSz - 65536);
@@ -554,9 +646,12 @@ class ClientIndexerRunner {
             combined.set(h64, 0);
             if (t64.length) combined.set(t64, h64.length);
             contentHash = await computeContentHash(combined, totalSz);
-          } else {
+          } else if (!isVid || (item.size && item.size <= 80 * 1024 * 1024)) {
             rawBytes = await readDriveFileBytes(drive, item.path, item.size);
             contentHash = await computeContentHash(rawBytes, item.size || rawBytes.length);
+          } else {
+            const fallbackSeed = new TextEncoder().encode(`${item.docId}:${item.size}:${item.mtimeMs}`);
+            contentHash = await computeContentHash(fallbackSeed, item.size || fallbackSeed.length);
           }
 
           if (!reindexExisting && contentHash && existingHashes.has(contentHash)) {
@@ -566,9 +661,10 @@ class ClientIndexerRunner {
           } else {
             let uploadBytes = null;
             let previewDataUrl = "";
+            let videoDuration = 0;
             let data = null;
 
-            if (isLocalVisionEnabled() && typeof drive.analyzeImage === "function") {
+            if (!isVid && isLocalVisionEnabled() && typeof drive.analyzeImage === "function") {
               try {
                 const localRes = await recognizeImageNative(drive, item.path, {
                   filename: item.name,
@@ -584,6 +680,7 @@ class ClientIndexerRunner {
                   title: localRes.title,
                   annotation: localRes.annotation,
                   tags: localRes.tags,
+                  location: localRes.location || "",
                   annotation_embedding: Array.isArray(emb) ? emb : null,
                   chunks: [{ text: localRes.annotation, embedding: Array.isArray(emb) ? emb : null }],
                 };
@@ -595,24 +692,41 @@ class ClientIndexerRunner {
 
             if (!data) {
               if (drive.isNative && typeof drive.getThumbnail === "function") {
-                const bigUrl = await drive.getThumbnail(item.path, 1024, 1024);
-                if (bigUrl) {
-                  uploadBytes = await dataUrlToBytes(bigUrl);
-                  const smallUrl = await drive.getThumbnail(item.path, 240, 240);
-                  previewDataUrl = smallUrl || bigUrl;
-                }
+                try {
+                  const bigUrl = await drive.getThumbnail(item.path, 1024, 1024);
+                  if (bigUrl) {
+                    uploadBytes = await dataUrlToBytes(bigUrl);
+                    const smallUrl = await drive.getThumbnail(item.path, 240, 240);
+                    previewDataUrl = smallUrl || bigUrl;
+                  }
+                } catch (_) {}
               }
               if (!uploadBytes) {
-                if (!rawBytes) rawBytes = await readDriveFileBytes(drive, item.path, item.size);
-                if (!exif.gpsString && !exif.takenAt) exif = extractJpegExif(rawBytes);
-                const blob = new Blob([rawBytes]);
-                const resized = await resizeBlobToJpeg(blob, 1024, 0.78);
-                uploadBytes = new Uint8Array(await resized.blob.arrayBuffer());
-                const thumb = await resizeBlobToJpeg(blob, 240, 0.62);
-                previewDataUrl = thumb.dataUrl;
+                if (isVid) {
+                  if (!item.size || item.size <= 80 * 1024 * 1024) {
+                    try {
+                      if (!rawBytes) rawBytes = await readDriveFileBytes(drive, item.path, item.size);
+                      const vBlob = new Blob([rawBytes], { type: guessMediaMime(item.name, true) });
+                      const poster = await extractVideoPosterFromBlob(vBlob);
+                      if (poster) {
+                        uploadBytes = poster.uploadBytes;
+                        previewDataUrl = poster.previewDataUrl || "";
+                        videoDuration = poster.duration || 0;
+                      }
+                    } catch (_) {}
+                  }
+                } else {
+                  if (!rawBytes) rawBytes = await readDriveFileBytes(drive, item.path, item.size);
+                  if (!exif.gpsString && !exif.takenAt) exif = extractJpegExif(rawBytes);
+                  const blob = new Blob([rawBytes]);
+                  const resized = await resizeBlobToJpeg(blob, 1024, 0.78);
+                  uploadBytes = new Uint8Array(await resized.blob.arrayBuffer());
+                  const thumb = await resizeBlobToJpeg(blob, 240, 0.62);
+                  previewDataUrl = thumb.dataUrl;
+                }
               }
 
-              if (isLocalVisionEnabled()) {
+              if (uploadBytes && isLocalVisionEnabled()) {
                 try {
                   const localRes = await recognizeImageLocal(uploadBytes, {
                     filename: item.name,
@@ -624,6 +738,7 @@ class ClientIndexerRunner {
                     title: localRes.title,
                     annotation: localRes.annotation,
                     tags: localRes.tags,
+                    location: localRes.location || "",
                     annotation_embedding: Array.isArray(emb) ? emb : null,
                     chunks: [{ text: localRes.annotation, embedding: Array.isArray(emb) ? emb : null }],
                   };
@@ -634,10 +749,11 @@ class ClientIndexerRunner {
               }
             }
 
-            if (!data) {
+            if (!data && uploadBytes) {
+              const posterName = isVid ? item.name.replace(/\.[^/.]+$/, ".jpg") : item.name;
               const headers = {
                 Accept: "application/json",
-                "X-OMD-Filename": encodeURIComponent(item.name),
+                "X-OMD-Filename": encodeURIComponent(posterName),
                 "X-OMD-Source": encodeURIComponent(item.path),
                 "X-OMD-Doc-Path": encodeURIComponent(item.docId),
                 "X-OMD-RAG-Scope": "private",
@@ -648,15 +764,40 @@ class ClientIndexerRunner {
               if (exif.gpsString) headers["X-OMD-GPS"] = exif.gpsString;
               if (exif.takenAt) headers["X-OMD-Taken-At"] = exif.takenAt;
 
-              const res = await httpDrive.fetch("/rag/recognize/raw", {
-                method: "POST",
-                headers,
-                body: uploadBytes,
-                signal,
-              });
-              if (!res.ok) throw new Error(`recognize HTTP ${res.status}`);
-              data = await res.json();
+              try {
+                const res = await httpDrive.fetch("/rag/recognize/raw", {
+                  method: "POST",
+                  headers,
+                  body: uploadBytes,
+                  signal,
+                });
+                if (res.ok) {
+                  data = await res.json();
+                }
+              } catch (recErr) {
+                if (recErr?.name === "AbortError") throw recErr;
+                if (!isVid) throw recErr;
+              }
             }
+
+            if (!data && isVid) {
+              const dtIso = item.mtimeMs ? new Date(item.mtimeMs).toISOString().slice(0, 19).replace("T", " ") : "";
+              const fallbackText = dtIso ? `Video: ${item.name}\nDate: ${dtIso}` : `Video: ${item.name}`;
+              let emb = null;
+              try {
+                const [vEmb] = await embedTexts(httpDrive, [fallbackText], 1, signal);
+                emb = Array.isArray(vEmb) ? vEmb : null;
+              } catch (_) {}
+              data = {
+                title: item.name,
+                annotation: fallbackText,
+                tags: ["video", deviceName.toLowerCase()],
+                annotation_embedding: emb,
+                chunks: emb ? [{ text: fallbackText, embedding: emb }] : [],
+              };
+            }
+
+            if (!data) throw new Error(`Failed to recognize ${item.name}`);
 
             const companionPath = item.path.replace(/\.[^/.]+$/, "") + ".Readme.md";
             let companionReadme = "";
@@ -667,7 +808,12 @@ class ClientIndexerRunner {
               }
             } catch (_) {}
 
-            const baseTags = Array.isArray(data.tags) ? [...data.tags] : ["photo"];
+            const baseTags = Array.isArray(data.tags) ? [...data.tags] : [isVid ? "video" : "photo"];
+            if (isVid) {
+              const pIdx = baseTags.indexOf("photo");
+              if (pIdx >= 0) baseTags.splice(pIdx, 1);
+              if (!baseTags.includes("video")) baseTags.unshift("video");
+            }
             const isSensitivePhoto =
               hasSensitiveTag(baseTags) ||
               hasSensitiveReadmeContent(data.annotation || "") ||
@@ -694,12 +840,24 @@ class ClientIndexerRunner {
               } catch (_) {}
             }
 
+            let parsedLoc = data.location || "";
+            if (!parsedLoc && cardText) {
+              const locM = cardText.match(/(?:^|\n)Location(?:\s*\([^)]*\))?:\s*([^\n.]+)/i);
+              if (locM) parsedLoc = locM[1].trim();
+            }
+
             await chatStore.addKnowledge({
               document_id: item.docId,
               title: data.title || item.name,
               text: cardText,
               tags: baseTags,
               collection: "user",
+              contentType: isVid ? "video" : "image",
+              mimeType: guessMediaMime(item.name, isVid),
+              taken_at: exif?.takenAt || "",
+              location: parsedLoc,
+              gps: exif?.gpsString || "",
+              ...(videoDuration > 0 ? { duration: videoDuration } : {}),
               content_hash: contentHash || data.content_hash || "",
               imagePreview: previewDataUrl || data.imagePreview || "",
               annotation_embedding: Array.isArray(data.annotation_embedding) ? data.annotation_embedding : null,

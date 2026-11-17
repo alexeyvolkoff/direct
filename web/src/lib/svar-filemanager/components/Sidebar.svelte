@@ -141,7 +141,7 @@
 			if (window.__omdOpenApplet) {
 				window.__omdOpenApplet(view);
 			} else {
-				const hash = view === "creations" ? "#/creations" : view === "memory" ? "#/knowledge" : "#/chat";
+				const hash = view === "creations" ? "#/creations" : view === "memory" ? "#/knowledge" : view === "media" ? "#/media" : "#/chat";
 				window.location.hash = hash;
 				window.dispatchEvent(new CustomEvent("omd-open-applet", { detail: { view } }));
 			}
@@ -207,6 +207,19 @@
 					<path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
 				</svg>
 				<span>{translate("knowledge", {}, "Knowledge")}</span>
+			</button>
+			<button
+				type="button"
+				class="wx-sidebar-nav-btn"
+				title={translate("media_library", {}, "Media Library")}
+				onclick={() => openApplet("media")}
+			>
+				<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<rect x="2" y="4" width="20" height="16" rx="2" />
+					<path d="m22 15-5-5L6 20" />
+					<circle cx="8" cy="9" r="1.5" />
+				</svg>
+				<span>{translate("media_library", {}, "Media Library")}</span>
 			</button>
 		{/if}
 		{#if $unreadCount > 0}

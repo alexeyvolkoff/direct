@@ -183,6 +183,8 @@ function buildPhotoResult({
     title: filename || "Photo",
     annotation: parts.join("\n").trim() || filename || "Photo",
     tags,
+    location: loc,
+    people,
   };
 }
 
