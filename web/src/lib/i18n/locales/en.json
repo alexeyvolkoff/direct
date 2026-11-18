@@ -1972,5 +1972,10 @@
   "write": "Write",
   "writing": "Writing {{path}}...",
   "you": "You",
-  "your_did": "Your DID"
+  "your_did": "Your DID",
+  "media_stories": "Stories & Series",
+  "media_models": "Models & Formats",
+  "media_jump_date": "Jump to date",
+  "media_folders": "Folders",
+  "media_screenshots": "Screenshots"
 }

@@ -1966,5 +1966,10 @@
   "write": "Escrita ",
   "writing": "Escrevendo {{path}}...",
   "you": "Você",
-  "your_did": "Seu DID"
+  "your_did": "Seu DID",
+  "media_stories": "Histórias e séries",
+  "media_models": "Modelos e formatos",
+  "media_jump_date": "Ir para data",
+  "media_folders": "Pastas",
+  "media_screenshots": "Capturas de ecrã"
 }

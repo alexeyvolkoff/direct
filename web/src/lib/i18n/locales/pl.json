@@ -1966,5 +1966,10 @@
   "write": "Zapis",
   "writing": "Pisanie {{path}}...",
   "you": "Ty",
-  "your_did": "Twój DID"
+  "your_did": "Twój DID",
+  "media_stories": "Historie i serie",
+  "media_models": "Modele i formaty",
+  "media_jump_date": "Przejdź do daty",
+  "media_folders": "Foldery",
+  "media_screenshots": "Zrzuty ekranu"
 }

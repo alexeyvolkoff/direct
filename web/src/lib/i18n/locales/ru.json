@@ -1972,5 +1972,10 @@
   "write": "Запись",
   "writing": "Запись {{path}}...",
   "you": "Вы",
-  "your_did": "Ваш DID"
+  "your_did": "Ваш DID",
+  "media_stories": "Истории и серии",
+  "media_models": "Модели и форматы",
+  "media_jump_date": "Переход к дате",
+  "media_folders": "Папки",
+  "media_screenshots": "Скриншоты"
 }

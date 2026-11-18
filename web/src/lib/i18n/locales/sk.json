@@ -1966,5 +1966,10 @@
   "write": "Zapisovanie",
   "writing": "Zápisovanie {{path}}...",
   "you": "Vy",
-  "your_did": "Váš DID"
+  "your_did": "Váš DID",
+  "media_stories": "Príbehy a série",
+  "media_models": "Modely a formáty",
+  "media_jump_date": "Prejsť na dátum",
+  "media_folders": "Priečinky",
+  "media_screenshots": "Snímky obrazovky"
 }

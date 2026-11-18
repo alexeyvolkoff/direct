@@ -1966,5 +1966,10 @@
   "write": "Yazma",
   "writing": "{{path}}... yazılıyor",
   "you": "Siz",
-  "your_did": "DID Kimliğiniz"
+  "your_did": "DID Kimliğiniz",
+  "media_stories": "Hikayeler ve Seriler",
+  "media_models": "Modeller ve Formatlar",
+  "media_jump_date": "Tarihe git",
+  "media_folders": "Klasörler",
+  "media_screenshots": "Ekran görüntüleri"
 }

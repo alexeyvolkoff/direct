@@ -1966,5 +1966,10 @@
   "write": "Запис",
   "writing": "Написання {{path}}...",
   "you": "Ви",
-  "your_did": "Ваш DID"
+  "your_did": "Ваш DID",
+  "media_stories": "Історії та серії",
+  "media_models": "Моделі та формати",
+  "media_jump_date": "Перехід до дати",
+  "media_folders": "Папки",
+  "media_screenshots": "Скріншоти"
 }

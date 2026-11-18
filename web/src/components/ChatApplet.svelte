@@ -209,6 +209,12 @@
 
   // Объединяем GunDB-карточки (личные) с on-device карточками ChromaDB
   $: allKnowledgeCards = [...deviceCards, ...knowledgeList];
+  $: if (typeof window !== "undefined") {
+    window.__omdKnowledgeCards = allKnowledgeCards;
+    try {
+      window.dispatchEvent(new CustomEvent("omd-knowledge-updated"));
+    } catch (_) {}
+  }
 
   // Защита от «шторма»: реактивных вызовов может быть несколько подряд, а ответ
   // /api/device_memory — мегабайты. Грузим порциями (DEVICE_PAGE_SIZE): первая

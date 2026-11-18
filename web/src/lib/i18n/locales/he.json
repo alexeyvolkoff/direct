@@ -1966,5 +1966,10 @@
   "write": "כתיבה",
   "writing": "כתיבה של {{path}}...",
   "you": "אתה/את",
-  "your_did": "ה-DID שלך"
+  "your_did": "ה-DID שלך",
+  "media_stories": "סיפורים וסדרות",
+  "media_models": "מודלים ופורמטים",
+  "media_jump_date": "קפיצה לתאריך",
+  "media_folders": "תיקיות",
+  "media_screenshots": "צילומי מסך"
 }

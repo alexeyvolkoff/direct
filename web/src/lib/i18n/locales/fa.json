@@ -1966,5 +1966,10 @@
   "write": "نوشتن",
   "writing": "در حال نوشتن {{path}}...",
   "you": "شما",
-  "your_did": "شناسه غیرمتمرکز (DID) شما"
+  "your_did": "شناسه غیرمتمرکز (DID) شما",
+  "media_stories": "داستان‌ها و مجموعه‌ها",
+  "media_models": "مدل‌ها و قالب‌ها",
+  "media_jump_date": "رفتن به تاریخ",
+  "media_folders": "پوشه‌ها",
+  "media_screenshots": "اسکرین‌شات‌ها"
 }

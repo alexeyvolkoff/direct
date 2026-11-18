@@ -1966,5 +1966,10 @@
   "write": "Пишите",
   "writing": "Писање ___ТАГ_ВАР_0___...",
   "you": "Ви",
-  "your_did": "Ваш DID"
+  "your_did": "Ваш DID",
+  "media_stories": "Приче и серије",
+  "media_models": "Модели и формати",
+  "media_jump_date": "Скочи на датум",
+  "media_folders": "Фасцикле",
+  "media_screenshots": "Снимци екрана"
 }

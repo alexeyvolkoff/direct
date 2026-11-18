@@ -10,6 +10,13 @@
   import { isNativeStorageAvailable, NativeStorageDrive } from "../lib/native-drive.js";
   import { indexerStore, clientIndexer } from "../lib/client-indexer.js";
   import { contentModeStore, setGlobalContentMode, hasSensitiveTag, hasSensitiveReadmeContent } from "../lib/content-mode.js";
+  import {
+    pushSubViewHistory,
+    dismissSubViewHistory,
+    enrichCreationAttributes,
+    parseReadmeSidecarText,
+    scanDirectCreationsFolder,
+  } from "../lib/media-albums.js";
   import DeviceIndexModal from "./DeviceIndexModal.svelte";
   import VideoViewer from "./VideoViewer.svelte";
 
@@ -54,7 +61,46 @@
     : false;
 
   let mediaTypeFilter = "all"; // 'all' | 'image' | 'video'
-  let activeAlbum = null; // { kind: 'person'|'place'|'moment'|'tag', id, title, subtitle, icon, coverUrl, itemIds: Set }
+  let activeAlbum = null; // { kind: 'person'|'place'|'moment'|'story'|'model'|'tag', id, title, subtitle, icon, coverUrl, itemIds: Set }
+  let albumHistoryToken = "";
+  let viewerHistoryToken = "";
+  let mobileScrubberOpen = false;
+
+  // Direct Creations scanner state (captures unindexed generated/ files, subfolders & personas)
+  let directCreationCards = [];
+  let directPersonas = [];
+  let creationsScanAbort = null;
+  let lastCreationsScanKey = "";
+
+  async function triggerDirectCreationsScan(force = false) {
+    const scanKey = `${Boolean(deviceDrive?.isConnected)}|${storageDevice?.linkId || ""}|${targetDevice?.linkId || ""}|${Boolean(httpDrive)}|${defaultStorage || ""}`;
+    if (!force && scanKey === lastCreationsScanKey && directCreationCards.length > 0) return;
+    lastCreationsScanKey = scanKey;
+    if (creationsScanAbort) {
+      try { creationsScanAbort.abort(); } catch (_) {}
+    }
+    const ctl = new AbortController();
+    creationsScanAbort = ctl;
+    try {
+      await scanDirectCreationsFolder({
+        deviceDrive,
+        storageDevice,
+        targetDevice,
+        httpDrive,
+        defaultStorage,
+        onBatchUpdate: ({ items: cItems, personas: cPersonas }) => {
+          if (ctl.signal.aborted) return;
+          directCreationCards = cItems || [];
+          directPersonas = cPersonas || [];
+        },
+        signal: ctl.signal,
+      });
+    } catch (_) {}
+  }
+
+  $: if (httpDrive || deviceDrive || storageDevice || targetDevice) {
+    triggerDirectCreationsScan(false);
+  }
 
   let searchInput = "";
   let searchQuery = "";
@@ -76,9 +122,10 @@
 
   function setTab(tab) {
     activeTab = tab;
-    if (tab === "timeline") {
-      activeAlbum = null;
+    if (tab === "timeline" && activeAlbum) {
+      closeAlbum();
     }
+    mobileScrubberOpen = false;
     if (typeof localStorage !== "undefined") {
       localStorage.setItem("omd_media_tab", tab);
     }
@@ -469,12 +516,21 @@
         .map((s) => String(s).toLowerCase())
     );
 
+    const combinedPersonas = [...(knownPeopleList || []), ...(directPersonas || [])];
+    const normDocSuffix = (p) => {
+      const clean = String(p || "").replace(/^\/+/, "");
+      const slash = clean.indexOf("/");
+      return (slash > 0 ? clean.slice(slash + 1) : clean).toLowerCase();
+    };
+    const seenCreationSuffix = new Set();
+
     for (const k of knowledgeList || []) {
       const kind = detectMediaKind(k);
       if (!kind) continue;
       const docId = String(k.document_id || k.path || "");
       const dedupKey = k.content_hash || docId;
       if (!dedupKey) continue;
+      seenCreationSuffix.add(normDocSuffix(docId));
       const prev = byHashOrDoc.get(dedupKey);
       const isDev = k.source === "device" || !!k.onDevice;
       if (!prev) {
@@ -486,13 +542,56 @@
       }
     }
 
+    // Merge unindexed files directly from generated/ (and its story subfolders)
+    for (const ck of directCreationCards || []) {
+      const docId = String(ck.document_id || ck.path || "");
+      if (!docId) continue;
+      const suf = normDocSuffix(docId);
+      if (seenCreationSuffix.has(suf) || byHashOrDoc.has(docId)) continue;
+      seenCreationSuffix.add(suf);
+      byHashOrDoc.set(docId, { card: ck, idx: rawOut.length });
+      rawOut.push(ck);
+    }
+
     return rawOut.map((k) => {
       const docId = String(k.document_id || k.path || "");
       const mediaKind = detectMediaKind(k);
-      const isCreation = isCreationItem(k, docId);
+      const isCreation = Boolean(k.isDirectCreation || isCreationItem(k, docId));
       const takenMs = extractCaptureTimestamp(k, docId);
       const locInfo = extractLocationInfo(k);
       const people = extractCardPeople(k, docId, knownPeopleIndexes.byPhoto, knownPeopleIndexes.byName);
+      const fname = docId.split("/").pop() || k.title || "Media";
+
+      let storyFolder = k.storyFolder || "";
+      let modelKey = k.modelKey || "";
+      let modelLabel = k.modelLabel || "";
+
+      if (isCreation) {
+        const parsedSidecar = parseReadmeSidecarText(k.text || k.content || "");
+        const enriched = enrichCreationAttributes({
+          filename: fname,
+          path: docId,
+          title: k.title || parsedSidecar.title || "",
+          description: parsedSidecar.description || "",
+          prompt: parsedSidecar.prompt || "",
+          storyFolder,
+          isVideo: mediaKind === "video",
+          explicitTags: parsedSidecar.explicitTags,
+          knownPersonas: combinedPersonas,
+        });
+        storyFolder = storyFolder || enriched.storyFolder;
+        modelKey = modelKey || enriched.modelKey;
+        modelLabel = modelLabel || enriched.modelLabel;
+        for (const pName of k.matchedPersonas || enriched.personas) {
+          if (!people.some((x) => x.toLowerCase() === pName.toLowerCase())) {
+            people.push(pName);
+          }
+        }
+        if (enriched.semanticTags.length > 0) {
+          k = { ...k, tags: [...(k.tags || []), ...enriched.semanticTags] };
+        }
+      }
+
       const peopleLower = new Set(people.map((p) => p.toLowerCase()));
       const locPartsLower = new Set(locInfo.partsLower);
       const docFirstSeg = docId.split("/").filter(Boolean)[0]?.toLowerCase() || "";
@@ -515,12 +614,12 @@
       }
 
       const isSensitive = Boolean(
+        k.sensitive ||
         hasSensitiveTag(k) ||
         hasSensitiveTag(k.tags) ||
         hasSensitiveReadmeContent(k.text || k.content || "")
       );
 
-      const fname = docId.split("/").pop() || k.title || "Media";
       const displayTitle = k.title && !isJustFileName(k.title, docId) ? k.title : fname;
       const summary = cleanCardSummary(k, docId);
 
@@ -543,6 +642,9 @@
         city: locInfo.city,
         country: locInfo.country,
         people,
+        storyFolder,
+        modelKey,
+        modelLabel,
         semanticTags,
         title: displayTitle,
         filename: fname,
@@ -583,17 +685,22 @@
       return [...withThumb, ...rest].slice(0, n);
     };
 
-    // 1. People albums
+    // 1. People & Personas albums
     const personBuckets = new Map();
-    for (const p of knownPeopleList || []) {
+    for (const p of [...(knownPeopleList || []), ...(directPersonas || [])]) {
       if (p && p.name) {
         const key = p.name.trim().toLowerCase();
-        personBuckets.set(key, {
-          key,
-          title: p.name.trim(),
-          avatarUrl: p.avatar_b64 || "",
-          items: [],
-        });
+        const prev = personBuckets.get(key);
+        if (!prev) {
+          personBuckets.set(key, {
+            key,
+            title: p.name.trim(),
+            avatarUrl: p.avatar_b64 || "",
+            items: [],
+          });
+        } else if (!prev.avatarUrl && p.avatar_b64) {
+          prev.avatarUrl = p.avatar_b64;
+        }
       }
     }
     for (const m of sortedDesc) {
@@ -715,7 +822,62 @@
       .sort((a, b) => b.endMs - a.endMs)
       .slice(0, 18);
 
-    // 4. Meaningful Semantic Tags
+    // 4. Stories & Series (subfolders inside generated/)
+    const storyBuckets = new Map();
+    for (const m of sortedDesc) {
+      if (!m.storyFolder) continue;
+      const key = m.storyFolder.toLowerCase();
+      if (!storyBuckets.has(key)) {
+        storyBuckets.set(key, {
+          key,
+          title: m.storyFolder.replace(/_/g, " "),
+          rawSlug: m.storyFolder,
+          items: [],
+        });
+      }
+      storyBuckets.get(key).items.push(m);
+    }
+    const storyAlbums = Array.from(storyBuckets.values())
+      .filter((b) => b.items.length > 0)
+      .sort((a, b) => b.items.length - a.items.length || a.title.localeCompare(b.title))
+      .map((b) => ({
+        kind: "story",
+        id: `story:${b.key}`,
+        title: b.title,
+        subtitle: `generated/${b.rawSlug}`,
+        count: b.items.length,
+        coverItems: pickCollageItems(b.items, 3),
+        coverItem: pickCoverItem(b.items),
+        itemIds: new Set(b.items.map((x) => x.id)),
+      }));
+
+    // 5. Creation Models & Engines (when Creations are included)
+    const modelBuckets = new Map();
+    for (const m of sortedDesc) {
+      if (!m.isCreation || !m.modelKey) continue;
+      if (!modelBuckets.has(m.modelKey)) {
+        modelBuckets.set(m.modelKey, {
+          key: m.modelKey,
+          title: m.modelLabel || m.modelKey,
+          items: [],
+        });
+      }
+      modelBuckets.get(m.modelKey).items.push(m);
+    }
+    const modelAlbums = Array.from(modelBuckets.values())
+      .filter((b) => b.items.length > 0)
+      .sort((a, b) => b.items.length - a.items.length)
+      .map((b) => ({
+        kind: "model",
+        id: `model:${b.key}`,
+        title: b.title,
+        count: b.items.length,
+        coverItems: pickCollageItems(b.items, 3),
+        coverItem: pickCoverItem(b.items),
+        itemIds: new Set(b.items.map((x) => x.id)),
+      }));
+
+    // 6. Meaningful Semantic Tags & Scene Categories
     const tagBuckets = new Map();
     for (const m of sortedDesc) {
       for (const t of m.semanticTags) {
@@ -741,10 +903,18 @@
 
     return {
       people: peopleAlbums,
+      stories: storyAlbums,
       places: placeAlbums,
       moments: momentAlbums,
+      models: modelAlbums,
       tags: tagAlbums,
-      totalCount: peopleAlbums.length + placeAlbums.length + momentAlbums.length + tagAlbums.length,
+      totalCount:
+        peopleAlbums.length +
+        storyAlbums.length +
+        placeAlbums.length +
+        momentAlbums.length +
+        modelAlbums.length +
+        tagAlbums.length,
     };
   })();
 
@@ -883,6 +1053,7 @@
       await tick();
     }
     activeScrubberKey = scrubberItem.key;
+    mobileScrubberOpen = false;
     if (scrollContainerEl) {
       const targetEl = scrollContainerEl.querySelector(`[data-month-anchor="${scrubberItem.key}"]`);
       if (targetEl) {
@@ -1006,6 +1177,10 @@
 
     if (item.isVideo) {
       if (validInline) return validInline;
+      if (item.isCreation && item.resolvedSeg && item.resolvedPath && !failedMap[item.id]) {
+        const coverPath = item.resolvedPath.replace(/\.[^/.]+$/, ".cover.jpg");
+        return `/p2p/${item.resolvedSeg}${encodeURI(coverPath)}?resize=true&width=${size}&height=${size}`;
+      }
       enqueueThumbFetch(item.docId, size);
       return "";
     }
@@ -1195,6 +1370,19 @@
     });
     lgMediaPagination.setInstance(lgMediaInstance);
 
+    let closedViaBack = false;
+    if (viewerHistoryToken) {
+      dismissSubViewHistory(viewerHistoryToken, { popHistory: false });
+      viewerHistoryToken = "";
+    }
+    viewerHistoryToken = pushSubViewHistory("media-lightbox", () => {
+      closedViaBack = true;
+      viewerHistoryToken = "";
+      if (lgMediaInstance) {
+        try { lgMediaInstance.closeGallery(); } catch (_) {}
+      }
+    });
+
     container.addEventListener("lgAfterClose", () => {
       try {
         if (lgMediaPagination) lgMediaPagination.cleanup();
@@ -1203,6 +1391,11 @@
       lgMediaPagination = null;
       lgMediaInstance = null;
       if (container.parentNode) container.parentNode.removeChild(container);
+      if (viewerHistoryToken && !closedViaBack) {
+        const tok = viewerHistoryToken;
+        viewerHistoryToken = "";
+        dismissSubViewHistory(tok, { popHistory: true });
+      }
     });
 
     lgMediaInstance.openGallery(startIndex);
@@ -1236,12 +1429,17 @@
   let activeVideoModal = null; // { playlist: [], startIndex: 0 }
   let localVideoBlobUrls = [];
 
-  function closeVideoModal() {
+  function closeVideoModal({ fromBack = false } = {}) {
     activeVideoModal = null;
     for (const u of localVideoBlobUrls) {
       try { URL.revokeObjectURL(u); } catch (_) {}
     }
     localVideoBlobUrls = [];
+    if (viewerHistoryToken) {
+      const tok = viewerHistoryToken;
+      viewerHistoryToken = "";
+      dismissSubViewHistory(tok, { popHistory: !fromBack });
+    }
   }
 
   async function resolvePlayableVideoUrl(item) {
@@ -1301,6 +1499,15 @@
       };
     });
 
+    if (viewerHistoryToken) {
+      dismissSubViewHistory(viewerHistoryToken, { popHistory: false });
+      viewerHistoryToken = "";
+    }
+    viewerHistoryToken = pushSubViewHistory("media-video", () => {
+      viewerHistoryToken = "";
+      closeVideoModal({ fromBack: true });
+    });
+
     activeVideoModal = {
       playlist,
       startIndex: clickedIdx,
@@ -1321,7 +1528,19 @@
   }
 
   function openAlbum(album) {
+    const hadAlbum = Boolean(activeAlbum);
     activeAlbum = album;
+    mobileScrubberOpen = false;
+    if (!hadAlbum) {
+      if (albumHistoryToken) {
+        dismissSubViewHistory(albumHistoryToken, { popHistory: false });
+      }
+      albumHistoryToken = pushSubViewHistory("media-album", () => {
+        albumHistoryToken = "";
+        activeAlbum = null;
+        mobileScrubberOpen = false;
+      });
+    }
     if (scrollContainerEl) {
       scrollContainerEl.scrollTo({ top: 0, behavior: "auto" });
     }
@@ -1329,6 +1548,12 @@
 
   function closeAlbum() {
     activeAlbum = null;
+    mobileScrubberOpen = false;
+    if (albumHistoryToken) {
+      const tok = albumHistoryToken;
+      albumHistoryToken = "";
+      dismissSubViewHistory(tok, { popHistory: true });
+    }
   }
 
   function formatDuration(sec) {
@@ -1339,6 +1564,17 @@
   }
 
   onDestroy(() => {
+    if (creationsScanAbort) {
+      try { creationsScanAbort.abort(); } catch (_) {}
+    }
+    if (viewerHistoryToken) {
+      dismissSubViewHistory(viewerHistoryToken, { popHistory: false });
+      viewerHistoryToken = "";
+    }
+    if (albumHistoryToken) {
+      dismissSubViewHistory(albumHistoryToken, { popHistory: false });
+      albumHistoryToken = "";
+    }
     if (unsubRegistry) {
       try { unsubRegistry(); } catch (_) {}
     }
@@ -1350,7 +1586,7 @@
     if (lgMediaInstance) {
       try { lgMediaInstance.destroy(); } catch (_) {}
     }
-    closeVideoModal();
+    closeVideoModal({ fromBack: true });
   });
 </script>
 
@@ -1481,20 +1717,40 @@
         </svg>
       </button>
 
-      <button
-        type="button"
-        class="header-icon-btn"
-        title={gridFit === "cover" ? $_("media_fit_natural", {}, "Show full aspect ratio") : $_("media_fit_square", {}, "Square grid")}
-        on:click={toggleGridFit}
-      >
-        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
-          {#if gridFit === "cover"}
-            <rect x="3" y="5" width="18" height="14" rx="2" />
-          {:else}
-            <rect x="4" y="4" width="16" height="16" rx="2" />
-          {/if}
-        </svg>
-      </button>
+      {#if isMobile && (activeTab === "timeline" || activeAlbum) && monthScrubberItems.length >= 2}
+        <button
+          type="button"
+          class="header-icon-btn scrubber-toggle-btn"
+          class:is-active={mobileScrubberOpen}
+          title={$_("media_jump_date", {}, "Jump to date")}
+          aria-label={$_("media_jump_date", {}, "Jump to date")}
+          on:click={() => (mobileScrubberOpen = !mobileScrubberOpen)}
+        >
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+            <line x1="16" y1="2" x2="16" y2="6" />
+            <line x1="8" y1="2" x2="8" y2="6" />
+            <line x1="3" y1="10" x2="21" y2="10" />
+          </svg>
+        </button>
+      {/if}
+
+      {#if !isMobile}
+        <button
+          type="button"
+          class="header-icon-btn"
+          title={gridFit === "cover" ? $_("media_fit_natural", {}, "Show full aspect ratio") : $_("media_fit_square", {}, "Square grid")}
+          on:click={toggleGridFit}
+        >
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
+            {#if gridFit === "cover"}
+              <rect x="3" y="5" width="18" height="14" rx="2" />
+            {:else}
+              <rect x="4" y="4" width="16" height="16" rx="2" />
+            {/if}
+          </svg>
+        </button>
+      {/if}
 
       <button
         type="button"
@@ -1509,20 +1765,23 @@
         </svg>
       </button>
 
-      <button
-        type="button"
-        class="header-icon-btn"
-        title={$_("refresh", {}, "Refresh")}
-        on:click={() => {
-          loadKnownPeople();
-          dispatch("refresh");
-        }}
-      >
-        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="23 4 23 10 17 10" />
-          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-        </svg>
-      </button>
+      {#if !isMobile}
+        <button
+          type="button"
+          class="header-icon-btn"
+          title={$_("refresh", {}, "Refresh")}
+          on:click={() => {
+            loadKnownPeople();
+            triggerDirectCreationsScan(true);
+            dispatch("refresh");
+          }}
+        >
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="23 4 23 10 17 10" />
+            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+          </svg>
+        </button>
+      {/if}
 
       <button
         type="button"
@@ -1672,6 +1931,44 @@
             </section>
           {/if}
 
+          <!-- 1.5 Stories & Series (subfolders inside generated/) -->
+          {#if autoAlbums.stories && autoAlbums.stories.length > 0}
+            <section class="album-section">
+              <div class="section-head">
+                <h3>🎬 {$_("media_stories", {}, "Stories & Series")}</h3>
+                <span class="section-badge">{autoAlbums.stories.length}</span>
+              </div>
+              <div class="album-cards-grid moments-grid">
+                {#each autoAlbums.stories as sAlbum (sAlbum.id)}
+                  <button type="button" class="album-collage-card" on:click={() => openAlbum(sAlbum)}>
+                    <div class="collage-cover count-{Math.min(3, sAlbum.coverItems.length)}">
+                      {#each sAlbum.coverItems.slice(0, 3) as cItem, idx (cItem.id)}
+                        {@const cUrl = getItemThumbUrl(cItem, idx === 0 ? 480 : 320, thumbUrls, imgFailed, inlineImgFailed, thumbBlobFailed)}
+                        <div class="collage-cell cell-{idx}" use:lazyObserveTile={cItem}>
+                          {#if cUrl}
+                            <img
+                              src={cUrl}
+                              alt=""
+                              loading="lazy"
+                              class:blurred-img={isBlurredInCurrentMode(cItem)}
+                              on:error={() => handleThumbError(cItem, cUrl)}
+                            />
+                          {:else}
+                            <div class="tile-fallback">🎬</div>
+                          {/if}
+                        </div>
+                      {/each}
+                    </div>
+                    <div class="album-card-meta">
+                      <span class="album-card-title">{sAlbum.title}</span>
+                      <span class="album-card-count">{sAlbum.count}</span>
+                    </div>
+                  </button>
+                {/each}
+              </div>
+            </section>
+          {/if}
+
           <!-- 2. Moments & Trips -->
           {#if autoAlbums.moments.length > 0}
             <section class="album-section">
@@ -1758,6 +2055,41 @@
                         {/if}
                       </div>
                       <span class="cover-count-pill">{plAlbum.count}</span>
+                    </div>
+                  </button>
+                {/each}
+              </div>
+            </section>
+          {/if}
+
+          <!-- 3.5 AI Models & Formats -->
+          {#if autoAlbums.models && autoAlbums.models.length > 0}
+            <section class="album-section">
+              <div class="section-head">
+                <h3>🎛️ {$_("media_models", {}, "Models & Formats")}</h3>
+                <span class="section-badge">{autoAlbums.models.length}</span>
+              </div>
+              <div class="album-cards-grid tags-cards-grid">
+                {#each autoAlbums.models as mdAlbum (mdAlbum.id)}
+                  {@const cItem = mdAlbum.coverItem}
+                  {@const cUrl = cItem ? getItemThumbUrl(cItem, 360, thumbUrls, imgFailed, inlineImgFailed, thumbBlobFailed) : ""}
+                  <button type="button" class="album-single-card compact" on:click={() => openAlbum(mdAlbum)}>
+                    <div class="single-cover" use:lazyObserveTile={cItem}>
+                      {#if cUrl}
+                        <img
+                          src={cUrl}
+                          alt={mdAlbum.title}
+                          loading="lazy"
+                          class:blurred-img={isBlurredInCurrentMode(cItem)}
+                          on:error={() => handleThumbError(cItem, cUrl)}
+                        />
+                      {:else}
+                        <div class="tile-fallback">🎛️</div>
+                      {/if}
+                      <div class="cover-gradient">
+                        <span class="cover-title">{mdAlbum.title}</span>
+                      </div>
+                      <span class="cover-count-pill">{mdAlbum.count}</span>
                     </div>
                   </button>
                 {/each}
@@ -1937,7 +2269,7 @@
                         type="button"
                         class="tile-info-btn"
                         title={$_("details", {}, "Details & Mark people")}
-                        on:click|stopPropagation={() => dispatch("edit", { card: item.card })}
+                        on:click|stopPropagation={() => dispatch("edit", { card: item.card?.isDirectCreation ? { ...item.card, readOnly: true } : item.card })}
                       >
                         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2">
                           <circle cx="12" cy="12" r="10" />
@@ -1955,10 +2287,15 @@
       {/if}
     </div>
 
-    <!-- Interactive Year-Month Date Scrubber (Immich-style) -->
-    {#if (activeTab === "timeline" || activeAlbum) && monthScrubberItems.length >= 2 && !isMobile}
-      <nav class="date-scrubber" aria-label="Timeline jump bar">
-        {#each monthScrubberItems.slice(0, 24) as sc (sc.key)}
+    <!-- Interactive Year-Month Date Scrubber (Desktop rail + Mobile drawer) -->
+    {#if (activeTab === "timeline" || activeAlbum) && monthScrubberItems.length >= 2 && (!isMobile || mobileScrubberOpen)}
+      {#if isMobile && mobileScrubberOpen}
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="mobile-scrubber-backdrop" on:click={() => (mobileScrubberOpen = false)}></div>
+      {/if}
+      <nav class="date-scrubber" class:mobile-open={isMobile && mobileScrubberOpen} aria-label="Timeline jump bar">
+        {#each monthScrubberItems.slice(0, 36) as sc (sc.key)}
           <button
             type="button"
             class="scrubber-tick"
@@ -2209,10 +2546,32 @@
     color: #ec4899;
   }
 
-  .sort-order-btn.is-active {
+  .sort-order-btn.is-active,
+  .scrubber-toggle-btn.is-active {
     color: #ec4899;
     border-color: rgba(236, 72, 153, 0.45);
     background: rgba(236, 72, 153, 0.1);
+  }
+
+  .mobile-scrubber-backdrop {
+    position: absolute;
+    inset: 0;
+    z-index: 24;
+    background: rgba(0, 0, 0, 0.18);
+  }
+
+  .date-scrubber.mobile-open {
+    z-index: 28;
+    right: 8px;
+    padding: 10px 8px;
+    gap: 6px;
+    max-height: 82%;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+  }
+
+  .date-scrubber.mobile-open .scrubber-tick {
+    font-size: 0.78rem;
+    padding: 5px 8px;
   }
 
   .bg-index-bar {

@@ -1966,5 +1966,10 @@
   "write": "写入",
   "writing": "正在写入 {{path}}...",
   "you": "您",
-  "your_did": "您的 DID"
+  "your_did": "您的 DID",
+  "media_stories": "故事与系列",
+  "media_models": "模型与格式",
+  "media_jump_date": "跳转到日期",
+  "media_folders": "文件夹",
+  "media_screenshots": "屏幕截图"
 }

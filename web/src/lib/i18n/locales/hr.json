@@ -1966,5 +1966,10 @@
   "write": "Pisati",
   "writing": "Pisanje {{path}}...",
   "you": "Vas",
-  "your_did": "Vaš DID"
+  "your_did": "Vaš DID",
+  "media_stories": "Priče i serije",
+  "media_models": "Modeli i formati",
+  "media_jump_date": "Skoči na datum",
+  "media_folders": "Mape",
+  "media_screenshots": "Snimke zaslona"
 }

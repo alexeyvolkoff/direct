@@ -676,6 +676,10 @@
 
   async function applyStateFromHash() {
     if (typeof window === "undefined" || isSharedRoute) return;
+    if (window.__omdSubViewJustPopped) {
+      window.__omdSubViewJustPopped = false;
+      return;
+    }
     let rawHash = window.location.hash || "#/";
     if (rawHash.startsWith("#")) rawHash = rawHash.slice(1);
 
@@ -6001,6 +6005,10 @@ async function blobToBase64(blob) {
           String(parentPath || "").startsWith("/shared-to-me")
       );
       const shouldEnforceSensitiveLock = isSharedLockedFile || get(contentModeStore) !== "fun";
+      const cameraRollScopeNames = typeof window !== "undefined" ? window.__omdCameraRollScopeNames : null;
+      if (typeof window !== "undefined" && window.__omdCameraRollScopeNames) {
+        window.__omdCameraRollScopeNames = null;
+      }
 
       if (mime.startsWith("image/") || ["jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "svg"].includes(ext)) {
         if (shouldEnforceSensitiveLock) {
@@ -6030,6 +6038,10 @@ async function blobToBase64(blob) {
                 const fExt = fName.includes('.') ? fName.split('.').pop().toLowerCase() : "";
                 return fMime.startsWith("image/") || ["jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "svg"].includes(fExt);
             });
+            if (cameraRollScopeNames instanceof Set && cameraRollScopeNames.size > 0) {
+              const scopedImages = images.filter((f) => cameraRollScopeNames.has(f.name || f.value || ""));
+              if (scopedImages.length > 0) images = scopedImages;
+            }
             if (shouldEnforceSensitiveLock && readmeStemsInFolder.size > 0) {
               const checked = await Promise.all(
                 images.map(async (imgF) => {
@@ -6286,13 +6298,17 @@ async function blobToBase64(blob) {
         try {
           _beginFolderFetch();
           const folderData = await device.drive.getFiles(realParent);
-          const videos = folderData.filter(f => {
+          let videos = folderData.filter(f => {
             if (f.isDir || f.type === "folder") return false;
             const fMime = (f.mimeType || f.type || "").toLowerCase();
             const fName = f.name || f.value || "";
             const fExt = fName.includes('.') ? fName.split('.').pop().toLowerCase() : "";
             return fMime.startsWith("video/") || ["mp4", "webm", "mkv", "avi", "mov"].includes(fExt);
           });
+          if (cameraRollScopeNames instanceof Set && cameraRollScopeNames.size > 0) {
+            const scopedVideos = videos.filter((f) => cameraRollScopeNames.has(f.name || f.value || ""));
+            if (scopedVideos.length > 0) videos = scopedVideos;
+          }
 
           const playlist = videos.map(f => {
             const fName = f.name || f.value || "";

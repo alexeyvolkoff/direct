@@ -1966,5 +1966,10 @@
   "write": "Schrijf",
   "writing": "Schrijven {{path}}...",
   "you": "Jij",
-  "your_did": "Uw DID"
+  "your_did": "Uw DID",
+  "media_stories": "Verhalen en series",
+  "media_models": "Modellen en formaten",
+  "media_jump_date": "Ga naar datum",
+  "media_folders": "Mappen",
+  "media_screenshots": "Screenshots"
 }

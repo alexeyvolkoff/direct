@@ -193,6 +193,10 @@ public class MainActivity extends BridgeActivity {
         if (exitFullscreen()) {
             return;
         }
+        if (getBridge() != null && getBridge().getWebView() != null && getBridge().getWebView().canGoBack()) {
+            getBridge().getWebView().goBack();
+            return;
+        }
         super.onBackPressed();
     }
 

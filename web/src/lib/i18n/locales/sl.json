@@ -1966,5 +1966,10 @@
   "write": "Pisanje",
   "writing": "Shranjevanje {{path}}...",
   "you": "Vi",
-  "your_did": "Vaš DID"
+  "your_did": "Vaš DID",
+  "media_stories": "Zgodbe in serije",
+  "media_models": "Modeli in formati",
+  "media_jump_date": "Skok na datum",
+  "media_folders": "Mape",
+  "media_screenshots": "Posnetki zaslona"
 }

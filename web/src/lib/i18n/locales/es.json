@@ -1966,5 +1966,10 @@
   "write": "Escritura",
   "writing": "Escribiendo {{path}}...",
   "you": "Tú",
-  "your_did": "Tu DID"
+  "your_did": "Tu DID",
+  "media_stories": "Historias y series",
+  "media_models": "Modelos y formatos",
+  "media_jump_date": "Ir a fecha",
+  "media_folders": "Carpetas",
+  "media_screenshots": "Capturas de pantalla"
 }
