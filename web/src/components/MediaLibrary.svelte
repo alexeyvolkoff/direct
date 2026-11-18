@@ -17,6 +17,9 @@
     parseReadmeSidecarText,
     scanDirectCreationsFolder,
     isLikelyGeneratedMedia,
+    canonicalizePlaceKey,
+    filterAndCanonicalizePhotoTags,
+    extractCardLandmarkAndEvent,
   } from "../lib/media-albums.js";
   import DeviceIndexModal from "./DeviceIndexModal.svelte";
   import VideoViewer from "./VideoViewer.svelte";
@@ -378,7 +381,7 @@
       .filter((l) =>
         l &&
         !l.startsWith("#") &&
-        !/^(Date|Taken at|Location|GPS|People|Text):/i.test(l)
+        !/^(Date|Taken at|Location|GPS|People|Text|Landmark|Event):/i.test(l)
       );
     const joined = lines.join(" ").trim();
     if (isJustFileName(joined, docId)) return "";
@@ -547,6 +550,16 @@
       rawOut.push(ck);
     }
 
+    // Collect all place tokens across the library so no city/region/country ever leaks into #tags
+    const globalPlaceKeys = new Set();
+    for (const k of rawOut) {
+      const li = extractLocationInfo(k);
+      for (const part of li.partsLower) {
+        globalPlaceKeys.add(part);
+        globalPlaceKeys.add(canonicalizePlaceKey(part));
+      }
+    }
+
     return rawOut.map((k) => {
       const docId = String(k.document_id || k.path || "");
       const mediaKind = detectMediaKind(k);
@@ -558,13 +571,15 @@
         : extractLocationInfo(k);
       const people = extractCardPeople(k, docId, knownPeopleIndexes.byPhoto, knownPeopleIndexes.byName);
       const fname = docId.split("/").pop() || k.title || "Media";
+      const rawTxt = k.text || k.content || "";
 
       let storyFolder = k.storyFolder || "";
       let modelKey = k.modelKey || "";
       let modelLabel = k.modelLabel || "";
+      let landmark = "";
+      let namedEvent = "";
 
       if (isCreation) {
-        const rawTxt = k.text || k.content || "";
         const parsedSidecar = parseReadmeSidecarText(rawTxt);
         const enriched = enrichCreationAttributes({
           filename: fname,
@@ -590,37 +605,42 @@
         if (enriched.semanticTags.length > 0) {
           k = { ...k, tags: [...(k.tags || []), ...enriched.semanticTags] };
         }
+      } else {
+        const extracted = extractCardLandmarkAndEvent(rawTxt, k.title || "", locInfo.city);
+        landmark = String(k.landmark || extracted.landmark || "").trim();
+        namedEvent = String(k.event || extracted.event || "").trim();
       }
 
       const peopleLower = new Set(people.map((p) => p.toLowerCase()));
-      const locPartsLower = new Set(locInfo.partsLower);
       const docFirstSeg = docId.split("/").filter(Boolean)[0]?.toLowerCase() || "";
       const devStatus = resolveMediaDeviceStatus(k, docId);
 
-      const semanticTags = [];
-      const seenTags = new Set();
-      for (const rawT of k.tags || []) {
-        const cleanT = String(rawT || "").trim().replace(/^#+/, "");
-        const lowT = cleanT.toLowerCase();
-        if (!lowT || lowT.length < 2 || lowT.length > 32) continue;
-        if (NOISE_TAGS.has(lowT)) continue;
-        if (peopleLower.has(lowT) || locPartsLower.has(lowT)) continue;
-        if (lowT === docFirstSeg || deviceNamesLower.has(lowT)) continue;
-        if (/^\d+$/.test(lowT)) continue;
-        if (!seenTags.has(lowT)) {
-          seenTags.add(lowT);
-          semanticTags.push(lowT);
-        }
-      }
+      // Filter out clothing, furniture, sky/building ubiquity, anatomy, and duplicate geographic tags
+      const cleanedTags = filterAndCanonicalizePhotoTags(k.tags || [], {
+        extraPlaceKeys: globalPlaceKeys,
+        peopleLower,
+        deviceNamesLower,
+        docFirstSeg,
+        eventLower: namedEvent ? namedEvent.toLowerCase() : "",
+        isCreation,
+      });
+      // Exclude the exact landmark title from #tags since Landmarks have their own dedicated section
+      const semanticTags = landmark
+        ? cleanedTags.filter((t) => t !== landmark.toLowerCase())
+        : cleanedTags;
 
       const isSensitive = Boolean(
         k.sensitive ||
         hasSensitiveTag(k) ||
         hasSensitiveTag(k.tags) ||
-        hasSensitiveReadmeContent(k.text || k.content || "")
+        hasSensitiveReadmeContent(rawTxt)
       );
 
-      const displayTitle = k.title && !isJustFileName(k.title, docId) ? k.title : fname;
+      const displayTitle =
+        (k.title && !isJustFileName(k.title, docId) ? k.title : "") ||
+        landmark ||
+        namedEvent ||
+        fname;
       const summary = cleanCardSummary(k, docId);
 
       const digitalFootprint = isCreation
@@ -647,6 +667,8 @@
         place: locInfo.place,
         city: locInfo.city,
         country: locInfo.country,
+        landmark,
+        namedEvent,
         people,
         storyFolder,
         modelKey,
@@ -733,11 +755,11 @@
         itemIds: new Set(b.items.map((x) => x.id)),
       }));
 
-    // 2. Places albums
+    // 2. Places albums (canonicalized across Latin/Cyrillic locale aliases)
     const placeBuckets = new Map();
     for (const m of sortedDesc) {
       if (!m.place) continue;
-      const key = (m.city || m.place).toLowerCase();
+      const key = canonicalizePlaceKey(m.city || m.place);
       if (!placeBuckets.has(key)) {
         placeBuckets.set(key, {
           key,
@@ -754,6 +776,35 @@
       .map((b) => ({
         kind: "place",
         id: `place:${b.key}`,
+        title: b.title,
+        subtitle: b.subtitle,
+        count: b.items.length,
+        coverItems: pickCollageItems(b.items, 3),
+        coverItem: pickCoverItem(b.items),
+        itemIds: new Set(b.items.map((x) => x.id)),
+      }));
+
+    // 2.5 Landmarks & Attractions albums
+    const landmarkBuckets = new Map();
+    for (const m of sortedDesc) {
+      if (!m.landmark) continue;
+      const key = m.landmark.toLowerCase();
+      if (!landmarkBuckets.has(key)) {
+        landmarkBuckets.set(key, {
+          key,
+          title: m.landmark,
+          subtitle: m.city || m.country || "",
+          items: [],
+        });
+      }
+      landmarkBuckets.get(key).items.push(m);
+    }
+    const landmarkAlbums = Array.from(landmarkBuckets.values())
+      .filter((b) => b.items.length > 0)
+      .sort((a, b) => b.items.length - a.items.length || a.title.localeCompare(b.title))
+      .map((b) => ({
+        kind: "landmark",
+        id: `landmark:${b.key}`,
         title: b.title,
         subtitle: b.subtitle,
         count: b.items.length,
@@ -805,8 +856,11 @@
         const descItems = [...cl].reverse();
         const dateLabel = formatSpanLabel(new Date(cl[0].takenMs), new Date(cl[cl.length - 1].takenMs));
         const cityCounts = new Map();
+        const highlightCounts = new Map();
         for (const x of cl) {
           if (x.city) cityCounts.set(x.city, (cityCounts.get(x.city) || 0) + 1);
+          const hl = x.namedEvent || x.landmark || "";
+          if (hl) highlightCounts.set(hl, (highlightCounts.get(hl) || 0) + 1);
         }
         let topCity = "";
         let topCnt = 0;
@@ -816,12 +870,22 @@
             topCnt = cnt;
           }
         }
-        const title = topCity ? `${topCity} · ${dateLabel}` : dateLabel;
+        let topHighlight = "";
+        let topHlCnt = 0;
+        for (const [hl, cnt] of highlightCounts.entries()) {
+          if (cnt > topHlCnt) {
+            topHighlight = hl;
+            topHlCnt = cnt;
+          }
+        }
+        const useHighlight = topHighlight && (topHlCnt >= 2 || topHlCnt / cl.length >= 0.4);
+        const leadLabel = useHighlight ? topHighlight : topCity;
+        const title = leadLabel ? `${leadLabel} · ${dateLabel}` : dateLabel;
         return {
           kind: "moment",
           id: `moment:real:${cl[0].takenMs}_${cl.length}`,
           title,
-          subtitle: topCity ? dateLabel : "",
+          subtitle: leadLabel ? dateLabel : "",
           endMs: cl[cl.length - 1].takenMs,
           count: descItems.length,
           coverItems: pickCollageItems(descItems, 3),
@@ -970,6 +1034,7 @@
     return {
       people: peopleAlbums,
       stories: storyAlbums,
+      landmarks: landmarkAlbums,
       places: placeAlbums,
       moments: momentAlbums,
       models: modelAlbums,
@@ -977,6 +1042,7 @@
       totalCount:
         peopleAlbums.length +
         storyAlbums.length +
+        landmarkAlbums.length +
         placeAlbums.length +
         momentAlbums.length +
         modelAlbums.length +
@@ -1000,6 +1066,8 @@
           m.filename.toLowerCase().includes(q) ||
           m.summary.toLowerCase().includes(q) ||
           m.place.toLowerCase().includes(q) ||
+          (m.landmark && m.landmark.toLowerCase().includes(q)) ||
+          (m.namedEvent && m.namedEvent.toLowerCase().includes(q)) ||
           m.people.some((p) => p.toLowerCase().includes(q)) ||
           m.semanticTags.some((t) => t.includes(q))
         );
@@ -1359,6 +1427,8 @@
 
   function buildSlideCaptionHtml(item) {
     const metaParts = [];
+    if (item.landmark) metaParts.push(`🏛️ ${escapeHtml(item.landmark)}`);
+    if (item.namedEvent) metaParts.push(`🎟️ ${escapeHtml(item.namedEvent)}`);
     if (item.place) metaParts.push(`📍 ${escapeHtml(item.place)}`);
     if (item.people && item.people.length) metaParts.push(`👤 ${escapeHtml(item.people.join(", "))}`);
     if (item.takenMs > 0) {
@@ -2087,6 +2157,53 @@
                     <div class="album-card-meta">
                       <span class="album-card-title">{mAlbum.title}</span>
                       <span class="album-card-count">{mAlbum.count}</span>
+                    </div>
+                  </button>
+                {/each}
+              </div>
+            </section>
+          {/if}
+
+          <!-- 2.8 Landmarks & Attractions -->
+          {#if autoAlbums.landmarks && autoAlbums.landmarks.length > 0}
+            <section class="album-section">
+              <div class="section-head">
+                <h3>🏛️ {$_("media_landmarks", {}, "Landmarks")}</h3>
+                <span class="section-badge">{autoAlbums.landmarks.length}</span>
+              </div>
+              <div class="album-cards-grid">
+                {#each autoAlbums.landmarks as lmAlbum (lmAlbum.id)}
+                  {@const cItem = lmAlbum.coverItem}
+                  {@const cUrl = cItem ? getItemThumbUrl(cItem, 480, thumbUrls, imgFailed, inlineImgFailed, thumbBlobFailed) : ""}
+                  <button type="button" class="album-single-card" on:click={() => openAlbum(lmAlbum)}>
+                    <div class="single-cover" use:lazyObserveTile={cItem}>
+                      {#if cUrl}
+                        <img
+                          src={cUrl}
+                          alt={lmAlbum.title}
+                          loading="lazy"
+                          class:blurred-img={isBlurredInCurrentMode(cItem)}
+                          on:error={() => handleThumbError(cItem, cUrl)}
+                        />
+                      {:else if cItem?.isOffline}
+                        <div class="tile-fallback offline-placeholder cover-offline">
+                          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8">
+                            <line x1="2" y1="2" x2="22" y2="22" />
+                            <path d="M17 17H7a2 2 0 0 1-2-2V5c0-.6.26-1.14.68-1.5" />
+                            <path d="M9 2h8a2 2 0 0 1 2 2v9" />
+                          </svg>
+                          <span class="offline-cover-hint">{$_("media_device_offline", {}, "Device offline")}</span>
+                        </div>
+                      {:else}
+                        <div class="tile-fallback">🏛️</div>
+                      {/if}
+                      <div class="cover-gradient">
+                        <span class="cover-title">{lmAlbum.title}</span>
+                        {#if lmAlbum.subtitle}
+                          <span class="cover-sub">{lmAlbum.subtitle}</span>
+                        {/if}
+                      </div>
+                      <span class="cover-count-pill">{lmAlbum.count}</span>
                     </div>
                   </button>
                 {/each}

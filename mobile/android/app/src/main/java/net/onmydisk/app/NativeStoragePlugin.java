@@ -802,7 +802,93 @@ public class NativeStoragePlugin extends Plugin {
         }
     }
 
-    private final ConcurrentHashMap<String, String> geocodeCache = new ConcurrentHashMap<>();
+    private static final java.util.Set<String> NATIVE_NOISE_LABELS = new java.util.HashSet<>(java.util.Arrays.asList(
+            "jeans", "denim", "jacket", "coat", "blazer", "suit", "tuxedo", "shirt", "t-shirt",
+            "polo shirt", "dress shirt", "blouse", "top", "sweater", "hoodie", "sweatshirt",
+            "cardigan", "vest", "trousers", "pants", "shorts", "leggings", "tights", "skirt",
+            "miniskirt", "dress", "gown", "sleeve", "collar", "pocket", "button", "zipper",
+            "tie", "necktie", "bow tie", "scarf", "belt", "glove", "sock", "shoe", "footwear",
+            "sneakers", "boot", "sandal", "slipper", "high heels", "hat", "cap", "baseball cap",
+            "beanie", "sun hat", "helmet", "glasses", "eyeglasses", "eyewear", "sunglasses",
+            "goggles", "vision care", "watch", "wristwatch", "jewelry", "necklace", "bracelet",
+            "earring", "ring", "bag", "handbag", "purse", "backpack", "luggage", "suitcase",
+            "umbrella", "clothing", "clothes", "apparel", "outerwear", "sportswear", "uniform",
+            "fashion", "fashion design", "fashion accessory", "fashion model", "textile", "fabric",
+            "cotton", "linen", "silk", "wool", "leather", "fur", "velvet", "lace", "plaid", "pattern",
+            "chair", "armchair", "office chair", "stool", "bench", "table", "desk", "coffee table",
+            "dining table", "couch", "sofa", "bed", "mattress", "pillow", "cushion", "blanket",
+            "bedding", "cabinet", "cupboard", "wardrobe", "closet", "drawer", "shelf", "shelving",
+            "bookcase", "bookshelf", "countertop", "curtain", "window blind", "window treatment",
+            "carpet", "rug", "floor", "flooring", "wood flooring", "hardwood", "tile", "ceiling",
+            "wall", "wallpaper", "door", "window", "mirror", "stairs", "handrail", "balcony",
+            "porch", "patio", "room", "living room", "bedroom", "bathroom", "kitchen", "dining room",
+            "office", "interior", "interior design", "furniture", "house", "home", "apartment",
+            "property", "real estate", "appliance", "home appliance", "kitchen appliance",
+            "lamp", "lampshade", "light fixture", "lighting", "chandelier", "daylighting",
+            "plate", "platter", "dishware", "tableware", "serveware", "porcelain", "ceramic",
+            "bowl", "cup", "mug", "teacup", "coffee cup", "saucer", "glassware", "stemware",
+            "wine glass", "beer glass", "drinking glass", "bottle", "water bottle", "plastic bottle",
+            "can", "tin can", "jar", "pitcher", "kettle", "cutlery", "flatware", "fork", "spoon",
+            "knife", "napkin", "tablecloth", "tray", "box", "cardboard", "paper", "cord", "cable", "wire",
+            "sky", "cloud", "cumulus", "daytime", "atmosphere", "light", "sunlight", "shadow",
+            "shade", "reflection", "horizon", "building", "structure", "infrastructure",
+            "architecture", "urban area", "metropolitan area", "city", "town", "village",
+            "neighbourhood", "residential area", "commercial building", "mixed-use", "office building",
+            "skyscraper", "tower block", "facade", "roof", "brick", "concrete", "cement", "asphalt",
+            "road", "road surface", "thoroughfare", "highway", "street", "alley", "sidewalk",
+            "pavement", "walkway", "curb", "parking", "parking lot", "street light", "traffic light",
+            "sign", "signage", "traffic sign", "pole", "utility pole", "electricity", "fence",
+            "wire fencing", "gate", "metal", "steel", "iron", "aluminum", "wood", "lumber", "plank",
+            "plywood", "glass", "plastic", "rubber", "stone", "rock", "bedrock", "pebble", "gravel",
+            "soil", "dirt", "ground", "grass", "lawn", "grassland", "plant", "terrestrial plant",
+            "vascular plant", "woody plant", "herbaceous plant", "houseplant", "flowerpot", "shrub",
+            "bush", "hedge", "groundcover", "tree", "trunk", "bark", "branch", "twig", "leaf",
+            "nature", "natural environment", "natural landscape", "landscape", "ecoregion", "biome",
+            "vehicle", "land vehicle", "motor vehicle", "car", "automobile", "sedan", "suv", "van",
+            "truck", "bus", "automotive design", "automotive exterior", "automotive lighting",
+            "automotive tire", "automotive wheel system", "headlamp", "bumper", "grille", "hood",
+            "fender", "windshield", "car door", "wheel", "rim", "alloy wheel", "tire", "tread",
+            "license plate", "vehicle registration plate", "traffic", "transport", "mode of transport",
+            "person", "people", "human", "human body", "man", "woman", "boy", "girl", "adult", "youth",
+            "child", "toddler", "baby", "face", "facial expression", "head", "forehead", "temple",
+            "eyebrow", "eyelash", "eye", "nose", "cheek", "ear", "mouth", "lip", "tooth", "chin",
+            "jaw", "neck", "throat", "shoulder", "arm", "elbow", "wrist", "hand", "finger", "thumb",
+            "nail", "chest", "torso", "abdomen", "waist", "back", "hip", "leg", "thigh", "knee",
+            "ankle", "foot", "toe", "skin", "flesh", "muscle", "joint", "hair", "hairstyle", "bangs",
+            "blond", "brown hair", "black hair", "long hair", "facial hair", "beard", "moustache",
+            "smile", "laugh", "laughter", "happy", "happiness", "joy", "fun", "leisure", "recreation",
+            "cool", "pose", "gesture", "standing", "sitting", "walking", "talking", "conversation",
+            "interaction", "sharing", "crowd", "audience", "event", "public event", "social group",
+            "selfie", "snapshot", "photography", "photograph", "photo", "picture", "image",
+            "stock photography", "portrait", "portrait photography", "close-up", "macro photography",
+            "flash photography", "monochrome", "black-and-white", "color", "tint", "magenta",
+            "purple", "blue", "electric blue", "azure", "green", "yellow", "orange", "red", "pink",
+            "brown", "grey", "gray", "black", "white", "darkness", "font", "text", "symbol", "logo",
+            "brand", "advertising", "poster", "document", "handwriting", "line", "rectangle", "square",
+            "circle", "triangle", "parallel", "symmetry", "slope", "space", "gadget", "electronic device",
+            "electronics", "technology", "display device", "flat panel display", "projection screen",
+            "screen", "computer monitor", "television", "laptop", "personal computer", "computer",
+            "computer keyboard", "mouse", "mobile phone", "smartphone", "telephony",
+            "portable communications device", "communication device", "multimedia", "software", "website",
+            "animal", "terrestrial animal", "working animal", "pet", "mammal", "vertebrate",
+            "carnivore", "whiskers", "snout", "paw", "claw", "tail"
+    ));
+
+    private static boolean isNativeNoiseLabel(String raw) {
+        if (raw == null) return true;
+        String low = raw.trim().toLowerCase(Locale.US);
+        if (low.isEmpty()) return true;
+        if (NATIVE_NOISE_LABELS.contains(low)) return true;
+        return low.contains("shirt") || low.contains("jacket") || low.contains("jeans")
+                || low.contains("denim") || low.contains("trousers") || low.contains("footwear")
+                || low.contains("eyewear") || low.contains("glasses") || low.contains("clothing")
+                || low.contains("fashion") || low.contains("chair") || low.contains("tableware")
+                || low.contains("dishware") || low.contains("furniture") || low.contains("flooring")
+                || low.contains("appliance") || low.contains("automotive") || low.contains("motor vehicle")
+                || low.contains("road surface") || low.contains("infrastructure");
+    }
+
+    private final ConcurrentHashMap<String, String[]> geocodeCache = new ConcurrentHashMap<>();
     private volatile ImageLabeler sharedLabeler = null;
     private volatile TextRecognizer sharedRecognizer = null;
     private volatile FaceDetector sharedFaceDetector = null;
@@ -810,7 +896,7 @@ public class NativeStoragePlugin extends Plugin {
     private synchronized ImageLabeler getSharedLabeler() {
         if (sharedLabeler == null) {
             sharedLabeler = ImageLabeling.getClient(
-                    new ImageLabelerOptions.Builder().setConfidenceThreshold(0.55f).build()
+                    new ImageLabelerOptions.Builder().setConfidenceThreshold(0.58f).build()
             );
         }
         return sharedLabeler;
@@ -834,37 +920,80 @@ public class NativeStoragePlugin extends Plugin {
         return sharedFaceDetector;
     }
 
+    private static boolean isValidPoiCandidate(String cand, String street, String city, String admin, String country) {
+        if (cand == null) return false;
+        String s = cand.trim();
+        if (s.length() < 4 || s.length() > 80) return false;
+        // Reject bare house numbers ("14", "22B", "10/2") and Plus Codes ("J8C4+2X")
+        if (s.matches("^\\d+[A-Za-zА-Яа-я0-9/\\-\\s]*$")) return false;
+        if (s.matches("^[23456789CFGHJMPQRVWX]{4,8}\\+.*")) return false;
+        if (!s.matches(".*[A-Za-zА-Яа-яІіЇїЄєҐґČčŠšŽžĆćĐđ].*")) return false;
+        if (street != null && s.equalsIgnoreCase(street.trim())) return false;
+        if (city != null && s.equalsIgnoreCase(city.trim())) return false;
+        if (admin != null && s.equalsIgnoreCase(admin.trim())) return false;
+        if (country != null && s.equalsIgnoreCase(country.trim())) return false;
+        String low = s.toLowerCase(Locale.ROOT);
+        if (low.contains("oblast") || low.contains("область") || low.contains("район") || low.contains("raion")) {
+            return false;
+        }
+        return true;
+    }
+
     @SuppressWarnings("deprecation")
-    private String reverseGeocodeCached(double lat, double lon) {
-        String key = String.format(Locale.US, "%.2f,%.2f", lat, lon);
-        String cached = geocodeCache.get(key);
+    private String[] reverseGeocodeDetailed(double lat, double lon) {
+        String key = String.format(Locale.US, "%.4f,%.4f", lat, lon);
+        String[] cached = geocodeCache.get(key);
         if (cached != null) return cached;
 
-        String resolved = "";
+        String resolvedLocation = "";
+        String resolvedPoi = "";
         try {
             if (Geocoder.isPresent()) {
                 Geocoder geocoder = new Geocoder(getContext(), Locale.getDefault());
-                List<Address> list = geocoder.getFromLocation(lat, lon, 1);
+                List<Address> list = geocoder.getFromLocation(lat, lon, 5);
                 if (list != null && !list.isEmpty()) {
-                    Address a = list.get(0);
-                    String city = a.getLocality();
-                    if (city == null || city.isEmpty()) city = a.getSubAdminArea();
-                    if (city == null || city.isEmpty()) city = a.getAdminArea();
-                    String country = a.getCountryName();
+                    Address primary = list.get(0);
+                    String city = primary.getLocality();
+                    if (city == null || city.isEmpty()) city = primary.getSubAdminArea();
+                    if ((city == null || city.isEmpty()) && primary.getAdminArea() != null) {
+                        String adm = primary.getAdminArea();
+                        if (!adm.toLowerCase(Locale.ROOT).contains("oblast") && !adm.toLowerCase(Locale.ROOT).contains("область")) {
+                            city = adm;
+                        }
+                    }
+                    String country = primary.getCountryName();
                     if (city != null && !city.isEmpty() && country != null && !country.isEmpty()) {
-                        resolved = city + ", " + country;
+                        resolvedLocation = city + ", " + country;
                     } else if (city != null && !city.isEmpty()) {
-                        resolved = city;
+                        resolvedLocation = city;
                     } else if (country != null && !country.isEmpty()) {
-                        resolved = country;
+                        resolvedLocation = country;
+                    }
+
+                    for (Address a : list) {
+                        String street = a.getThoroughfare();
+                        String locCity = a.getLocality() != null ? a.getLocality() : city;
+                        String adm = a.getAdminArea();
+                        String ctry = a.getCountryName() != null ? a.getCountryName() : country;
+                        String premises = a.getPremises();
+                        if (isValidPoiCandidate(premises, street, locCity, adm, ctry)) {
+                            resolvedPoi = premises.trim();
+                            break;
+                        }
+                        String feat = a.getFeatureName();
+                        if (isValidPoiCandidate(feat, street, locCity, adm, ctry)) {
+                            resolvedPoi = feat.trim();
+                            break;
+                        }
                     }
                 }
             }
         } catch (Exception e) {
             Log.d(TAG, "reverseGeocode failed: " + e.getMessage());
         }
-        geocodeCache.put(key, resolved);
-        return resolved;
+        String[] res = new String[]{resolvedLocation, resolvedPoi};
+        geocodeCache.put(key, res);
+        return res;
     }
 
     @PluginMethod
@@ -902,6 +1031,7 @@ public class NativeStoragePlugin extends Plugin {
             int rotation = 0;
             float[] latLong = new float[2];
             boolean hasGps = false;
+            String exifTakenAt = "";
             try {
                 androidx.exifinterface.media.ExifInterface exif = new androidx.exifinterface.media.ExifInterface(target.getAbsolutePath());
                 int ori = exif.getAttributeInt(androidx.exifinterface.media.ExifInterface.TAG_ORIENTATION, androidx.exifinterface.media.ExifInterface.ORIENTATION_NORMAL);
@@ -909,9 +1039,21 @@ public class NativeStoragePlugin extends Plugin {
                 else if (ori == androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_180) rotation = 180;
                 else if (ori == androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_270) rotation = 270;
                 hasGps = exif.getLatLong(latLong);
+                String dtOrig = exif.getAttribute(androidx.exifinterface.media.ExifInterface.TAG_DATETIME_ORIGINAL);
+                if (dtOrig == null || dtOrig.trim().isEmpty()) {
+                    dtOrig = exif.getAttribute(androidx.exifinterface.media.ExifInterface.TAG_DATETIME);
+                }
+                if (dtOrig != null) exifTakenAt = dtOrig.trim();
             } catch (Exception ignored) {}
 
-            final String location = hasGps ? reverseGeocodeCached(latLong[0], latLong[1]) : "";
+            final boolean finalHasGps = hasGps && (latLong[0] != 0.0f || latLong[1] != 0.0f);
+            final double finalLat = finalHasGps ? latLong[0] : 0.0;
+            final double finalLon = finalHasGps ? latLong[1] : 0.0;
+            final String finalTakenAt = exifTakenAt;
+            final String[] geoInfo = finalHasGps ? reverseGeocodeDetailed(finalLat, finalLon) : new String[]{"", ""};
+            final String location = geoInfo[0];
+            final String poi = geoInfo[1];
+            final int effectiveHeight = Math.max(1, (rotation == 90 || rotation == 270) ? bitmap.getWidth() : bitmap.getHeight());
 
             InputImage inputImage = InputImage.fromBitmap(bitmap, rotation);
             ImageLabeler labeler = getSharedLabeler();
@@ -926,18 +1068,48 @@ public class NativeStoragePlugin extends Plugin {
             Tasks.whenAllComplete(labelTask, textTask, faceTask).addOnCompleteListener(done -> {
                 try {
                     JSArray labelsArr = new JSArray();
+                    JSArray labelDetailsArr = new JSArray();
                     if (labelTask.isSuccessful() && labelTask.getResult() != null) {
                         for (ImageLabel lbl : labelTask.getResult()) {
                             String txt = lbl.getText();
-                            if (txt != null && !txt.isEmpty()) {
+                            float conf = lbl.getConfidence();
+                            if (txt != null && !txt.isEmpty() && !isNativeNoiseLabel(txt)) {
                                 labelsArr.put(txt);
+                                JSObject det = new JSObject();
+                                det.put("text", txt);
+                                det.put("confidence", conf);
+                                labelDetailsArr.put(det);
                             }
                         }
                     }
                     String ocrText = "";
+                    JSArray headlinesArr = new JSArray();
                     if (textTask.isSuccessful() && textTask.getResult() != null) {
-                        ocrText = textTask.getResult().getText();
+                        Text visionText = textTask.getResult();
+                        ocrText = visionText.getText();
                         if (ocrText != null) ocrText = ocrText.trim();
+
+                        // Extract prominent banner / slide / sign headlines sorted by visual font height
+                        List<Map.Entry<String, Float>> lineCandidates = new ArrayList<>();
+                        for (Text.TextBlock block : visionText.getTextBlocks()) {
+                            for (Text.Line line : block.getLines()) {
+                                String ln = line.getText() != null ? line.getText().trim() : "";
+                                android.graphics.Rect box = line.getBoundingBox();
+                                if (ln.length() >= 3 && ln.length() <= 80 && box != null) {
+                                    float relH = box.height() / (float) effectiveHeight;
+                                    if (relH >= 0.024f && ln.matches(".*[A-Za-zА-Яа-яІіЇїЄєҐґČčŠšŽž]{2,}.*")) {
+                                        lineCandidates.add(new java.util.AbstractMap.SimpleEntry<>(ln, relH));
+                                    }
+                                }
+                            }
+                        }
+                        Collections.sort(lineCandidates, (a, b) -> Float.compare(b.getValue(), a.getValue()));
+                        for (int i = 0; i < Math.min(5, lineCandidates.size()); i++) {
+                            JSObject hl = new JSObject();
+                            hl.put("text", lineCandidates.get(i).getKey());
+                            hl.put("relHeight", lineCandidates.get(i).getValue());
+                            headlinesArr.put(hl);
+                        }
                     }
                     int faceCount = 0;
                     if (faceTask.isSuccessful() && faceTask.getResult() != null) {
@@ -945,13 +1117,23 @@ public class NativeStoragePlugin extends Plugin {
                     }
 
                     long elapsed = System.currentTimeMillis() - t0;
-                    Log.i(TAG, "analyzeImage (" + path + ") in " + elapsed + "ms, labels=" + labelsArr.length() + ", faces=" + faceCount + ", ocrLen=" + (ocrText != null ? ocrText.length() : 0) + ", loc=" + location);
+                    Log.i(TAG, "analyzeImage (" + path + ") in " + elapsed + "ms, labels=" + labelsArr.length() + ", headlines=" + headlinesArr.length() + ", faces=" + faceCount + ", loc=" + location + ", poi=" + poi);
 
                     JSObject ret = new JSObject();
                     ret.put("labels", labelsArr);
+                    ret.put("labelDetails", labelDetailsArr);
                     ret.put("text", ocrText != null ? ocrText : "");
+                    ret.put("headlines", headlinesArr);
                     ret.put("faceCount", faceCount);
                     ret.put("location", location);
+                    ret.put("poi", poi);
+                    if (finalHasGps) {
+                        ret.put("gpsLat", finalLat);
+                        ret.put("gpsLon", finalLon);
+                    }
+                    if (!finalTakenAt.isEmpty()) {
+                        ret.put("takenAt", finalTakenAt);
+                    }
                     ret.put("elapsedMs", elapsed);
                     call.resolve(ret);
                 } catch (Exception e) {

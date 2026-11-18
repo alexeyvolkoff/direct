@@ -13133,21 +13133,44 @@ async def summarize_document_for_readme(ctx: UserContext, raw_text: str, limit: 
     return (response or "").strip()
 
 
+_TRIVIAL_TAG_BLOCKLIST = {
+    "jeans", "denim", "jacket", "coat", "blazer", "suit", "shirt", "t-shirt", "blouse",
+    "sweater", "hoodie", "trousers", "pants", "shorts", "skirt", "dress", "shoe", "shoes",
+    "footwear", "sneakers", "boots", "glasses", "eyewear", "sunglasses", "hat", "cap",
+    "bag", "handbag", "backpack", "clothing", "clothes", "outfit", "apparel", "fashion",
+    "chair", "chairs", "table", "desk", "couch", "sofa", "stool", "bench", "bed", "pillow",
+    "cabinet", "shelf", "curtain", "carpet", "floor", "flooring", "wall", "ceiling", "door",
+    "window", "room", "interior", "furniture", "plate", "cup", "mug", "bottle", "glassware",
+    "tableware", "lamp", "lighting", "sky", "blue sky", "cloud", "clouds", "daylight",
+    "sunlight", "building", "buildings", "architecture", "infrastructure", "street", "road",
+    "sidewalk", "asphalt", "pavement", "grass", "lawn", "tree", "trees", "plant", "plants",
+    "vehicle", "car", "automobile", "wheel", "traffic", "person", "people", "man", "woman",
+    "face", "smile", "hair", "fun", "leisure", "crowd", "audience", "event", "photo",
+    "photograph", "picture", "image", "selfie", "portrait", "snapshot",
+}
+
+
 async def extract_tags_from_text(ctx: UserContext, raw_text: str, limit: int = 4000) -> list:
     """
-    Генерирует теги для документа через LLM.
+    Генерирует смысловые теги для документа или фото-аннотации через LLM.
+    Исключает бытовой визуальный шум (одежду, мебель, небо, здания).
     Возвращает список тегов без # (для хранения в unified_memory).
     """
     text_to_process = raw_text[:limit]
 
     prompt = (
-        "Extract 3-7 short topic tags from the following text. "
+        "Extract 2-6 high-value semantic tags from the following text. "
+        "Focus ONLY on meaningful topics: named landmarks or monuments, specific events or conferences, "
+        "pets and animals (e.g. cat, dog, bird), distinctive nature (mountains, waterfall, beach, sunset), "
+        "sports/activities, or document subject matter. "
+        "NEVER output clothing items (jeans, jacket, shirt, dress, glasses), furniture (chair, table), "
+        "or ubiquitous background elements (sky, clouds, building, street, tree, car, person, smile, fun, event). "
         "Return ONLY the tags as a comma-separated list, lowercase, no # prefix, no explanation.\n\n"
         f"Text:\n{text_to_process}"
     )
 
     messages = [
-        {"role": "system", "content": "You extract concise keyword tags from text. Reply only with comma-separated tags."},
+        {"role": "system", "content": "You extract concise high-signal topic tags. Reply only with comma-separated tags, omitting trivial clothing, furniture, sky, or generic building words."},
         {"role": "user", "content": prompt},
     ]
 
@@ -13164,10 +13187,12 @@ async def extract_tags_from_text(ctx: UserContext, raw_text: str, limit: int = 4
             raw = data.get("message", {}).get("content", "") or data.get("content", "")
         else:
             raw = str(data)
-        # Парсим теги: убираем #, лишние пробелы, пустые
         tags = [t.strip().lstrip("#").lower() for t in raw.replace("\n", ",").split(",")]
-        tags = [t for t in tags if t and len(t) < 30]
-        return tags[:7]
+        tags = [
+            t for t in tags
+            if t and 2 <= len(t) < 32 and t not in _TRIVIAL_TAG_BLOCKLIST
+        ]
+        return tags[:6]
     except Exception as e:
         logging.error(f"[extract_tags] error: {e}")
         return []

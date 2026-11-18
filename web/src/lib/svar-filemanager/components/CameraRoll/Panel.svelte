@@ -13,7 +13,9 @@
 		detectCreationModelInfo,
 		isLikelyGeneratedMedia,
 		parseReadmeSidecarText,
-		NOISE_MEDIA_TAGS,
+		canonicalizePlaceKey,
+		filterAndCanonicalizePhotoTags,
+		extractCardLandmarkAndEvent,
 		buildTimelineDayGroups,
 		buildMonthScrubberMarkers,
 	} from "../../../media-albums.js";
@@ -228,14 +230,23 @@
 				  })
 				: null;
 
-			const tags = [];
-			const seenT = new Set();
-			for (const t of matchedCard?.tags || []) {
-				const clean = String(t || "").trim().toLowerCase().replace(/^#+/, "");
-				if (!clean || clean.length < 2 || NOISE_MEDIA_TAGS.has(clean) || seenT.has(clean)) continue;
-				seenT.add(clean);
-				tags.push(clean);
+			const extracted = !isCreation && matchedCard
+				? extractCardLandmarkAndEvent(cardText, matchedCard.title || "", loc.city)
+				: { landmark: "", event: "" };
+			const landmark = !isCreation ? String(matchedCard?.landmark || extracted.landmark || "").trim() : "";
+
+			const extraPlaces = new Set();
+			if (loc.city) {
+				extraPlaces.add(loc.city.toLowerCase());
+				extraPlaces.add(canonicalizePlaceKey(loc.city));
 			}
+			if (loc.country) extraPlaces.add(loc.country.toLowerCase());
+
+			const tags = filterAndCanonicalizePhotoTags(matchedCard?.tags || [], {
+				extraPlaceKeys: extraPlaces,
+				peopleLower: new Set(people.map((p) => p.toLowerCase())),
+				isCreation,
+			}).filter((t) => !landmark || t !== landmark.toLowerCase());
 
 			return {
 				raw: f,
@@ -248,6 +259,7 @@
 				city: loc.city,
 				country: loc.country,
 				place: loc.city,
+				landmark,
 				people,
 				modelInfo,
 				tags,
@@ -317,7 +329,7 @@
 		const plMap = new Map();
 		for (const m of descAll) {
 			if (!m.city) continue;
-			const k = m.city.toLowerCase();
+			const k = canonicalizePlaceKey(m.city);
 			if (!plMap.has(k)) plMap.set(k, { title: m.city, subtitle: m.country, items: [] });
 			plMap.get(k).items.push(m);
 		}
@@ -438,6 +450,23 @@
 				itemIds: new Set(shotItems.map((x) => x.id)),
 			});
 		}
+		const lmMap = new Map();
+		for (const m of descAll) {
+			if (!m.landmark) continue;
+			const k = m.landmark.toLowerCase();
+			if (!lmMap.has(k)) lmMap.set(k, { title: m.landmark, items: [] });
+			lmMap.get(k).items.push(m);
+		}
+		for (const [k, b] of lmMap.entries()) {
+			categoryAlbums.push({
+				id: `landmark:${k}`,
+				title: `🏛️ ${b.title}`,
+				count: b.items.length,
+				coverFile: pickCover(b.items),
+				itemIds: new Set(b.items.map((x) => x.id)),
+			});
+		}
+
 		const modMap = new Map();
 		for (const m of descAll) {
 			if (!m.modelInfo) continue;

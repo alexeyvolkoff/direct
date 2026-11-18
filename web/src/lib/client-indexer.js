@@ -19,6 +19,7 @@ import {
 } from "./client-rag.js";
 import { isLocalVisionEnabled, recognizeImageLocal, recognizeImageNative } from "./local-vision.js";
 import { hasSensitiveReadmeContent, hasSensitiveTag } from "./content-mode.js";
+import { filterAndCanonicalizePhotoTags } from "./media-albums.js";
 
 const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "webp"]);
 const VIDEO_EXTS = new Set(["mp4", "mov", "webm", "m4v", "mkv"]);
@@ -681,6 +682,8 @@ class ClientIndexerRunner {
                   annotation: localRes.annotation,
                   tags: localRes.tags,
                   location: localRes.location || "",
+                  landmark: localRes.landmark || "",
+                  event: localRes.event || "",
                   annotation_embedding: Array.isArray(emb) ? emb : null,
                   chunks: [{ text: localRes.annotation, embedding: Array.isArray(emb) ? emb : null }],
                 };
@@ -739,6 +742,8 @@ class ClientIndexerRunner {
                     annotation: localRes.annotation,
                     tags: localRes.tags,
                     location: localRes.location || "",
+                    landmark: localRes.landmark || "",
+                    event: localRes.event || "",
                     annotation_embedding: Array.isArray(emb) ? emb : null,
                     chunks: [{ text: localRes.annotation, embedding: Array.isArray(emb) ? emb : null }],
                   };
@@ -808,11 +813,18 @@ class ClientIndexerRunner {
               }
             } catch (_) {}
 
-            const baseTags = Array.isArray(data.tags) ? [...data.tags] : [isVid ? "video" : "photo"];
-            if (isVid) {
-              const pIdx = baseTags.indexOf("photo");
-              if (pIdx >= 0) baseTags.splice(pIdx, 1);
-              if (!baseTags.includes("video")) baseTags.unshift("video");
+            const rawDataTags = Array.isArray(data.tags) ? data.tags : [];
+            const filteredSemantic = filterAndCanonicalizePhotoTags(rawDataTags, {
+              landmarkLower: data.landmark ? String(data.landmark).toLowerCase() : "",
+              eventLower: data.event ? String(data.event).toLowerCase() : "",
+              isCreation: false,
+            });
+            const baseTags = [isVid ? "video" : "photo", ...filteredSemantic];
+            for (const rt of rawDataTags) {
+              const low = String(rt || "").trim().toLowerCase();
+              if ((low === "private" || low === "public" || low === "sensitive") && !baseTags.includes(low)) {
+                baseTags.push(low);
+              }
             }
             const isSensitivePhoto =
               hasSensitiveTag(baseTags) ||
@@ -857,6 +869,8 @@ class ClientIndexerRunner {
               taken_at: exif?.takenAt || "",
               location: parsedLoc,
               gps: exif?.gpsString || "",
+              ...(data.landmark ? { landmark: data.landmark } : {}),
+              ...(data.event ? { event: data.event } : {}),
               ...(videoDuration > 0 ? { duration: videoDuration } : {}),
               content_hash: contentHash || data.content_hash || "",
               imagePreview: previewDataUrl || data.imagePreview || "",

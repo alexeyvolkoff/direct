@@ -1170,6 +1170,7 @@
   "media_no_albums_yet": "生成自动相册需要更多元数据，请切换到“时间线”浏览全部媒体。",
   "media_offline_preview_only": "原文件位于离线设备上（仅可查看缩略图）",
   "media_people": "人物",
+  "media_landmarks": "地标景点",
   "media_places": "地点",
   "media_search_placeholder": "搜索地点、人物、场景、文字...",
   "media_sort_newest": "最新优先",

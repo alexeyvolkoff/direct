@@ -1172,6 +1172,7 @@
   "media_no_albums_yet": "More metadata is needed to form automatic albums. Switch to Timeline to browse all media.",
   "media_offline_preview_only": "Original file is on an offline device (preview only)",
   "media_people": "People",
+  "media_landmarks": "Landmarks",
   "media_places": "Places",
   "media_search_placeholder": "Search places, people, scenes, text...",
   "media_sort_newest": "Newest first",
