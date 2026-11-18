@@ -11,6 +11,8 @@
 		extractFilenameTimestamp,
 		parseExifOrIsoTimestamp,
 		detectCreationModelInfo,
+		isLikelyGeneratedMedia,
+		parseReadmeSidecarText,
 		NOISE_MEDIA_TAGS,
 		buildTimelineDayGroups,
 		buildMonthScrubberMarkers,
@@ -204,11 +206,27 @@
 				parseExifOrIsoTimestamp(f.date || f.lastModified || f.mtime) ||
 				0;
 
-			const loc = parseKnowledgePlace(matchedCard);
+			const cardText = matchedCard?.text || matchedCard?.content || "";
+			const isCreation =
+				isCreationsDir ||
+				isLikelyGeneratedMedia({
+					filename: fname,
+					path: f.id || "",
+					text: cardText,
+					tags: matchedCard?.tags || [],
+				});
+			const parsedSidecar = isCreation && cardText ? parseReadmeSidecarText(cardText) : null;
+			const loc = isCreation ? { city: "", country: "" } : parseKnowledgePlace(matchedCard);
 			const people = parseKnowledgePeople(matchedCard);
 			const isVid = isVideoFile(f);
-			const isScreenshot = /^(screenshot|screen_|scr_)/i.test(fname);
-			const modelInfo = isCreationsDir ? detectCreationModelInfo(fname, isVid) : null;
+			const isScreenshot = !isCreation && /^(screenshot|screen_|scr_)/i.test(fname);
+			const modelInfo = isCreation
+				? detectCreationModelInfo(fname, isVid, {
+						modelHint: parsedSidecar?.model || "",
+						prompt: parsedSidecar?.prompt || "",
+						rawText: cardText,
+				  })
+				: null;
 
 			const tags = [];
 			const seenT = new Set();
@@ -225,6 +243,7 @@
 				name: fname,
 				takenMs,
 				isVideo: isVid,
+				isCreation,
 				isScreenshot,
 				city: loc.city,
 				country: loc.country,
@@ -313,50 +332,87 @@
 			}))
 			.sort((a, b) => b.count - a.count);
 
-		// 3. Moments / Date Clusters (works on ANY folder, indexed or not!)
-		const datedAsc = descAll.filter((m) => m.takenMs > 0).slice().reverse();
-		const clusters = [];
-		let cur = [];
-		for (const m of datedAsc) {
-			if (!cur.length) {
-				cur = [m];
+		// 3. Moments / Date Clusters (strictly separated: real camera moments vs generated creative sessions)
+		const locStr = $i18nLocale || undefined;
+		const fmtSpan = (sDt, eDt) => {
+			const sameDay =
+				sDt.getFullYear() === eDt.getFullYear() &&
+				sDt.getMonth() === eDt.getMonth() &&
+				sDt.getDate() === eDt.getDate();
+			return sameDay
+				? sDt.toLocaleDateString(locStr, { day: "numeric", month: "short", year: "numeric" })
+				: `${sDt.toLocaleDateString(locStr, { day: "numeric", month: "short" })} - ${eDt.toLocaleDateString(locStr, { day: "numeric", month: "short", year: "numeric" })}`;
+		};
+
+		const realAsc = descAll.filter((m) => !m.isCreation && m.takenMs > 0).slice().reverse();
+		const realClusters = [];
+		let curR = [];
+		for (const m of realAsc) {
+			if (!curR.length) {
+				curR = [m];
+			} else if ((m.takenMs - curR[curR.length - 1].takenMs) / 3600000 <= 36) {
+				curR.push(m);
 			} else {
-				const prev = cur[cur.length - 1];
-				const gapHours = (m.takenMs - prev.takenMs) / 3600000;
-				if (gapHours <= 36) {
-					cur.push(m);
+				realClusters.push(curR);
+				curR = [m];
+			}
+		}
+		if (curR.length) realClusters.push(curR);
+
+		const genAsc = descAll.filter((m) => m.isCreation && m.takenMs > 0).slice().reverse();
+		const genClusters = [];
+		let curG = [];
+		for (const m of genAsc) {
+			if (!curG.length) {
+				curG = [m];
+			} else {
+				const prev = curG[curG.length - 1];
+				const gapH = (m.takenMs - prev.takenMs) / 3600000;
+				const sameMod = !m.modelInfo?.key || !prev.modelInfo?.key || m.modelInfo.key === prev.modelInfo.key;
+				const spanH = (m.takenMs - curG[0].takenMs) / 3600000;
+				if (gapH <= 12 && sameMod && spanH <= 72) {
+					curG.push(m);
 				} else {
-					clusters.push(cur);
-					cur = [m];
+					genClusters.push(curG);
+					curG = [m];
 				}
 			}
 		}
-		if (cur.length) clusters.push(cur);
+		if (curG.length) genClusters.push(curG);
 
-		const locStr = $i18nLocale || undefined;
-		const momentAlbums = clusters
+		const realMomentAlbums = realClusters
 			.filter((cl) => cl.length >= 3)
 			.map((cl) => {
 				const rev = [...cl].reverse();
-				const sDt = new Date(cl[0].takenMs);
-				const eDt = new Date(cl[cl.length - 1].takenMs);
-				const sameDay =
-					sDt.getFullYear() === eDt.getFullYear() &&
-					sDt.getMonth() === eDt.getMonth() &&
-					sDt.getDate() === eDt.getDate();
-				const dLabel = sameDay
-					? sDt.toLocaleDateString(locStr, { day: "numeric", month: "short", year: "numeric" })
-					: `${sDt.toLocaleDateString(locStr, { day: "numeric", month: "short" })} - ${eDt.toLocaleDateString(locStr, { day: "numeric", month: "short", year: "numeric" })}`;
+				const dLabel = fmtSpan(new Date(cl[0].takenMs), new Date(cl[cl.length - 1].takenMs));
 				const topPlace = rev.find((x) => x.city)?.city || "";
 				return {
-					id: `moment:${cl[0].takenMs}_${cl.length}`,
+					id: `moment:real:${cl[0].takenMs}_${cl.length}`,
 					title: topPlace ? `${topPlace} · ${dLabel}` : dLabel,
 					endMs: cl[cl.length - 1].takenMs,
 					count: rev.length,
 					coverFile: pickCover(rev),
 					itemIds: new Set(rev.map((x) => x.id)),
 				};
-			})
+			});
+
+		const genMomentAlbums = genClusters
+			.filter((cl) => cl.length >= 3)
+			.map((cl) => {
+				const rev = [...cl].reverse();
+				const dLabel = fmtSpan(new Date(cl[0].takenMs), new Date(cl[cl.length - 1].takenMs));
+				const topMod = rev.find((x) => x.modelInfo?.label)?.modelInfo?.label || "";
+				return {
+					id: `moment:gen:${cl[0].takenMs}_${cl.length}`,
+					title: topMod ? `✨ ${topMod} · ${dLabel}` : `✨ ${dLabel}`,
+					endMs: cl[cl.length - 1].takenMs,
+					count: rev.length,
+					coverFile: pickCover(rev),
+					itemIds: new Set(rev.map((x) => x.id)),
+				};
+			});
+
+		const momentAlbums = [...realMomentAlbums, ...genMomentAlbums]
 			.sort((a, b) => b.endMs - a.endMs)
 			.slice(0, 16);
 
@@ -382,22 +438,20 @@
 				itemIds: new Set(shotItems.map((x) => x.id)),
 			});
 		}
-		if (isCreationsDir) {
-			const modMap = new Map();
-			for (const m of descAll) {
-				if (!m.modelInfo) continue;
-				if (!modMap.has(m.modelInfo.key)) modMap.set(m.modelInfo.key, { title: m.modelInfo.label, items: [] });
-				modMap.get(m.modelInfo.key).items.push(m);
-			}
-			for (const [k, b] of modMap.entries()) {
-				categoryAlbums.push({
-					id: `model:${k}`,
-					title: b.title,
-					count: b.items.length,
-					coverFile: pickCover(b.items),
-					itemIds: new Set(b.items.map((x) => x.id)),
-				});
-			}
+		const modMap = new Map();
+		for (const m of descAll) {
+			if (!m.modelInfo) continue;
+			if (!modMap.has(m.modelInfo.key)) modMap.set(m.modelInfo.key, { title: m.modelInfo.label, items: [] });
+			modMap.get(m.modelInfo.key).items.push(m);
+		}
+		for (const [k, b] of modMap.entries()) {
+			categoryAlbums.push({
+				id: `model:${k}`,
+				title: `🎛️ ${b.title}`,
+				count: b.items.length,
+				coverFile: pickCover(b.items),
+				itemIds: new Set(b.items.map((x) => x.id)),
+			});
 		}
 
 		const tMap = new Map();

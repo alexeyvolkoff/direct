@@ -16,6 +16,7 @@
     enrichCreationAttributes,
     parseReadmeSidecarText,
     scanDirectCreationsFolder,
+    isLikelyGeneratedMedia,
   } from "../lib/media-albums.js";
   import DeviceIndexModal from "./DeviceIndexModal.svelte";
   import VideoViewer from "./VideoViewer.svelte";
@@ -231,20 +232,13 @@
   }
 
   function isCreationItem(k, docId) {
-    const cleanPath = String(docId || "").toLowerCase();
-    const fname = cleanPath.split("/").pop() || "";
-    const txt = String(k.text || k.content || "");
-    if (/^(krea_|anima_|horde_|gen_)/i.test(fname)) return true;
-    if (/^img_\d{5}_\d{8}_\d{6}/i.test(fname)) return true;
-    if (cleanPath.includes("/onmychat/") || cleanPath.includes("/creations/") || cleanPath.includes("/generated/")) return true;
-    if (defaultStorage) {
-      const cleanDef = String(defaultStorage).replace(/^\/+|\/+$/g, "").toLowerCase();
-      if (cleanDef && cleanDef.includes("onmychat") && cleanPath.includes(cleanDef)) return true;
-    }
-    if (/<!--\s*prompt:/i.test(txt)) return true;
-    const tagsLow = Array.isArray(k.tags) ? k.tags.map((t) => String(t).toLowerCase()) : [];
-    if (tagsLow.includes("ai_generated") || tagsLow.includes("krea") || tagsLow.includes("sdxl")) return true;
-    return false;
+    return isLikelyGeneratedMedia({
+      filename: String(docId || "").split("/").pop() || k.title || "",
+      path: docId,
+      text: k.text || k.content || "",
+      tags: k.tags || [],
+      defaultStorage,
+    });
   }
 
   function parseExifOrIsoDate(rawStr) {
@@ -558,7 +552,10 @@
       const mediaKind = detectMediaKind(k);
       const isCreation = Boolean(k.isDirectCreation || isCreationItem(k, docId));
       const takenMs = extractCaptureTimestamp(k, docId);
-      const locInfo = extractLocationInfo(k);
+      // Generated artworks never carry physical GPS locations; they use digital model/persona footprints instead
+      const locInfo = isCreation
+        ? { place: "", city: "", country: "", partsLower: [] }
+        : extractLocationInfo(k);
       const people = extractCardPeople(k, docId, knownPeopleIndexes.byPhoto, knownPeopleIndexes.byName);
       const fname = docId.split("/").pop() || k.title || "Media";
 
@@ -567,13 +564,16 @@
       let modelLabel = k.modelLabel || "";
 
       if (isCreation) {
-        const parsedSidecar = parseReadmeSidecarText(k.text || k.content || "");
+        const rawTxt = k.text || k.content || "";
+        const parsedSidecar = parseReadmeSidecarText(rawTxt);
         const enriched = enrichCreationAttributes({
           filename: fname,
           path: docId,
           title: k.title || parsedSidecar.title || "",
           description: parsedSidecar.description || "",
           prompt: parsedSidecar.prompt || "",
+          modelHint: parsedSidecar.model || "",
+          rawText: rawTxt,
           storyFolder,
           isVideo: mediaKind === "video",
           explicitTags: parsedSidecar.explicitTags,
@@ -623,6 +623,12 @@
       const displayTitle = k.title && !isJustFileName(k.title, docId) ? k.title : fname;
       const summary = cleanCardSummary(k, docId);
 
+      const digitalFootprint = isCreation
+        ? (people.length > 0 && modelLabel && modelLabel !== "Studio"
+            ? `${people[0]} · ${modelLabel}`
+            : (modelLabel || people[0] || "AI Studio"))
+        : "";
+
       return {
         id: k.id || k._id || k.memory_id || docId,
         docId,
@@ -645,6 +651,7 @@
         storyFolder,
         modelKey,
         modelLabel,
+        digitalFootprint,
         semanticTags,
         title: displayTitle,
         filename: fname,
@@ -755,37 +762,48 @@
         itemIds: new Set(b.items.map((x) => x.id)),
       }));
 
-    // 3. Moments & Trips (contiguous chronological clusters with >= 3 items within <= 36h gap)
-    const datedAsc = sortedDesc.filter((m) => m.takenMs > 0).slice().reverse();
-    const rawClusters = [];
-    let curCluster = [];
-    for (const m of datedAsc) {
-      if (!curCluster.length) {
-        curCluster = [m];
+    // 3. Moments & Trips (strictly separated: physical GPS camera moments vs digital-footprint creative sessions)
+    const locLocale = $locale || undefined;
+    const formatSpanLabel = (startDt, endDt) => {
+      const sameDay =
+        startDt.getFullYear() === endDt.getFullYear() &&
+        startDt.getMonth() === endDt.getMonth() &&
+        startDt.getDate() === endDt.getDate();
+      return sameDay
+        ? startDt.toLocaleDateString(locLocale, { day: "numeric", month: "short", year: "numeric" })
+        : `${startDt.toLocaleDateString(locLocale, { day: "numeric", month: "short" })} - ${endDt.toLocaleDateString(locLocale, { day: "numeric", month: "short", year: "numeric" })}`;
+    };
+
+    // 3a. Real Camera Moments & Trips (!m.isCreation)
+    const realDatedAsc = sortedDesc.filter((m) => !m.isCreation && m.takenMs > 0).slice().reverse();
+    const realClusters = [];
+    let curReal = [];
+    for (const m of realDatedAsc) {
+      if (!curReal.length) {
+        curReal = [m];
       } else {
-        const prev = curCluster[curCluster.length - 1];
+        const prev = curReal[curReal.length - 1];
         const gapHours = (m.takenMs - prev.takenMs) / 3600000;
         const sameCity = m.city && prev.city && m.city.toLowerCase() === prev.city.toLowerCase();
         const maxGap = sameCity ? 72 : 30;
         if (gapHours <= maxGap) {
-          curCluster.push(m);
+          curReal.push(m);
         } else {
-          rawClusters.push(curCluster);
-          curCluster = [m];
+          realClusters.push(curReal);
+          curReal = [m];
         }
       }
     }
-    if (curCluster.length) rawClusters.push(curCluster);
+    if (curReal.length) realClusters.push(curReal);
 
-    const momentAlbums = rawClusters
+    const realMomentAlbums = realClusters
       .filter((cl) => {
         const hasPlace = cl.some((x) => Boolean(x.city || x.place));
         return (hasPlace && cl.length >= 3) || cl.length >= 5;
       })
       .map((cl) => {
         const descItems = [...cl].reverse();
-        const startDt = new Date(cl[0].takenMs);
-        const endDt = new Date(cl[cl.length - 1].takenMs);
+        const dateLabel = formatSpanLabel(new Date(cl[0].takenMs), new Date(cl[cl.length - 1].takenMs));
         const cityCounts = new Map();
         for (const x of cl) {
           if (x.city) cityCounts.set(x.city, (cityCounts.get(x.city) || 0) + 1);
@@ -798,18 +816,10 @@
             topCnt = cnt;
           }
         }
-        const locLocale = $locale || undefined;
-        const sameDay =
-          startDt.getFullYear() === endDt.getFullYear() &&
-          startDt.getMonth() === endDt.getMonth() &&
-          startDt.getDate() === endDt.getDate();
-        const dateLabel = sameDay
-          ? startDt.toLocaleDateString(locLocale, { day: "numeric", month: "short", year: "numeric" })
-          : `${startDt.toLocaleDateString(locLocale, { day: "numeric", month: "short" })} - ${endDt.toLocaleDateString(locLocale, { day: "numeric", month: "short", year: "numeric" })}`;
         const title = topCity ? `${topCity} · ${dateLabel}` : dateLabel;
         return {
           kind: "moment",
-          id: `moment:${cl[0].takenMs}_${cl.length}`,
+          id: `moment:real:${cl[0].takenMs}_${cl.length}`,
           title,
           subtitle: topCity ? dateLabel : "",
           endMs: cl[cl.length - 1].takenMs,
@@ -818,7 +828,63 @@
           coverItem: pickCoverItem(descItems),
           itemIds: new Set(descItems.map((x) => x.id)),
         };
-      })
+      });
+
+    // 3b. Creative Sessions (m.isCreation) using digital footprint (Base Model / Persona) instead of geotag
+    const creationDatedAsc = sortedDesc.filter((m) => m.isCreation && m.takenMs > 0).slice().reverse();
+    const creationClusters = [];
+    let curGen = [];
+    for (const m of creationDatedAsc) {
+      if (!curGen.length) {
+        curGen = [m];
+      } else {
+        const prev = curGen[curGen.length - 1];
+        const gapHours = (m.takenMs - prev.takenMs) / 3600000;
+        const sameModel = !m.modelKey || !prev.modelKey || m.modelKey === prev.modelKey;
+        const spanHours = (m.takenMs - curGen[0].takenMs) / 3600000;
+        if (gapHours <= 12 && sameModel && spanHours <= 72) {
+          curGen.push(m);
+        } else {
+          creationClusters.push(curGen);
+          curGen = [m];
+        }
+      }
+    }
+    if (curGen.length) creationClusters.push(curGen);
+
+    const creationMomentAlbums = creationClusters
+      .filter((cl) => cl.length >= 4)
+      .map((cl) => {
+        const descItems = [...cl].reverse();
+        const dateLabel = formatSpanLabel(new Date(cl[0].takenMs), new Date(cl[cl.length - 1].takenMs));
+        const fpCounts = new Map();
+        for (const x of cl) {
+          const fp = x.digitalFootprint || x.modelLabel || "";
+          if (fp) fpCounts.set(fp, (fpCounts.get(fp) || 0) + 1);
+        }
+        let topFp = "";
+        let topCnt = 0;
+        for (const [fp, cnt] of fpCounts.entries()) {
+          if (cnt > topCnt) {
+            topFp = fp;
+            topCnt = cnt;
+          }
+        }
+        const title = topFp ? `✨ ${topFp} · ${dateLabel}` : `✨ ${dateLabel}`;
+        return {
+          kind: "moment",
+          id: `moment:gen:${cl[0].takenMs}_${cl.length}`,
+          title,
+          subtitle: dateLabel,
+          endMs: cl[cl.length - 1].takenMs,
+          count: descItems.length,
+          coverItems: pickCollageItems(descItems, 3),
+          coverItem: pickCoverItem(descItems),
+          itemIds: new Set(descItems.map((x) => x.id)),
+        };
+      });
+
+    const momentAlbums = [...realMomentAlbums, ...creationMomentAlbums]
       .sort((a, b) => b.endMs - a.endMs)
       .slice(0, 18);
 
@@ -996,15 +1062,19 @@
           monthShort,
           dayLabel,
           placesCount: new Map(),
+          modelsCount: new Map(),
           topPlace: "",
+          topModel: "",
           items: [],
         };
         groups.push(cur);
       }
       cur.items.push(m);
-      if (m.city || m.place) {
+      if (!m.isCreation && (m.city || m.place)) {
         const p = m.city || m.place;
         cur.placesCount.set(p, (cur.placesCount.get(p) || 0) + 1);
+      } else if (m.isCreation && m.modelLabel) {
+        cur.modelsCount.set(m.modelLabel, (cur.modelsCount.get(m.modelLabel) || 0) + 1);
       }
     }
 
@@ -1018,6 +1088,15 @@
         }
       }
       g.topPlace = bestP;
+      let bestM = "";
+      let bestMCnt = 0;
+      for (const [md, cnt] of g.modelsCount.entries()) {
+        if (cnt > bestMCnt) {
+          bestM = md;
+          bestMCnt = cnt;
+        }
+      }
+      g.topModel = bestM;
     }
     return groups;
   })();
@@ -2175,6 +2254,9 @@
                     <h4 class="day-label">{group.dayLabel}</h4>
                     {#if group.topPlace}
                       <span class="day-place-chip">📍 {group.topPlace}</span>
+                    {/if}
+                    {#if group.topModel && !group.topPlace}
+                      <span class="day-place-chip">🎛️ {group.topModel}</span>
                     {/if}
                   </div>
                   <span class="day-count">{group.items.length}</span>

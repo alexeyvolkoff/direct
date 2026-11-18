@@ -387,9 +387,11 @@
       const enriched = enrichCreationAttributes({
         filename: it.name,
         path: it.path,
-        title: it.title || "",
-        description: it.description || "",
-        prompt: it.prompt || "",
+        title: it.title || parsedDesc.title || "",
+        description: parsedDesc.description || it.description || "",
+        prompt: it.prompt || parsedDesc.prompt || "",
+        modelHint: it.model || parsedDesc.model || "",
+        rawText: it.description || "",
         personaHint: it.persona || "",
         storyFolder: activeStorySubfolder || "",
         isVideo: Boolean(it.isVideo),
@@ -4472,9 +4474,16 @@
               await ensureFolderRecursive(targetDrive, destFolder);
               const title = data.title || customTitle || cleanPrompt.slice(0, 30) || "";
               const desc = stripSensitiveHashtags(data.description || customDescription || "");
+              const genModelStamp = String(
+                data.model ||
+                (itemIsVideo ? "minimax-h3" : (effectiveBaseModel || ""))
+              ).trim();
               let readmeContent = `# ${title}\n\n${desc}\n`;
               if (itemSensitive) {
                 readmeContent += `\n#sensitive\n`;
+              }
+              if (genModelStamp) {
+                readmeContent += `\n<!-- model: ${genModelStamp} -->\n`;
               }
               if (cleanPrompt) {
                 readmeContent += `\n<!-- prompt: ${cleanPrompt} -->\n`;

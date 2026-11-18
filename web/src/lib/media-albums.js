@@ -183,26 +183,125 @@ const SCENE_CATEGORY_RULES = [
   { tag: "cinematic & film", rx: /\b(35mm|film grain|analog|cinematic|bokeh|50mm|85mm|volumetric lighting)\b/i },
 ];
 
-export function detectCreationModelInfo(filename, isVideo = false) {
+export function humanizeCheckpointName(rawCkpt = "") {
+  const stem = String(rawCkpt || "")
+    .trim()
+    .replace(/\.(safetensors|ckpt|pt|pth|bin)$/i, "")
+    .replace(/_+\d+$/, "")
+    .trim();
+  if (!stem) return "";
+  const low = stem.toLowerCase();
+
+  if (low.includes("analogmadness")) return { key: "ckpt:analog_madness_sdxl", label: "AnalogMadness SDXL" };
+  if (low.includes("cyberrealisticxl") || low === "realistic") return { key: "ckpt:cyberrealistic_xl", label: "CyberRealistic XL" };
+  if (low.includes("ponysemi") || low === "tooned") return { key: "ckpt:pony_semi_xl", label: "Pony Semi XL" };
+  if (low.includes("cyberrealisticpony") || low.includes("ponyrealism") || low === "perfect") {
+    return { key: "ckpt:cyberrealistic_pony", label: "CyberRealistic Pony" };
+  }
+  if (low.includes("illustrious") || low === "fantasy") return { key: "ckpt:illustrious_xl", label: "Illustrious XL" };
+  if (low.includes("juggernaut")) return { key: "ckpt:juggernaut_xl", label: "Juggernaut XL" };
+  if (low.includes("albedobase") || low.includes("albedo_base")) return { key: "ckpt:albedobase_xl", label: "AlbedoBase XL" };
+  if (low.includes("flux")) return { key: "ckpt:flux", label: "Flux.1" };
+  if (low.includes("krea")) return { key: "krea2", label: "Krea 2" };
+  if (low.includes("anima")) return { key: "anima", label: "Anima" };
+  if (low.includes("minimax") || low === "h3") return { key: "video_h3", label: "MiniMax-H3 · Video" };
+  if (low.includes("horde")) return { key: "horde", label: "AI Horde" };
+
+  // Generic humanizer for checkpoint filenames like myModelSDXL_v20 -> MyModel SDXL
+  const cleaned = stem
+    .replace(/[_-]+(?:v|xl|fp16|fp8|bf16|pruned)[0-9a-z.]*$/i, "")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const pretty = cleaned
+    ? cleaned.charAt(0).toUpperCase() + cleaned.slice(1)
+    : stem;
+  const slug = pretty.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  return { key: `ckpt:${slug || "custom"}`, label: pretty };
+}
+
+export function isLikelyGeneratedMedia({
+  filename = "",
+  path = "",
+  text = "",
+  tags = [],
+  defaultStorage = "",
+} = {}) {
+  const cleanPath = String(path || "").toLowerCase();
+  const fname = String(filename || cleanPath.split("/").pop() || "");
+  const lowName = fname.toLowerCase();
+  const txt = String(text || "");
+
+  if (cleanPath.includes("/onmychat/") || cleanPath.includes("/creations/") || cleanPath.includes("/generated/")) {
+    return true;
+  }
+  if (defaultStorage) {
+    const cleanDef = String(defaultStorage).replace(/^\/+|\/+$/g, "").toLowerCase();
+    if (cleanDef && cleanDef.includes("onmychat") && cleanPath.includes(cleanDef)) return true;
+  }
+  if (/^(krea_|anima_|horde_|gen_|sdxl_|h3_|comfyui_|avatar_)/i.test(fname)) return true;
+  if (/^[a-zа-яё]{2,20}(?:avatar)?_(?:krea|sdxl|h3|anima|horde)_/i.test(fname)) return true;
+  if (/^img_\d{5}_/i.test(lowName) || /\.safetensors_\d+/i.test(lowName) || /^img-[a-z0-9_]+_\d+_/i.test(lowName)) {
+    return true;
+  }
+  if (/<!--\s*(?:prompt|model):/i.test(txt)) return true;
+  if (/\bscore_9\s*,\s*score_8_up\b/i.test(txt)) return true;
+  const tagsLow = Array.isArray(tags) ? tags.map((t) => String(t || "").toLowerCase().replace(/^#+/, "")) : [];
+  if (tagsLow.includes("ai_generated") || tagsLow.includes("krea") || tagsLow.includes("sdxl") || tagsLow.includes("comfyui")) {
+    return true;
+  }
+  return false;
+}
+
+export function detectCreationModelInfo(filename, isVideo = false, extra = {}) {
   const fname = String(filename || "");
   const low = fname.toLowerCase();
+  const modelHint = String(extra?.modelHint || "").trim();
+  const combinedTxt = `${extra?.prompt || ""}\n${extra?.rawText || ""}`;
 
-  if (/^avatar_/i.test(fname) || /avatar_krea/i.test(low)) {
+  if (modelHint) {
+    const parsedHint = humanizeCheckpointName(modelHint);
+    if (parsedHint) return parsedHint;
+  }
+
+  // 1. Embedded checkpoint filename like IMG-analogMadnessSDXL_xl5.safetensors_00644_.png
+  const mCkpt = fname.match(/^(?:IMG-|GEN-|SDXL-)?([A-Za-z0-9_.-]+?)\.safetensors(?:_\d+)?/i);
+  if (mCkpt && mCkpt[1]) {
+    const parsedCkpt = humanizeCheckpointName(mCkpt[1]);
+    if (parsedCkpt) return parsedCkpt;
+  }
+
+  // 2. Avatars
+  if (/^avatar_/i.test(fname) || /avatar_(?:krea|sdxl)/i.test(low) || /^[a-z]+avatar_/i.test(fname)) {
     return { key: "avatars", label: "Avatars" };
   }
+  // 3. Video / MiniMax-H3
   if (/\bh3[_-]/i.test(fname) || /_h3_/i.test(low) || isVideo) {
-    return { key: "video_h3", label: "Video · H3" };
+    return { key: "video_h3", label: "MiniMax-H3 · Video" };
   }
+  // 4. Krea 2
   if (/\bkrea\b|_krea_|^krea_/i.test(fname)) {
     return { key: "krea2", label: "Krea 2" };
   }
+  // 5. AI Horde
   if (/^horde_|_horde_/i.test(low)) {
     return { key: "horde", label: "AI Horde" };
   }
+  // 6. Anima
   if (/^anima_|_anima_/i.test(low)) {
     return { key: "anima", label: "Anima" };
   }
-  if (/^sdxl_|safetensors|^img_\d{5}_|^gen_/i.test(low)) {
+  // 7. Pony / Illustrious prompt tags in raw prompt sidecars (e.g. score_9, score_8_up)
+  if (/\bscore_9\s*,\s*score_8_up\b/i.test(combinedTxt)) {
+    return { key: "ckpt:pony_xl", label: "Pony XL" };
+  }
+  // 8. ComfyUI direct workflow outputs
+  if (/^comfyui_/i.test(low)) {
+    return { key: "comfyui", label: "ComfyUI Studio" };
+  }
+  // 9. Express SDXL Studio
+  if (/^sdxl_|^img_\d{5}_|^gen_/i.test(low)) {
     return { key: "sdxl", label: "SDXL Studio" };
   }
   return { key: "studio", label: "Studio" };
@@ -211,13 +310,19 @@ export function detectCreationModelInfo(filename, isVideo = false) {
 export function parseReadmeSidecarText(rawTxt = "") {
   const txt = String(rawTxt || "").trim();
   if (!txt) {
-    return { title: "", description: "", prompt: "", isSensitive: false, explicitTags: [] };
+    return { title: "", description: "", prompt: "", model: "", isSensitive: false, explicitTags: [] };
   }
 
   let prompt = "";
   const mPrompt = txt.match(/<!--\s*prompt:\s*([\s\S]*?)-->/i);
   if (mPrompt) {
     prompt = mPrompt[1].trim();
+  }
+
+  let model = "";
+  const mModel = txt.match(/<!--\s*model:\s*([\s\S]*?)-->/i);
+  if (mModel) {
+    model = mModel[1].trim();
   }
 
   const withoutComments = txt.replace(/<!--[\s\S]*?-->/g, "").trim();
@@ -228,6 +333,11 @@ export function parseReadmeSidecarText(rawTxt = "") {
   }
 
   const body = withoutComments.replace(/^#\s+[^\n]+\n*/, "").trim();
+  // Legacy raw-prompt sidecars (e.g. "<Judith> score_9, score_8_up...") without markdown title
+  if (!prompt && !title && (/\bscore_9\b/i.test(body) || /^<[A-Za-z0-9_-]{2,24}>/.test(body))) {
+    prompt = body;
+  }
+
   const explicitTags = [];
   const seen = new Set();
   const tagMatches = body.matchAll(/(?:^|\s)#([a-zA-Zа-яА-ЯёЁіїєґІЇЄҐ0-9_]{2,30})/g);
@@ -252,6 +362,7 @@ export function parseReadmeSidecarText(rawTxt = "") {
     title,
     description: cleanDesc,
     prompt,
+    model,
     isSensitive,
     explicitTags,
   };
@@ -263,6 +374,8 @@ export function enrichCreationAttributes({
   title = "",
   description = "",
   prompt = "",
+  modelHint = "",
+  rawText = "",
   personaHint = "",
   storyFolder = "",
   isVideo = false,
@@ -270,7 +383,11 @@ export function enrichCreationAttributes({
   knownPersonas = [],
 }) {
   const fname = String(filename || path.split("/").pop() || "");
-  const modelInfo = detectCreationModelInfo(fname, isVideo);
+  const modelInfo = detectCreationModelInfo(fname, isVideo, {
+    modelHint,
+    prompt,
+    rawText: rawText || description,
+  });
 
   // Build lookup of known personas
   const personaMap = new Map();
@@ -314,7 +431,11 @@ export function enrichCreationAttributes({
     }
   }
 
-  // 3. Explicit character patterns in prompt: "shot of Kate, a 23-year-old..." or "<Name>"
+  // 3. Explicit character patterns in prompt: "shot of Kate, a 23-year-old..." or "<Judith>" / "<lora:Name:...>"
+  const mAngleTag = combinedText.match(/(?:^|\s)<([A-Z][a-zA-Z0-9]{1,18})>/);
+  if (mAngleTag && !["Picture", "Image", "Video", "Photo", "Scene"].includes(mAngleTag[1])) {
+    addPersona(mAngleTag[1]);
+  }
   const mShotOf = prompt.match(/\b(?:shot|portrait|photo|view) of ([A-Z][a-z]{2,15})(?:\s*,|\s+pulling|\s+standing|\s+sitting|\s+leaning|\s+walking|\s+wearing|\s+in\b)/);
   if (mShotOf && !["The", "Her", "His", "Two", "One"].includes(mShotOf[1])) {
     addPersona(mShotOf[1]);
@@ -358,7 +479,7 @@ export function enrichCreationAttributes({
 // ---------------------------------------------------------------------------
 // 4. Lightweight Readme Cache & Direct Creations Scanner (for MediaLibrary)
 // ---------------------------------------------------------------------------
-const README_META_CACHE_KEY = "omd_media_readme_meta_v1";
+const README_META_CACHE_KEY = "omd_media_readme_meta_v2";
 let _memReadmeCache = null;
 
 function _loadReadmeCache() {
@@ -628,6 +749,7 @@ export async function scanDirectCreationsFolder({
       title: meta?.title || "",
       description: meta?.description || "",
       prompt: meta?.prompt || "",
+      modelHint: meta?.model || "",
       storyFolder: rec.storyFolder,
       isVideo: rec.isVideo,
       explicitTags: meta?.explicitTags || [],
@@ -640,7 +762,11 @@ export async function scanDirectCreationsFolder({
       path: rec.docId,
       relPath: rec.relPath,
       title: meta?.title || rec.name,
-      text: [meta?.description, meta?.prompt ? `<!-- prompt: ${meta.prompt} -->` : ""].filter(Boolean).join("\n"),
+      text: [
+        meta?.description,
+        meta?.model ? `<!-- model: ${meta.model} -->` : "",
+        meta?.prompt ? `<!-- prompt: ${meta.prompt} -->` : "",
+      ].filter(Boolean).join("\n"),
       contentType: rec.isVideo ? "video" : "image",
       isDirectCreation: true,
       onDevice: Boolean(!activeDev?.local),
