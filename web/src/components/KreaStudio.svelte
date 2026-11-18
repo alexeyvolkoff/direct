@@ -3555,9 +3555,29 @@
     return `/p2p/${dev}${encodeURI(cleanPath)}?resize=true&width=480&height=480`;
   }
 
+  function getImmediateMemoryUrl(item, imgCache = imageBlobCache, thCache = thumbBlobCache) {
+    if (!item) return "";
+    if (item.isVideo) {
+      const key = (item.path || item.name || "") + ":cover";
+      return item.coverBlobUrl || thCache[key] || thCache[(item.name || "") + ":cover"] || item.thumbBlobUrl || "";
+    }
+    return (
+      item.thumbBlobUrl ||
+      thCache[item.path] ||
+      thCache[item.name] ||
+      item.blobUrl ||
+      imgCache[item.path] ||
+      imgCache[item.name] ||
+      ""
+    );
+  }
+
   function lazyLoad(node, src) {
     let currentSrc = src || "";
     let observer = null;
+    let intersected = false;
+    const isMemoryUrl = (u) => Boolean(u && (u.startsWith("blob:") || u.startsWith("data:")));
+
     const markLoaded = () => {
       node.classList.add("thumb-loaded");
       if (node.parentElement) {
@@ -3572,33 +3592,38 @@
         node.parentElement.classList.add("thumb-loading");
       }
     };
-    const onLoad = () => markLoaded();
+    const revealDecoded = () => {
+      if (typeof node.decode === "function") {
+        node.decode().catch(() => {}).finally(markLoaded);
+      } else {
+        markLoaded();
+      }
+    };
+    const onLoad = () => revealDecoded();
     node.addEventListener("load", onLoad);
 
     const show = () => {
+      intersected = true;
       if (currentSrc && node.getAttribute("src") !== currentSrc) {
         markLoading();
         node.src = currentSrc;
         if (node.complete && node.naturalWidth > 0) {
-          markLoaded();
+          revealDecoded();
         }
       } else if (node.complete && node.naturalWidth > 0 && node.getAttribute("src")) {
-        markLoaded();
+        revealDecoded();
       }
     };
-    const root = null; // viewport-based lazy loading
-    if (typeof IntersectionObserver === "undefined") {
+
+    // Load in-memory blob:/data: URLs immediately without waiting on IntersectionObserver
+    if (isMemoryUrl(currentSrc) || typeof IntersectionObserver === "undefined") {
       show();
       return {
         update(newSrc) {
           const next = newSrc || "";
           if (next !== currentSrc) {
             currentSrc = next;
-            if (node.getAttribute("src") && currentSrc) {
-              markLoading();
-              node.src = currentSrc;
-              if (node.complete && node.naturalWidth > 0) markLoaded();
-            }
+            if (currentSrc) show();
           }
         },
         destroy() {
@@ -3606,6 +3631,8 @@
         }
       };
     }
+
+    const root = null; // viewport-based lazy loading
     observer = new IntersectionObserver((entries) => {
       for (const entry of entries) {
         if (entry.isIntersecting) {
@@ -3620,10 +3647,9 @@
         const next = newSrc || "";
         if (next !== currentSrc) {
           currentSrc = next;
-          if (node.getAttribute("src") && currentSrc) {
-            markLoading();
-            node.src = currentSrc;
-            if (node.complete && node.naturalWidth > 0) markLoaded();
+          if ((intersected || isMemoryUrl(currentSrc)) && currentSrc) {
+            try { observer && observer.unobserve(node); } catch (_) {}
+            show();
           }
         }
       },
@@ -3708,6 +3734,9 @@
 
   async function fetchLargeImageBlob(fetchFn, url, defaultMime = "") {
     const CHUNK_SIZE = 128 * 1024; // 128 KB safe chunk size for WebRTC SCTP
+    const baseHeaders = buildAuthHeaders();
+    delete baseHeaders["Content-Type"];
+
     let offset = 0;
     let totalLength = null;
     let detectedMime = defaultMime;
@@ -3717,19 +3746,19 @@
       const end = totalLength !== null ? Math.min(offset + CHUNK_SIZE - 1, totalLength - 1) : offset + CHUNK_SIZE - 1;
       const resp = await fetchFn(url, {
         headers: {
+          ...baseHeaders,
           Range: `bytes=${offset}-${end}`
         }
       });
       if (!resp.ok && resp.status !== 206) {
-        if (offset === 0) {
-          return await resp.blob();
-        }
         throw new Error(`Range fetch failed: HTTP ${resp.status}`);
       }
 
       if (!detectedMime) {
         const ct = (resp.headers.get("Content-Type") || resp.headers.get("content-type") || "").split(";")[0].trim();
-        if (ct && ct !== "application/octet-stream") detectedMime = ct;
+        if (ct && ct !== "application/octet-stream" && !ct.includes("application/json") && !ct.includes("text/html")) {
+          detectedMime = ct;
+        }
       }
 
       const cr = resp.headers.get("Content-Range") || resp.headers.get("content-range");
@@ -3740,7 +3769,12 @@
       const blob = await resp.blob();
       chunks.push(blob);
       offset += blob.size;
-      if (blob.size === 0 || (totalLength !== null && offset >= totalLength)) {
+
+      // If server returned 200 OK (full body in a single response without Content-Range), stop immediately
+      if (resp.status === 200 && !cr) {
+        break;
+      }
+      if (blob.size === 0 || (totalLength === null && blob.size < CHUNK_SIZE) || (totalLength !== null && offset >= totalLength)) {
         break;
       }
     }
@@ -4362,11 +4396,33 @@
       if (data.url) {
         try {
           imageBlob = await fetchLargeImageBlob(fetchFn, data.url, itemIsVideo ? "video/mp4" : "image/png");
+          // Verify full image decode before mounting so truncated chunks never paint a top strip
+          if (!itemIsVideo && imageBlob && imageBlob.size > 0 && typeof createImageBitmap === "function") {
+            try {
+              const bmp = await createImageBitmap(imageBlob);
+              bmp.close();
+            } catch (_) {
+              const retryHeaders = buildAuthHeaders();
+              delete retryHeaders["Content-Type"];
+              const fullResp = await fetchFn(data.url, { headers: retryHeaders });
+              if (fullResp && fullResp.ok) {
+                const rawFull = await fullResp.blob();
+                if (rawFull && rawFull.size > 0) {
+                  imageBlob = new Blob([rawFull], { type: "image/png" });
+                }
+              }
+            }
+          }
           if (imageBlob && imageBlob.size > 0) {
             localBlobUrl = URL.createObjectURL(imageBlob);
             imageBlobCache[fullImagePath] = localBlobUrl;
             imageBlobCache[filename] = localBlobUrl;
             imageBlobCache = { ...imageBlobCache };
+            if (!itemIsVideo) {
+              thumbBlobCache[fullImagePath] = localBlobUrl;
+              thumbBlobCache[filename] = localBlobUrl;
+              thumbBlobCache = { ...thumbBlobCache };
+            }
           }
         } catch (fetchErr) {
           console.warn("[KreaStudio] Preload/save error:", fetchErr);
@@ -4420,6 +4476,7 @@
         prompt: cleanPrompt,
         sensitive: itemSensitive,
         blobUrl: localBlobUrl,
+        thumbBlobUrl: !itemIsVideo ? localBlobUrl : null,
         coverBlobUrl: localCoverBlobUrl,
         imageBlob,
         persona: selectedPersonas.map((p) => p.name).join(", ") || "",
@@ -4427,6 +4484,15 @@
         gpuTime: data.gpu_time || null,
         totalTime: data.total_time || null
       };
+
+      // Clear placeholder state BEFORE inserting newItem so the day-group grid never wraps and jumps mid-paint
+      isGenerating = false;
+      if (isExtendingVideo) {
+        extendingVideoItem = null;
+      }
+      clearInterval(generationTimer);
+      clearTimeout(timeoutHandle);
+      activeTab = "gallery";
 
       if (!activeStorySubfolder || activeStorySubfolder === effectiveSub) {
         items = sortItemsList([newItem, ...items.filter((x) => x.id !== newItem.id)], sortOrder);
@@ -4439,14 +4505,6 @@
         }).catch(() => {});
       }
 
-      isGenerating = false;
-      if (isExtendingVideo) {
-        extendingVideoItem = null;
-      }
-      clearInterval(generationTimer);
-      clearTimeout(timeoutHandle);
-
-      activeTab = "gallery";
       await tick();
       initLightGallery();
 
@@ -7462,11 +7520,13 @@
               {@const itemRefIdx = getGalleryItemRefIndex(item, attachedReferences)}
               {@const itemShouldBlur = effectiveContentMode !== "fun" && Boolean(item.sensitive)}
               {@const clickScope = activeKreaAlbum ? filteredKreaItems : kGroup.items}
+              {@const immediateMemUrl = getImmediateMemoryUrl(item, imageBlobCache, thumbBlobCache)}
               <div class="gallery-card" class:is-attached-ref={itemRefIdx >= 0} class:is-sensitive-card={itemShouldBlur}>
                 <!-- svelte-ignore a11y-click-events-have-key-events -->
                 <!-- svelte-ignore a11y-no-static-element-interactions -->
                 <div
                   class="gallery-card-thumb-wrap"
+                  class:thumb-ready={Boolean(immediateMemUrl)}
                   class:is-sensitive-thumb-wrap={itemShouldBlur}
                   role="button"
                   tabindex="0"
@@ -7483,15 +7543,26 @@
                   }}
                 >
                   {#if item.isVideo}
-                    <img
-                      src=""
-                      alt={item.title || item.prompt}
-                      use:lazyLoad={(activeDevSegment, getVideoPosterUrl(item))}
-                      class="gallery-thumb"
-                      class:sensitive-blur={itemShouldBlur}
-                      loading="lazy"
-                      on:error={(e) => handleVideoPosterError(item, e)}
-                    />
+                    {#if immediateMemUrl}
+                      <img
+                        src={immediateMemUrl}
+                        alt={item.title || item.prompt}
+                        class="gallery-thumb thumb-loaded"
+                        class:sensitive-blur={itemShouldBlur}
+                        decoding="async"
+                        on:error={(e) => handleVideoPosterError(item, e)}
+                      />
+                    {:else}
+                      <img
+                        src=""
+                        alt={item.title || item.prompt}
+                        use:lazyLoad={(activeDevSegment, getVideoPosterUrl(item))}
+                        class="gallery-thumb"
+                        class:sensitive-blur={itemShouldBlur}
+                        loading="lazy"
+                        on:error={(e) => handleVideoPosterError(item, e)}
+                      />
+                    {/if}
                     {#if hoveredVideoId === item.id && !itemShouldBlur}
                       <video
                         src={(activeDevSegment, getFullImageUrl(item))}
@@ -7515,15 +7586,26 @@
                       {/if}
                     </div>
                   {:else}
-                    <img
-                      src=""
-                      alt={item.title || item.prompt}
-                      use:lazyLoad={(activeDevSegment, getThumbnailUrl(item))}
-                      class="gallery-thumb"
-                      class:sensitive-blur={itemShouldBlur}
-                      loading="lazy"
-                      on:error={(e) => handleImageError(item, e)}
-                    />
+                    {#if immediateMemUrl}
+                      <img
+                        src={immediateMemUrl}
+                        alt={item.title || item.prompt}
+                        class="gallery-thumb thumb-loaded"
+                        class:sensitive-blur={itemShouldBlur}
+                        decoding="async"
+                        on:error={(e) => handleImageError(item, e)}
+                      />
+                    {:else}
+                      <img
+                        src=""
+                        alt={item.title || item.prompt}
+                        use:lazyLoad={(activeDevSegment, getThumbnailUrl(item))}
+                        class="gallery-thumb"
+                        class:sensitive-blur={itemShouldBlur}
+                        loading="lazy"
+                        on:error={(e) => handleImageError(item, e)}
+                      />
+                    {/if}
                     {#if itemRefIdx >= 0}
                       <div class="attached-ref-card-badge">
                         {studioEngineMode === "video"
@@ -11325,13 +11407,10 @@
     display: flex;
     flex-direction: column;
     transition: border-color 0.2s ease, transform 0.2s ease;
-    content-visibility: auto;
-    contain-intrinsic-size: auto 240px auto 360px;
   }
 
   .gallery-card.placeholder-card {
-    content-visibility: visible;
-    contain-intrinsic-size: none;
+    position: relative;
   }
 
   /* Dynamic Generating Placeholder Card */

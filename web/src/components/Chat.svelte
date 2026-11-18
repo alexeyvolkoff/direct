@@ -3777,9 +3777,6 @@ function lastFreshTitle(messages) {
         }
       });
       if (!resp.ok && resp.status !== 206) {
-        if (offset === 0) {
-          return await resp.blob();
-        }
         throw new Error(`Range fetch failed: HTTP ${resp.status}`);
       }
 
@@ -3791,7 +3788,10 @@ function lastFreshTitle(messages) {
       const blob = await resp.blob();
       chunks.push(blob);
       offset += blob.size;
-      if (blob.size === 0 || (totalLength !== null && offset >= totalLength)) {
+      if (resp.status === 200 && !cr) {
+        break;
+      }
+      if (blob.size === 0 || (totalLength === null && blob.size < CHUNK_SIZE) || (totalLength !== null && offset >= totalLength)) {
         break;
       }
     }
