@@ -27,7 +27,7 @@ The AI node supports four runtime inference modes in `config.ini` (and live swit
 | **`hybrid`** | Local (`ChromaDB`) | **Local Ollama** for private Work/RAG + **[AI Horde](/horde/)** for creative Fun/RP | Balanced privacy + access to large community RP models |
 | **`horde`** | Local (`ChromaDB` / `GunDB`) | Distributed **[AI Horde](/horde/)** workers (chat & SDXL images) | Pure AI Horde fans (also selectable directly as **`Horde AI`** in the top **AI Node** dropdown even without a personal node) |
 
-> **Earn Priority Kudos Automatically**: If your node has a local GPU with **ComfyUI**, enable the built-in **[AI Horde & Dreamer Worker](/horde/)** (`HORDE_WORKER_ENABLED = true`) to volunteer idle GPU cycles and earn Kudos for priority LLM & image generations.
+> **Earn Priority Kudos on a Single GPU**: If you run the official **`horde-worker-reGen`** worker on your GPU to earn Kudos on AI Horde, Direct's **[Cooperative `reGen` ComfyUI Bridge](/horde/)** lets **Creations** Studio share `hordelib`'s embedded CUDA engine on `:8188` between Horde jobs without running a second ComfyUI process.
 {: .tip }
 
 > **Zero-Install Option**: If you do not run an AI node locally yet, open **Chats**, **Creations**, or **Knowledge** from the sidebar to connect automatically to the built-in **Public Demo AI Node** in `ScopedGuest` mode.

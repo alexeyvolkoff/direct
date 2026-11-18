@@ -1,18 +1,13 @@
 """
-AI Horde Dreamer Worker & Image Client for Direct (`horde_dreamer.py`).
+AI Horde Image Client & Cooperative `horde-worker-reGen` Telemetry Console (`horde_dreamer.py`).
 
 Features:
-1. Built-in AI Horde Image Worker ("Dreamer"):
-   - Unlimited 24/7 Local SDXL generation via local ComfyUI (`hordelib`-compatible
-     `stable_diffusion` pipeline honoring requested `steps`, `cfg_scale`, `sampler_name`,
-     `karras`/`scheduler`, and `clip_skip`) when local ComfyUI queue is idle.
-   - Strict `AI-Horde-image-model-reference` SHA256 & byte-size verification for all
-     advertised checkpoints (with zero cross-model fallback).
-   - Live telemetry & Maintenance Mode management for dedicated `horde-worker-reGen`
-     runners paired with the cooperative `:8188` ComfyUI bridge (`regen_comfy_bridge`).
-2. AI Horde Image Generation Client (`horde_generate_image`) & `ai_mode` normalization hook.
-3. Owner-only management console at `/horde` and JSON endpoints under `/horde/api/*`
-   and `/assistant/horde_worker`.
+1. AI Horde Image Generation Client (`horde_generate_image`) & `ai_mode` normalization hook.
+2. Owner-only telemetry & Maintenance Mode management console at `/horde` (and JSON endpoints
+   under `/horde/api/*`) for operators running the official `horde-worker-reGen` worker
+   paired with the cooperative `:8188` ComfyUI bridge (`regen_comfy_bridge`).
+3. Note: Direct does not run a standalone third-party AI Horde worker in production;
+   GPU contribution to AI Horde uses the official upstream `horde-worker-reGen` runner.
 """
 
 import asyncio
@@ -2482,10 +2477,8 @@ async def _dreamer_worker_loop() -> None:
 
 
 async def start_horde_dreamer() -> None:
-    global _worker_task
+    """Install AI Horde client hooks (standalone custom worker loop is retired in favor of official horde-worker-reGen)."""
     install_horde_client_hooks()
-    if _worker_task is None or _worker_task.done():
-        _worker_task = asyncio.create_task(_dreamer_worker_loop())
 
 
 # ============================================================================

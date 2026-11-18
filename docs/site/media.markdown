@@ -19,7 +19,9 @@ Switch to **Timeline** in the top segmented bar to browse all your indexed photo
 
 * **True Capture Timestamps**: Dates are resolved automatically from camera **EXIF `DateTimeOriginal`**, sidecar metadata, filename timestamps (`IMG_YYYYMMDD_HHMMSS`), or file creation dates.
 * **Sticky Day & Place Headers**: Each day group displays a sticky date header paired with the dominant city/place recognized from GPS metadata for that day.
-* **Interactive Year-Month Date Scrubber**: Jump across months and years of thousands of photos instantaneously using the vertical scrubber along the right edge, backed by progressive 60 fps lazy rendering.
+* **Interactive Year-Month Date Scrubber**: Jump across months and years of thousands of photos instantaneously using the vertical scrubber along the right edge on desktop, or tap the **📅 Jump to date** toolbar button on mobile portrait screens.
+* **Hardware & Browser Back Navigation**: Pressing the system or browser **Back** button inside any opened Auto-Album, Story subfolder, or fullscreen photo/video viewer steps cleanly back to the root library view without exiting the app.
+* **Unified Experience Across File Manager & Creations**: The exact same `Timeline | Auto-Albums` switcher, sticky day headers, Year-Month date scrubber, and scoped viewer experience is also built directly into **Creations -> Gallery** and **File Manager** whenever a photo/video folder is opened in icon/roll mode (`CameraRoll`), complete with native folder icons and `⋮` folder actions.
 * **Toolbar Controls**:
   * **Search**: Filter instantaneously across cities, countries, recognized people, AI scene descriptions, OCR text, and `#tags`.
   * **Sort Order** (`Newest first` / `Oldest first`): Flip chronological direction in one click (matching **Creations**).
@@ -50,7 +52,8 @@ Switch to **Auto-Albums** to explore automatic collections assembled locally fro
 ## 4. `+ Creations` Filter & `Work / Fun` Privacy
 
 * **Clean Camera Roll by Default**: AI-generated artworks from **[Creations](/creations/)** are excluded from your personal photo timeline by default. Click **`+ Creations`** in the top toolbar anytime to blend generated images and videos into your timeline and albums.
-* **Contextual `Work / Fun` Toggle**: When **`+ Creations`** is enabled, the **`Work / Fun`** mode pill appears in the toolbar. Any `#sensitive` media stays blurred and locked in **Work** mode across **Media Library**, **Memory Cards**, and **Creations** (and remains permanently blurred on public shared links until downloaded locally).
+* **Direct `generated/` & `.Readme.md` Sidecar Scanning (No Re-Indexing Required)**: Even if your `generated/` folder is not indexed in ChromaDB, enabling **`+ Creations`** directly scans `generated/`, story subfolders, `personas/*.json`, and `.Readme.md` sidecar metadata (`# Title`, `#tags`, `#sensitive`, and prompt/model comments) to assemble Auto-Albums by **Personas**, **Stories & Series**, **Models & Formats** (`Krea 2`, `SDXL Studio`, `Video · H3`, `AI Horde`), and **Themes & Tags**.
+* **Contextual `Work / Fun` Toggle**: When **`+ Creations`** is enabled, the **`Work / Fun`** mode pill appears in the toolbar. Any `#sensitive` media stays blurred and locked in **Work** mode across **Media Library**, **Memory Cards**, **Creations**, and **File Manager** (and remains permanently blurred on public shared links until downloaded locally).
 
 ---
 

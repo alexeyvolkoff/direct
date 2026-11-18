@@ -40,7 +40,7 @@ Out of the box, `config.ini` includes ready-to-use templates that appear automat
 | Application | Default Port & Path | Icon | Description |
 | :--- | :--- | :--- | :--- |
 | **ComfyUI** | `:8188/` | `diagram-3-fill` | Node-based local diffusion workflow studio (`SDXL`, `Pony`, `Flux`) - works with standalone ComfyUI or the cooperative `horde-worker-reGen` bridge. |
-| **AI Horde** | `:4000/horde` | `gpu-card` | Built-in **[AI Horde Worker & Bridge](/horde/)** console - monitor live Kudos & MPS telemetry, toggle Maintenance Mode, and inspect `:8188` GPU health. |
+| **AI Horde** | `:4000/horde` | `gpu-card` | Owner-only **[AI Horde & reGen Bridge](/horde/)** console - monitor live `horde-worker-reGen` Kudos & MPS telemetry, toggle Maintenance Mode, and inspect `:8188` GPU health. |
 | **GenVault** | `:8077/` | `collection-play-fill` | Local AI Media Vault for browsing, organizing, and streaming generated images, video clips, and prompts. |
 | **Memos** | `:5230/` | `stickies-fill` | Lightweight self-hosted personal notes and knowledge capture hub. |
 | **DocuSeal** | `:3000/` | `file-earmark-check-fill` | Self-hosted digital document signing and form automation suite. |

@@ -63,8 +63,8 @@ Recommended for dedicated desktop or home-server NVIDIA GPUs:
 If your node runs in **Agentic mode** (`AI_PROVIDER = agentic`, installed with `--agentic` / `-Agentic`), no local ComfyUI installation is needed:
 * `agentic_tunnel.py` exposes a local listener (`127.0.0.1:28188`) that tunnels ComfyUI API calls and WebSocket progress over an encrypted **WebRTC DataChannel** to your paired remote GPU node or the **Public AI Node**.
 
-### Option C: Advanced Single-GPU Sharing with `horde-worker-reGen`
-If your GPU already runs **`horde-worker-reGen`** 24/7 to earn Kudos on AI Horde, you can reuse its internal ComfyUI engine cooperatively on `127.0.0.1:8188` via `ai/regen_comfy_bridge` without running a second CUDA process - see **[AI Horde & Cooperative `reGen` Bridge](/horde/#3-advanced-single-gpu-setup-horde-worker-regen--cooperative-comfyui-bridge)**.
+### Option C: Single-GPU Sharing with Official `horde-worker-reGen`
+If your GPU runs the official **`horde-worker-reGen`** worker 24/7 to earn Kudos on AI Horde, you can reuse its embedded ComfyUI engine cooperatively on `127.0.0.1:8188` via `ai/regen_comfy_bridge` without running a second CUDA process - see **[AI Horde & Cooperative `reGen` Bridge](/horde/#2-official-horde-worker-regen--cooperative-comfyui-bridge)**.
 
 ### Option D: Optional Serverless Cloud Backend for `Studio` (`Krea 2` / `Anima`)
 Advanced self-hosters who want on-demand **24-40 GB VRAM** cloud bursts for `Krea 2`, `Anima`, and video pipelines without keeping heavy weights on local hardware can point `MODAL_COMFY_URL` (and `MODAL_AUTH_TOKEN`) in `config.ini` to their own serverless ComfyUI endpoint (for example on [Modal](https://modal.com) backed by a persistent models volume). Dynamic CivitAI LoRAs (`civitai_<versionId>`) selected in `Studio` are cached directly onto the remote volume on demand.
@@ -73,7 +73,7 @@ Advanced self-hosters who want on-demand **24-40 GB VRAM** cloud bursts for `Kre
 
 ## 3. Generating Images in Creations & Chat
 
-1. **Creations Workspace**: Click **Creations** in the left sidebar, pick your **Base Model**, **Art Style**, **Character**, or **Persona**, optionally attach a reference photo (`+ Add photo`) or open **Director's Chair** for AI-assisted prompt staging, and click **Generate**.
+1. **Creations Workspace**: Click **Creations** in the left sidebar, pick your **Base Model**, **Art Style**, **Character**, or **Persona**, optionally attach a reference photo (`+ Add photo`) or open **Director's Chair** for AI-assisted prompt staging, and click **Generate**. Browse your artworks in the adaptive **Timeline** (with Year-Month date scrubber attached to the studio canvas) or switch to **Auto-Albums** (**Personas**, **Stories & Series**, **Models & Formats**, **Themes & Tags**).
 2. **In-Chat `/generate` & RP Selfies**: Trigger image generation directly inside any chat (including automatic Persona appearance/LoRA preservation):
    ```text
    /generate Golden afternoon light across Provence lavender hills, cinematic wide landscape

@@ -15,7 +15,7 @@
 
 > **⚡ Live Entry Points:**
 > - 📂 **Disk Direct:** [**disk.direct**](https://disk.direct) — P2P file manager, WordCraft / GridCraft / DeckCraft office editors, media streaming, and remote WebRTC SSH terminal.
-> - 💬 **AI Assistant Direct:** [**aiassistant.direct**](https://aiassistant.direct) — private RAG over your folders, autonomous MCP agents, ComfyUI Creative Studio, and AI Horde worker/client.
+> - 💬 **AI Assistant Direct:** [**aiassistant.direct**](https://aiassistant.direct) - private RAG over your folders, autonomous MCP agents, ComfyUI Creative Studio, and AI Horde client & `reGen` bridge.
 > - 📚 **Documentation:** [**docs.disk.direct**](https://docs.disk.direct) — installation guides, decentralized identity (DID), personal AI & search node setup, and P2P app proxy.
 
 ---
@@ -34,7 +34,7 @@
        ▼          └───────────────┬──────────────────────┘                            │ Local Compute & Horde    │
   ┌─────────────────────────┐  ┌──┴─────────────────────────┐                         │ • Ollama / RKLLAMA (LLM) │
   │ services/gun-hub        │  │ core/Gateway.pro           │                         │ • ComfyUI (SDXL + DMD2)  │
-  │ GunDB DID relay, chats, │  │ Signaling coordinator &    │                         │ • AI Horde Worker/Bridge │
+  │ GunDB DID relay, chats, │  │ Signaling coordinator &    │                         │ • AI Horde Client/Bridge │
   │ device cert authority   │  │ TURN fallback (coturn)     │                         └──────────────────────────┘
   └─────────────────────────┘  └────────────────────────────┘
 ```
@@ -46,7 +46,7 @@
 | Directory | Component | Description |
 | :--- | :--- | :--- |
 | [`core/`](core/) | **P2P Node & Gateway (C++ / Qt)** | `Node.pro` (Linux, Windows, macOS, OpenWrt storage & SSH daemon), `Gateway.pro` (signaling server), and `OnMyDiskLink/` (WebRTC DataChannel & TLS engine) |
-| [`ai/`](ai/) | **AI Assistant Node (Python)** | FastAPI service (`127.0.0.1:4000`), ChromaDB multimodal RAG, InsightFace recognition, MCP tools, ComfyUI Creative Studio, and AI Horde client & Dreamer worker |
+| [`ai/`](ai/) | **AI Assistant Node (Python)** | FastAPI service (`127.0.0.1:4000`), ChromaDB multimodal RAG, InsightFace recognition, MCP tools, ComfyUI Creative Studio, and AI Horde client & cooperative `reGen` ComfyUI bridge |
 | [`web/`](web/) | **Unified Web Client (Svelte 5)** | Single PWA serving both `disk.direct` and `aiassistant.direct`: file manager, office suite, terminal, AI chat, memory cards, Media Library (timeline & auto-albums), and studio |
 | [`mobile/`](mobile/) | **Mobile Apps (Capacitor)** | Native iOS and Android apps (**Disk Direct**) |
 | [`services/`](services/) | **Coordination Microservices** | `gun-hub/` (GunDB SEA DID relay & device PKI), `coturn/` (TURN server config), and `webpush/` |
