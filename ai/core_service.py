@@ -11739,6 +11739,100 @@ def build_story_markdown(story_data: dict) -> str:
     return "\n".join(lines).strip() + "\n"
 
 
+async def compose_media_story(
+    ctx: UserContext,
+    album_title: str = "",
+    plot_hint: str = "",
+    frames: list[dict] | None = None,
+    language: str = "en",
+) -> str:
+    """Composes an illustrated Markdown story / mini-comic (Readme.md) from photo/video facts."""
+    frame_list = frames or []
+    hint = str(plot_hint or "").strip()
+    sample_text = f"{hint} {album_title}".strip()
+    story_lang, _ = _resolve_director_language(sample_text, ctx) if sample_text else (language or "English", False)
+
+    frame_lines = []
+    video_files = []
+    for idx, f in enumerate(frame_list[:24]):
+        if not isinstance(f, dict):
+            continue
+        fn = str(f.get("filename") or f"frame_{idx + 1}.jpg").strip()
+        is_vid = bool(f.get("isVideo"))
+        if is_vid:
+            video_files.append(f"./{fn}")
+        parts = [f"File: ./{fn} ({'VIDEO' if is_vid else 'IMAGE'})"]
+        if f.get("dateLabel"):
+            parts.append(f"Date: {f['dateLabel']}")
+        people = f.get("people") or []
+        if people:
+            parts.append("People/Characters: " + ", ".join(str(p) for p in people))
+        if f.get("landmark"):
+            parts.append(f"Landmark: {f['landmark']}")
+        if f.get("event"):
+            parts.append(f"Event: {f['event']}")
+        if f.get("place"):
+            parts.append(f"Location: {f['place']}")
+        tags = f.get("tags") or []
+        if tags:
+            parts.append("Themes: " + ", ".join(str(t) for t in tags))
+        if f.get("description"):
+            parts.append("Notes: " + str(f["description"])[:420])
+        frame_lines.append(f"Frame {idx + 1}: " + " | ".join(parts))
+
+    sys_prompt = (
+        "You are a master visual storyteller and photo-comic author. "
+        "Write an illustrated Markdown story (Readme.md) with embedded media panels `![Caption](./filename)`. "
+        "Output ONLY clean Markdown without code fences."
+    )
+    user_prompt = "\n".join(filter(None, [
+        f"Language: {story_lang}.",
+        f"Collection context: {album_title}" if album_title else "",
+        f"Story Plot Hint: {hint}" if hint else "Story Plot Hint: Weave a vivid, engaging story from these moments.",
+        "",
+        "Media Frames:",
+        "\n".join(frame_lines),
+        "",
+        "Rules:",
+        "1. Start with `# <Story Title>` and a short `> <tagline>`.",
+        "2. Embed the media frames into the narrative using exact paths `![<Scene caption>](./<exact_filename>)` on their own lines.",
+        f"3. Place video file(s) ({', '.join(video_files)}) as the closing finale." if video_files else "3. End with a memorable closing paragraph.",
+        "4. Incorporate real facts (people, landmarks, events, locations, and companion notes) naturally.",
+    ]))
+
+    messages = [
+        {"role": "system", "content": sys_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+
+    if _should_use_horde_for_ctx(ctx):
+        h_model = _resolve_horde_model(ctx)
+        h_key = _resolve_horde_api_key(ctx)
+        full_content = ""
+        async for chunk in horde_client.horde_generate_stream(
+            {"messages": messages, "options": {"temperature": 0.7, "num_predict": 2200}},
+            api_key=h_key,
+            preferred_model=h_model,
+        ):
+            msg = chunk.get("message") or {}
+            if msg.get("content"):
+                full_content += msg["content"]
+        return clean_response(full_content).strip()
+
+    req_payload = {
+        "messages": messages,
+        "model": get_llm_model(ctx),
+        "stream": False,
+        "options": {"temperature": 0.65, "num_predict": 2400},
+    }
+    data = await llm_request(req_payload)
+    if isinstance(data, dict):
+        raw = data.get("message", {}).get("content", "") or data.get("content", "")
+    else:
+        raw = str(data or "")
+    return clean_response(raw).strip()
+
+
 def save_story_to_local_disk(ctx: UserContext, story_data: dict) -> dict:
     """Saves Readme.md and story.json into generated/<story_slug>/ on the AI node (for Node Owner)."""
     raw_slug = str(story_data.get("story_slug") or story_data.get("story_title") or "").strip()

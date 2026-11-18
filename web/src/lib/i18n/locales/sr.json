@@ -1972,5 +1972,22 @@
   "media_models": "Модели и формати",
   "media_jump_date": "Скочи на датум",
   "media_folders": "Фасцикле",
-  "media_screenshots": "Снимци екрана"
+  "media_screenshots": "Снимци екрана",
+  "share_a_story": "Подели причу",
+  "story_modal_title": "Подели причу",
+  "story_modal_subtitle": "Копирајте изабране медије у подфасциклу и саставите илустровани мини-стрип",
+  "story_subfolder_label": "Подфасцикла приче",
+  "story_plot_label": "Смерница за причу",
+  "story_plot_placeholder": "О чему треба да буде прича? Атмосфера, тон или главна идеја...",
+  "story_create_btn": "Направи стрип причу",
+  "story_stage_copying": "Копирање датотека у подфасциклу...",
+  "story_stage_composing": "АИ чвор пише илустровану причу...",
+  "story_stage_saving": "Чување Readme.md...",
+  "story_ready_title": "Прича је спремна!",
+  "story_open_btn": "Отвори причу",
+  "story_share_link_btn": "Подели везу",
+  "story_publish_civitai_btn": "Објави на CivitAI",
+  "story_files_footer": "Датотеке",
+  "story_select_items": "Изаберите бар једну фотографију или видео",
+  "story_selected_count": "Изабрано: {count}"
 }

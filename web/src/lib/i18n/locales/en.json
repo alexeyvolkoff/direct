@@ -1978,5 +1978,22 @@
   "media_models": "Models & Formats",
   "media_jump_date": "Jump to date",
   "media_folders": "Folders",
-  "media_screenshots": "Screenshots"
+  "media_screenshots": "Screenshots",
+  "share_a_story": "Share a story",
+  "story_modal_title": "Share a Story",
+  "story_modal_subtitle": "Copy selected media into a story folder and compose an illustrated mini-comic",
+  "story_subfolder_label": "Story subfolder",
+  "story_plot_label": "Story plot hint",
+  "story_plot_placeholder": "What should the story be about? Tone, mood, funny twist, or key idea...",
+  "story_create_btn": "Create Story Comic",
+  "story_stage_copying": "Copying media files into subfolder...",
+  "story_stage_composing": "AI node is writing your illustrated comic...",
+  "story_stage_saving": "Saving Readme.md comic...",
+  "story_ready_title": "Story comic is ready!",
+  "story_open_btn": "Open Story",
+  "story_share_link_btn": "Share Link",
+  "story_publish_civitai_btn": "Publish to CivitAI",
+  "story_files_footer": "Files",
+  "story_select_items": "Select at least one photo or video",
+  "story_selected_count": "{count} media selected"
 }

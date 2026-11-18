@@ -1978,5 +1978,22 @@
   "media_models": "Модели и форматы",
   "media_jump_date": "Переход к дате",
   "media_folders": "Папки",
-  "media_screenshots": "Скриншоты"
+  "media_screenshots": "Скриншоты",
+  "share_a_story": "Создать историю",
+  "story_modal_title": "Поделиться историей",
+  "story_modal_subtitle": "Скопировать выбранные медиа в подпапку и составить иллюстрированный мини-комикс",
+  "story_subfolder_label": "Подпапка для истории",
+  "story_plot_label": "Подсказка для сюжета",
+  "story_plot_placeholder": "О чём составить рассказ? Настроение, интрига, юмор или ключевая идея...",
+  "story_create_btn": "Создать историю-комикс",
+  "story_stage_copying": "Копируем медиафайлы в подпапку...",
+  "story_stage_composing": "ИИ-нода сочиняет иллюстрированный рассказ...",
+  "story_stage_saving": "Сохраняем комикс Readme.md...",
+  "story_ready_title": "История-комикс готова!",
+  "story_open_btn": "Открыть историю",
+  "story_share_link_btn": "Поделиться ссылкой",
+  "story_publish_civitai_btn": "Опубликовать в CivitAI",
+  "story_files_footer": "Файлы",
+  "story_select_items": "Выберите хотя бы одно фото или видео",
+  "story_selected_count": "Выбрано медиа: {count}"
 }

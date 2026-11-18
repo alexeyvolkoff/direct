@@ -1972,5 +1972,22 @@
   "media_models": "Modelos e formatos",
   "media_jump_date": "Ir para data",
   "media_folders": "Pastas",
-  "media_screenshots": "Capturas de ecrã"
+  "media_screenshots": "Capturas de ecrã",
+  "share_a_story": "Compartilhar história",
+  "story_modal_title": "Compartilhar uma história",
+  "story_modal_subtitle": "Copie as mídias selecionadas para uma subpasta e crie uma mini-HQ ilustrada",
+  "story_subfolder_label": "Subpasta da história",
+  "story_plot_label": "Dica de enredo",
+  "story_plot_placeholder": "Sobre o que deve ser a história? Tom, clima ou ideia principal...",
+  "story_create_btn": "Criar história ilustrada",
+  "story_stage_copying": "Copiando arquivos de mídia...",
+  "story_stage_composing": "O nó de IA está escrevendo sua história ilustrada...",
+  "story_stage_saving": "Salvando Readme.md...",
+  "story_ready_title": "A história está pronta!",
+  "story_open_btn": "Abrir história",
+  "story_share_link_btn": "Compartilhar link",
+  "story_publish_civitai_btn": "Publicar no CivitAI",
+  "story_files_footer": "Arquivos",
+  "story_select_items": "Selecione pelo menos uma foto ou vídeo",
+  "story_selected_count": "{count} selecionados"
 }

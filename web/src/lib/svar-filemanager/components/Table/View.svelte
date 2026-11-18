@@ -1,8 +1,16 @@
 <script>
-	import { getContext } from "svelte";
+	import { getContext, onMount, onDestroy } from "svelte";
 	import { formatSize } from "../../store/index.js";
 	import { deviceRegistry } from "../../../device-registry.js";
 	import { isFolderFetchingStore } from "../../../folder-loading.js";
+	import { _ as i18nT } from "../../../i18n/index.js";
+	import { hasSensitiveTag } from "../../../content-mode.js";
+	import {
+		isStoryOrLongReadme,
+		loadFolderStoryReadme,
+		resolveFolderMediaAssetUrl,
+	} from "../../../story-composer.js";
+	import StoryComicView from "../../../../components/StoryComicView.svelte";
 	import { delegateClick, dateToString, setID } from "@svar-ui/lib-dom";
 	import { Grid } from "@svar-ui/svelte-grid";
 	import { setFolderSort } from "../../store/sort-prefs.js";
@@ -15,6 +23,7 @@
 	let { panel, active = false, onclick, oncontextmenu, isPanels = false } = $props();
 
 	const api = getContext("filemanager-store");
+	const templates = api.templates;
 	const menuOptions = getContext("filemanager-menu-options");
 
 	const locale = getContext("wx-i18n");
@@ -239,6 +248,72 @@
 
 	let renderedFiles = $derived(files || []);
 
+	let folderReadme = $state("");
+	let localMediaVer = $state(0);
+	let isDark = $state(
+		typeof document !== "undefined"
+			? document.documentElement.classList.contains("dark-theme")
+			: true
+	);
+	let themeObserver = null;
+
+	onMount(() => {
+		if (typeof document !== "undefined" && typeof MutationObserver !== "undefined") {
+			isDark = document.documentElement.classList.contains("dark-theme");
+			themeObserver = new MutationObserver(() => {
+				isDark = document.documentElement.classList.contains("dark-theme");
+			});
+			themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+		}
+	});
+
+	onDestroy(() => {
+		if (themeObserver) {
+			themeObserver.disconnect();
+			themeObserver = null;
+		}
+	});
+
+	$effect(() => {
+		const curPath = path || "";
+		const curFiles = files || [];
+		let cancelled = false;
+		if (isPanels || !curPath || curPath === "/" || isDeviceRoot) {
+			folderReadme = "";
+		} else {
+			loadFolderStoryReadme(curPath, curFiles).then((txt) => {
+				if (!cancelled) folderReadme = txt || "";
+			});
+		}
+		return () => {
+			cancelled = true;
+		};
+	});
+
+	const hasStoryComic = $derived(
+		!isPanels && !isDeviceRoot && isStoryOrLongReadme(folderReadme)
+	);
+
+	function handleComicImageClick(payload) {
+		const targetLow = String(payload?.filename || "").toLowerCase();
+		if (!targetLow) return;
+		const matched = (files || []).find(
+			(f) => String(f?.name || f?.value || "").toLowerCase() === targetLow
+		);
+		if (matched) {
+			api.exec("open-file", { id: matched.id });
+		}
+	}
+
+	function handleShareCurrentFolder() {
+		if (!path || path === "/" || typeof window === "undefined") return;
+		window.dispatchEvent(
+			new CustomEvent("omd-share-folder", {
+				detail: { folderId: path },
+			})
+		);
+	}
+
 	let sortMarks = $derived.by(() => {
 		if (renderedFiles && sorts[path]) {
 			const { key, order } = sorts[path];
@@ -255,9 +330,40 @@
 		data-id={setID("body")}
 		class="wx-list"
 		class:wx-active={active}
+		class:has-story-comic={hasStoryComic}
 		use:delegateClick={{ click, dblclick }}
 	>
 	<UploadDropArea>
+		{#if hasStoryComic}
+			<div class="wx-table-comic-lead" onclick={(e) => e.stopPropagation()}>
+				<StoryComicView
+					markdown={folderReadme}
+					folderTitle={path?.split("/").filter(Boolean).pop() || ""}
+					isDarkTheme={isDark}
+					mediaVersion={localMediaVer}
+					resolveMediaUrl={(rel) =>
+						resolveFolderMediaAssetUrl(path, files, rel, {
+							templates,
+							onAsyncReady: () => (localMediaVer += 1),
+						})}
+					resolvePosterUrl={(rel) =>
+						resolveFolderMediaAssetUrl(path, files, rel, {
+							forPoster: true,
+							templates,
+						})}
+					isSensitiveMedia={(rel) => {
+						const fname = String(rel || "").split("/").pop().toLowerCase();
+						const f = (files || []).find(
+							(x) => String(x?.name || x?.value || "").toLowerCase() === fname
+						);
+						return Boolean(f && (f.isSensitive || hasSensitiveTag(f)));
+					}}
+					canShare={Boolean(path && path !== "/" && !path.startsWith("/shared-to-me"))}
+					onImageClick={handleComicImageClick}
+					onShare={handleShareCurrentFolder}
+				/>
+			</div>
+		{/if}
 		{#if renderedFiles.length}
 			<Grid
 				init={initTable}
@@ -307,6 +413,12 @@
 
 	.wx-list {
 		height: calc(100% - 50px);
+	}
+	.wx-list.has-story-comic {
+		overflow-y: auto;
+	}
+	.wx-table-comic-lead {
+		padding: 6px 14px 4px;
 	}
 	.wx-list > :global(.wx-upload-area .wx-grid) {
 		--wx-table-cell-border: var(--wx-fm-grid-border);

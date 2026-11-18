@@ -19,6 +19,8 @@
   import { getStoredOmdKey } from "../lib/omd-key.js";
   import { getViewerSettings } from "../lib/viewer-settings.js";
   import { isCameraRollFolder, isImageOrVideo, isVideoFile, formatDuration, isIgnoredFile } from "../lib/svar-filemanager/components/CameraRoll/media-utils.js";
+  import { isStoryOrLongReadme } from "../lib/story-composer.js";
+  import StoryComicView from "./StoryComicView.svelte";
   import { resolveAppMode, APP_MODE_CHAT } from "../lib/app-mode.js";
   import { gatewayConfig } from "../lib/gateway-config.js";
   import { hasSensitiveReadmeContent, hasSensitiveTag } from "../lib/content-mode.js";
@@ -51,6 +53,63 @@
   $: crRealFiles = isCameraRoll ? (folderItems || []).filter(f => !isIgnoredFile(f)) : [];
   $: crSubfolders = isCameraRoll ? crRealFiles.filter(f => f.isDir || f.type === "folder") : [];
   $: crMediaFiles = isCameraRoll ? crRealFiles.filter(f => isImageOrVideo(f)).slice().sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime()) : [];
+
+  let sharedFolderReadme = "";
+  let sharedReadmeKey = "";
+  $: hasSharedStoryComic = isStoryOrLongReadme(sharedFolderReadme);
+
+  $: {
+    const readmeItem = (folderItems || []).find(
+      (f) => !f.isDir && String(f?.name || "").trim().toLowerCase() === "readme.md"
+    );
+    const nextKey = readmeItem ? `${currentSubPath}::${readmeItem.name}::${readmeItem.size || 0}` : "";
+    if (!readmeItem) {
+      sharedReadmeKey = "";
+      sharedFolderReadme = "";
+    } else if (nextKey !== sharedReadmeKey) {
+      sharedReadmeKey = nextKey;
+      const readmeUrl = getItemP2pUrl(readmeItem);
+      if (readmeUrl && typeof fetch === "function") {
+        fetch(readmeUrl)
+          .then((r) => (r.ok ? r.text() : ""))
+          .then((txt) => {
+            if (sharedReadmeKey === nextKey) sharedFolderReadme = txt || "";
+          })
+          .catch(() => {});
+      }
+    }
+  }
+
+  function resolveSharedComicMediaUrl(relOrName = "") {
+    const targetLow = String(relOrName || "").split("/").pop().toLowerCase();
+    const matched = (folderItems || []).find(
+      (f) => String(f?.name || "").toLowerCase() === targetLow
+    );
+    if (!matched) return "";
+    const baseUrl = getItemP2pUrl(matched);
+    if (!baseUrl) return "";
+    if (isVideoFile(matched)) return baseUrl;
+    const vs = getViewerSettings();
+    return vs.downscaleImages
+      ? `${baseUrl}?resize=true&width=1440&height=1440`
+      : baseUrl;
+  }
+
+  function resolveSharedComicPosterUrl(relOrName = "") {
+    const targetLow = String(relOrName || "").split("/").pop().toLowerCase();
+    const matched = (folderItems || []).find(
+      (f) => String(f?.name || "").toLowerCase() === targetLow
+    );
+    return matched ? getItemThumbnail(matched) : "";
+  }
+
+  function handleSharedComicImageClick(e) {
+    const targetLow = String(e?.detail?.filename || e?.filename || "").toLowerCase();
+    const matched = (folderItems || []).find(
+      (f) => String(f?.name || "").toLowerCase() === targetLow
+    );
+    if (matched) handleItemClick(matched);
+  }
   let lgInstance = null;
   let lgPagination = null;
 
@@ -939,8 +998,26 @@
                   <i class="wxi-folder" style="font-size: 48px; color: var(--accent, #7B86C4);"></i>
                   <p>{$_("folder_empty", {}, "This folder is empty")}</p>
                 </div>
-              {:else if folderViewMode === 'cards'}
-                {#if isCameraRoll}
+              {:else}
+                {#if hasSharedStoryComic}
+                  <div class="shared-story-comic-wrap" style="padding: 8px 14px 4px;">
+                    <StoryComicView
+                      markdown={sharedFolderReadme}
+                      folderTitle={currentSubPath ? currentSubPath.split("/").filter(Boolean).pop() : (shareData?.title || shareData?.name || "")}
+                      {isDarkTheme}
+                      resolveMediaUrl={resolveSharedComicMediaUrl}
+                      resolvePosterUrl={resolveSharedComicPosterUrl}
+                      isSensitiveMedia={(rel) => {
+                        const low = String(rel || "").split("/").pop().toLowerCase();
+                        const f = (folderItems || []).find((x) => String(x?.name || "").toLowerCase() === low);
+                        return Boolean(f && (f.isSensitive || f._checkingSensitive));
+                      }}
+                      on:image-click={handleSharedComicImageClick}
+                    />
+                  </div>
+                {/if}
+                {#if folderViewMode === 'cards'}
+                  {#if isCameraRoll}
                   <!-- Camera Roll Mode (Pure media folders) -->
                   <div class="wx-cameraroll-container">
                     {#if crSubfolders.length}
@@ -1113,6 +1190,7 @@
                     </tbody>
                   </table>
                 </div>
+                {/if}
               {/if}
             </div>
           </div>

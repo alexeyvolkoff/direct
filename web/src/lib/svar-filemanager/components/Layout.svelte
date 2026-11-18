@@ -104,8 +104,8 @@
 					if (item) {
 						if (!inTree && selected.length > 1) {
 							options = narrowMode
-								? [previewOption, ...menuOptions("multiselect")]
-								: menuOptions("multiselect");
+								? [previewOption, ...menuOptions("multiselect", selected)]
+								: menuOptions("multiselect", selected);
 						} else if (id === "/") {
 							options = menuOptions("folder", item).filter(
 								o => o.id === "paste"
@@ -191,6 +191,9 @@
 				break;
 			case "share-item":
 				api.exec("share-item", { id: context.id });
+				break;
+			case "share-story":
+				api.exec("share-story", { id: context ? context.id : path, ids });
 				break;
 			case "disconnect-device":
 				api.exec("disconnect-device", { id: context.id });

@@ -1972,5 +1972,22 @@
   "media_models": "Modelle & Formate",
   "media_jump_date": "Zu Datum springen",
   "media_folders": "Ordner",
-  "media_screenshots": "Screenshots"
+  "media_screenshots": "Screenshots",
+  "share_a_story": "Story erstellen",
+  "story_modal_title": "Story teilen",
+  "story_modal_subtitle": "Ausgewählte Medien in einen Unterordner kopieren und einen Mini-Comic verfassen",
+  "story_subfolder_label": "Story-Unterordner",
+  "story_plot_label": "Handlungshinweis",
+  "story_plot_placeholder": "Worum soll es in der Geschichte gehen? Stimmung, Stil oder Hauptidee...",
+  "story_create_btn": "Story-Comic erstellen",
+  "story_stage_copying": "Mediendateien werden kopiert...",
+  "story_stage_composing": "KI-Knoten schreibt deinen illustrierten Comic...",
+  "story_stage_saving": "Readme.md wird gespeichert...",
+  "story_ready_title": "Story-Comic ist fertig!",
+  "story_open_btn": "Story öffnen",
+  "story_share_link_btn": "Link teilen",
+  "story_publish_civitai_btn": "Auf CivitAI veröffentlichen",
+  "story_files_footer": "Dateien",
+  "story_select_items": "Mindestens ein Foto oder Video auswählen",
+  "story_selected_count": "{count} Medien ausgewählt"
 }

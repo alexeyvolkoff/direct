@@ -1972,5 +1972,22 @@
   "media_models": "Modeli i formati",
   "media_jump_date": "Skoči na datum",
   "media_folders": "Mape",
-  "media_screenshots": "Snimke zaslona"
+  "media_screenshots": "Snimke zaslona",
+  "share_a_story": "Podijeli priču",
+  "story_modal_title": "Podijeli priču",
+  "story_modal_subtitle": "Kopirajte odabrane medije u podmapu i sastavite ilustrirani mini-strip",
+  "story_subfolder_label": "Podmapa priče",
+  "story_plot_label": "Uputa za radnju",
+  "story_plot_placeholder": "O čemu bi priča trebala govoriti? Ugođaj, ton ili glavna ideja...",
+  "story_create_btn": "Izradi strip priču",
+  "story_stage_copying": "Kopiranje datoteka u podmapu...",
+  "story_stage_composing": "AI čvor piše vašu ilustriranu priču...",
+  "story_stage_saving": "Spremanje Readme.md...",
+  "story_ready_title": "Priča je spremna!",
+  "story_open_btn": "Otvori priču",
+  "story_share_link_btn": "Podijeli poveznicu",
+  "story_publish_civitai_btn": "Objavi na CivitAI",
+  "story_files_footer": "Datoteke",
+  "story_select_items": "Odaberite barem jednu fotografiju ili video",
+  "story_selected_count": "Odabrano: {count}"
 }

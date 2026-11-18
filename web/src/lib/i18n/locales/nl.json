@@ -1972,5 +1972,22 @@
   "media_models": "Modellen en formaten",
   "media_jump_date": "Ga naar datum",
   "media_folders": "Mappen",
-  "media_screenshots": "Screenshots"
+  "media_screenshots": "Screenshots",
+  "share_a_story": "Verhaal delen",
+  "story_modal_title": "Deel een verhaal",
+  "story_modal_subtitle": "Kopieer geselecteerde media naar een submap en maak een geïllustreerde ministrip",
+  "story_subfolder_label": "Submap voor verhaal",
+  "story_plot_label": "Hint voor het verhaal",
+  "story_plot_placeholder": "Waar moet het verhaal over gaan? Sfeer, toon of hoofdidee...",
+  "story_create_btn": "Verhaalstrip maken",
+  "story_stage_copying": "Mediabestanden kopiëren...",
+  "story_stage_composing": "AI-node schrijft je geïllustreerde verhaal...",
+  "story_stage_saving": "Readme.md opslaan...",
+  "story_ready_title": "Verhaalstrip is klaar!",
+  "story_open_btn": "Verhaal openen",
+  "story_share_link_btn": "Link delen",
+  "story_publish_civitai_btn": "Publiceren op CivitAI",
+  "story_files_footer": "Bestanden",
+  "story_select_items": "Selecteer minimaal één foto of video",
+  "story_selected_count": "{count} geselecteerd"
 }

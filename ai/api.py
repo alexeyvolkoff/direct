@@ -6503,6 +6503,38 @@ async def krea_story_save_endpoint(request: Request, data: StorySaveInput):
     }
 
 
+class StoryComposeInput(BaseModel):
+    omd_key: Optional[str] = ""
+    album_title: Optional[str] = ""
+    plot_hint: Optional[str] = ""
+    frames: list[dict] = []
+    language: Optional[str] = "en"
+    settings: Optional[dict] = None
+
+
+@app.post("/story/compose")
+async def story_compose_endpoint(request: Request, data: StoryComposeInput):
+    """Composes an illustrated Markdown story (Readme.md) from photo/video facts on the active AI node."""
+    ctx = get_ctx(data.omd_key or "")
+    ctx.private_mode = trusted_private_access(request, ctx)
+    ctx.trusted_owner = trusted_owner_access(request)
+    if data.settings and isinstance(data.settings, dict):
+        ctx.settings.update(data.settings)
+    _apply_request_ai_headers(request, ctx, data.settings)
+    try:
+        md = await core_service.compose_media_story(
+            ctx=ctx,
+            album_title=data.album_title or "",
+            plot_hint=data.plot_hint or "",
+            frames=data.frames or [],
+            language=data.language or "en",
+        )
+        return {"status": "ok", "markdown": md}
+    except Exception as e:
+        logging.error(f"Error in /story/compose: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/krea/stories")
 async def krea_list_stories_endpoint(request: Request, omd_key: str | None = Depends(get_omd_key)):
     """Lists saved story projects on the AI node (for Node Owner)."""

@@ -1972,5 +1972,22 @@
   "media_models": "Modely a formáty",
   "media_jump_date": "Prejsť na dátum",
   "media_folders": "Priečinky",
-  "media_screenshots": "Snímky obrazovky"
+  "media_screenshots": "Snímky obrazovky",
+  "share_a_story": "Zdieľať príbeh",
+  "story_modal_title": "Zdieľať príbeh",
+  "story_modal_subtitle": "Skopírujte vybrané médiá do podpriečinka a vytvorte ilustrovaný mini-komiks",
+  "story_subfolder_label": "Podpriečinok príbehu",
+  "story_plot_label": "Nápoveda k deju",
+  "story_plot_placeholder": "O čom má byť príbeh? Nálada, tón alebo hlavná myšlienka...",
+  "story_create_btn": "Vytvoriť komiksový príbeh",
+  "story_stage_copying": "Kopírovanie mediálnych súborov...",
+  "story_stage_composing": "AI uzol píše váš ilustrovaný príbeh...",
+  "story_stage_saving": "Ukladanie Readme.md...",
+  "story_ready_title": "Príbeh je pripravený!",
+  "story_open_btn": "Otvoriť príbeh",
+  "story_share_link_btn": "Zdieľať odkaz",
+  "story_publish_civitai_btn": "Publikovať na CivitAI",
+  "story_files_footer": "Súbory",
+  "story_select_items": "Vyberte aspoň jednu fotku alebo video",
+  "story_selected_count": "Vybrané: {count}"
 }

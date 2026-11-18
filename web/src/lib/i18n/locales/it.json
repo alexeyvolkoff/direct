@@ -1972,5 +1972,22 @@
   "media_models": "Modelli e formati",
   "media_jump_date": "Vai alla data",
   "media_folders": "Cartelle",
-  "media_screenshots": "Screenshot"
+  "media_screenshots": "Screenshot",
+  "share_a_story": "Condividi storia",
+  "story_modal_title": "Condividi una storia",
+  "story_modal_subtitle": "Copia i media selezionati in una sottocartella e crea un mini-fumetto illustrato",
+  "story_subfolder_label": "Sottocartella della storia",
+  "story_plot_label": "Suggerimento per la trama",
+  "story_plot_placeholder": "Di cosa deve parlare la storia? Tono, atmosfera o idea principale...",
+  "story_create_btn": "Crea fumetto storia",
+  "story_stage_copying": "Copia dei file multimediali...",
+  "story_stage_composing": "Il nodo IA sta scrivendo il fumetto illustrato...",
+  "story_stage_saving": "Salvataggio Readme.md...",
+  "story_ready_title": "La storia è pronta!",
+  "story_open_btn": "Apri storia",
+  "story_share_link_btn": "Condividi link",
+  "story_publish_civitai_btn": "Pubblica su CivitAI",
+  "story_files_footer": "File",
+  "story_select_items": "Seleziona almeno una foto o un video",
+  "story_selected_count": "{count} media selezionati"
 }

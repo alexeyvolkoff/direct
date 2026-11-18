@@ -1,12 +1,21 @@
 <script>
-	import { getContext } from "svelte";
+	import { getContext, onMount, onDestroy } from "svelte";
 	import { delegateClick, setID } from "@svar-ui/lib-dom";
 	import { deviceRegistry } from "../../../device-registry.js";
 	import { isFolderFetchingStore } from "../../../folder-loading.js";
+	import { _ as i18nT } from "../../../i18n/index.js";
+	import { hasSensitiveTag } from "../../../content-mode.js";
+	import {
+		isStoryOrLongReadme,
+		loadFolderStoryReadme,
+		resolveFolderMediaAssetUrl,
+	} from "../../../story-composer.js";
+	import StoryComicView from "../../../../components/StoryComicView.svelte";
 	import Item from "./Item.svelte";
 	import EmptyFolderState from "../EmptyFolderState.svelte";
 
 	const api = getContext("filemanager-store");
+	const templates = api.templates;
 	const _ = getContext("filemanager-locale") || getContext("wx-i18n").getGroup("filemanager");
 	const menuOptions = getContext("filemanager-menu-options");
 
@@ -135,6 +144,72 @@
 	}
 
 	let renderedFiles = $derived(files || []);
+
+	let folderReadme = $state("");
+	let localMediaVer = $state(0);
+	let isDark = $state(
+		typeof document !== "undefined"
+			? document.documentElement.classList.contains("dark-theme")
+			: true
+	);
+	let themeObserver = null;
+
+	onMount(() => {
+		if (typeof document !== "undefined" && typeof MutationObserver !== "undefined") {
+			isDark = document.documentElement.classList.contains("dark-theme");
+			themeObserver = new MutationObserver(() => {
+				isDark = document.documentElement.classList.contains("dark-theme");
+			});
+			themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+		}
+	});
+
+	onDestroy(() => {
+		if (themeObserver) {
+			themeObserver.disconnect();
+			themeObserver = null;
+		}
+	});
+
+	$effect(() => {
+		const curPath = path || "";
+		const curFiles = files || [];
+		let cancelled = false;
+		if (!curPath || curPath === "/" || isDeviceRoot || $mode === "search") {
+			folderReadme = "";
+		} else {
+			loadFolderStoryReadme(curPath, curFiles).then((txt) => {
+				if (!cancelled) folderReadme = txt || "";
+			});
+		}
+		return () => {
+			cancelled = true;
+		};
+	});
+
+	const hasStoryComic = $derived(
+		$mode !== "search" && !isDeviceRoot && isStoryOrLongReadme(folderReadme)
+	);
+
+	function handleComicImageClick(payload) {
+		const targetLow = String(payload?.filename || "").toLowerCase();
+		if (!targetLow) return;
+		const matched = (files || []).find(
+			(f) => String(f?.name || f?.value || "").toLowerCase() === targetLow
+		);
+		if (matched) {
+			api.exec("open-file", { id: matched.id });
+		}
+	}
+
+	function handleShareCurrentFolder() {
+		if (!path || path === "/" || typeof window === "undefined") return;
+		window.dispatchEvent(
+			new CustomEvent("omd-share-folder", {
+				detail: { folderId: path },
+			})
+		);
+	}
 </script>
 
 {#if $mode == "search" && !renderedFiles.length}
@@ -149,6 +224,39 @@
 		data-id={setID("body")}
 		use:delegateClick={{ click, dblclick, context: applySelection }}
 	>
+		{#if hasStoryComic}
+			<div class="wx-cards-comic-lead" onclick={(e) => e.stopPropagation()}>
+				<StoryComicView
+					markdown={folderReadme}
+					folderTitle={path?.split("/").filter(Boolean).pop() || ""}
+					isDarkTheme={isDark}
+					mediaVersion={localMediaVer}
+					resolveMediaUrl={(rel) =>
+						resolveFolderMediaAssetUrl(path, files, rel, {
+							templates,
+							onAsyncReady: () => (localMediaVer += 1),
+						})}
+					resolvePosterUrl={(rel) =>
+						resolveFolderMediaAssetUrl(path, files, rel, {
+							forPoster: true,
+							templates,
+						})}
+					isSensitiveMedia={(rel) => {
+						const fname = String(rel || "").split("/").pop().toLowerCase();
+						const f = (files || []).find(
+							(x) => String(x?.name || x?.value || "").toLowerCase() === fname
+						);
+						return Boolean(f && (f.isSensitive || hasSensitiveTag(f)));
+					}}
+					canShare={Boolean(path && path !== "/" && !path.startsWith("/shared-to-me"))}
+					onImageClick={handleComicImageClick}
+					onShare={handleShareCurrentFolder}
+				/>
+				<div class="wx-cards-comic-footer-label">
+					<span>📎 {$i18nT("story_files_footer", {}, "Files")} · {renderedFiles.length}</span>
+				</div>
+			</div>
+		{/if}
 		{#each renderedFiles as child (child.id)}
 			<Item item={child} />
 		{/each}
@@ -222,6 +330,22 @@
 		border-top-color: var(--wx-color-primary, #3D467A);
 		border-radius: 50%;
 		animation: wx-spin 0.8s linear infinite;
+	}
+	.wx-cards-comic-lead {
+		flex: 0 0 100%;
+		width: 100%;
+		box-sizing: border-box;
+		padding: 4px 0 6px;
+	}
+	.wx-cards-comic-footer-label {
+		display: flex;
+		align-items: center;
+		padding: 8px 6px 6px;
+		font-size: 12.5px;
+		font-weight: 650;
+		opacity: 0.72;
+		border-top: 1px solid var(--wx-border-color, rgba(128, 128, 150, 0.16));
+		margin-top: 4px;
 	}
 	@keyframes wx-spin {
 		to { transform: rotate(360deg); }

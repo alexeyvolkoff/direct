@@ -1972,5 +1972,22 @@
   "media_models": "مدل‌ها و قالب‌ها",
   "media_jump_date": "رفتن به تاریخ",
   "media_folders": "پوشه‌ها",
-  "media_screenshots": "اسکرین‌شات‌ها"
+  "media_screenshots": "اسکرین‌شات‌ها",
+  "share_a_story": "اشتراک داستان",
+  "story_modal_title": "اشتراک‌گذاری داستان",
+  "story_modal_subtitle": "رسانه‌های انتخاب‌شده را در زیرپوشه کپی کرده و مینی‌کمیک مصور بسازید",
+  "story_subfolder_label": "زیرپوشه داستان",
+  "story_plot_label": "راهنمای موضوع داستان",
+  "story_plot_placeholder": "داستان درباره چه چیزی باشد؟ حال‌وهوا، لحن یا ایده اصلی...",
+  "story_create_btn": "ساخت کمیک داستان",
+  "story_stage_copying": "در حال کپی فایل‌های رسانه...",
+  "story_stage_composing": "گره هوش مصنوعی در حال نوشتن داستان مصور است...",
+  "story_stage_saving": "در حال ذخیره Readme.md...",
+  "story_ready_title": "داستان آماده است!",
+  "story_open_btn": "باز کردن داستان",
+  "story_share_link_btn": "اشتراک پیوند",
+  "story_publish_civitai_btn": "انتشار در CivitAI",
+  "story_files_footer": "فایل‌ها",
+  "story_select_items": "حداقل یک عکس یا ویدیو انتخاب کنید",
+  "story_selected_count": "{count} مورد انتخاب شد"
 }

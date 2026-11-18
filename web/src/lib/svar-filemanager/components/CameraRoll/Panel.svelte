@@ -2,7 +2,13 @@
 	import { getContext, onMount, onDestroy, tick } from "svelte";
 	import { delegateClick, setID } from "@svar-ui/lib-dom";
 	import Item from "./Item.svelte";
+	import StoryComicView from "../../../../components/StoryComicView.svelte";
 	import { isImageOrVideo, isVideoFile, isIgnoredFile } from "./media-utils.js";
+	import {
+		isStoryOrLongReadme,
+		loadFolderStoryReadme,
+		resolveFolderMediaAssetUrl,
+	} from "../../../story-composer.js";
 	import { _ as i18nT, locale as i18nLocale } from "../../../i18n/index.js";
 	import { contentModeStore, hasSensitiveTag } from "../../../content-mode.js";
 	import {
@@ -52,6 +58,33 @@
 	let knowledgeTick = $state(0);
 	let failedFolderCovers = $state({});
 	let lastTrackedPath = "";
+	let folderReadme = $state("");
+	let localMediaVer = $state(0);
+	let isDark = $state(
+		typeof document !== "undefined"
+			? document.documentElement.classList.contains("dark-theme")
+			: true
+	);
+
+	const hasStoryComic = $derived(
+		$mode !== "search" && isStoryOrLongReadme(folderReadme)
+	);
+
+	$effect(() => {
+		const curPath = path || "";
+		const curFiles = files || [];
+		let cancelled = false;
+		if (!curPath || curPath === "/" || $mode === "search") {
+			folderReadme = "";
+		} else {
+			loadFolderStoryReadme(curPath, curFiles).then((txt) => {
+				if (!cancelled) folderReadme = txt || "";
+			});
+		}
+		return () => {
+			cancelled = true;
+		};
+	});
 
 	$effect(() => {
 		const curPath = path || "";
@@ -73,15 +106,28 @@
 		knowledgeTick += 1;
 	}
 
+	let themeObserver = null;
+
 	onMount(() => {
 		if (typeof window !== "undefined") {
 			window.addEventListener("omd-knowledge-updated", onKnowledgeUpdated);
+		}
+		if (typeof document !== "undefined" && typeof MutationObserver !== "undefined") {
+			isDark = document.documentElement.classList.contains("dark-theme");
+			themeObserver = new MutationObserver(() => {
+				isDark = document.documentElement.classList.contains("dark-theme");
+			});
+			themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
 		}
 	});
 
 	onDestroy(() => {
 		if (typeof window !== "undefined") {
 			window.removeEventListener("omd-knowledge-updated", onKnowledgeUpdated);
+		}
+		if (themeObserver) {
+			themeObserver.disconnect();
+			themeObserver = null;
 		}
 		if (albumBackToken) {
 			dismissSubViewHistory(albumBackToken, { popHistory: false });
@@ -500,15 +546,88 @@
 			});
 		}
 
-		const total = subfolders.length + peopleAlbums.length + placeAlbums.length + momentAlbums.length + categoryAlbums.length;
+		const keepSubgroup = (alb) => !(hasStoryComic && subfolders.length === 0 && alb.count >= descAll.length);
+		const filtPeople = peopleAlbums.filter(keepSubgroup);
+		const filtPlaces = placeAlbums.filter(keepSubgroup);
+		const filtMoments = momentAlbums.filter(keepSubgroup);
+		const filtCategories = categoryAlbums.filter(keepSubgroup);
+
+		const total = subfolders.length + filtPeople.length + filtPlaces.length + filtMoments.length + filtCategories.length;
 		return {
-			people: peopleAlbums,
-			places: placeAlbums,
-			moments: momentAlbums,
-			categories: categoryAlbums,
+			people: filtPeople,
+			places: filtPlaces,
+			moments: filtMoments,
+			categories: filtCategories,
 			totalCount: total,
 		};
 	});
+
+	const hasGroupingAlbums = $derived(crAutoAlbums.totalCount > 0 || subfolders.length > 0);
+	const effectiveCrTab = $derived(hasGroupingAlbums ? crTab : "timeline");
+	const selectedMediaEntries = $derived(
+		enrichedMedia.filter((m) => Array.isArray(selected) && selected.includes(m.id))
+	);
+	const showTopbar = $derived(
+		hasGroupingAlbums ||
+		Boolean(activeAlbum) ||
+		selectedMediaEntries.length > 0 ||
+		timelineGroups.length > 1
+	);
+
+	function triggerShareStory(entries, title = "") {
+		if (!entries || !entries.length || typeof window === "undefined") return;
+		window.dispatchEvent(
+			new CustomEvent("omd-open-share-story", {
+				detail: {
+					items: entries,
+					albumTitle: title || "",
+					explicitParentFolderId: path && path !== "/" && !path.startsWith("/shared-") ? path : "",
+					isCreations: isCreationsDir,
+				},
+			})
+		);
+	}
+
+	function triggerShareStoryForAlbum(alb, e) {
+		if (e) e.stopPropagation();
+		if (!alb || !alb.itemIds) return;
+		const entries = enrichedMedia.filter((m) => alb.itemIds.has(m.id));
+		triggerShareStory(entries, alb.title || "");
+	}
+
+	function handleComicImageClick(payload) {
+		const targetLow = String(payload?.filename || "").toLowerCase();
+		if (!targetLow) return;
+		const matched = (files || []).find(
+			(f) => String(f?.name || f?.value || "").toLowerCase() === targetLow
+		);
+		if (matched) {
+			if (typeof window !== "undefined") {
+				window.__omdCameraRollScopeNames = new Set(
+					mediaFiles.map((x) => x.name || x.value || "").filter(Boolean)
+				);
+			}
+			api.exec("open-file", { id: matched.id });
+		}
+	}
+
+	function handleShareCurrentFolder() {
+		if (!path || path === "/" || typeof window === "undefined") return;
+		window.dispatchEvent(
+			new CustomEvent("omd-share-folder", {
+				detail: { folderId: path },
+			})
+		);
+	}
+
+	function handlePublishCurrentStoryToCivitai() {
+		if (!path || path === "/" || typeof window === "undefined") return;
+		window.dispatchEvent(
+			new CustomEvent("omd-publish-story-civitai", {
+				detail: { folderId: path },
+			})
+		);
+	}
 
 	function getCoverPreview(fileObj) {
 		if (!fileObj || !templates?.preview) return "";
@@ -679,33 +798,35 @@
 	</div>
 {:else}
 	<div class="wx-cr-shell">
-		{#if mediaFiles.length > 0 || subfolders.length > 0}
+		{#if (mediaFiles.length > 0 || subfolders.length > 0) && showTopbar}
 			<div class="wx-cr-topbar">
 				<div class="wx-cr-topbar-left">
-					<div class="wx-cr-seg" role="tablist">
-						<button
-							type="button"
-							role="tab"
-							class="wx-cr-seg-btn"
-							class:active={crTab === "timeline" && !activeAlbum}
-							onclick={() => setCrTab("timeline")}
-						>
-							<span>{$i18nT("media_timeline", {}, "Timeline")}</span>
-							<span class="wx-cr-pill-cnt">{mediaFiles.length}</span>
-						</button>
-						<button
-							type="button"
-							role="tab"
-							class="wx-cr-seg-btn"
-							class:active={crTab === "albums" || Boolean(activeAlbum)}
-							onclick={() => setCrTab("albums")}
-						>
-							<span>{$i18nT("media_auto_albums", {}, "Auto-Albums")}</span>
-							{#if crAutoAlbums.totalCount > 0}
-								<span class="wx-cr-pill-cnt">{crAutoAlbums.totalCount}</span>
-							{/if}
-						</button>
-					</div>
+					{#if hasGroupingAlbums}
+						<div class="wx-cr-seg" role="tablist">
+							<button
+								type="button"
+								role="tab"
+								class="wx-cr-seg-btn"
+								class:active={effectiveCrTab === "timeline" && !activeAlbum}
+								onclick={() => setCrTab("timeline")}
+							>
+								<span>{$i18nT("media_timeline", {}, "Timeline")}</span>
+								<span class="wx-cr-pill-cnt">{mediaFiles.length}</span>
+							</button>
+							<button
+								type="button"
+								role="tab"
+								class="wx-cr-seg-btn"
+								class:active={effectiveCrTab === "albums" || Boolean(activeAlbum)}
+								onclick={() => setCrTab("albums")}
+							>
+								<span>{$i18nT("media_auto_albums", {}, "Auto-Albums")}</span>
+								{#if crAutoAlbums.totalCount > 0}
+									<span class="wx-cr-pill-cnt">{crAutoAlbums.totalCount}</span>
+								{/if}
+							</button>
+						</div>
+					{/if}
 
 					{#if activeAlbum}
 						<div class="wx-cr-crumb">
@@ -713,32 +834,53 @@
 								← {$i18nT("media_all_albums", {}, "All albums")}
 							</button>
 							<span class="wx-cr-crumb-title">{activeAlbum.title} ({sortedEnriched.length})</span>
+							{#if !path?.startsWith("/shared-to-me")}
+								<button
+									type="button"
+									class="wx-cr-story-cta"
+									onclick={() => triggerShareStory(sortedEnriched, activeAlbum.title)}
+								>
+									📖 {$i18nT("share_a_story", {}, "Share a story")}
+								</button>
+							{/if}
 						</div>
 					{/if}
 				</div>
 
 				<div class="wx-cr-topbar-right">
-					<button
-						type="button"
-						class="wx-cr-icon-btn"
-						class:active={crSort === "asc"}
-						title={crSort === "desc" ? $i18nT("sort_date_desc", {}, "Date (newest first)") : $i18nT("sort_date_asc", {}, "Date (oldest first)")}
-						onclick={toggleCrSort}
-					>
-						<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-							{#if crSort === "desc"}
-								<path d="M4 6h9M4 12h7M4 18h5" />
-								<path d="M16 15l3 3 3-3" />
-								<path d="M19 6v12" />
-							{:else}
-								<path d="M4 6h5M4 12h7M4 18h9" />
-								<path d="M16 9l3-3 3 3" />
-								<path d="M19 18V6" />
-							{/if}
-						</svg>
-					</button>
+					{#if selectedMediaEntries.length > 0 && !path?.startsWith("/shared-to-me")}
+						<button
+							type="button"
+							class="wx-cr-story-cta"
+							onclick={() => triggerShareStory(selectedMediaEntries, activeAlbum?.title || "")}
+						>
+							📖 {$i18nT("share_a_story", {}, "Share a story")} ({selectedMediaEntries.length})
+						</button>
+					{/if}
 
-					{#if isMobile && (crTab === "timeline" || activeAlbum) && monthScrubber.length >= 2}
+					{#if sortedEnriched.length > 1}
+						<button
+							type="button"
+							class="wx-cr-icon-btn"
+							class:active={crSort === "asc"}
+							title={crSort === "desc" ? $i18nT("sort_date_desc", {}, "Date (newest first)") : $i18nT("sort_date_asc", {}, "Date (oldest first)")}
+							onclick={toggleCrSort}
+						>
+							<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+								{#if crSort === "desc"}
+									<path d="M4 6h9M4 12h7M4 18h5" />
+									<path d="M16 15l3 3 3-3" />
+									<path d="M19 6v12" />
+								{:else}
+									<path d="M4 6h5M4 12h7M4 18h9" />
+									<path d="M16 9l3-3 3 3" />
+									<path d="M19 18V6" />
+								{/if}
+							</svg>
+						</button>
+					{/if}
+
+					{#if isMobile && (effectiveCrTab === "timeline" || activeAlbum) && monthScrubber.length >= 2}
 						<button
 							type="button"
 							class="wx-cr-icon-btn"
@@ -767,7 +909,7 @@
 			data-id={setID("body")}
 			use:delegateClick={{ click, dblclick, context: applySelection }}
 		>
-			{#if crTab === "albums" && !activeAlbum}
+			{#if effectiveCrTab === "albums" && !activeAlbum}
 				<!-- CAMERAROLL AUTO-ALBUMS VIEW -->
 				<div class="wx-cr-albums-wrap">
 					{#if subfolders.length > 0}
@@ -849,19 +991,29 @@
 							<div class="wx-cr-albums-grid compact">
 								{#each crAutoAlbums.people as pAlb (pAlb.id)}
 									{@const cov = getCoverPreview(pAlb.coverFile)}
-									<button type="button" class="wx-cr-album-card compact" onclick={(e) => { e.stopPropagation(); openAlbum(pAlb); }}>
-										<div class="wx-cr-album-cover">
-											{#if cov}
-												<img src={cov} alt={pAlb.title} loading="lazy" class:wx-cr-cov-blur={isCoverBlurred(pAlb.coverFile)} />
-											{:else}
-												<div class="wx-cr-album-fallback">👤</div>
-											{/if}
-											<div class="wx-cr-album-grad">
-												<span class="wx-cr-album-title">{pAlb.title}</span>
+									<div class="wx-cr-album-card-wrap">
+										<button type="button" class="wx-cr-album-card compact" onclick={(e) => { e.stopPropagation(); openAlbum(pAlb); }}>
+											<div class="wx-cr-album-cover">
+												{#if cov}
+													<img src={cov} alt={pAlb.title} loading="lazy" class:wx-cr-cov-blur={isCoverBlurred(pAlb.coverFile)} />
+												{:else}
+													<div class="wx-cr-album-fallback">👤</div>
+												{/if}
+												<div class="wx-cr-album-grad">
+													<span class="wx-cr-album-title">{pAlb.title}</span>
+												</div>
+												<span class="wx-cr-album-cnt">{pAlb.count}</span>
 											</div>
-											<span class="wx-cr-album-cnt">{pAlb.count}</span>
-										</div>
-									</button>
+										</button>
+										{#if !path?.startsWith("/shared-to-me")}
+											<button
+												type="button"
+												class="wx-cr-album-story-btn"
+												title={$i18nT("share_a_story", {}, "Share a story")}
+												onclick={(e) => triggerShareStoryForAlbum(pAlb, e)}
+											>📖</button>
+										{/if}
+									</div>
 								{/each}
 							</div>
 						</div>
@@ -876,19 +1028,29 @@
 							<div class="wx-cr-albums-grid">
 								{#each crAutoAlbums.moments as mAlb (mAlb.id)}
 									{@const cov = getCoverPreview(mAlb.coverFile)}
-									<button type="button" class="wx-cr-album-card" onclick={(e) => { e.stopPropagation(); openAlbum(mAlb); }}>
-										<div class="wx-cr-album-cover">
-											{#if cov}
-												<img src={cov} alt={mAlb.title} loading="lazy" class:wx-cr-cov-blur={isCoverBlurred(mAlb.coverFile)} />
-											{:else}
-												<div class="wx-cr-album-fallback">🗓️</div>
-											{/if}
-											<div class="wx-cr-album-grad">
-												<span class="wx-cr-album-title">{mAlb.title}</span>
+									<div class="wx-cr-album-card-wrap">
+										<button type="button" class="wx-cr-album-card" onclick={(e) => { e.stopPropagation(); openAlbum(mAlb); }}>
+											<div class="wx-cr-album-cover">
+												{#if cov}
+													<img src={cov} alt={mAlb.title} loading="lazy" class:wx-cr-cov-blur={isCoverBlurred(mAlb.coverFile)} />
+												{:else}
+													<div class="wx-cr-album-fallback">🗓️</div>
+												{/if}
+												<div class="wx-cr-album-grad">
+													<span class="wx-cr-album-title">{mAlb.title}</span>
+												</div>
+												<span class="wx-cr-album-cnt">{mAlb.count}</span>
 											</div>
-											<span class="wx-cr-album-cnt">{mAlb.count}</span>
-										</div>
-									</button>
+										</button>
+										{#if !path?.startsWith("/shared-to-me")}
+											<button
+												type="button"
+												class="wx-cr-album-story-btn"
+												title={$i18nT("share_a_story", {}, "Share a story")}
+												onclick={(e) => triggerShareStoryForAlbum(mAlb, e)}
+											>📖</button>
+										{/if}
+									</div>
 								{/each}
 							</div>
 						</div>
@@ -903,19 +1065,29 @@
 							<div class="wx-cr-albums-grid">
 								{#each crAutoAlbums.places as plAlb (plAlb.id)}
 									{@const cov = getCoverPreview(plAlb.coverFile)}
-									<button type="button" class="wx-cr-album-card" onclick={(e) => { e.stopPropagation(); openAlbum(plAlb); }}>
-										<div class="wx-cr-album-cover">
-											{#if cov}
-												<img src={cov} alt={plAlb.title} loading="lazy" class:wx-cr-cov-blur={isCoverBlurred(plAlb.coverFile)} />
-											{:else}
-												<div class="wx-cr-album-fallback">📍</div>
-											{/if}
-											<div class="wx-cr-album-grad">
-												<span class="wx-cr-album-title">{plAlb.title}</span>
+									<div class="wx-cr-album-card-wrap">
+										<button type="button" class="wx-cr-album-card" onclick={(e) => { e.stopPropagation(); openAlbum(plAlb); }}>
+											<div class="wx-cr-album-cover">
+												{#if cov}
+													<img src={cov} alt={plAlb.title} loading="lazy" class:wx-cr-cov-blur={isCoverBlurred(plAlb.coverFile)} />
+												{:else}
+													<div class="wx-cr-album-fallback">📍</div>
+												{/if}
+												<div class="wx-cr-album-grad">
+													<span class="wx-cr-album-title">{plAlb.title}</span>
+												</div>
+												<span class="wx-cr-album-cnt">{plAlb.count}</span>
 											</div>
-											<span class="wx-cr-album-cnt">{plAlb.count}</span>
-										</div>
-									</button>
+										</button>
+										{#if !path?.startsWith("/shared-to-me")}
+											<button
+												type="button"
+												class="wx-cr-album-story-btn"
+												title={$i18nT("share_a_story", {}, "Share a story")}
+												onclick={(e) => triggerShareStoryForAlbum(plAlb, e)}
+											>📖</button>
+										{/if}
+									</div>
 								{/each}
 							</div>
 						</div>
@@ -930,19 +1102,29 @@
 							<div class="wx-cr-albums-grid compact">
 								{#each crAutoAlbums.categories as cAlb (cAlb.id)}
 									{@const cov = getCoverPreview(cAlb.coverFile)}
-									<button type="button" class="wx-cr-album-card compact" onclick={(e) => { e.stopPropagation(); openAlbum(cAlb); }}>
-										<div class="wx-cr-album-cover">
-											{#if cov}
-												<img src={cov} alt={cAlb.title} loading="lazy" class:wx-cr-cov-blur={isCoverBlurred(cAlb.coverFile)} />
-											{:else}
-												<div class="wx-cr-album-fallback">#</div>
-											{/if}
-											<div class="wx-cr-album-grad">
-												<span class="wx-cr-album-title">{cAlb.title}</span>
+									<div class="wx-cr-album-card-wrap">
+										<button type="button" class="wx-cr-album-card compact" onclick={(e) => { e.stopPropagation(); openAlbum(cAlb); }}>
+											<div class="wx-cr-album-cover">
+												{#if cov}
+													<img src={cov} alt={cAlb.title} loading="lazy" class:wx-cr-cov-blur={isCoverBlurred(cAlb.coverFile)} />
+												{:else}
+													<div class="wx-cr-album-fallback">#</div>
+												{/if}
+												<div class="wx-cr-album-grad">
+													<span class="wx-cr-album-title">{cAlb.title}</span>
+												</div>
+												<span class="wx-cr-album-cnt">{cAlb.count}</span>
 											</div>
-											<span class="wx-cr-album-cnt">{cAlb.count}</span>
-										</div>
-									</button>
+										</button>
+										{#if !path?.startsWith("/shared-to-me")}
+											<button
+												type="button"
+												class="wx-cr-album-story-btn"
+												title={$i18nT("share_a_story", {}, "Share a story")}
+												onclick={(e) => triggerShareStoryForAlbum(cAlb, e)}
+											>📖</button>
+										{/if}
+									</div>
 								{/each}
 							</div>
 						</div>
@@ -955,7 +1137,40 @@
 					{/if}
 				</div>
 			{:else}
-				<!-- CHRONOLOGICAL TIMELINE STREAM -->
+				<!-- CHRONOLOGICAL TIMELINE STREAM (+ COMIC STORY ZONE AT TOP) -->
+				{#if hasStoryComic && !activeAlbum}
+					<div class="wx-cr-story-lead">
+						<StoryComicView
+							markdown={folderReadme}
+							folderTitle={path?.split("/").filter(Boolean).pop() || ""}
+							isDarkTheme={isDark}
+							mediaVersion={localMediaVer}
+							resolveMediaUrl={(rel) =>
+								resolveFolderMediaAssetUrl(path, files, rel, {
+									templates,
+									onAsyncReady: () => (localMediaVer += 1),
+								})}
+							resolvePosterUrl={(rel) =>
+								resolveFolderMediaAssetUrl(path, files, rel, {
+									forPoster: true,
+									templates,
+								})}
+							isSensitiveMedia={(rel) => {
+								const fname = String(rel || "").split("/").pop().toLowerCase();
+								const f = (files || []).find(
+									(x) => String(x?.name || x?.value || "").toLowerCase() === fname
+								);
+								return Boolean(f && (f.isSensitive || hasSensitiveTag(f)));
+							}}
+							canShare={Boolean(path && path !== "/" && !path.startsWith("/shared-to-me"))}
+							canPublishCivitai={Boolean(isCreationsDir && path && path.split("/").filter(Boolean).length >= 3)}
+							onImageClick={handleComicImageClick}
+							onShare={handleShareCurrentFolder}
+							onPublishCivitai={handlePublishCurrentStoryToCivitai}
+						/>
+					</div>
+				{/if}
+
 				{#if subfolders.length && !activeAlbum}
 					<div class="wx-cr-folders-row">
 						{#each subfolders as folder (folder.id)}
@@ -981,15 +1196,21 @@
 						{#each timelineGroups as group, gIdx (group.dayKey)}
 							{@const isNewMonth = gIdx === 0 || timelineGroups[gIdx - 1].monthKey !== group.monthKey}
 							<section class="wx-cr-day-group" data-cr-month={isNewMonth ? group.monthKey : undefined}>
-								<div class="wx-cr-day-head">
-									<div class="wx-cr-day-title-wrap">
-										<span class="wx-cr-day-label">{group.dayLabel}</span>
-										{#if group.topPlace}
-											<span class="wx-cr-day-place">📍 {group.topPlace}</span>
-										{/if}
+								{#if hasStoryComic && !activeAlbum && timelineGroups.length === 1}
+									<div class="wx-cr-story-footer-head">
+										<span>📎 {$i18nT("story_files_footer", {}, "Files")} · {group.items.length}</span>
 									</div>
-									<span class="wx-cr-day-cnt">{group.items.length}</span>
-								</div>
+								{:else}
+									<div class="wx-cr-day-head">
+										<div class="wx-cr-day-title-wrap">
+											<span class="wx-cr-day-label">{group.dayLabel}</span>
+											{#if group.topPlace}
+												<span class="wx-cr-day-place">📍 {group.topPlace}</span>
+											{/if}
+										</div>
+										<span class="wx-cr-day-cnt">{group.items.length}</span>
+									</div>
+								{/if}
 								<div class="wx-cameraroll-grid">
 									{#each group.items as entry (entry.id)}
 										<Item item={entry.raw} />
@@ -1002,7 +1223,7 @@
 			{/if}
 		</div>
 
-		{#if (crTab === "timeline" || activeAlbum) && monthScrubber.length >= 2 && (!isMobile || mobileScrubberOpen)}
+		{#if (effectiveCrTab === "timeline" || activeAlbum) && monthScrubber.length >= 2 && (!isMobile || mobileScrubberOpen)}
 			{#if isMobile && mobileScrubberOpen}
 				<!-- svelte-ignore a11y_click_events_have_key_events -->
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1552,5 +1773,89 @@
 	.wx-not-found-text {
 		text-align: center;
 		color: var(--wx-color-font-alt);
+	}
+
+	.wx-cr-story-lead {
+		padding: 6px 14px 0;
+	}
+
+	.wx-cr-story-footer-head {
+		display: flex;
+		align-items: center;
+		padding: 6px 12px 8px;
+		font-size: 12.5px;
+		font-weight: 650;
+		opacity: 0.72;
+		border-top: 1px solid var(--wx-border, rgba(128, 128, 150, 0.16));
+		margin: 4px 8px 2px;
+	}
+
+	.wx-cr-story-cta {
+		appearance: none;
+		border: 1px solid rgba(139, 92, 246, 0.45);
+		background: linear-gradient(135deg, rgba(124, 58, 237, 0.2), rgba(236, 72, 153, 0.18));
+		color: inherit;
+		border-radius: 999px;
+		padding: 5px 12px;
+		font-size: 12px;
+		font-weight: 650;
+		cursor: pointer;
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		transition: transform 0.12s ease, background 0.15s ease;
+	}
+
+	.wx-cr-story-cta:hover {
+		transform: translateY(-1px);
+		background: linear-gradient(135deg, rgba(124, 58, 237, 0.34), rgba(236, 72, 153, 0.28));
+	}
+
+	.wx-cr-album-card-wrap {
+		position: relative;
+		display: flex;
+		width: 100%;
+	}
+
+	.wx-cr-album-card-wrap > .wx-cr-album-card {
+		width: 100%;
+	}
+
+	.wx-cr-album-story-btn {
+		position: absolute;
+		top: 8px;
+		left: 8px;
+		z-index: 4;
+		width: 28px;
+		height: 28px;
+		border-radius: 50%;
+		border: 1px solid rgba(255, 255, 255, 0.25);
+		background: rgba(15, 15, 25, 0.78);
+		color: #fff;
+		font-size: 13px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+		opacity: 0;
+		transform: scale(0.92);
+		transition: opacity 0.15s ease, transform 0.15s ease, background 0.15s ease;
+	}
+
+	.wx-cr-album-card-wrap:hover .wx-cr-album-story-btn,
+	.wx-cr-album-story-btn:focus-visible {
+		opacity: 1;
+		transform: scale(1);
+	}
+
+	.wx-cr-album-story-btn:hover {
+		background: rgba(124, 58, 237, 0.92);
+	}
+
+	@media (hover: none) {
+		.wx-cr-album-story-btn {
+			opacity: 0.92;
+			transform: scale(1);
+		}
 	}
 </style>

@@ -10,14 +10,16 @@ export const VIDEO_EXTS = new Set([
 
 export const IGNORED_NAMES = new Set([
 	"thumbs.db", "desktop.ini", "ehthumbs.db", "ehthumbs_vista.db",
-	".ds_store", "ds_store", ".nomedia", "nomedia", ".trashed", "trashed"
+	".ds_store", "ds_store", ".nomedia", "nomedia", ".trashed", "trashed",
+	"story.json", "folder.jpg"
 ]);
 
 export function isAssociatedReadme(file) {
 	if (!file) return false;
 	const name = (file.name || file.value || "").trim();
-	if (name === "Readme.md" || name === "README.md") return true;
+	if (name === "Readme.md" || name === "README.md" || name === "readme.md") return true;
 	if (name.toLowerCase().endsWith(".readme.md")) return true;
+	if (/\.cover\.(jpe?g|png|webp)$/i.test(name)) return true;
 	return false;
 }
 

@@ -1972,5 +1972,22 @@
   "media_models": "Modèles et formats",
   "media_jump_date": "Aller à la date",
   "media_folders": "Dossiers",
-  "media_screenshots": "Captures d'écran"
+  "media_screenshots": "Captures d'écran",
+  "share_a_story": "Partager une histoire",
+  "story_modal_title": "Partager une histoire",
+  "story_modal_subtitle": "Copier les médias sélectionnés dans un sous-dossier et rédiger une mini-BD illustrée",
+  "story_subfolder_label": "Sous-dossier de l'histoire",
+  "story_plot_label": "Indice pour l'intrigue",
+  "story_plot_placeholder": "De quoi doit parler l'histoire ? Ton, ambiance ou idée clé...",
+  "story_create_btn": "Créer l'histoire illustrée",
+  "story_stage_copying": "Copie des fichiers multimédias...",
+  "story_stage_composing": "Le nœud IA rédige votre mini-BD...",
+  "story_stage_saving": "Enregistrement de Readme.md...",
+  "story_ready_title": "L'histoire est prête !",
+  "story_open_btn": "Ouvrir l'histoire",
+  "story_share_link_btn": "Partager le lien",
+  "story_publish_civitai_btn": "Publier sur CivitAI",
+  "story_files_footer": "Fichiers",
+  "story_select_items": "Sélectionnez au moins une photo ou vidéo",
+  "story_selected_count": "{count} médias sélectionnés"
 }

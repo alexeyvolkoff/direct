@@ -1972,5 +1972,22 @@
   "media_models": "Моделі та формати",
   "media_jump_date": "Перехід до дати",
   "media_folders": "Папки",
-  "media_screenshots": "Скріншоти"
+  "media_screenshots": "Скріншоти",
+  "share_a_story": "Створити історію",
+  "story_modal_title": "Поділитися історією",
+  "story_modal_subtitle": "Скопіювати вибрані медіа у підпапку та скласти ілюстрований міні-комікс",
+  "story_subfolder_label": "Підпапка для історії",
+  "story_plot_label": "Підказка для сюжету",
+  "story_plot_placeholder": "Про що скласти розповідь? Настрій, гумор або головна ідея...",
+  "story_create_btn": "Створити історію-комікс",
+  "story_stage_copying": "Копіюємо медіафайли у підпапку...",
+  "story_stage_composing": "ШІ-нода пише ілюстровану історію...",
+  "story_stage_saving": "Зберігаємо комікс Readme.md...",
+  "story_ready_title": "Історія-комікс готова!",
+  "story_open_btn": "Відкрити історію",
+  "story_share_link_btn": "Поділитися посиланням",
+  "story_publish_civitai_btn": "Опублікувати в CivitAI",
+  "story_files_footer": "Файли",
+  "story_select_items": "Виберіть хоча б одне фото чи відео",
+  "story_selected_count": "Вибрано медіа: {count}"
 }

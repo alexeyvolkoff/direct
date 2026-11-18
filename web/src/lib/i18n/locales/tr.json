@@ -1972,5 +1972,22 @@
   "media_models": "Modeller ve Formatlar",
   "media_jump_date": "Tarihe git",
   "media_folders": "Klasörler",
-  "media_screenshots": "Ekran görüntüleri"
+  "media_screenshots": "Ekran görüntüleri",
+  "share_a_story": "Hikaye paylaş",
+  "story_modal_title": "Bir Hikaye Paylaş",
+  "story_modal_subtitle": "Seçilen medyaları bir alt klasöre kopyalayın ve resimli mini çizgi roman oluşturun",
+  "story_subfolder_label": "Hikaye alt klasörü",
+  "story_plot_label": "Konu ipucu",
+  "story_plot_placeholder": "Hikaye ne hakkında olmalı? Ton, atmosfer veya ana fikir...",
+  "story_create_btn": "Hikaye Çizgi Romanı Oluştur",
+  "story_stage_copying": "Medya dosyaları kopyalanıyor...",
+  "story_stage_composing": "Yapay zeka düğümü hikayenizi yazıyor...",
+  "story_stage_saving": "Readme.md kaydediliyor...",
+  "story_ready_title": "Hikaye hazır!",
+  "story_open_btn": "Hikayeyi Aç",
+  "story_share_link_btn": "Bağlantıyı Paylaş",
+  "story_publish_civitai_btn": "CivitAI'da Yayınla",
+  "story_files_footer": "Dosyalar",
+  "story_select_items": "En az bir fotoğraf veya video seçin",
+  "story_selected_count": "{count} medya seçildi"
 }

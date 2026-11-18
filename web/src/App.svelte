@@ -49,6 +49,7 @@
   import MarkdownViewer from "./components/MarkdownViewer.svelte";
   import PairModal from "./components/PairModal.svelte";
   import ShareModal from "./components/ShareModal.svelte";
+  import ShareStoryModal from "./components/ShareStoryModal.svelte";
   import AddShareModal from "./components/AddShareModal.svelte";
   import FolderPicker from "./components/FolderPicker.svelte";
   import DeviceSettings from "./components/DeviceSettings.svelte";
@@ -412,6 +413,11 @@
   let showShareModal = false;
   let shareTargetItem = null;
   let shareTargetDevice = null;
+  let showShareStoryModal = false;
+  let shareStoryItems = [];
+  let shareStoryAlbumTitle = "";
+  let shareStoryParentFolderId = "";
+  let shareStoryIsCreations = false;
   let showAddShareModal = false;
   let showConfirmRevokeModal = false;
   let revokeTargetShareId = "";
@@ -4990,6 +4996,81 @@
     showShareModal = true;
   }
 
+  const STORY_MEDIA_EXT_RE = /\.(jpe?g|png|webp|gif|avif|bmp|mp4|webm|mov|m4v|mkv)$/i;
+  function isMediaItemForStory(f) {
+    if (!f || f.isDir || f.type === "folder") return false;
+    const nm = String(f.name || f.value || "");
+    if (!nm || nm.startsWith(".") || /\.cover\.jpe?g$/i.test(nm) || /^folder\.jpe?g$/i.test(nm)) return false;
+    return STORY_MEDIA_EXT_RE.test(nm);
+  }
+
+  function handleGlobalOpenShareStory(e) {
+    const d = (e && e.detail) || {};
+    if (!Array.isArray(d.items) || d.items.length === 0) return;
+    shareStoryItems = d.items;
+    shareStoryAlbumTitle = d.albumTitle || "";
+    shareStoryParentFolderId = d.explicitParentFolderId || "";
+    shareStoryIsCreations = Boolean(d.isCreations);
+    showShareStoryModal = true;
+  }
+
+  function handleGlobalShareFolder(e) {
+    const d = (e && e.detail) || {};
+    const folderId = d.folderId || "";
+    if (!folderId || folderId === "/") return;
+    const existing = fmApi ? fmApi.getFile(folderId) : null;
+    if (existing) {
+      openShareModal(existing);
+      return;
+    }
+    openShareModal({
+      id: folderId,
+      name: d.subfolderName || folderId.split("/").filter(Boolean).pop() || "Story",
+      type: "folder",
+      isDir: true,
+    });
+  }
+
+  function handleGlobalPublishStoryCivitai() {
+    openChatsApp();
+    chatActiveView = "creations";
+  }
+
+  async function refreshParentAfterStoryCreated(res) {
+    if (!res) return;
+    const parentId = res.parentFolderId;
+    const folderId = res.folderId;
+    if (typeof window !== "undefined" && window._folderItems) {
+      if (parentId) delete window._folderItems[parentId];
+      if (folderId) delete window._folderItems[folderId];
+    }
+    const parsedParent = parentId ? splitDeviceId(parentId) : null;
+    const dev = (parsedParent && resolveDevice(parsedParent.prefix)) || res.device || activeDevice;
+    if (dev?.drive && typeof dev.drive.clearCache === "function") {
+      try { await dev.drive.clearCache(); } catch (_) {}
+    }
+    if (fmApi && parentId && isRealFileManagerFolder(parentId)) {
+      fmApi.exec("request-data", { id: parentId, refresh: true });
+    }
+  }
+
+  async function handleOpenCreatedStory(res) {
+    if (!res || !res.folderId) return;
+    await refreshParentAfterStoryCreated(res);
+    const parsed = splitDeviceId(res.folderId);
+    const dev = (parsed && resolveDevice(parsed.prefix)) || res.device || activeDevice;
+    if (dev && parsed) {
+      try {
+        await ensureFolderAndParents(dev, parsed.path);
+      } catch (_) {}
+    }
+    if (currentApp === "chat") previousApp = "chat";
+    currentApp = "filemanager";
+    if (fmApi) {
+      fmApi.exec("set-path", { id: res.folderId });
+    }
+  }
+
   function updateOpenGraphMeta(res) {
     if (typeof document === "undefined" || !res) return;
     const brandTitle = getDomainBrandTitle();
@@ -5295,6 +5376,37 @@
         });
       }
     }
+    if (type === "multiselect" && Array.isArray(item) && fmApi) {
+      const hasMedia = item.some((fid) => {
+        if (!fid || String(fid).startsWith("/shared-")) return false;
+        return isMediaItemForStory(fmApi.getFile(fid));
+      });
+      if (hasMedia) {
+        opts.push({
+          id: "share-story",
+          text: translate("share_a_story", {}, "Share a story..."),
+          icon: "wxi-plus"
+        });
+      }
+    } else if (item && item.id && item.id !== "/" && !item.isDevice && !String(item.id).startsWith("/shared-")) {
+      if (isMediaItemForStory(item)) {
+        opts.push({
+          id: "share-story",
+          text: translate("share_a_story", {}, "Share a story..."),
+          icon: "wxi-plus"
+        });
+      } else if (type === "folder" && item.type === "folder") {
+        const parsedF = splitDeviceId(item.id);
+        if (parsedF && parsedF.path && parsedF.path !== "/") {
+          opts.push({
+            id: "share-story",
+            text: translate("share_a_story", {}, "Share a story..."),
+            icon: "wxi-plus"
+          });
+        }
+      }
+    }
+
     if (item && item.id && item.id !== "/" && !item.isDevice && identity && identity.type === "persistent") {
       opts.push({
         id: "share-item",
@@ -5434,6 +5546,81 @@
       const file = api.getFile(id);
       if (!file) return;
       openShareModal(file);
+    });
+
+    api.on("share-story", async ({ id, ids }) => {
+      if (Array.isArray(ids) && ids.length > 1) {
+        const mediaItems = ids
+          .map((fid) => api.getFile(fid))
+          .filter(isMediaItemForStory)
+          .map((f) => ({
+            ...f,
+            previewUrl: getPreview(f, 360) || "",
+          }));
+        if (mediaItems.length > 0) {
+          const parentId = currentFolderId && currentFolderId !== "/" && !currentFolderId.startsWith("/shared-")
+            ? currentFolderId
+            : "";
+          shareStoryItems = mediaItems;
+          shareStoryAlbumTitle = "";
+          shareStoryParentFolderId = parentId;
+          shareStoryIsCreations = /\/(generated|creations|onmychat)(\/|$)/i.test(parentId);
+          showShareStoryModal = true;
+        }
+        return;
+      }
+
+      const file = id ? api.getFile(id) : null;
+      if (!file) return;
+
+      if (file.type === "folder" || file.isDir) {
+        let childFiles = (typeof window !== "undefined" && window._folderItems && window._folderItems[file.id]) || [];
+        const parsed = splitDeviceId(file.id);
+        const dev = parsed ? resolveDevice(parsed.prefix) : null;
+        if ((!childFiles || childFiles.length === 0) && dev?.drive && typeof dev.drive.getFiles === "function") {
+          try {
+            const rawList = await dev.drive.getFiles(parsed.path);
+            childFiles = (rawList || []).map((rf) => {
+              const nm = rf.name || rf.value || "";
+              return {
+                ...rf,
+                id: `${file.id.replace(/\/+$/, "")}/${nm}`,
+                name: nm,
+              };
+            });
+          } catch (_) {}
+        }
+        const mediaItems = (childFiles || [])
+          .filter(isMediaItemForStory)
+          .map((f) => ({
+            ...f,
+            previewUrl: getPreview(f, 360) || "",
+          }));
+        if (mediaItems.length === 0) {
+          showToast(translate("story_select_items", {}, "No photos or videos found in this folder"));
+          return;
+        }
+        const parentId = typeof file.parent === "string" && file.parent !== "/"
+          ? file.parent
+          : (currentFolderId && currentFolderId !== "/" ? currentFolderId : "");
+        shareStoryItems = mediaItems;
+        shareStoryAlbumTitle = file.name || file.value || "";
+        shareStoryParentFolderId = parentId;
+        shareStoryIsCreations = /\/(generated|creations|onmychat)(\/|$)/i.test(file.id);
+        showShareStoryModal = true;
+        return;
+      }
+
+      if (isMediaItemForStory(file)) {
+        const parentId = typeof file.parent === "string" && file.parent !== "/"
+          ? file.parent
+          : (currentFolderId && currentFolderId !== "/" ? currentFolderId : "");
+        shareStoryItems = [{ ...file, previewUrl: getPreview(file, 360) || "" }];
+        shareStoryAlbumTitle = "";
+        shareStoryParentFolderId = parentId;
+        shareStoryIsCreations = /\/(generated|creations|onmychat)(\/|$)/i.test(parentId);
+        showShareStoryModal = true;
+      }
     });
 
     api.on("copy-share-url", ({ id }) => {
@@ -7144,7 +7331,12 @@ async function blobToBase64(blob) {
   };
 </script>
 
-<svelte:window on:keydown={handleKeydown} />
+<svelte:window
+  on:keydown={handleKeydown}
+  on:omd-open-share-story={handleGlobalOpenShareStory}
+  on:omd-share-folder={handleGlobalShareFolder}
+  on:omd-publish-story-civitai={handleGlobalPublishStoryCivitai}
+/>
 
 {#snippet filesOverlayClose()}
   <button
@@ -7469,6 +7661,25 @@ async function blobToBase64(blob) {
           on:shareRevoked={() => reloadSharedByMe()}
         />
       {/if}
+
+      <ShareStoryModal
+        show={showShareStoryModal}
+        {isDarkTheme}
+        items={shareStoryItems}
+        albumTitle={shareStoryAlbumTitle}
+        explicitParentFolderId={shareStoryParentFolderId}
+        isCreations={shareStoryIsCreations}
+        targetDevice={chatTargetDevice || activeDevice}
+        storageDevice={activeDevice}
+        deviceDrive={activeDevice?.drive || null}
+        httpDrive={chatTargetDevice ? getHttpDriveForDevice(chatTargetDevice) : fmHttpDrive}
+        omdKey={(identity && identity.profile && identity.profile.omd_key) || getStoredOmdKey() || ""}
+        on:close={() => { showShareStoryModal = false; }}
+        on:story-created={(e) => refreshParentAfterStoryCreated(e.detail)}
+        on:open-story={(e) => handleOpenCreatedStory(e.detail)}
+        on:share-folder={(e) => handleGlobalShareFolder({ detail: e.detail })}
+        on:publish-civitai={() => handleGlobalPublishStoryCivitai()}
+      />
 
       {#if showAddShareModal}
         <AddShareModal

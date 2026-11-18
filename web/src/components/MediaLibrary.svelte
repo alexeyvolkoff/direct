@@ -1663,8 +1663,63 @@
     };
   }
 
+  let selectMode = false;
+  let selectedTileIds = new Set();
+
+  function toggleSelectMode() {
+    selectMode = !selectMode;
+    if (!selectMode && selectedTileIds.size > 0) {
+      selectedTileIds = new Set();
+    }
+  }
+
+  function toggleTileSelected(item, e) {
+    if (e) e.stopPropagation();
+    if (!item || item.isOffline) return;
+    const next = new Set(selectedTileIds);
+    if (next.has(item.id)) {
+      next.delete(item.id);
+    } else {
+      next.add(item.id);
+    }
+    selectedTileIds = next;
+  }
+
+  function openShareStoryFromLibrary(itemsList, title = "") {
+    const online = (itemsList || []).filter((x) => x && !x.isOffline);
+    if (!online.length || typeof window === "undefined") return;
+    const enrichedForStory = online.map((m) => ({
+      ...m,
+      previewUrl: getItemThumbUrl(m, 360),
+    }));
+    window.dispatchEvent(
+      new CustomEvent("omd-open-share-story", {
+        detail: {
+          items: enrichedForStory,
+          albumTitle: title || "",
+          isCreations: online.length > 0 && online.every((x) => Boolean(x.isCreation)),
+        },
+      })
+    );
+    if (selectMode) {
+      selectMode = false;
+      selectedTileIds = new Set();
+    }
+  }
+
+  function openShareStoryForAutoAlbum(album, e) {
+    if (e) e.stopPropagation();
+    if (!album || !album.itemIds) return;
+    const itemsList = baseMediaPool.filter((m) => !m.isOffline && album.itemIds.has(m.id));
+    openShareStoryFromLibrary(itemsList, album.title || "");
+  }
+
   function handleTileClick(item, scopeList) {
     if (!item || item.isOffline) return;
+    if (selectMode || selectedTileIds.size > 0) {
+      toggleTileSelected(item);
+      return;
+    }
     if (isBlurredInCurrentMode(item)) {
       showSensitiveWorkNotice();
       return;
@@ -1821,6 +1876,31 @@
 
     <!-- Right Controls -->
     <div class="header-right">
+      {#if selectedTileIds.size > 0}
+        <button
+          type="button"
+          class="story-cta-pill"
+          on:click={() =>
+            openShareStoryFromLibrary(
+              baseMediaPool.filter((m) => selectedTileIds.has(m.id)),
+              activeAlbum?.title || ""
+            )}
+        >
+          📖 {$_("share_a_story", {}, "Share a story")} ({selectedTileIds.size})
+        </button>
+      {/if}
+
+      {#if (activeTab === "timeline" || activeAlbum) && filteredMedia.length > 0}
+        <button
+          type="button"
+          class="pill-toggle-btn"
+          class:active={selectMode || selectedTileIds.size > 0}
+          on:click={toggleSelectMode}
+        >
+          <span>✓ {$_("select", {}, "Select")}</span>
+        </button>
+      {/if}
+
       {#if creationsTotalCount > 0 || includeCreations}
         <button
           type="button"
@@ -1986,6 +2066,15 @@
           <span class="crumb-sep">/</span>
           <span class="crumb-title">{activeAlbum.title}</span>
           <span class="crumb-count">({filteredMedia.length})</span>
+          {#if filteredMedia.some((x) => !x.isOffline)}
+            <button
+              type="button"
+              class="story-cta-pill"
+              on:click={() => openShareStoryFromLibrary(filteredMedia, activeAlbum.title)}
+            >
+              📖 {$_("share_a_story", {}, "Share a story")}
+            </button>
+          {/if}
         </div>
       {/if}
 
@@ -2127,38 +2216,46 @@
               </div>
               <div class="album-cards-grid moments-grid">
                 {#each autoAlbums.moments as mAlbum (mAlbum.id)}
-                  <button type="button" class="album-collage-card" on:click={() => openAlbum(mAlbum)}>
-                    <div class="collage-cover count-{Math.min(3, mAlbum.coverItems.length)}">
-                      {#each mAlbum.coverItems.slice(0, 3) as cItem, idx (cItem.id)}
-                        {@const cUrl = getItemThumbUrl(cItem, idx === 0 ? 480 : 320, thumbUrls, imgFailed, inlineImgFailed, thumbBlobFailed)}
-                        <div class="collage-cell cell-{idx}" use:lazyObserveTile={cItem}>
-                          {#if cUrl}
-                            <img
-                              src={cUrl}
-                              alt=""
-                              loading="lazy"
-                              class:blurred-img={isBlurredInCurrentMode(cItem)}
-                              on:error={() => handleThumbError(cItem, cUrl)}
-                            />
-                          {:else if cItem.isOffline}
-                            <div class="tile-fallback offline-placeholder compact" title={$_("media_device_offline", {}, "Device offline")}>
-                              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8">
-                                <line x1="2" y1="2" x2="22" y2="22" />
-                                <path d="M17 17H7a2 2 0 0 1-2-2V5c0-.6.26-1.14.68-1.5" />
-                                <path d="M9 2h8a2 2 0 0 1 2 2v9" />
-                              </svg>
-                            </div>
-                          {:else}
-                            <div class="tile-fallback">🖼️</div>
-                          {/if}
-                        </div>
-                      {/each}
-                    </div>
-                    <div class="album-card-meta">
-                      <span class="album-card-title">{mAlbum.title}</span>
-                      <span class="album-card-count">{mAlbum.count}</span>
-                    </div>
-                  </button>
+                  <div class="album-card-wrap">
+                    <button type="button" class="album-collage-card" on:click={() => openAlbum(mAlbum)}>
+                      <div class="collage-cover count-{Math.min(3, mAlbum.coverItems.length)}">
+                        {#each mAlbum.coverItems.slice(0, 3) as cItem, idx (cItem.id)}
+                          {@const cUrl = getItemThumbUrl(cItem, idx === 0 ? 480 : 320, thumbUrls, imgFailed, inlineImgFailed, thumbBlobFailed)}
+                          <div class="collage-cell cell-{idx}" use:lazyObserveTile={cItem}>
+                            {#if cUrl}
+                              <img
+                                src={cUrl}
+                                alt=""
+                                loading="lazy"
+                                class:blurred-img={isBlurredInCurrentMode(cItem)}
+                                on:error={() => handleThumbError(cItem, cUrl)}
+                              />
+                            {:else if cItem.isOffline}
+                              <div class="tile-fallback offline-placeholder compact" title={$_("media_device_offline", {}, "Device offline")}>
+                                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8">
+                                  <line x1="2" y1="2" x2="22" y2="22" />
+                                  <path d="M17 17H7a2 2 0 0 1-2-2V5c0-.6.26-1.14.68-1.5" />
+                                  <path d="M9 2h8a2 2 0 0 1 2 2v9" />
+                                </svg>
+                              </div>
+                            {:else}
+                              <div class="tile-fallback">🖼️</div>
+                            {/if}
+                          </div>
+                        {/each}
+                      </div>
+                      <div class="album-card-meta">
+                        <span class="album-card-title">{mAlbum.title}</span>
+                        <span class="album-card-count">{mAlbum.count}</span>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      class="album-story-fab"
+                      title={$_("share_a_story", {}, "Share a story")}
+                      on:click={(e) => openShareStoryForAutoAlbum(mAlbum, e)}
+                    >📖</button>
+                  </div>
                 {/each}
               </div>
             </section>
@@ -2175,37 +2272,45 @@
                 {#each autoAlbums.landmarks as lmAlbum (lmAlbum.id)}
                   {@const cItem = lmAlbum.coverItem}
                   {@const cUrl = cItem ? getItemThumbUrl(cItem, 480, thumbUrls, imgFailed, inlineImgFailed, thumbBlobFailed) : ""}
-                  <button type="button" class="album-single-card" on:click={() => openAlbum(lmAlbum)}>
-                    <div class="single-cover" use:lazyObserveTile={cItem}>
-                      {#if cUrl}
-                        <img
-                          src={cUrl}
-                          alt={lmAlbum.title}
-                          loading="lazy"
-                          class:blurred-img={isBlurredInCurrentMode(cItem)}
-                          on:error={() => handleThumbError(cItem, cUrl)}
-                        />
-                      {:else if cItem?.isOffline}
-                        <div class="tile-fallback offline-placeholder cover-offline">
-                          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8">
-                            <line x1="2" y1="2" x2="22" y2="22" />
-                            <path d="M17 17H7a2 2 0 0 1-2-2V5c0-.6.26-1.14.68-1.5" />
-                            <path d="M9 2h8a2 2 0 0 1 2 2v9" />
-                          </svg>
-                          <span class="offline-cover-hint">{$_("media_device_offline", {}, "Device offline")}</span>
-                        </div>
-                      {:else}
-                        <div class="tile-fallback">🏛️</div>
-                      {/if}
-                      <div class="cover-gradient">
-                        <span class="cover-title">{lmAlbum.title}</span>
-                        {#if lmAlbum.subtitle}
-                          <span class="cover-sub">{lmAlbum.subtitle}</span>
+                  <div class="album-card-wrap">
+                    <button type="button" class="album-single-card" on:click={() => openAlbum(lmAlbum)}>
+                      <div class="single-cover" use:lazyObserveTile={cItem}>
+                        {#if cUrl}
+                          <img
+                            src={cUrl}
+                            alt={lmAlbum.title}
+                            loading="lazy"
+                            class:blurred-img={isBlurredInCurrentMode(cItem)}
+                            on:error={() => handleThumbError(cItem, cUrl)}
+                          />
+                        {:else if cItem?.isOffline}
+                          <div class="tile-fallback offline-placeholder cover-offline">
+                            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8">
+                              <line x1="2" y1="2" x2="22" y2="22" />
+                              <path d="M17 17H7a2 2 0 0 1-2-2V5c0-.6.26-1.14.68-1.5" />
+                              <path d="M9 2h8a2 2 0 0 1 2 2v9" />
+                            </svg>
+                            <span class="offline-cover-hint">{$_("media_device_offline", {}, "Device offline")}</span>
+                          </div>
+                        {:else}
+                          <div class="tile-fallback">🏛️</div>
                         {/if}
+                        <div class="cover-gradient">
+                          <span class="cover-title">{lmAlbum.title}</span>
+                          {#if lmAlbum.subtitle}
+                            <span class="cover-sub">{lmAlbum.subtitle}</span>
+                          {/if}
+                        </div>
+                        <span class="cover-count-pill">{lmAlbum.count}</span>
                       </div>
-                      <span class="cover-count-pill">{lmAlbum.count}</span>
-                    </div>
-                  </button>
+                    </button>
+                    <button
+                      type="button"
+                      class="album-story-fab"
+                      title={$_("share_a_story", {}, "Share a story")}
+                      on:click={(e) => openShareStoryForAutoAlbum(lmAlbum, e)}
+                    >📖</button>
+                  </div>
                 {/each}
               </div>
             </section>
@@ -2222,37 +2327,45 @@
                 {#each autoAlbums.places as plAlbum (plAlbum.id)}
                   {@const cItem = plAlbum.coverItem}
                   {@const cUrl = cItem ? getItemThumbUrl(cItem, 480, thumbUrls, imgFailed, inlineImgFailed, thumbBlobFailed) : ""}
-                  <button type="button" class="album-single-card" on:click={() => openAlbum(plAlbum)}>
-                    <div class="single-cover" use:lazyObserveTile={cItem}>
-                      {#if cUrl}
-                        <img
-                          src={cUrl}
-                          alt={plAlbum.title}
-                          loading="lazy"
-                          class:blurred-img={isBlurredInCurrentMode(cItem)}
-                          on:error={() => handleThumbError(cItem, cUrl)}
-                        />
-                      {:else if cItem?.isOffline}
-                        <div class="tile-fallback offline-placeholder cover-offline">
-                          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8">
-                            <line x1="2" y1="2" x2="22" y2="22" />
-                            <path d="M17 17H7a2 2 0 0 1-2-2V5c0-.6.26-1.14.68-1.5" />
-                            <path d="M9 2h8a2 2 0 0 1 2 2v9" />
-                          </svg>
-                          <span class="offline-cover-hint">{$_("media_device_offline", {}, "Device offline")}</span>
-                        </div>
-                      {:else}
-                        <div class="tile-fallback">📍</div>
-                      {/if}
-                      <div class="cover-gradient">
-                        <span class="cover-title">{plAlbum.title}</span>
-                        {#if plAlbum.subtitle}
-                          <span class="cover-sub">{plAlbum.subtitle}</span>
+                  <div class="album-card-wrap">
+                    <button type="button" class="album-single-card" on:click={() => openAlbum(plAlbum)}>
+                      <div class="single-cover" use:lazyObserveTile={cItem}>
+                        {#if cUrl}
+                          <img
+                            src={cUrl}
+                            alt={plAlbum.title}
+                            loading="lazy"
+                            class:blurred-img={isBlurredInCurrentMode(cItem)}
+                            on:error={() => handleThumbError(cItem, cUrl)}
+                          />
+                        {:else if cItem?.isOffline}
+                          <div class="tile-fallback offline-placeholder cover-offline">
+                            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8">
+                              <line x1="2" y1="2" x2="22" y2="22" />
+                              <path d="M17 17H7a2 2 0 0 1-2-2V5c0-.6.26-1.14.68-1.5" />
+                              <path d="M9 2h8a2 2 0 0 1 2 2v9" />
+                            </svg>
+                            <span class="offline-cover-hint">{$_("media_device_offline", {}, "Device offline")}</span>
+                          </div>
+                        {:else}
+                          <div class="tile-fallback">📍</div>
                         {/if}
+                        <div class="cover-gradient">
+                          <span class="cover-title">{plAlbum.title}</span>
+                          {#if plAlbum.subtitle}
+                            <span class="cover-sub">{plAlbum.subtitle}</span>
+                          {/if}
+                        </div>
+                        <span class="cover-count-pill">{plAlbum.count}</span>
                       </div>
-                      <span class="cover-count-pill">{plAlbum.count}</span>
-                    </div>
-                  </button>
+                    </button>
+                    <button
+                      type="button"
+                      class="album-story-fab"
+                      title={$_("share_a_story", {}, "Share a story")}
+                      on:click={(e) => openShareStoryForAutoAlbum(plAlbum, e)}
+                    >📖</button>
+                  </div>
                 {/each}
               </div>
             </section>
@@ -2385,9 +2498,11 @@
                     {@const isBlurred = isBlurredInCurrentMode(item)}
                     {@const viewerScope = activeAlbum ? filteredMedia : group.items}
                     {@const offlineTooltip = item.isOffline ? $_("media_offline_preview_only", { device: item.deviceLabel || "" }, "Original file is on an offline device") : ""}
+                    {@const isTileSelected = selectedTileIds.has(item.id)}
                     <div
                       class="media-tile"
                       class:is-offline={item.isOffline}
+                      class:is-selected={isTileSelected}
                       role={item.isOffline ? "group" : "button"}
                       tabindex={item.isOffline ? -1 : 0}
                       title={offlineTooltip}
@@ -2400,6 +2515,18 @@
                         }
                       }}
                     >
+                      {#if !item.isOffline}
+                        <button
+                          type="button"
+                          class="tile-select-check"
+                          class:visible={selectMode || isTileSelected}
+                          class:checked={isTileSelected}
+                          title={$_("select", {}, "Select")}
+                          on:click|stopPropagation={(e) => toggleTileSelected(item, e)}
+                        >
+                          {isTileSelected ? "✓" : ""}
+                        </button>
+                      {/if}
                       {#if tUrl}
                         <img
                           class="tile-img"
@@ -3565,5 +3692,112 @@
       max-width: none;
       flex-basis: 100%;
     }
+  }
+
+  .story-cta-pill {
+    appearance: none;
+    border: 1px solid rgba(139, 92, 246, 0.5);
+    background: linear-gradient(135deg, rgba(124, 58, 237, 0.24), rgba(236, 72, 153, 0.2));
+    color: inherit;
+    border-radius: 999px;
+    padding: 6px 13px;
+    font-size: 12.5px;
+    font-weight: 650;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+    transition: transform 0.12s ease, background 0.15s ease;
+  }
+
+  .story-cta-pill:hover {
+    transform: translateY(-1px);
+    background: linear-gradient(135deg, rgba(124, 58, 237, 0.38), rgba(236, 72, 153, 0.3));
+  }
+
+  .album-card-wrap {
+    position: relative;
+    display: flex;
+    width: 100%;
+  }
+
+  .album-card-wrap > .album-collage-card,
+  .album-card-wrap > .album-single-card {
+    width: 100%;
+  }
+
+  .album-story-fab {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 4;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    background: rgba(15, 15, 26, 0.8);
+    color: #fff;
+    font-size: 13.5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    transform: scale(0.92);
+    transition: opacity 0.15s ease, transform 0.15s ease, background 0.15s ease;
+  }
+
+  .album-card-wrap:hover .album-story-fab,
+  .album-story-fab:focus-visible {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  .album-story-fab:hover {
+    background: rgba(124, 58, 237, 0.94);
+  }
+
+  @media (hover: none) {
+    .album-story-fab {
+      opacity: 0.92;
+      transform: scale(1);
+    }
+  }
+
+  .media-tile.is-selected {
+    outline: 2.5px solid #8b5cf6;
+    outline-offset: -2.5px;
+  }
+
+  .tile-select-check {
+    position: absolute;
+    top: 7px;
+    left: 7px;
+    z-index: 5;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.85);
+    background: rgba(12, 12, 22, 0.55);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s ease, background 0.15s ease, transform 0.12s ease;
+  }
+
+  .media-tile:hover .tile-select-check,
+  .tile-select-check.visible {
+    opacity: 1;
+  }
+
+  .tile-select-check.checked {
+    background: #7c3aed;
+    border-color: #c4b5fd;
   }
 </style>

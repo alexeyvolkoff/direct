@@ -1972,5 +1972,22 @@
   "media_models": "מודלים ופורמטים",
   "media_jump_date": "קפיצה לתאריך",
   "media_folders": "תיקיות",
-  "media_screenshots": "צילומי מסך"
+  "media_screenshots": "צילומי מסך",
+  "share_a_story": "שתף סיפור",
+  "story_modal_title": "שתף סיפור מאויר",
+  "story_modal_subtitle": "העתק מדיה נבחרת לתיקיית משנה וצור מיני-קומיקס מאויר",
+  "story_subfolder_label": "תיקיית משנה לסיפור",
+  "story_plot_label": "רמז לעלילה",
+  "story_plot_placeholder": "על מה הסיפור צריך להיות? אווירה, סגנון או רעיון מרכזי...",
+  "story_create_btn": "צור קומיקס סיפור",
+  "story_stage_copying": "מעתיק קובצי מדיה לתיקייה...",
+  "story_stage_composing": "צומת ה-AI כותב את הסיפור המאויר...",
+  "story_stage_saving": "שומר Readme.md...",
+  "story_ready_title": "הסיפור מוכן!",
+  "story_open_btn": "פתח סיפור",
+  "story_share_link_btn": "שתף קישור",
+  "story_publish_civitai_btn": "פרסם ב-CivitAI",
+  "story_files_footer": "קבצים",
+  "story_select_items": "בחר לפחות תמונה או סרטון אחד",
+  "story_selected_count": "נבחרו {count} פריטי מדיה"
 }

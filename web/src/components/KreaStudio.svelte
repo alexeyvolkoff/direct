@@ -34,6 +34,9 @@
     buildTimelineDayGroups,
     buildMonthScrubberMarkers,
   } from "../lib/media-albums.js";
+  import { isStoryOrLongReadme, parseStoryReadmeMeta } from "../lib/story-composer.js";
+  import StoryComicView from "./StoryComicView.svelte";
+  import ShareStoryModal from "./ShareStoryModal.svelte";
   import defaultKreaPresets from "../lib/krea_presets.json";
 
   let civitaiAccounts = [];
@@ -5069,6 +5072,260 @@
     showCivitaiPublishModal = true;
   }
 
+  let activeStoryReadme = "";
+  let showKreaShareStoryModal = false;
+  let kreaShareStoryItems = [];
+  let kreaShareStoryTitle = "";
+  let kreaSelectMode = false;
+  let kreaSelectedIds = new Set();
+
+  $: hasKreaStoryComic = Boolean(activeStorySubfolder && isStoryOrLongReadme(activeStoryReadme));
+  $: kreaComicMediaVer = items.length + Object.keys(imageBlobCache).length + Object.keys(thumbBlobCache).length;
+
+  async function loadActiveKreaStoryReadme(slug = activeStorySubfolder) {
+    if (!slug) {
+      activeStoryReadme = "";
+      return;
+    }
+    const folderReal = `${getTargetFolder()}/${slug}`.replace(/\/+/g, "/");
+    const readmeReal = `${folderReal}/Readme.md`;
+    const drive = getTargetDrive();
+    let txt = "";
+    try {
+      if (drive) {
+        txt = (await readDriveText(drive, readmeReal).catch(() => "")) || "";
+      }
+      if (!txt) {
+        const dev = activeDevSegment || getDevSegment();
+        const r = await fetch(`/p2p/${dev}${encodeURI(readmeReal)}`).catch(() => null);
+        if (r && r.ok) {
+          const ct = (r.headers.get("content-type") || "").toLowerCase();
+          if (!ct.includes("text/html")) {
+            txt = await r.text();
+          }
+        }
+      }
+    } catch (_) {}
+    if (activeStorySubfolder === slug) {
+      activeStoryReadme = txt || "";
+    }
+  }
+
+  $: if (!activeStorySubfolder) {
+    activeStoryReadme = "";
+  }
+
+  function resolveKreaComicMediaUrl(relOrName = "") {
+    const low = String(relOrName || "").split("/").pop().toLowerCase();
+    const matched = items.find((it) => String(it?.name || "").toLowerCase() === low);
+    if (matched) {
+      return matched.isVideo ? getFullImageUrl(matched) : getViewImageUrl(matched);
+    }
+    if (!activeStorySubfolder || !low) return "";
+    const dev = activeDevSegment || getDevSegment();
+    const fallbackPath = `${getTargetFolder()}/${activeStorySubfolder}/${String(relOrName || "").replace(/^\.\//, "")}`.replace(/\/+/g, "/");
+    return `/p2p/${dev}${encodeURI(fallbackPath)}`;
+  }
+
+  function resolveKreaComicPosterUrl(relOrName = "") {
+    const low = String(relOrName || "").split("/").pop().toLowerCase();
+    const matched = items.find((it) => String(it?.name || "").toLowerCase() === low);
+    return matched ? getVideoPosterUrl(matched) : "";
+  }
+
+  function handleKreaComicImageClick(e) {
+    const low = String(e?.detail?.filename || e?.filename || "").toLowerCase();
+    const matched = items.find((it) => String(it?.name || "").toLowerCase() === low);
+    if (matched) {
+      openGallery(matched, items);
+    }
+  }
+
+  function shareKreaStoryFolder(slug = activeStorySubfolder) {
+    if (!slug || typeof window === "undefined") return;
+    const dev = activeDevSegment || getDevSegment();
+    const folderId = `/${dev}${getTargetFolder()}/${slug}`.replace(/\/+/g, "/");
+    window.dispatchEvent(
+      new CustomEvent("omd-share-folder", {
+        detail: { folderId },
+      })
+    );
+  }
+
+  function toggleKreaSelectMode() {
+    kreaSelectMode = !kreaSelectMode;
+    if (!kreaSelectMode && kreaSelectedIds.size > 0) {
+      kreaSelectedIds = new Set();
+    }
+  }
+
+  function toggleKreaCardSelected(item, e) {
+    if (e) e.stopPropagation();
+    if (!item) return;
+    const next = new Set(kreaSelectedIds);
+    if (next.has(item.id)) {
+      next.delete(item.id);
+    } else {
+      next.add(item.id);
+    }
+    kreaSelectedIds = next;
+  }
+
+  function openKreaShareStory(rawList, title = "") {
+    if (!Array.isArray(rawList) || rawList.length === 0) return;
+    const dev = activeDevSegment || getDevSegment();
+    kreaShareStoryItems = rawList.map((it) => ({
+      ...it,
+      filename: it.name,
+      docId: `/${dev}${it.path?.startsWith("/") ? it.path : "/" + (it.path || "")}`,
+      resolvedSeg: dev,
+      resolvedPath: it.path?.startsWith("/") ? it.path : "/" + (it.path || ""),
+      isSensitive: Boolean(it.sensitive),
+      previewUrl: it.isVideo ? getVideoPosterUrl(it) : getThumbnailUrl(it),
+    }));
+    kreaShareStoryTitle = title || "";
+    showKreaShareStoryModal = true;
+    if (kreaSelectMode) {
+      kreaSelectMode = false;
+      kreaSelectedIds = new Set();
+    }
+  }
+
+  function openKreaShareStoryForAlbum(alb, e) {
+    if (e) e.stopPropagation();
+    if (!alb || !alb.itemIds) return;
+    const list = items.filter((it) => alb.itemIds.has(it.id));
+    openKreaShareStory(list, alb.title || "");
+  }
+
+  async function openPublishStoryFolderToCivitai(slug = activeStorySubfolder) {
+    const cleanSlug = String(slug || "").trim();
+    if (!cleanSlug) return;
+
+    const drive = getTargetDrive();
+    const dev = activeDevSegment || getDevSegment();
+    const folderReal = `${getTargetFolder()}/${cleanSlug}`.replace(/\/+/g, "/");
+
+    let readmeTxt = "";
+    let storyJson = null;
+    try {
+      if (drive) {
+        readmeTxt = (await readDriveText(drive, `${folderReal}/Readme.md`).catch(() => "")) || "";
+        const rawJson = await readDriveText(drive, `${folderReal}/story.json`).catch(() => "");
+        if (rawJson) storyJson = JSON.parse(rawJson);
+      }
+      if (!readmeTxt) {
+        const r = await fetch(`/p2p/${dev}${encodeURI(`${folderReal}/Readme.md`)}`).catch(() => null);
+        if (r && r.ok && !(r.headers.get("content-type") || "").includes("text/html")) {
+          readmeTxt = await r.text();
+        }
+      }
+    } catch (_) {}
+
+    // Gather image files inside the story folder
+    let candidateImages = [];
+    if (activeStorySubfolder === cleanSlug && items.length > 0) {
+      candidateImages = items
+        .filter((it) => !it.isVideo && !/^(?:folder\.jpg|.*\.cover\.jpe?g)$/i.test(it.name || ""))
+        .map((it) => ({
+          name: it.name,
+          path: it.path || `${folderReal}/${it.name}`,
+          story_slug: cleanSlug,
+          prompt: it.prompt || "",
+          blob: it.blob || null,
+          blobUrl: it.blobUrl || imageBlobCache[it.path] || imageBlobCache[it.name] || "",
+        }));
+    } else {
+      let rawFiles = [];
+      if (drive && typeof drive.getFiles === "function") {
+        rawFiles = (await drive.getFiles(folderReal).catch(() => [])) || [];
+      } else if (httpDrive && typeof httpDrive.fetch === "function") {
+        const r = await httpDrive.fetch(`/api/v1/files?path=${encodeURIComponent(folderReal)}`).catch(() => null);
+        if (r && r.ok) {
+          const dj = await r.json();
+          rawFiles = dj.list || dj.files || [];
+        }
+      }
+      candidateImages = rawFiles
+        .filter((f) => {
+          const nm = f?.name || f?.value || "";
+          return nm && !f.isDir && /\.(jpe?g|png|webp)$/i.test(nm) && !/^(?:folder\.jpg|.*\.cover\.jpe?g)$/i.test(nm);
+        })
+        .sort((a, b) => String(a.name || a.value).localeCompare(String(b.name || b.value), undefined, { numeric: true }))
+        .map((f) => {
+          const nm = f.name || f.value;
+          return {
+            name: nm,
+            path: `${folderReal}/${nm}`,
+            story_slug: cleanSlug,
+            prompt: "",
+            blob: null,
+            blobUrl: "",
+          };
+        });
+    }
+
+    if (candidateImages.length === 0) {
+      generationError = $_("civitai_err_no_scenes", {}, "No image frames found in this story folder to publish.");
+      return;
+    }
+
+    const parsedMeta = parseStoryReadmeMeta(readmeTxt);
+    // Order images by Readme.md narrative order first, then any remaining images in the folder (max 20 per CivitAI post)
+    const byLower = new Map(candidateImages.map((img) => [img.name.toLowerCase(), img]));
+    const ordered = [];
+    const picked = new Set();
+    for (const refName of parsedMeta.referencedFiles) {
+      const m = byLower.get(refName.toLowerCase());
+      if (m && !picked.has(m.name.toLowerCase())) {
+        picked.add(m.name.toLowerCase());
+        ordered.push(m);
+      }
+    }
+    for (const img of candidateImages) {
+      if (!picked.has(img.name.toLowerCase())) {
+        picked.add(img.name.toLowerCase());
+        ordered.push(img);
+      }
+    }
+
+    civitaiPubMode = "story";
+    civitaiPubItems = ordered.slice(0, 20);
+    civitaiPubTitle = (
+      parsedMeta.title ||
+      storyJson?.story_title ||
+      cleanSlug.replace(/_/g, " ")
+    ).trim();
+    civitaiPubDetail = (
+      parsedMeta.cleanDetail ||
+      (Array.isArray(storyJson?.scenes)
+        ? storyJson.scenes
+            .map((s) => (s.narrative ? `${s.title ? `**${s.scene_number}. ${s.title}**\n` : ""}${s.narrative}` : ""))
+            .filter(Boolean)
+            .join("\n\n")
+        : "")
+    ).trim();
+    civitaiPubTags = "";
+    civitaiPubPersonaId = (selectedPersona && selectedPersona.id !== "none") ? selectedPersona.id : "";
+    civitaiPubError = "";
+    civitaiPubResult = null;
+
+    if (!civitaiPubAccountId) {
+      let savedAcc = "";
+      try { savedAcc = window.localStorage.getItem("omc_civitai_pub_account") || ""; } catch (_) {}
+      if (savedAcc && (effectiveCivitaiAccounts || []).some((a) => a.id === savedAcc)) {
+        civitaiPubAccountId = savedAcc;
+      } else if (effectiveCivitaiAccounts && effectiveCivitaiAccounts.length > 0) {
+        civitaiPubAccountId = effectiveCivitaiAccounts[0].id;
+      } else if (civitaiAccounts && civitaiAccounts.length > 0) {
+        civitaiPubAccountId = civitaiAccounts[0].id;
+      } else {
+        civitaiPubAccountId = "custom";
+      }
+    }
+    showCivitaiPublishModal = true;
+  }
+
   async function submitCivitaiPublish() {
     if (isPublishingCivitai || !civitaiPubItems.length) return;
     const rawCustomTok = civitaiPubCustomToken.trim();
@@ -6204,6 +6461,7 @@
     }
     await loadCreations();
     if (sub) {
+      loadActiveKreaStoryReadme(sub);
       const match = savedStoriesList.find((s) => s.story_slug === sub);
       if (match) {
         openSavedStory(match);
@@ -7222,6 +7480,15 @@
                   ← {$_("media_all_albums", {}, "All albums")}
                 </button>
                 <span class="krea-crumb-title">{activeKreaAlbum.title} ({filteredKreaItems.length})</span>
+                {#if filteredKreaItems.length > 0}
+                  <button
+                    type="button"
+                    class="story-open-director-chip krea-story-cta"
+                    on:click={() => openKreaShareStory(filteredKreaItems, activeKreaAlbum.title)}
+                  >
+                    📖 {$_("share_a_story", {}, "Share a story")}
+                  </button>
+                {/if}
               </div>
             {:else if storyFolders.length > 0 || activeStorySubfolder}
               <div class="story-folders-inline">
@@ -7253,26 +7520,67 @@
                     🎬 {$_("krea_storyboard_tab", {}, "Storyboard")}
                   </button>
                 {/if}
+                {#if activeStorySubfolder}
+                  <button
+                    type="button"
+                    class="story-open-director-chip krea-civitai-cta"
+                    on:click={() => openPublishStoryFolderToCivitai(activeStorySubfolder)}
+                  >
+                    🚀 {$_("story_publish_civitai_btn", {}, "Publish to CivitAI")}
+                  </button>
+                  <button
+                    type="button"
+                    class="story-open-director-chip"
+                    on:click={() => shareKreaStoryFolder(activeStorySubfolder)}
+                  >
+                    🔗 {$_("story_share_link_btn", {}, "Share Link")}
+                  </button>
+                {/if}
               </div>
             {/if}
           </div>
 
-          {#if isMobile && (kreaGalleryMode === "timeline" || activeKreaAlbum || activeStorySubfolder) && kreaMonthScrubber.length >= 2}
-            <button
-              type="button"
-              class="krea-scrubber-btn"
-              class:active={kreaScrubberOpen}
-              title={$_("media_jump_date", {}, "Jump to date")}
-              on:click={() => (kreaScrubberOpen = !kreaScrubberOpen)}
-            >
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                <line x1="16" y1="2" x2="16" y2="6" />
-                <line x1="8" y1="2" x2="8" y2="6" />
-                <line x1="3" y1="10" x2="21" y2="10" />
-              </svg>
-            </button>
-          {/if}
+          <div class="krea-subbar-right">
+            {#if kreaSelectedIds.size > 0}
+              <button
+                type="button"
+                class="story-open-director-chip krea-story-cta"
+                on:click={() =>
+                  openKreaShareStory(
+                    items.filter((it) => kreaSelectedIds.has(it.id)),
+                    activeKreaAlbum?.title || ""
+                  )}
+              >
+                📖 {$_("share_a_story", {}, "Share a story")} ({kreaSelectedIds.size})
+              </button>
+            {/if}
+            {#if (kreaGalleryMode === "timeline" || activeKreaAlbum) && filteredKreaItems.length > 0 && !activeStorySubfolder}
+              <button
+                type="button"
+                class="story-folder-pill"
+                class:active={kreaSelectMode || kreaSelectedIds.size > 0}
+                on:click={toggleKreaSelectMode}
+              >
+                ✓ {$_("select", {}, "Select")}
+              </button>
+            {/if}
+            {#if isMobile && (kreaGalleryMode === "timeline" || activeKreaAlbum || activeStorySubfolder) && kreaMonthScrubber.length >= 2}
+              <button
+                type="button"
+                class="krea-scrubber-btn"
+                class:active={kreaScrubberOpen}
+                title={$_("media_jump_date", {}, "Jump to date")}
+                on:click={() => (kreaScrubberOpen = !kreaScrubberOpen)}
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                  <line x1="16" y1="2" x2="16" y2="6" />
+                  <line x1="8" y1="2" x2="8" y2="6" />
+                  <line x1="3" y1="10" x2="21" y2="10" />
+                </svg>
+              </button>
+            {/if}
+          </div>
         </div>
 
         {#if isLoadingFiles && items.length === 0 && !isGenerating}
@@ -7333,29 +7641,37 @@
                 </div>
                 <div class="krea-albums-grid">
                   {#each kreaAutoAlbums.stories as stAlb (stAlb.id)}
-                    <button
-                      type="button"
-                      class="krea-album-card"
-                      on:click={() => {
-                        setKreaGalleryMode("timeline");
-                        selectStorySubfolder(stAlb.slug);
-                      }}
-                    >
-                      <div class="krea-album-cover">
-                        {#if stAlb.coverUrl}
-                          <img src={stAlb.coverUrl} alt={stAlb.title} loading="lazy" />
-                        {:else}
-                          <div class="krea-album-fallback folder-fallback">
-                            <svg viewBox="0 0 16 16" width="64" height="64" aria-hidden="true">
-                              <path fill="currentColor" d="M9.828 3h3.982a2 2 0 0 1 1.992 2.181l-.637 7A2 2 0 0 1 13.174 14H2.825a2 2 0 0 1-1.991-1.819l-.637-7a2 2 0 0 1 .342-1.31L.5 3a2 2 0 0 1 2-2h3.672a2 2 0 0 1 1.414.586l.828.828A2 2 0 0 0 9.828 3m-8.322.12q.322-.119.684-.12h5.396l-.707-.707A1 1 0 0 0 6.172 2H2.5a1 1 0 0 0-1 .981z" />
-                            </svg>
+                    <div class="krea-album-card-wrap">
+                      <button
+                        type="button"
+                        class="krea-album-card"
+                        on:click={() => {
+                          setKreaGalleryMode("timeline");
+                          selectStorySubfolder(stAlb.slug);
+                        }}
+                      >
+                        <div class="krea-album-cover">
+                          {#if stAlb.coverUrl}
+                            <img src={stAlb.coverUrl} alt={stAlb.title} loading="lazy" />
+                          {:else}
+                            <div class="krea-album-fallback folder-fallback">
+                              <svg viewBox="0 0 16 16" width="64" height="64" aria-hidden="true">
+                                <path fill="currentColor" d="M9.828 3h3.982a2 2 0 0 1 1.992 2.181l-.637 7A2 2 0 0 1 13.174 14H2.825a2 2 0 0 1-1.991-1.819l-.637-7a2 2 0 0 1 .342-1.31L.5 3a2 2 0 0 1 2-2h3.672a2 2 0 0 1 1.414.586l.828.828A2 2 0 0 0 9.828 3m-8.322.12q.322-.119.684-.12h5.396l-.707-.707A1 1 0 0 0 6.172 2H2.5a1 1 0 0 0-1 .981z" />
+                              </svg>
+                            </div>
+                          {/if}
+                          <div class="krea-album-grad">
+                            <span class="krea-album-title">{stAlb.title}</span>
                           </div>
-                        {/if}
-                        <div class="krea-album-grad">
-                          <span class="krea-album-title">{stAlb.title}</span>
                         </div>
-                      </div>
-                    </button>
+                      </button>
+                      <button
+                        type="button"
+                        class="krea-album-fab civitai"
+                        title={$_("story_publish_civitai_btn", {}, "Publish to CivitAI")}
+                        on:click|stopPropagation={() => openPublishStoryFolderToCivitai(stAlb.slug)}
+                      >🚀</button>
+                    </div>
                   {/each}
                 </div>
               </div>
@@ -7372,19 +7688,27 @@
                     {@const cItem = mAlb.coverItem}
                     {@const cUrl = cItem ? (cItem.isVideo ? getVideoPosterUrl(cItem) : getThumbnailUrl(cItem)) : ""}
                     {@const blurCover = Boolean(cItem && effectiveContentMode !== "fun" && cItem.sensitive)}
-                    <button type="button" class="krea-album-card compact" on:click={() => openKreaAlbum(mAlb)}>
-                      <div class="krea-album-cover">
-                        {#if cUrl}
-                          <img src={cUrl} alt={mAlb.title} loading="lazy" class:sensitive-blur={blurCover} />
-                        {:else}
-                          <div class="krea-album-fallback">🎛️</div>
-                        {/if}
-                        <div class="krea-album-grad">
-                          <span class="krea-album-title">{mAlb.title}</span>
+                    <div class="krea-album-card-wrap">
+                      <button type="button" class="krea-album-card compact" on:click={() => openKreaAlbum(mAlb)}>
+                        <div class="krea-album-cover">
+                          {#if cUrl}
+                            <img src={cUrl} alt={mAlb.title} loading="lazy" class:sensitive-blur={blurCover} />
+                          {:else}
+                            <div class="krea-album-fallback">🎛️</div>
+                          {/if}
+                          <div class="krea-album-grad">
+                            <span class="krea-album-title">{mAlb.title}</span>
+                          </div>
+                          <span class="krea-album-count">{mAlb.count}</span>
                         </div>
-                        <span class="krea-album-count">{mAlb.count}</span>
-                      </div>
-                    </button>
+                      </button>
+                      <button
+                        type="button"
+                        class="krea-album-fab"
+                        title={$_("share_a_story", {}, "Share a story")}
+                        on:click|stopPropagation={(e) => openKreaShareStoryForAlbum(mAlb, e)}
+                      >📖</button>
+                    </div>
                   {/each}
                 </div>
               </div>
@@ -7401,19 +7725,27 @@
                     {@const cItem = tAlb.coverItem}
                     {@const cUrl = cItem ? (cItem.isVideo ? getVideoPosterUrl(cItem) : getThumbnailUrl(cItem)) : ""}
                     {@const blurCover = Boolean(cItem && effectiveContentMode !== "fun" && cItem.sensitive)}
-                    <button type="button" class="krea-album-card compact" on:click={() => openKreaAlbum(tAlb)}>
-                      <div class="krea-album-cover">
-                        {#if cUrl}
-                          <img src={cUrl} alt={tAlb.title} loading="lazy" class:sensitive-blur={blurCover} />
-                        {:else}
-                          <div class="krea-album-fallback">#</div>
-                        {/if}
-                        <div class="krea-album-grad">
-                          <span class="krea-album-title">{tAlb.title}</span>
+                    <div class="krea-album-card-wrap">
+                      <button type="button" class="krea-album-card compact" on:click={() => openKreaAlbum(tAlb)}>
+                        <div class="krea-album-cover">
+                          {#if cUrl}
+                            <img src={cUrl} alt={tAlb.title} loading="lazy" class:sensitive-blur={blurCover} />
+                          {:else}
+                            <div class="krea-album-fallback">#</div>
+                          {/if}
+                          <div class="krea-album-grad">
+                            <span class="krea-album-title">{tAlb.title}</span>
+                          </div>
+                          <span class="krea-album-count">{tAlb.count}</span>
                         </div>
-                        <span class="krea-album-count">{tAlb.count}</span>
-                      </div>
-                    </button>
+                      </button>
+                      <button
+                        type="button"
+                        class="krea-album-fab"
+                        title={$_("share_a_story", {}, "Share a story")}
+                        on:click|stopPropagation={(e) => openKreaShareStoryForAlbum(tAlb, e)}
+                      >📖</button>
+                    </div>
                   {/each}
                 </div>
               </div>
@@ -7432,6 +7764,28 @@
             bind:clientWidth={kreaStreamWidth}
             style={!isMobile ? `--krea-cols: ${kreaGridCols};` : ""}
           >
+            {#if activeStorySubfolder && hasKreaStoryComic}
+              <div class="krea-story-comic-lead" style={!isMobile ? "grid-column: 1 / -1; min-width: 0;" : ""}>
+                <StoryComicView
+                  markdown={activeStoryReadme}
+                  folderTitle={activeStorySubfolder}
+                  {isDarkTheme}
+                  mediaVersion={kreaComicMediaVer}
+                  resolveMediaUrl={resolveKreaComicMediaUrl}
+                  resolvePosterUrl={resolveKreaComicPosterUrl}
+                  isSensitiveMedia={(rel) => {
+                    const low = String(rel || "").split("/").pop().toLowerCase();
+                    const m = items.find((x) => String(x?.name || "").toLowerCase() === low);
+                    return Boolean(m && m.sensitive);
+                  }}
+                  canShare={true}
+                  canPublishCivitai={true}
+                  on:image-click={handleKreaComicImageClick}
+                  on:share={() => shareKreaStoryFolder(activeStorySubfolder)}
+                  on:publish-civitai={() => openPublishStoryFolderToCivitai(activeStorySubfolder)}
+                />
+              </div>
+            {/if}
             {#if isGenerating}
               <div class="krea-day-group" style={!isMobile ? "grid-column: span 1; min-width: 0;" : ""}>
                 <div class="krea-day-sticky-head">
@@ -7508,10 +7862,16 @@
                 style={!isMobile ? `${isNewMonth && kgIdx > 0 ? "grid-column-start: 1; " : ""}grid-column-end: span ${groupSpan}; min-width: 0;` : ""}
                 data-krea-month={isNewMonth ? kGroup.monthKey : undefined}
               >
-                <div class="krea-day-sticky-head" class:is-sticky-head={isMobile || kGroup.items.length > kreaGridCols}>
-                  <span class="krea-day-label" title={kGroup.dayLabel}>{kGroup.dayLabel}</span>
-                  <span class="krea-day-count">{kGroup.items.length}</span>
-                </div>
+                {#if activeStorySubfolder && hasKreaStoryComic && kreaTimelineGroups.length <= 1}
+                  <div class="krea-story-files-footer-head">
+                    <span>📎 {$_("story_files_footer", {}, "Files")} · {kGroup.items.length}</span>
+                  </div>
+                {:else}
+                  <div class="krea-day-sticky-head" class:is-sticky-head={isMobile || kGroup.items.length > kreaGridCols}>
+                    <span class="krea-day-label" title={kGroup.dayLabel}>{kGroup.dayLabel}</span>
+                    <span class="krea-day-count">{kGroup.items.length}</span>
+                  </div>
+                {/if}
                 <div
                   class="gallery-grid"
                   style={!isMobile ? `grid-template-columns: repeat(${groupSpan}, minmax(0, 1fr));` : ""}
@@ -7521,7 +7881,8 @@
               {@const itemShouldBlur = effectiveContentMode !== "fun" && Boolean(item.sensitive)}
               {@const clickScope = activeKreaAlbum ? filteredKreaItems : kGroup.items}
               {@const immediateMemUrl = getImmediateMemoryUrl(item, imageBlobCache, thumbBlobCache)}
-              <div class="gallery-card" class:is-attached-ref={itemRefIdx >= 0} class:is-sensitive-card={itemShouldBlur}>
+              {@const isKreaSelected = kreaSelectedIds.has(item.id)}
+              <div class="gallery-card" class:is-attached-ref={itemRefIdx >= 0} class:is-sensitive-card={itemShouldBlur} class:is-story-selected={isKreaSelected}>
                 <!-- svelte-ignore a11y-click-events-have-key-events -->
                 <!-- svelte-ignore a11y-no-static-element-interactions -->
                 <div
@@ -7530,8 +7891,19 @@
                   class:is-sensitive-thumb-wrap={itemShouldBlur}
                   role="button"
                   tabindex="0"
-                  on:click={() => openGallery(item, clickScope)}
-                  on:keydown={(e) => e.key === "Enter" && openGallery(item, clickScope)}
+                  on:click={() => {
+                    if (kreaSelectMode || kreaSelectedIds.size > 0) {
+                      toggleKreaCardSelected(item);
+                    } else {
+                      openGallery(item, clickScope);
+                    }
+                  }}
+                  on:keydown={(e) => {
+                    if (e.key === "Enter") {
+                      if (kreaSelectMode || kreaSelectedIds.size > 0) toggleKreaCardSelected(item);
+                      else openGallery(item, clickScope);
+                    }
+                  }}
                   on:mouseenter={() => {
                     if (item.isVideo && !itemShouldBlur) hoveredVideoId = item.id;
                   }}
@@ -7542,6 +7914,18 @@
                     }
                   }}
                 >
+                  {#if !activeStorySubfolder}
+                    <button
+                      type="button"
+                      class="krea-card-select-check"
+                      class:visible={kreaSelectMode || isKreaSelected}
+                      class:checked={isKreaSelected}
+                      title={$_("select", {}, "Select")}
+                      on:click|stopPropagation={(e) => toggleKreaCardSelected(item, e)}
+                    >
+                      {isKreaSelected ? "✓" : ""}
+                    </button>
+                  {/if}
                   {#if item.isVideo}
                     {#if immediateMemUrl}
                       <img
@@ -10472,6 +10856,43 @@
       </div>
     </div>
   {/if}
+
+  <ShareStoryModal
+    show={showKreaShareStoryModal}
+    {isDarkTheme}
+    items={kreaShareStoryItems}
+    albumTitle={kreaShareStoryTitle}
+    explicitParentFolderId={`/${activeDevSegment || getDevSegment()}${getTargetFolder()}`.replace(/\/+/g, "/")}
+    isCreations={true}
+    targetDevice={resolveDevice()}
+    storageDevice={resolveDevice()}
+    deviceDrive={getTargetDrive()}
+    {httpDrive}
+    {defaultStorage}
+    {omdKey}
+    on:close={() => (showKreaShareStoryModal = false)}
+    on:story-created={(e) => {
+      const sub = e?.detail?.subfolderName;
+      if (sub && !storyFolders.includes(sub)) {
+        storyFolders = [...storyFolders, sub].sort();
+      }
+    }}
+    on:open-story={(e) => {
+      const sub = e?.detail?.subfolderName;
+      if (sub) {
+        setKreaGalleryMode("timeline");
+        selectStorySubfolder(sub);
+      }
+    }}
+    on:share-folder={(e) => {
+      const sub = e?.detail?.subfolderName;
+      if (sub) shareKreaStoryFolder(sub);
+    }}
+    on:publish-civitai={(e) => {
+      const sub = e?.detail?.subfolderName;
+      if (sub) openPublishStoryFolderToCivitai(sub);
+    }}
+  />
 
   <!-- Modal: AI Persona Factory (Scenario A + B combined) -->
   {#if showAiFactoryModal}
@@ -18032,5 +18453,104 @@
     height: 5px;
     border-radius: 50%;
     background: currentColor;
+  }
+  .krea-subbar-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .krea-story-cta {
+    background: linear-gradient(135deg, rgba(124, 58, 237, 0.25), rgba(236, 72, 153, 0.22)) !important;
+    border-color: rgba(139, 92, 246, 0.5) !important;
+  }
+  .krea-civitai-cta {
+    background: linear-gradient(135deg, rgba(37, 99, 235, 0.24), rgba(124, 58, 237, 0.28)) !important;
+    border-color: rgba(96, 165, 250, 0.5) !important;
+  }
+  .krea-album-card-wrap {
+    position: relative;
+    display: flex;
+    width: 100%;
+  }
+  .krea-album-card-wrap > .krea-album-card {
+    width: 100%;
+  }
+  .krea-album-fab {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 4;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    background: rgba(15, 15, 26, 0.82);
+    color: #fff;
+    font-size: 13.5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    transform: scale(0.92);
+    transition: opacity 0.15s ease, transform 0.15s ease, background 0.15s ease;
+  }
+  .krea-album-card-wrap:hover .krea-album-fab,
+  .krea-album-fab:focus-visible {
+    opacity: 1;
+    transform: scale(1);
+  }
+  .krea-album-fab:hover {
+    background: rgba(124, 58, 237, 0.94);
+  }
+  .krea-album-fab.civitai:hover {
+    background: rgba(37, 99, 235, 0.94);
+  }
+  @media (hover: none) {
+    .krea-album-fab {
+      opacity: 0.92;
+      transform: scale(1);
+    }
+  }
+  .krea-story-files-footer-head {
+    display: flex;
+    align-items: center;
+    padding: 6px 8px 8px;
+    font-size: 0.8rem;
+    font-weight: 650;
+    opacity: 0.72;
+    border-top: 1px solid rgba(128, 128, 150, 0.18);
+  }
+  .gallery-card.is-story-selected {
+    outline: 2.5px solid #8b5cf6;
+    outline-offset: -2px;
+  }
+  .krea-card-select-check {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 6;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.85);
+    background: rgba(12, 12, 22, 0.58);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s ease, background 0.15s ease;
+  }
+  .gallery-card-thumb-wrap:hover .krea-card-select-check,
+  .krea-card-select-check.visible {
+    opacity: 1;
+  }
+  .krea-card-select-check.checked {
+    background: #7c3aed;
+    border-color: #c4b5fd;
   }
 </style>

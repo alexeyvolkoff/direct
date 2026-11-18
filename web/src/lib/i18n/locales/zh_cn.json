@@ -1972,5 +1972,22 @@
   "media_models": "模型与格式",
   "media_jump_date": "跳转到日期",
   "media_folders": "文件夹",
-  "media_screenshots": "屏幕截图"
+  "media_screenshots": "屏幕截图",
+  "share_a_story": "分享故事",
+  "story_modal_title": "创建图文故事",
+  "story_modal_subtitle": "将所选媒体复制到子文件夹并生成图文漫画故事",
+  "story_subfolder_label": "故事子文件夹",
+  "story_plot_label": "剧情提示",
+  "story_plot_placeholder": "故事应该讲些什么？基调、氛围或核心创意...",
+  "story_create_btn": "生成故事漫画",
+  "story_stage_copying": "正在复制媒体文件到子文件夹...",
+  "story_stage_composing": "AI 节点正在撰写图文漫画故事...",
+  "story_stage_saving": "正在保存 Readme.md...",
+  "story_ready_title": "图文故事已就绪！",
+  "story_open_btn": "打开故事",
+  "story_share_link_btn": "分享链接",
+  "story_publish_civitai_btn": "发布到 CivitAI",
+  "story_files_footer": "文件",
+  "story_select_items": "请至少选择一张照片或视频",
+  "story_selected_count": "已选择 {count} 项媒体"
 }
