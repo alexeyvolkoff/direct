@@ -361,7 +361,9 @@
         kreaScrubberOpen = false;
       });
     }
-    if (scrollContainerEl) {
+    if (studioMainEl) {
+      studioMainEl.scrollTo({ top: 0, behavior: "auto" });
+    } else if (scrollContainerEl) {
       scrollContainerEl.scrollTo({ top: 0, behavior: "auto" });
     }
   }
@@ -527,13 +529,22 @@
   });
 
   $: kreaMonthScrubber = buildMonthScrubberMarkers(filteredKreaItems, $locale || undefined);
+  let kreaStreamWidth = 0;
+  $: kreaGridCols = isMobile ? 1 : Math.max(1, Math.floor(((kreaStreamWidth || 1200) + 16) / (240 + 16)));
+  $: kreaShowTimelineScrubber =
+    activeTab === "gallery" &&
+    (kreaGalleryMode === "timeline" || Boolean(activeKreaAlbum) || Boolean(activeStorySubfolder)) &&
+    !(isLoadingFiles && items.length === 0 && !isGenerating) &&
+    (items.length > 0 || isGenerating) &&
+    kreaMonthScrubber.length >= 2;
 
   function jumpToKreaMonth(sc) {
     if (!sc) return;
     activeKreaScrubberKey = sc.key;
     kreaScrubberOpen = false;
-    if (scrollContainerEl) {
-      const targetEl = scrollContainerEl.querySelector(`[data-krea-month="${sc.key}"]`);
+    const scroller = studioMainEl || scrollContainerEl;
+    if (scroller) {
+      const targetEl = scroller.querySelector(`[data-krea-month="${sc.key}"]`);
       if (targetEl) {
         targetEl.scrollIntoView({ behavior: "smooth", block: "start" });
       }
@@ -541,9 +552,10 @@
   }
 
   function handleKreaGalleryScroll() {
-    if (!scrollContainerEl || kreaMonthScrubber.length < 2) return;
-    const anchors = scrollContainerEl.querySelectorAll("[data-krea-month]");
-    const topRef = scrollContainerEl.getBoundingClientRect().top;
+    const scroller = studioMainEl || scrollContainerEl;
+    if (!scroller || kreaMonthScrubber.length < 2) return;
+    const anchors = scroller.querySelectorAll("[data-krea-month]");
+    const topRef = scroller.getBoundingClientRect().top;
     let cur = kreaMonthScrubber[0]?.key || "";
     for (const el of anchors) {
       if (el.getBoundingClientRect().top - topRef <= 120) {
@@ -6996,7 +7008,7 @@
   <!-- Main Workspace + AI Director Split -->
   <div class="studio-body-split">
   <div class="studio-canvas-col" style={`--composer-h: ${Math.max(composerHeight, 130)}px;`}>
-  <main class="studio-main" bind:this={studioMainEl}>
+  <main class="studio-main" bind:this={studioMainEl} on:scroll={handleKreaGalleryScroll}>
     {#if activeTab === "personas"}
       <!-- PERSONAS VIEW -->
       <section class="personas-section" in:fade={{ duration: 150 }}>
@@ -7107,8 +7119,8 @@
       <!-- GALLERY VIEW -->
       <section
         class="gallery-section"
+        class:has-desktop-scrubber={!isMobile && kreaShowTimelineScrubber}
         bind:this={scrollContainerEl}
-        on:scroll={handleKreaGalleryScroll}
         in:fade={{ duration: 150 }}
       >
         <div class="krea-gallery-subbar">
@@ -7348,9 +7360,18 @@
           </div>
 
         {:else}
-          <div class="krea-timeline-stream">
+          <div
+            class="krea-timeline-stream"
+            bind:clientWidth={kreaStreamWidth}
+            style={!isMobile ? `--krea-cols: ${kreaGridCols};` : ""}
+          >
             {#if isGenerating}
-              <div class="gallery-grid" style="margin-bottom: 16px;">
+              <div class="krea-day-group" style={!isMobile ? "grid-column: span 1; min-width: 0;" : ""}>
+                <div class="krea-day-sticky-head">
+                  <span class="krea-day-label">⚡ {$_("krea_stage_generating", {}, "Генерация")}</span>
+                  <span class="krea-day-count">1</span>
+                </div>
+                <div class="gallery-grid" style={!isMobile ? "grid-template-columns: minmax(0, 1fr);" : ""}>
               <div class="gallery-card placeholder-card">
                 <div
                   class="placeholder-preview"
@@ -7409,16 +7430,25 @@
                   {/if}
                 </div>
               </div>
+                </div>
               </div>
             {/if}
             {#each kreaTimelineGroups as kGroup, kgIdx (kGroup.dayKey)}
               {@const isNewMonth = kgIdx === 0 || kreaTimelineGroups[kgIdx - 1].monthKey !== kGroup.monthKey}
-              <div class="krea-day-group" data-krea-month={isNewMonth ? kGroup.monthKey : undefined}>
-                <div class="krea-day-sticky-head">
-                  <span class="krea-day-label">{kGroup.dayLabel}</span>
+              {@const groupSpan = isMobile ? 1 : Math.min(kreaGridCols, Math.max(1, kGroup.items.length))}
+              <div
+                class="krea-day-group"
+                style={!isMobile ? `${isNewMonth && kgIdx > 0 ? "grid-column-start: 1; " : ""}grid-column-end: span ${groupSpan}; min-width: 0;` : ""}
+                data-krea-month={isNewMonth ? kGroup.monthKey : undefined}
+              >
+                <div class="krea-day-sticky-head" class:is-sticky-head={isMobile || kGroup.items.length > kreaGridCols}>
+                  <span class="krea-day-label" title={kGroup.dayLabel}>{kGroup.dayLabel}</span>
                   <span class="krea-day-count">{kGroup.items.length}</span>
                 </div>
-                <div class="gallery-grid">
+                <div
+                  class="gallery-grid"
+                  style={!isMobile ? `grid-template-columns: repeat(${groupSpan}, minmax(0, 1fr));` : ""}
+                >
             {#each kGroup.items as item (item.id)}
               {@const itemRefIdx = getGalleryItemRefIndex(item, attachedReferences)}
               {@const itemShouldBlur = effectiveContentMode !== "fun" && Boolean(item.sensitive)}
@@ -7691,32 +7721,32 @@
               </div>
             {/each}
           </div>
-
-          {#if kreaMonthScrubber.length >= 2 && (!isMobile || kreaScrubberOpen)}
-            {#if isMobile && kreaScrubberOpen}
-              <!-- svelte-ignore a11y_click_events_have_key_events -->
-              <!-- svelte-ignore a11y_no_static_element_interactions -->
-              <div class="krea-scrubber-backdrop" on:click={() => (kreaScrubberOpen = false)}></div>
-            {/if}
-            <nav class="krea-date-scrubber" class:mobile-open={isMobile && kreaScrubberOpen} aria-label="Creations date scrubber">
-              {#each kreaMonthScrubber.slice(0, 36) as sc (sc.key)}
-                <button
-                  type="button"
-                  class="krea-scrubber-tick"
-                  class:active={activeKreaScrubberKey === sc.key}
-                  title={sc.fullLabel}
-                  on:click={() => jumpToKreaMonth(sc)}
-                >
-                  <span>{sc.shortLabel} '{String(sc.year).slice(-2)}</span>
-                  <span class="krea-scrubber-dot"></span>
-                </button>
-              {/each}
-            </nav>
-          {/if}
         {/if}
       </section>
     {/if}
   </main>
+
+  {#if kreaShowTimelineScrubber && (!isMobile || kreaScrubberOpen)}
+    {#if isMobile && kreaScrubberOpen}
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="krea-scrubber-backdrop" on:click={() => (kreaScrubberOpen = false)}></div>
+    {/if}
+    <nav class="krea-date-scrubber" class:mobile-open={isMobile && kreaScrubberOpen} aria-label="Creations date scrubber">
+      {#each kreaMonthScrubber.slice(0, 36) as sc (sc.key)}
+        <button
+          type="button"
+          class="krea-scrubber-tick"
+          class:active={activeKreaScrubberKey === sc.key}
+          title={sc.fullLabel}
+          on:click={() => jumpToKreaMonth(sc)}
+        >
+          <span>{sc.shortLabel} '{String(sc.year).slice(-2)}</span>
+          <span class="krea-scrubber-dot"></span>
+        </button>
+      {/each}
+    </nav>
+  {/if}
 
   <!-- Sticky Bottom Generation Composer with Sliders -->
   <footer class="studio-composer" use:trackComposerHeight>
@@ -11182,8 +11212,14 @@
 
   /* Gallery View */
   .gallery-section {
-    max-width: 1400px;
-    margin: 0 auto;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    box-sizing: border-box;
+  }
+
+  .gallery-section.has-desktop-scrubber {
+    padding-right: 56px;
   }
 
   .empty-gallery {
@@ -17632,43 +17668,60 @@
     background: rgba(236, 72, 153, 0.12);
   }
   .krea-timeline-stream {
-    display: flex;
-    flex-direction: column;
-    gap: 22px;
-    padding-right: 34px;
+    display: grid;
+    grid-template-columns: repeat(var(--krea-cols, 5), minmax(0, 1fr));
+    column-gap: 16px;
+    row-gap: 22px;
+    width: 100%;
+    align-items: start;
   }
   @media (max-width: 768px) {
-    .krea-timeline-stream {
+    .gallery-section.has-desktop-scrubber {
       padding-right: 0;
+    }
+    .krea-timeline-stream {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
     }
   }
   .krea-day-group {
     display: flex;
     flex-direction: column;
     gap: 10px;
+    min-width: 0;
   }
   .krea-day-sticky-head {
-    position: sticky;
-    top: -12px;
-    z-index: 8;
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 8px;
     padding: 6px 4px;
-    backdrop-filter: blur(8px);
-    background: rgba(15, 10, 18, 0.82);
+    min-width: 0;
   }
-  .krea-studio-root.light-theme .krea-day-sticky-head {
+  .krea-day-sticky-head.is-sticky-head {
+    position: sticky;
+    top: -20px;
+    z-index: 8;
+    backdrop-filter: blur(8px);
+    background: rgba(15, 10, 18, 0.84);
+  }
+  .krea-studio-root.light-theme .krea-day-sticky-head.is-sticky-head {
     background: rgba(248, 250, 252, 0.88);
   }
   .krea-day-label {
     font-size: 0.92rem;
     font-weight: 700;
     text-transform: capitalize;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
   }
   .krea-day-count {
     font-size: 0.76rem;
     opacity: 0.65;
+    flex-shrink: 0;
   }
   .krea-albums-showcase {
     display: flex;
@@ -17830,17 +17883,17 @@
     font-weight: 600;
   }
   .krea-scrubber-backdrop {
-    position: fixed;
+    position: absolute;
     inset: 0;
-    z-index: 44;
-    background: rgba(0, 0, 0, 0.16);
+    z-index: 24;
+    background: rgba(0, 0, 0, 0.18);
   }
   .krea-date-scrubber {
-    position: fixed;
-    right: 10px;
-    top: 50%;
+    position: absolute;
+    right: 12px;
+    top: calc((100% - var(--composer-h, 180px)) / 2);
     transform: translateY(-50%);
-    z-index: 45;
+    z-index: 25;
     display: flex;
     flex-direction: column;
     align-items: flex-end;
@@ -17850,7 +17903,7 @@
     background: rgba(22, 25, 35, 0.86);
     border: 1px solid rgba(255, 255, 255, 0.12);
     backdrop-filter: blur(8px);
-    max-height: 62vh;
+    max-height: calc(100% - var(--composer-h, 180px) - 24px);
     overflow-y: auto;
   }
   .krea-studio-root.light-theme .krea-date-scrubber {

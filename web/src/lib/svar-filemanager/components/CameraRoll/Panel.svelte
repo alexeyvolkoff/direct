@@ -703,12 +703,18 @@
 									{@const fCov = getCoverPreview(folder)}
 									{@const showCov = Boolean(fCov && !failedFolderCovers[folder.id])}
 									{@const fIcon = getFolderIcon(folder)}
-									<button
-										type="button"
-										class="wx-cr-album-card"
-										onclick={(e) => {
-											e.stopPropagation();
-											openFolder(folder.id);
+									{@const isSpecialFolder = folder.id === "/shared-to-me" || folder.id === "/shared-by-me" || folder.name === "shared-to-me" || folder.name === "shared-by-me" || folder.isRootSection}
+									<div
+										role="button"
+										tabindex="0"
+										data-id={setID(folder.id)}
+										class="wx-cr-album-card wx-cr-folder-card"
+										class:wx-selected={Array.isArray(selected) && selected.indexOf(folder.id) >= 0}
+										onkeydown={(e) => {
+											if (e.key === "Enter" || e.key === " ") {
+												e.preventDefault();
+												openFolder(folder.id);
+											}
 										}}
 									>
 										<div class="wx-cr-album-cover" class:no-cover={!showCov}>
@@ -732,11 +738,20 @@
 													{/if}
 												</div>
 											{/if}
+											{#if !isSpecialFolder}
+												<div
+													data-action-id={setID(folder.id)}
+													class="wx-more wx-cr-folder-more"
+													title={_("Actions")}
+												>
+													<i class="wxi-dots-v"></i>
+												</div>
+											{/if}
 											<div class="wx-cr-album-grad">
 												<span class="wx-cr-album-title">{folder.name || folder.value}</span>
 											</div>
 										</div>
-									</button>
+									</div>
 								{/each}
 							</div>
 						</div>
@@ -1276,6 +1291,58 @@
 	:global(.light-theme) .wx-cr-album-cover.no-cover .wx-cr-album-grad {
 		background: linear-gradient(to top, rgba(242, 244, 248, 0.96), transparent);
 		color: var(--wx-color-font, #1e293b);
+	}
+
+	.wx-cr-folder-card.wx-selected {
+		border-color: var(--wx-color-primary, #7c3aed);
+		box-shadow: 0 0 0 1px var(--wx-color-primary, #7c3aed);
+	}
+
+	.wx-cr-folder-more {
+		position: absolute;
+		top: 7px;
+		right: 7px;
+		width: 26px;
+		height: 26px;
+		border-radius: 50%;
+		background: rgba(0, 0, 0, 0.48);
+		backdrop-filter: blur(4px);
+		color: #ffffff;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		opacity: 0;
+		transform: scale(0.88);
+		transition: opacity 0.15s ease, transform 0.15s ease, background 0.15s ease;
+		z-index: 3;
+		font-size: 15px;
+		cursor: pointer;
+	}
+
+	.wx-cr-folder-card:hover .wx-cr-folder-more,
+	.wx-cr-folder-card:focus-within .wx-cr-folder-more {
+		opacity: 1;
+		transform: scale(1);
+	}
+
+	.wx-cr-folder-more:hover {
+		background: rgba(0, 0, 0, 0.78);
+	}
+
+	:global(.light-theme) .wx-cr-album-cover.no-cover .wx-cr-folder-more {
+		background: rgba(15, 23, 42, 0.08);
+		color: var(--wx-color-font, #334155);
+	}
+
+	:global(.light-theme) .wx-cr-album-cover.no-cover .wx-cr-folder-more:hover {
+		background: rgba(15, 23, 42, 0.16);
+	}
+
+	@media (max-width: 768px) {
+		.wx-cr-folder-more {
+			opacity: 1;
+			transform: scale(1);
+		}
 	}
 
 	.wx-cr-album-grad {
