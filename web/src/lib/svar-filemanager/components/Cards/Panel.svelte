@@ -216,7 +216,7 @@
 	<div class="wx-not-found">
 		<div class="wx-not-found-text">{_("Looks like nothing is here")}</div>
 	</div>
-{:else if renderedFiles.length}
+{:else if renderedFiles.length || hasStoryComic}
 	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 	<div
 		tabindex="0"

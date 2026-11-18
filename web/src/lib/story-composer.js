@@ -289,7 +289,13 @@ export async function loadFolderStoryReadme(folderId, files = []) {
     return "";
   }
   const normFolder = String(folderId).replace(/\/+$/, "");
+  const trackedMeta =
+    typeof window !== "undefined" && window._folderReadmeMeta
+      ? window._folderReadmeMeta[normFolder] || null
+      : null;
+
   const inlineEntry =
+    trackedMeta?.readmeFile ||
     files.readmeFile ||
     files.find((f) => {
       if (!f || f.isDir || f.type === "folder") return false;
@@ -297,35 +303,45 @@ export async function loadFolderStoryReadme(folderId, files = []) {
     }) ||
     null;
 
-  if (files.length === 0 && !inlineEntry && !files.storyJsonFile) {
+  const storyJsonEntry = trackedMeta?.storyJsonFile || files.storyJsonFile || null;
+
+  // Fast skip on WebRTC folders confirmed to have neither Readme.md nor story.json
+  if (trackedMeta && trackedMeta.isWebRtc && !inlineEntry && !storyJsonEntry) {
     return "";
   }
 
-  const stamp = `${files.length}_${inlineEntry?.size || 0}`;
+  if (files.length === 0 && !inlineEntry && !storyJsonEntry) {
+    return "";
+  }
+
+  const stamp = `${files.length}_${inlineEntry?.size || 0}_${storyJsonEntry?.size || 0}`;
   const cacheKey = `${normFolder}::${stamp}`;
   if (_folderReadmeCache.has(cacheKey)) {
     return _folderReadmeCache.get(cacheKey);
   }
 
-  const { prefix, device, realPath } = splitPrefixedFolderPath(normFolder);
-  if (!device?.drive && !prefix) return "";
+  const split = splitPrefixedFolderPath(normFolder);
+  const drive = trackedMeta?.drive || split.device?.drive || null;
+  const prefix = trackedMeta?.prefix || split.prefix || "";
+  const realPath = trackedMeta?.realPath || split.realPath || "/";
+  if (!drive && !prefix) return "";
 
   const baseDir = realPath === "/" ? "" : realPath;
   const readmeName = inlineEntry?.name || inlineEntry?.value || "Readme.md";
   const readmeRealPath = `${baseDir}/${readmeName}`;
-  const p2pUrl = prefix && !device?.local ? `/p2p/${prefix}${encodeURI(readmeRealPath)}` : "";
+  const p2pUrl = prefix && !split.device?.local ? `/p2p/${prefix}${encodeURI(readmeRealPath)}` : "";
 
-  let text = await readTextFromDrive(device?.drive || null, readmeRealPath, p2pUrl);
+  let text = await readTextFromDrive(drive, readmeRealPath, p2pUrl);
   if (!text && readmeName !== "README.md" && !inlineEntry) {
     const upperPath = `${baseDir}/README.md`;
-    const upperP2p = prefix && !device?.local ? `/p2p/${prefix}${encodeURI(upperPath)}` : "";
-    text = await readTextFromDrive(device?.drive || null, upperPath, upperP2p);
+    const upperP2p = prefix && !split.device?.local ? `/p2p/${prefix}${encodeURI(upperPath)}` : "";
+    text = await readTextFromDrive(drive, upperPath, upperP2p);
   }
 
-  if (!text && (files.storyJsonFile || /\/(generated|creations|onmychat)(\/|$)/i.test(normFolder))) {
+  if (!text && (storyJsonEntry || /\/(generated|creations|onmychat)(\/|$)/i.test(normFolder))) {
     const jsonPath = `${baseDir}/story.json`;
-    const jsonP2p = prefix && !device?.local ? `/p2p/${prefix}${encodeURI(jsonPath)}` : "";
-    const rawJson = await readTextFromDrive(device?.drive || null, jsonPath, jsonP2p);
+    const jsonP2p = prefix && !split.device?.local ? `/p2p/${prefix}${encodeURI(jsonPath)}` : "";
+    const rawJson = await readTextFromDrive(drive, jsonPath, jsonP2p);
     if (rawJson) {
       try {
         text = buildMarkdownFromStoryJson(JSON.parse(rawJson));
@@ -367,12 +383,19 @@ export function resolveFolderMediaAssetUrl(
   }
 
   const normFolder = String(folderId || "").replace(/\/+$/, "");
-  const { prefix, device, realPath } = splitPrefixedFolderPath(normFolder);
+  const trackedMeta =
+    typeof window !== "undefined" && window._folderReadmeMeta
+      ? window._folderReadmeMeta[normFolder] || null
+      : null;
+  const split = splitPrefixedFolderPath(normFolder);
+  const prefix = trackedMeta?.prefix || split.prefix || "";
+  const device = split.device;
+  const realPath = trackedMeta?.realPath || split.realPath || "/";
   const exactName = matchedFile ? (matchedFile.name || matchedFile.value || cleanRel) : cleanRel;
   const fullRealPath = `${realPath === "/" ? "" : realPath}/${exactName}`;
 
-  // Remote P2P device: direct /p2p URL streams videos and renders crisp full/resized images
-  if (prefix && !device?.local && !normFolder.startsWith("/shared-")) {
+  // Remote P2P device (including /shared-to-me via trackedMeta): direct /p2p URL streams videos and renders crisp images
+  if (prefix && !device?.local && (!normFolder.startsWith("/shared-") || Boolean(trackedMeta?.prefix))) {
     const baseP2p = `/p2p/${prefix}${encodeURI(fullRealPath)}`;
     if (isVid) return baseP2p;
     if (matchedFile && templates?.preview) {

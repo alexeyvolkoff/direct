@@ -3616,6 +3616,15 @@
           });
 
         if (!window._folderItems) window._folderItems = {};
+        if (!window._folderReadmeMeta) window._folderReadmeMeta = {};
+        window._folderReadmeMeta[id] = {
+          drive: device.drive,
+          realPath,
+          prefix: String(device.prefix || device.linkId || "").replace(/^\/+|\/+$/g, ""),
+          isWebRtc: typeof device.drive?.sendRPC === "function",
+          readmeFile: res.readmeFile || null,
+          storyJsonFile: res.storyJsonFile || null,
+        };
         enrichFolderSensitiveFlags(
           remapped,
           id,
@@ -4295,6 +4304,15 @@
                 updateRootFilesData();
                 refreshDeviceNodeApps(device);
               }
+              if (!window._folderReadmeMeta) window._folderReadmeMeta = {};
+              window._folderReadmeMeta[fullId] = {
+                drive: device.drive,
+                realPath: folderPath,
+                prefix: String(device.prefix || device.linkId || "").replace(/^\/+|\/+$/g, ""),
+                isWebRtc: typeof device.drive?.sendRPC === "function",
+                readmeFile: res.readmeFile || null,
+                storyJsonFile: res.storyJsonFile || null,
+              };
               enrichFolderSensitiveFlags(finalItems, fullId, device.prefix || device.linkId || "", false);
               window._folderItems[fullId] = finalItems;
               fmApi.exec("provide-data", { id: fullId, data: finalItems });
