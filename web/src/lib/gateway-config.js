@@ -324,7 +324,7 @@ export function getGatewayDocsUrl(subpath = "") {
 
 export function getGatewayTosUrl() {
   if (resolveAppMode() === APP_MODE_CHAT) {
-    return isLocalBrowserHost() ? "https://aiassistant.direct/tos" : "/tos";
+    return isLocalBrowserHost() ? "https://ai-agent.direct/tos" : "/tos";
   }
   const gw = getActiveGateway();
   if (!isLocalBrowserHost() && !gw.isCustom && gw.origin === window.location.origin) {
@@ -335,7 +335,7 @@ export function getGatewayTosUrl() {
 
 export function getGatewayPrivacyUrl() {
   if (resolveAppMode() === APP_MODE_CHAT) {
-    return isLocalBrowserHost() ? "https://aiassistant.direct/tos#gdpr" : "/tos#gdpr";
+    return isLocalBrowserHost() ? "https://ai-agent.direct/tos#gdpr" : "/tos#gdpr";
   }
   const gw = getActiveGateway();
   if (!isLocalBrowserHost() && !gw.isCustom && gw.origin === window.location.origin) {

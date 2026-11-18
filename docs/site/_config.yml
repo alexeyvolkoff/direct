@@ -1,7 +1,7 @@
 title: "Disk Direct Documentation"
 email: info@disk.direct
 description: >-
-  Official documentation for Disk Direct & AI Assistant Direct —
+  Official documentation for Disk Direct & AI Agent Direct —
   decentralized peer-to-peer personal cloud, Knowledge Base (RAG), and private AI workspace.
 url: "https://docs.disk.direct"
 baseurl: ""
@@ -15,7 +15,7 @@ aux_links:
   "Open Disk Direct":
     - "https://disk.direct"
   "AI Assistant":
-    - "https://aiassistant.direct"
+    - "https://ai-agent.direct"
   "GitHub":
     - "https://github.com/alexeyvolkoff/direct"
 aux_links_new_tab: true

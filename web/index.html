@@ -56,7 +56,7 @@
       (function () {
         var h = String((window.location && window.location.hostname) || "").toLowerCase();
         var m = String(window.__omdAppMode || "").toLowerCase();
-        var isChat = (m === "chat" || h === "aiassistant.direct" || h.endsWith(".aiassistant.direct") || h.indexOf("chat.") === 0 || h.indexOf("ai.") === 0 || h === "onmychat.com" || h.endsWith(".onmychat.com"));
+        var isChat = (m === "chat" || h === "ai-agent.direct" || h.endsWith(".ai-agent.direct") || h === "aiassistant.direct" || h.endsWith(".aiassistant.direct") || h.indexOf("chat.") === 0 || h.indexOf("ai.") === 0 || h === "onmychat.com" || h.endsWith(".onmychat.com"));
         var isOmd = !isChat && (h === "onmydisk.net" || h.endsWith(".onmydisk.net") || h === "onmydisk.com" || h.endsWith(".onmydisk.com"));
         var storedBrand = "";
         var storedFavicon = "";
@@ -73,7 +73,7 @@
             }
           } catch (_) {}
         }
-        var fallbackBrand = isChat ? "AI Assistant Direct" : (storedBrand || (isOmd ? "On My Disk" : "Disk Direct"));
+        var fallbackBrand = isChat ? "AI Agent Direct" : (storedBrand || (isOmd ? "On My Disk" : "Disk Direct"));
         document.documentElement.classList.add(isChat ? "skin-chat" : "skin-files");
         if (isOmd) {
           document.documentElement.classList.add("gateway-skin-omd");

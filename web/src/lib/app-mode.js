@@ -115,6 +115,8 @@ function modeFromHostname() {
   if (!host) return null;
 
   if (
+    host === "ai-agent.direct" ||
+    host.endsWith(".ai-agent.direct") ||
     host === "aiassistant.direct" ||
     host.endsWith(".aiassistant.direct") ||
     host === "onmychat.com" ||
@@ -208,6 +210,8 @@ export function isOnMyChatDomain() {
   if (typeof window === "undefined") return false;
   const host = String(window.location?.hostname || "").toLowerCase();
   return (
+    host === "ai-agent.direct" ||
+    host.endsWith(".ai-agent.direct") ||
     host === "aiassistant.direct" ||
     host.endsWith(".aiassistant.direct") ||
     host.startsWith("chat.") ||
@@ -218,7 +222,7 @@ export function isOnMyChatDomain() {
 }
 
 export function getDomainBrandTitle() {
-  if (isOnMyChatDomain()) return "AI Assistant Direct";
+  if (isOnMyChatDomain()) return "AI Agent Direct";
   if (typeof window !== "undefined") {
     try {
       const raw = window.localStorage?.getItem("omd_active_gateway_v1");

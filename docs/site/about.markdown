@@ -4,10 +4,10 @@ title: About
 permalink: /about/
 nav_order: 99
 ---
-# 🌐 About **Disk Direct** & **AI Assistant Direct**
+# 🌐 About **Disk Direct** & **AI Agent Direct**
 <hr>
 
-[**Disk Direct**](https://disk.direct) and [**AI Assistant Direct**](https://aiassistant.direct) are open-source (`Apache-2.0`), community-driven projects built around a straightforward mission: give individuals and teams modern cloud convenience and frontier AI productivity **without surrendering ownership of their files, identity, or private knowledge**.
+[**Disk Direct**](https://disk.direct) and [**AI Agent Direct**](https://ai-agent.direct) are open-source (`Apache-2.0`), community-driven projects built around a straightforward mission: give individuals and teams modern cloud convenience and frontier AI productivity **without surrendering ownership of their files, identity, or private knowledge**.
 
 ## Core Architectural Principles
 

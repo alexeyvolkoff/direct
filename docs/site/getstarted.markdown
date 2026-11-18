@@ -12,7 +12,7 @@ Welcome to **Disk Direct** — your decentralized personal cloud and private AI 
 
 ## 1. Sign In or Create Your Decentralized ID (DID)
 
-Open [**disk.direct**](https://disk.direct) (or [**aiassistant.direct**](https://aiassistant.direct) to jump straight into chat) in any modern browser, or launch the native **Disk Direct** Android / iOS app.
+Open [**disk.direct**](https://disk.direct) (or [**ai-agent.direct**](https://ai-agent.direct) to jump straight into chat) in any modern browser, or launch the native **Disk Direct** Android / iOS app.
 
 ![Sign in or connect](/images/login.png)
 
@@ -72,7 +72,7 @@ To add a folder on any connected device:
 ## 4. Navigating the Unified Workspace
 
 ### Left Sidebar Shortcuts
-Whether you open **Disk Direct** in Files mode (`disk.direct`) or AI mode (`aiassistant.direct`), every core workspace is one click away in the left sidebar:
+Whether you open **Disk Direct** in Files mode (`disk.direct`) or AI mode (`ai-agent.direct`), every core workspace is one click away in the left sidebar:
 * **Device Tree & Shares**: Browse all your online Linux/Windows/macOS/OpenWrt nodes, mobile devices, and local browser storage — including direct P2P cross-device copy and move without cloud staging.
 * **Shared with me / Shared by me**: Direct DID user-to-user shares and public P2P links you created.
 * **Chats**: Private AI assistant (`June`) with SSE streaming, RAG source chips, and autonomous MCP document tools.

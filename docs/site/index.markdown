@@ -3,10 +3,10 @@ layout: home
 title: Home
 nav_order: 0
 ---
-## Welcome to **Disk Direct** & **AI Assistant Direct**
+## Welcome to **Disk Direct** & **AI Agent Direct**
 <hr>
 
-Welcome to the official documentation for [**Disk Direct**](https://disk.direct) and [**AI Assistant Direct**](https://aiassistant.direct) — a decentralized personal cloud and private AI workspace where your files, knowledge index, and cryptographic identity stay under your control. Data travels directly between your devices over encrypted **WebRTC DataChannels**, while the signaling gateway coordinates peer discovery and fallback relay without storing your files.
+Welcome to the official documentation for [**Disk Direct**](https://disk.direct) and [**AI Agent Direct**](https://ai-agent.direct) — a decentralized personal cloud and private AI workspace where your files, knowledge index, and cryptographic identity stay under your control. Data travels directly between your devices over encrypted **WebRTC DataChannels**, while the signaling gateway coordinates peer discovery and fallback relay without storing your files.
 
 ![Disk Direct Workspace](/images/file_manager.png)
 
@@ -19,7 +19,7 @@ Connect browsers, mobile devices, laptops, mini-PCs, NAS boxes, and routers into
 * **[External Cloud Storage (rclone)](/external/)**: Mount **ProtonDrive**, **WebDAV**, and other external cloud providers directly into your node.
 
 ### 🤖 Private AI & Knowledge Workspace
-Turn your storage into an intelligent, privacy-preserving workspace powered by **AI Assistant Direct**:
+Turn your storage into an intelligent, privacy-preserving workspace powered by **AI Agent Direct**:
 * **[Personal AI Node](/ainode/)**: Deploy the local AI service (`:4000`) with **Ollama** (CPU/CUDA/Metal), **Rockchip RKLLAMA** (NPU), **Hybrid**, **Horde AI**, or zero-GPU **Agentic P2P** inference, and configure node routing vs assistant persona in dedicated **AI Node** and **AI Assistant** settings tabs.
 * **[Semantic Search](/searchnode/)**: Search documents, photos, videos, and people by meaning across 50+ languages using the unified multimodal vector index.
 * **[Storage as Knowledge (RAG)](/rag/)**: Browse multimodal **Memory Cards** right from the sidebar, find specific people and photos with on-device facial & vision recognition, and chat with your private documents.

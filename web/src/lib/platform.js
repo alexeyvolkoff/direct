@@ -47,6 +47,8 @@ export function isPrimaryWebGateway() {
   return (
     h === "disk.direct" ||
     h.endsWith(".disk.direct") ||
+    h === "ai-agent.direct" ||
+    h.endsWith(".ai-agent.direct") ||
     h === "aiassistant.direct" ||
     h.endsWith(".aiassistant.direct")
   );

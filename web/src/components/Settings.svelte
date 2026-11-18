@@ -2308,7 +2308,7 @@
                 </div>
                 <div class="row-value-badge">
                   <a
-                    href={$otaState.isNative ? "https://aiassistant.direct/about" : "/about"}
+                    href={$otaState.isNative ? "https://ai-agent.direct/about" : "/about"}
                     target="_blank"
                     rel="noopener noreferrer"
                     class="btn-secondary-action btn-sm"

@@ -18,7 +18,7 @@
         var cachedPreset = "";
         try { cachedPreset = localStorage.getItem("omd_gateway_skin_preset") || ""; } catch (_) {}
         var isOmd = host === "direct.onmydisk.net" || host === "onmydisk.net" || /\.onmydisk\.net$/.test(host) || cachedPreset === "omd-classic";
-        var isChat = !isOmd && (host === "aiassistant.direct" || host.indexOf("aiassistant") !== -1 || host.indexOf("chat.") === 0 || /\.onmychat\.com$/.test(host));
+        var isChat = !isOmd && (host === "ai-agent.direct" || host.indexOf("ai-agent.") !== -1 || host === "aiassistant.direct" || host.indexOf("aiassistant") !== -1 || host.indexOf("chat.") === 0 || /\.onmychat\.com$/.test(host));
         document.documentElement.classList.add(isOmd ? "skin-omd" : (isChat ? "skin-chat" : "skin-files"));
         if (isOmd) {
           var omdIcons = document.querySelectorAll('link[rel*="icon"]');
@@ -903,8 +903,8 @@
           .toLowerCase()
           .replace(/\.+$/, "");
         var isOmd = document.documentElement.classList.contains("skin-omd") || host === "direct.onmydisk.net" || host === "onmydisk.net" || /\.onmydisk\.net$/.test(host);
-        var isChat = !isOmd && (host === "aiassistant.direct" || /\.onmychat\.com$/.test(host));
-        var brand = isOmd ? "On My Disk" : (isChat ? "AI Assistant" : "Disk Direct");
+        var isChat = !isOmd && (host === "ai-agent.direct" || host.indexOf("ai-agent.") !== -1 || host === "aiassistant.direct" || /\.onmychat\.com$/.test(host));
+        var brand = isOmd ? "On My Disk" : (isChat ? "AI Agent Direct" : "Disk Direct");
         if (document.title.indexOf("{") !== -1) {
           document.title = document.title.replace(/\{APPTITLE\}|\{TITLE\}/g, brand);
         }

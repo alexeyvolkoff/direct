@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "AI Assistant Direct",
-  "short_name": "AI Assistant",
-  "description": "Private Peer-to-Peer AI Assistant & Creative Studio",
+  "name": "AI Agent Direct",
+  "short_name": "AI Agent",
+  "description": "Private Peer-to-Peer AI Agent & Creative Studio",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

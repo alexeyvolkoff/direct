@@ -5,7 +5,7 @@
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Disk Direct](https://img.shields.io/badge/P2P%20Cloud-disk.direct-brightgreen.svg)](https://disk.direct)
-[![AI Assistant Direct](https://img.shields.io/badge/AI%20Assistant-aiassistant.direct-7c3aed.svg)](https://aiassistant.direct)
+[![AI Agent Direct](https://img.shields.io/badge/AI%20Agent-ai--agent.direct-7c3aed.svg)](https://ai-agent.direct)
 [![Documentation](https://img.shields.io/badge/Docs-docs.disk.direct-0ea5e9.svg)](https://docs.disk.direct)
 [![Qt](https://img.shields.io/badge/C%2B%2B%2FQt-5.15-green.svg)](core/)
 [![Svelte](https://img.shields.io/badge/Web%20PWA-Svelte%205-orange.svg)](web/)
@@ -15,7 +15,7 @@
 
 > **⚡ Live Entry Points:**
 > - 📂 **Disk Direct:** [**disk.direct**](https://disk.direct) — P2P file manager, WordCraft / GridCraft / DeckCraft office editors, media streaming, and remote WebRTC SSH terminal.
-> - 💬 **AI Assistant Direct:** [**aiassistant.direct**](https://aiassistant.direct) - private RAG over your folders, autonomous MCP agents, ComfyUI Creative Studio, and AI Horde client & `reGen` bridge.
+> - 🤖 **AI Agent Direct:** [**ai-agent.direct**](https://ai-agent.direct) (also [**aiassistant.direct**](https://aiassistant.direct)) — private RAG over your folders, autonomous MCP agents, ComfyUI Creative Studio, and AI Horde client & `reGen` bridge.
 > - 📚 **Documentation:** [**docs.disk.direct**](https://docs.disk.direct) — installation guides, decentralized identity (DID), personal AI & search node setup, and P2P app proxy.
 
 ---
@@ -26,7 +26,7 @@
   Browser / Mobile PWA (web/, mobile/)        Storage Node (core/)                    AI Assistant Node (ai/)
   ┌──────────────────────────────┐            ┌──────────────────────────┐  RAG /     ┌──────────────────────────┐
   │ disk.direct                  │ WebRTC     │ files · media · terminal │  MCP tools │ FastAPI · ChromaDB RAG   │
-  │ aiassistant.direct           ├──DataCh───►│ P2P Storage Node (C++/Qt)├───────────►│ MCP agent · Face Engine  │
+  │ ai-agent.direct              ├──DataCh───►│ P2P Storage Node (C++/Qt)├───────────►│ MCP agent · Face Engine  │
   └────▲──────────▲──────────────┘  (direct)  └──────────▲───────────────┘  localhost └────────────┬─────────────┘
        │          │                                      │  127.0.0.1:4000                         │
        │ DID auth │ WebSocket signaling                  │ TLS control link                        ▼
@@ -47,7 +47,7 @@
 | :--- | :--- | :--- |
 | [`core/`](core/) | **P2P Node & Gateway (C++ / Qt)** | `Node.pro` (Linux, Windows, macOS, OpenWrt storage & SSH daemon), `Gateway.pro` (signaling server), and `OnMyDiskLink/` (WebRTC DataChannel & TLS engine) |
 | [`ai/`](ai/) | **AI Assistant Node (Python)** | FastAPI service (`127.0.0.1:4000`), ChromaDB multimodal RAG, InsightFace recognition, MCP tools, ComfyUI Creative Studio, and AI Horde client & cooperative `reGen` ComfyUI bridge |
-| [`web/`](web/) | **Unified Web Client (Svelte 5)** | Single PWA serving both `disk.direct` and `aiassistant.direct`: file manager, office suite, terminal, AI chat, memory cards, Media Library (timeline & auto-albums), and studio |
+| [`web/`](web/) | **Unified Web Client (Svelte 5)** | Single PWA serving `disk.direct` and `ai-agent.direct`: file manager, office suite, terminal, AI chat, memory cards, Media Library (timeline & auto-albums), and studio |
 | [`mobile/`](mobile/) | **Mobile Apps (Capacitor)** | Native iOS and Android apps (**Disk Direct**) |
 | [`services/`](services/) | **Coordination Microservices** | `gun-hub/` (GunDB SEA DID relay & device PKI), `coturn/` (TURN server config), and `webpush/` |
 | [`docs/`](docs/) | **Documentation** | Technical specifications, screenshots, and the documentation site (`docs/site/`) |

@@ -33,7 +33,7 @@
         var cachedPreset = "";
         try { cachedPreset = localStorage.getItem("omd_gateway_skin_preset") || ""; } catch (_) {}
         var isOmd = host === "direct.onmydisk.net" || host === "onmydisk.net" || /\.onmydisk\.net$/.test(host) || cachedPreset === "omd-classic";
-        var isChat = !isOmd && (host === "aiassistant.direct" || host.indexOf("aiassistant") !== -1 || host.indexOf("chat.") === 0 || /\.onmychat\.com$/.test(host));
+        var isChat = !isOmd && (host === "ai-agent.direct" || host.indexOf("ai-agent.") !== -1 || host === "aiassistant.direct" || host.indexOf("aiassistant") !== -1 || host.indexOf("chat.") === 0 || /\.onmychat\.com$/.test(host));
         document.documentElement.classList.add(isOmd ? "skin-omd" : (isChat ? "skin-chat" : "skin-files"));
         if (isOmd) {
           var omdIcons = document.querySelectorAll('link[rel*="icon"]');
@@ -1032,7 +1032,7 @@
       <div class="diagram-flow">
         <div class="diagram-node">
           <h3 data-i18n="diag_left_title">📱 Your Browser or Phone</h3>
-          <p data-i18n-html="diag_left_desc">Open <strong>aiassistant.direct</strong> from anywhere. Chat with AI, browse folders, edit office documents, or stream videos.</p>
+          <p data-i18n-html="diag_left_desc">Open <strong>ai-agent.direct</strong> from anywhere. Chat with AI, browse folders, edit office documents, or stream videos.</p>
         </div>
 
         <div class="diagram-bridge">
