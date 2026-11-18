@@ -207,6 +207,8 @@ In **Disk Direct**, infrastructure routing and assistant persona configuration a
 * **AI Horde API Key, Model Filter & Save**: Enter your personal **Horde API Key** (`0000000000` for anonymous, or your key for priority Kudos queue), choose **`Auto`** or a specific live **Horde Model** (automatically filtered to capable `>= 8B` models, excluding tiny `< 8B` or debug workers, with the actual answered model badge shown under each reply in chat), and click **Save AI Node Settings**.
 * **Local On-Device Processing**: Enable **Local data extraction** and **Local photo analysis** to process documents and photos directly on your device without uploading raw files.
 
+![AI Node Settings](/images/horde_assistant.png)
+
 ### `Settings -> AI Assistant` (Persona & Prompts)
 * **Assistant Profile & Character Import**: Customize the assistant's **Name** (default `June`), **Title**, **Appearance & Avatar**, how it **Calls you**, or click **Import Character** to load an existing SillyTavern `.png` / `.json` character card.
 * **Work & Fun Personalities**: Define dedicated system prompts for **Work** mode (problem-solving, document analysis, and tasks) and **Fun** mode (creative chats and roleplay), plus your default storage folder for generated Creations.

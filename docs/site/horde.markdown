@@ -35,7 +35,7 @@ In **Settings -> AI Node** (or in `/opt/direct/ai/config.ini`), you can use **AI
 * **Primary OpenAI-Compatible SSE Transport (`https://oai.aihorde.net/v1/chat/completions`)**: Supports real-time token streaming, `reasoning_content` thinking deltas, `tool_calls`, multimodal vision inputs, multi-model fallback (`models` up to 5), and `x_horde` worker/Kudos metadata, with automatic fallback to legacy `/api/v2/generate/text/async` polling for models served only by non-OAI workers.
 * **Quality-Filtered `>= 8B` Catalog & Live Worker Badge**: Automatic model selection and offline-model fallback strictly filter out tiny `< 8B` and debug workers (retaining capable `8B-128B+` dense and MoE models, with 5-minute fault quarantine). Every AI Horde chat reply displays a compact badge (`⚡` when answered by your primary model, or `↪` when answered by an online fallback worker) showing the exact model that generated the response.
 
-![AI Horde Hybrid Mode & SillyTavern Character Import](/images/horde_assistant.png)
+![AI Horde Hybrid Mode in Settings -> AI Node](/images/horde_assistant.png)
 
 ### Client Image Mapping, SFW Guardrails & CivitAI LoRAs (`ai/horde_image_mapper.py`)
 * **Studio-to-Horde Mapper**: Translates **Creations** (`Express`) and in-chat `/generate` prompts, negative prompts (`###`), aspect ratios, steps, samplers, verbal Persona passports, and open-download SDXL CivitAI LoRAs (`<= 400 MB`, up to 5 LoRAs, plus Haidra's pre-cached `247778` 8-step TurboMix accelerator or 18-step `k_dpmpp_2m Karras`) into compliant `/api/v2/generate/async` requests (`Client-Agent: Direct:1.0.0:https://github.com/alexeyvolkoff/direct`).

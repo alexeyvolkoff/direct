@@ -167,7 +167,7 @@ If you run the AI node on a low-power always-on NAS or mini-PC without a discret
 - **Official `horde-worker-reGen` + Cooperative ComfyUI Bridge (`regen_comfy_bridge/`):** Operators running the official `horde-worker-reGen` (`SDXL`, `Pony`, `Flux.1-Schnell`, LoRAs, ControlNet) on a single 12-24 GB GPU can prepend `PYTHONPATH=/opt/direct/ai/regen_comfy_bridge` (without modifying `horde-worker-reGen` or `hordelib`) to expose `hordelib`'s embedded ComfyUI on `127.0.0.1:8188` and run Direct Creative Studio (`flow.json` SDXL + DMD2, CivitAI LoRAs, IP-Adapter + ReActor + Impact Auto-Inpaint) cooperatively between AI Horde jobs on the same CUDA context, plus access the live ComfyUI web UI via the **ComfyUI** P2P Node App.
 - **Owner-Only `/horde` Telemetry Console:** Monitor `horde-regen.service`, live Kudos earned, Megapixelsteps, `:8188` GPU VRAM availability, advertised AI Horde models, Studio checkpoints, and 1-click **Maintenance Mode** (`PUT /api/v2/workers/{id}`) from `http://localhost:4000/horde` (or the **AI Horde** Node App inside **Disk Direct**).
 
-![AI Horde Hybrid Mode & Character Import](docs/horde_assistant.png)
+![AI Horde Hybrid Mode in Settings -> AI Node](docs/horde_assistant.png)
 
 ![AI Horde reGen Telemetry & ComfyUI Bridge Console](docs/horde_worker.png)
 
