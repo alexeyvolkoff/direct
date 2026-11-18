@@ -46,12 +46,14 @@
 	let activeScrubberKey = $state("");
 	let scrollEl = $state(null);
 	let knowledgeTick = $state(0);
+	let failedFolderCovers = $state({});
 	let lastTrackedPath = "";
 
 	$effect(() => {
 		const curPath = path || "";
 		if (curPath !== lastTrackedPath) {
 			lastTrackedPath = curPath;
+			failedFolderCovers = {};
 			if (activeAlbum) {
 				activeAlbum = null;
 				if (albumBackToken) {
@@ -427,7 +429,15 @@
 
 	function getCoverPreview(fileObj) {
 		if (!fileObj || !templates?.preview) return "";
+		if ((fileObj.type === "folder" || fileObj.isDir) && !fileObj.hasCover && !fileObj.customAttributes?.cover) {
+			return "";
+		}
 		return templates.preview(fileObj, 320, 240) || "";
+	}
+
+	function getFolderIcon(folder) {
+		if (!folder || !templates?.icon) return "";
+		return templates.icon(folder, "big") || "";
 	}
 
 	function isCoverBlurred(fileObj) {
@@ -680,12 +690,19 @@
 					{#if subfolders.length > 0}
 						<div class="wx-cr-album-sec">
 							<div class="wx-cr-sec-head">
-								<h4>📁 {$i18nT("media_folders", {}, "Folders")}</h4>
+								<h4>
+									<svg class="wx-cr-head-folder-svg" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+										<path fill="currentColor" d="M9.828 3h3.982a2 2 0 0 1 1.992 2.181l-.637 7A2 2 0 0 1 13.174 14H2.825a2 2 0 0 1-1.991-1.819l-.637-7a2 2 0 0 1 .342-1.31L.5 3a2 2 0 0 1 2-2h3.672a2 2 0 0 1 1.414.586l.828.828A2 2 0 0 0 9.828 3m-8.322.12q.322-.119.684-.12h5.396l-.707-.707A1 1 0 0 0 6.172 2H2.5a1 1 0 0 0-1 .981z" />
+									</svg>
+									<span>{$i18nT("media_folders", {}, "Folders")}</span>
+								</h4>
 								<span class="wx-cr-sec-cnt">{subfolders.length}</span>
 							</div>
 							<div class="wx-cr-albums-grid">
 								{#each subfolders as folder (folder.id)}
 									{@const fCov = getCoverPreview(folder)}
+									{@const showCov = Boolean(fCov && !failedFolderCovers[folder.id])}
+									{@const fIcon = getFolderIcon(folder)}
 									<button
 										type="button"
 										class="wx-cr-album-card"
@@ -694,11 +711,26 @@
 											openFolder(folder.id);
 										}}
 									>
-										<div class="wx-cr-album-cover">
-											{#if fCov}
-												<img src={fCov} alt={folder.name || folder.value} loading="lazy" />
+										<div class="wx-cr-album-cover" class:no-cover={!showCov}>
+											{#if showCov}
+												<img
+													src={fCov}
+													alt={folder.name || folder.value}
+													loading="lazy"
+													onerror={() => {
+														failedFolderCovers = { ...failedFolderCovers, [folder.id]: true };
+													}}
+												/>
 											{:else}
-												<div class="wx-cr-album-fallback">📁</div>
+												<div class="wx-cr-album-fallback folder-fallback">
+													{#if fIcon}
+														<img class="wx-cr-folder-icon" src={fIcon} alt="" />
+													{:else}
+														<svg class="wx-cr-folder-svg" viewBox="0 0 16 16" aria-hidden="true">
+															<path fill="currentColor" d="M9.828 3h3.982a2 2 0 0 1 1.992 2.181l-.637 7A2 2 0 0 1 13.174 14H2.825a2 2 0 0 1-1.991-1.819l-.637-7a2 2 0 0 1 .342-1.31L.5 3a2 2 0 0 1 2-2h3.672a2 2 0 0 1 1.414.586l.828.828A2 2 0 0 0 9.828 3m-8.322.12q.322-.119.684-.12h5.396l-.707-.707A1 1 0 0 0 6.172 2H2.5a1 1 0 0 0-1 .981z" />
+														</svg>
+													{/if}
+												</div>
 											{/if}
 											<div class="wx-cr-album-grad">
 												<span class="wx-cr-album-title">{folder.name || folder.value}</span>
@@ -1146,6 +1178,14 @@
 		font-size: 14.5px;
 		font-weight: 700;
 		color: var(--wx-color-font, inherit);
+		display: inline-flex;
+		align-items: center;
+		gap: 7px;
+	}
+
+	.wx-cr-head-folder-svg {
+		color: var(--wx-color-primary, #929CD4);
+		flex-shrink: 0;
 	}
 
 	.wx-cr-sec-cnt {
@@ -1193,7 +1233,7 @@
 		height: 112px;
 	}
 
-	.wx-cr-album-cover img {
+	.wx-cr-album-cover > img {
 		width: 100%;
 		height: 100%;
 		object-fit: cover;
@@ -1212,6 +1252,30 @@
 		align-items: center;
 		justify-content: center;
 		font-size: 28px;
+		box-sizing: border-box;
+	}
+
+	.wx-cr-album-fallback.folder-fallback {
+		padding-bottom: 14px;
+		color: var(--wx-color-primary, #929CD4);
+	}
+
+	.wx-cr-album-fallback .wx-cr-folder-icon,
+	.wx-cr-album-fallback .wx-cr-folder-svg {
+		width: 66px;
+		height: 66px;
+		object-fit: contain;
+		display: block;
+		color: var(--wx-color-primary, #929CD4);
+	}
+
+	:global(.light-theme) .wx-cr-album-cover.no-cover {
+		background: var(--wx-background, #ffffff);
+	}
+
+	:global(.light-theme) .wx-cr-album-cover.no-cover .wx-cr-album-grad {
+		background: linear-gradient(to top, rgba(242, 244, 248, 0.96), transparent);
+		color: var(--wx-color-font, #1e293b);
 	}
 
 	.wx-cr-album-grad {
