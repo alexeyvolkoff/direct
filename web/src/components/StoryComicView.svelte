@@ -126,6 +126,7 @@
 
     const lines = cleaned.split(/\r?\n/);
     let extractedTitle = "";
+    let inlineTagline = "";
     let startIdx = 0;
 
     for (let i = 0; i < lines.length; i++) {
@@ -133,14 +134,21 @@
       if (!t) continue;
       const mH1 = t.match(/^#\s+(.+)$/);
       if (mH1) {
-        extractedTitle = mH1[1].trim();
+        const rawH1 = mH1[1].trim();
+        const splitQuote = rawH1.match(/^([^>]+?)\s+>\s+(.+)$/);
+        if (splitQuote) {
+          extractedTitle = splitQuote[1].trim();
+          inlineTagline = splitQuote[2].trim();
+        } else {
+          extractedTitle = rawH1;
+        }
         startIdx = i + 1;
       }
       break;
     }
 
     const blocks = [];
-    let proseBuffer = [];
+    let proseBuffer = inlineTagline ? [`> ${inlineTagline}`] : [];
 
     const flushProse = () => {
       const mdChunk = proseBuffer.join("\n").trim();

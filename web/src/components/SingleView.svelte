@@ -934,7 +934,7 @@
   </header>
 
   <!-- Main Content Viewer -->
-  <main class="singleview-main">
+  <main class="singleview-main" class:is-comic-main={Boolean(shareData?.isDir && !previewingFile && hasSharedStoryComic)}>
     <div class="viewer-card" class:is-comic-card={Boolean(shareData?.isDir && !previewingFile && hasSharedStoryComic)}>
       <!-- Media Preview -->
       <div
@@ -1460,8 +1460,12 @@
   .singleview-wrapper {
     display: flex;
     flex-direction: column;
-    min-height: 100vh;
+    height: 100%;
+    max-height: 100dvh;
     width: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     transition: background 0.2s ease, color 0.2s ease;
   }
@@ -1524,6 +1528,9 @@
 
   /* Nav Header */
   .singleview-nav {
+    position: sticky;
+    top: 0;
+    flex-shrink: 0;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -1691,10 +1698,17 @@
 
   /* Main Section */
   .singleview-main {
-    flex: 1;
+    flex: 1 0 auto;
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: 16px 0;
+    box-sizing: border-box;
+  }
+
+  .singleview-main.is-comic-main {
+    align-items: flex-start;
+    padding: 20px 12px 28px;
   }
 
   .viewer-card {
@@ -1742,7 +1756,9 @@
 
   .viewer-card.is-comic-card {
     max-width: min(1060px, 95vw);
-    margin: 16px auto;
+    margin: 0 auto;
+    overflow: visible;
+    flex-shrink: 0;
   }
 
   .preview-stage.is-comic-stage {
@@ -1751,8 +1767,16 @@
     overflow: visible;
   }
 
+  .preview-stage.is-comic-stage .shared-folder-view {
+    max-height: none;
+    height: auto;
+    min-height: 0;
+  }
+
   .folder-stage-body.is-comic-body {
-    overflow-y: visible;
+    max-height: none;
+    height: auto;
+    overflow: visible;
     padding: 12px 16px 24px;
   }
 
