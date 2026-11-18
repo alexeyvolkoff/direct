@@ -164,11 +164,23 @@ export function resolveAppModeInfo() {
     }
   }
 
+  const hostMode = modeFromHostname();
+  const serverMode = modeFromServer();
+  const isSharedPath = typeof window !== "undefined" && (
+    String(window.location?.pathname || "").startsWith("/shared") ||
+    String(window.location?.hash || "").startsWith("#/shared")
+  );
+  // Dedicated chat/agent hostnames (ai-agent.direct, aiassistant.direct, chat.*, ai.*)
+  // must never be downgraded to "files" by a gateway binary compiled before the domain was added.
+  const effectiveServerMode = (hostMode?.mode === APP_MODE_CHAT && !isSharedPath && serverMode?.mode === APP_MODE_FILES)
+    ? null
+    : serverMode;
+
   cachedResult = cachedResult
-    || modeFromServer()
+    || effectiveServerMode
     || modeFromNativePreference()
     || modeFromBuild()
-    || modeFromHostname()
+    || hostMode
     || { mode: APP_MODE_FILES, source: "default" };
 
   try {

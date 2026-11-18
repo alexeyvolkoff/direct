@@ -54,14 +54,14 @@
 #define PERSONAL_LINKS_PREFIX  "/shared-by-me"
 #define SUBMIT_FORM_PREFIX   "/submitform"
 #ifdef QT_DEBUG
-#define CHAT_DOMAIN         "aiassistant.direct"
+#define CHAT_DOMAIN         "ai-agent.direct"
 #else
-#define CHAT_DOMAIN         "aiassistant.direct"
+#define CHAT_DOMAIN         "ai-agent.direct"
 #endif
 #define CHAT_PREFIX         "/ai"
 
 /* True when the request host belongs to the chat frontend. The same backend
- * serves both chat (aiassistant.direct / chat.disk.direct) and files (disk.direct)
+ * serves both chat (ai-agent.direct / aiassistant.direct / chat.disk.direct) and files (disk.direct)
  * domains, so this must be evaluated per request, not cached globally. */
 static inline bool isChatHost(const QString &host)
 {
@@ -79,6 +79,7 @@ static inline bool isChatHost(const QString &host)
         h.chop(1);
     const QString chatDomain = QString::fromLatin1(CHAT_DOMAIN);
     return h == chatDomain || h.endsWith(QStringLiteral(".") + chatDomain)
+        || h == QStringLiteral("aiassistant.direct") || h.endsWith(QStringLiteral(".aiassistant.direct"))
         || h.startsWith(QStringLiteral("chat.")) || h.startsWith(QStringLiteral("ai."))
         || h == QStringLiteral("onmychat.com") || h.endsWith(QStringLiteral(".onmychat.com"));
 }
