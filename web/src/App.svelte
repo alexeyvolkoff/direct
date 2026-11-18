@@ -91,7 +91,7 @@
   import { setupGalleryPagination, getGalleryCaption } from "./lib/gallery-pagination.js";
   import { initGalleryCaptionAutoHide } from "./lib/gallery-caption-autohide.js";
   import { get } from "svelte/store";
-  import { contentModeStore, hasSensitiveReadmeContent, hasSensitiveTag } from "./lib/content-mode.js";
+  import { contentModeStore, nsfwUnblurStore, toggleNsfwUnblur, hasSensitiveReadmeContent, hasSensitiveTag } from "./lib/content-mode.js";
   import 'lightgallery/css/lightgallery.css';
   import 'lightgallery/css/lg-fullscreen.css';
 
@@ -128,27 +128,39 @@
         readmeByStem.set(nm.replace(/\.readme\.md$/i, "").toLowerCase(), f);
       }
     }
-    if (readmeByStem.size === 0) return;
+    const anyCompanionFlag = itemsList.some((f) => Boolean(f && f.hasCompanionReadme));
+    if (readmeByStem.size === 0 && !anyCompanionFlag) return;
 
-    const shouldPreBlur = isSharedFolder || get(contentModeStore) !== "fun";
+    const shouldPreBlur = !get(nsfwUnblurStore) && (isSharedFolder || get(contentModeStore) !== "fun");
     const pending = [];
     for (const f of itemsList) {
       if (!_isMediaFileItem(f)) continue;
-      if (hasSensitiveTag(f)) {
+      if (f.isSensitive === true || hasSensitiveTag(f)) {
         f.isSensitive = true;
         continue;
       }
       const nm = String(f.name || f.value || "");
       const stemNoExt = nm.replace(/\.[^.]+$/, "").toLowerCase();
       const rItem = readmeByStem.get(stemNoExt) || readmeByStem.get(nm.toLowerCase());
-      if (!rItem) {
+      let relRPath = "";
+      if (rItem) {
+        const rawRPath = String(rItem.realPath || rItem.id || "");
+        relRPath = cleanPrefix && rawRPath.startsWith(cleanPrefix + "/")
+          ? rawRPath.slice(cleanPrefix.length)
+          : rawRPath;
+      } else if (f.hasCompanionReadme) {
+        const rawFPath = String(f.id || "");
+        const relFPath = cleanPrefix && rawFPath.startsWith(cleanPrefix + "/")
+          ? rawFPath.slice(cleanPrefix.length)
+          : rawFPath;
+        const parentDir = relFPath.includes("/") ? relFPath.slice(0, relFPath.lastIndexOf("/")) : "";
+        const sidecarName = f.companionReadmeName || `${nm.replace(/\.[^.]+$/, "")}.Readme.md`;
+        relRPath = `${parentDir}/${sidecarName}`;
+      }
+      if (!relRPath) {
         f.isSensitive = false;
         continue;
       }
-      const rawRPath = String(rItem.realPath || rItem.id || "");
-      const relRPath = cleanPrefix && rawRPath.startsWith(cleanPrefix + "/")
-        ? rawRPath.slice(cleanPrefix.length)
-        : rawRPath;
       const cacheKey = `${cleanPrefix}:${relRPath}`;
       if (_sensitivePathCache.has(cacheKey)) {
         f.isSensitive = _sensitivePathCache.get(cacheKey);
@@ -6191,7 +6203,7 @@ async function blobToBase64(blob) {
           String(file.id || "").startsWith("/shared-to-me") ||
           String(parentPath || "").startsWith("/shared-to-me")
       );
-      const shouldEnforceSensitiveLock = isSharedLockedFile || get(contentModeStore) !== "fun";
+      const shouldEnforceSensitiveLock = !get(nsfwUnblurStore) && (isSharedLockedFile || get(contentModeStore) !== "fun");
       const cameraRollScopeNames = typeof window !== "undefined" ? window.__omdCameraRollScopeNames : null;
       if (typeof window !== "undefined" && window.__omdCameraRollScopeNames) {
         window.__omdCameraRollScopeNames = null;
@@ -7178,6 +7190,15 @@ async function blobToBase64(blob) {
   }
 
   function handleKeydown(event) {
+    if (!isSharedRoute && currentApp !== 'code' && currentApp !== 'terminal' && event.ctrlKey && !event.altKey && !event.shiftKey && (event.code === 'KeyF' || String(event.key || '').toLowerCase() === 'f')) {
+      const activeEl = typeof document !== 'undefined' ? document.activeElement : null;
+      const tag = String(activeEl?.tagName || '').toUpperCase();
+      if (tag !== 'INPUT' && tag !== 'TEXTAREA' && !activeEl?.isContentEditable && !activeEl?.closest?.('.monaco-editor')) {
+        event.preventDefault();
+        toggleNsfwUnblur({ syncContentMode: true });
+        return;
+      }
+    }
     if (event.key === 'Escape') {
       if (viewerFile) closeViewer();
       else if (currentApp === 'settings') {

@@ -7,7 +7,6 @@
 	import { getContext, setContext, tick } from "svelte";
 
 	import SearchView from "./SearchView.svelte";
-	import Info from "./Info.svelte";
 	import Panels from "./Panels.svelte";
 	import Sidebar from "./Sidebar.svelte";
 	import Toolbar from "./Toolbar.svelte";
@@ -16,7 +15,7 @@
 	import CameraRollView from "./CameraRoll/View.svelte";
 	import { isCameraRollFolder } from "./CameraRoll/media-utils.js";
 
-	let { readonly = false, menuOptions, extraInfo, httpDrive = null, searchDrivesProvider = null, toolbarActions = null } = $props();
+	let { readonly = false, menuOptions, httpDrive = null, searchDrivesProvider = null, toolbarActions = null } = $props();
 
 	setContext("filemanager-menu-options", menuOptions);
 
@@ -48,7 +47,6 @@
 
 	const {
 		mode: rMode,
-		preview: rPreview,
 		activePanel: rActivePanel,
 		panels: rPanels,
 	} = api.getReactiveState();
@@ -71,14 +69,8 @@
 		}
 	});
 
-	const previewOption = {
-		icon: "wxi-eye",
-		text: "Preview",
-		id: "preview",
-	};
-
 	function getReadonlyMenu(type) {
-		let options = narrowMode ? [previewOption] : [];
+		let options = [];
 		if (type === "file")
 			options = [
 				...options,
@@ -103,9 +95,7 @@
 				default:
 					if (item) {
 						if (!inTree && selected.length > 1) {
-							options = narrowMode
-								? [previewOption, ...menuOptions("multiselect", selected)]
-								: menuOptions("multiselect", selected);
+							options = menuOptions("multiselect", selected);
 						} else if (id === "/") {
 							options = menuOptions("folder", item).filter(
 								o => o.id === "paste"
@@ -113,9 +103,7 @@
 						} else {
 							const mOptions = menuOptions(item.type, item);
 							if (mOptions) {
-								options = narrowMode
-									? [previewOption, ...mOptions]
-									: mOptions;
+								options = mOptions;
 							}
 						}
 					}
@@ -183,9 +171,6 @@
 			case "delete":
 				showConfirm({ selected: ids });
 				break;
-			case "preview":
-				api.exec("show-preview", { mode: !$rPreview });
-				break;
 			case "terminal-here":
 				api.exec("open-terminal", { id: context.id });
 				break;
@@ -237,83 +222,63 @@
 		getPanel,
 	}}
 >
-	{#if narrowMode && $rPreview}
-		<div class="wx-info-narrow">
-			<Info {narrowMode} {extraInfo} />
-		</div>
-	{:else}
-		<Toolbar {narrowMode} onshowtree={toggleSidebar} {toolbarActions} />
-		<ContextMenu
-			dataKey={"id"}
-			at={"point"}
+	<Toolbar {narrowMode} onshowtree={toggleSidebar} {toolbarActions} />
+	<ContextMenu
+		dataKey={"id"}
+		at={"point"}
+		options={contextMenuOptions}
+		resolver={resolveContext}
+		onclick={handleMenu}
+	>
+		<ActionMenu
+			dataKey="actionId"
 			options={contextMenuOptions}
 			resolver={resolveContext}
 			onclick={handleMenu}
 		>
-			<ActionMenu
-				dataKey="actionId"
-				options={contextMenuOptions}
-				resolver={resolveContext}
-				onclick={handleMenu}
-			>
-				<Uploader apiOnly={true} uploadURL={handleUpload}>
-					<div class="wx-content-wrapper wx-flex">
-						{#if $rMode === "search"}
-							<div class="wx-search-zone">
-								<SearchView {httpDrive} {searchDrivesProvider} />
-							</div>
-						{:else if $rMode !== "panels"}
+			<Uploader apiOnly={true} uploadURL={handleUpload}>
+				<div class="wx-content-wrapper wx-flex">
+					{#if $rMode === "search"}
+						<div class="wx-search-zone">
+							<SearchView {httpDrive} {searchDrivesProvider} />
+						</div>
+					{:else if $rMode !== "panels"}
+						<div
+							use:clickOutside={hideSidebar}
+							class="wx-sidebar"
+							class:wx-sidebar-narrow={narrowMode}
+							class:wx-sidebar-visible={showSidebar}
+							bind:clientWidth={sidebarWidth}
+						>
+							<Sidebar {readonly} {menuOptions} onnavigate={() => { if (narrowMode) showSidebar = false; }} />
+						</div>
+						<div
+							class="wx-content"
+							style={narrowMode ? "width: 100%" : `width: calc(100% - ${sidebarWidth || 0}px - 10px)`}
+						>
 							<div
-								use:clickOutside={hideSidebar}
-								class="wx-sidebar"
-								class:wx-sidebar-narrow={narrowMode}
-								class:wx-sidebar-visible={showSidebar}
-								bind:clientWidth={sidebarWidth}
+								class="wx-content-item-fit"
+								class:wx-cameraroll-fit={isCameraRoll}
+								data-id={setID("body")}
 							>
-								<Sidebar {readonly} {menuOptions} onnavigate={() => { if (narrowMode) showSidebar = false; }} />
-							</div>
-							<div
-								class="wx-content"
-								style={narrowMode ? "width: 100%" : `width: calc(100% - ${sidebarWidth || 0}px - 10px)`}
-							>
-								<div
-									class="wx-content-item{$rPreview
-										? ''
-										: '-fit'}"
-									class:wx-cameraroll-fit={isCameraRoll && !$rPreview}
-									data-id={setID("body")}
-								>
-									{#if $rMode === "table"}
-										<TableView panel={$rActivePanel} />
-									{:else if isCameraRoll}
-										<CameraRollView isCameraRoll={true} />
-									{:else}
-										<CardsView />
-									{/if}
-								</div>
-								{#if $rPreview}
-									<div class="wx-info">
-										<Info {extraInfo} />
-									</div>
+								{#if $rMode === "table"}
+									<TableView panel={$rActivePanel} />
+								{:else if isCameraRoll}
+									<CameraRollView isCameraRoll={true} />
+								{:else}
+									<CardsView />
 								{/if}
 							</div>
-						{:else}
-							<div
-								class="wx-content-item{$rPreview ? '' : '-fit'}"
-							>
-								<Panels />
-							</div>
-							{#if $rPreview}
-								<div class="wx-info">
-									<Info {extraInfo} />
-								</div>
-							{/if}
-						{/if}
-					</div>
-				</Uploader>
-			</ActionMenu>
-		</ContextMenu>
-	{/if}
+						</div>
+					{:else}
+						<div class="wx-content-item-fit">
+							<Panels />
+						</div>
+					{/if}
+				</div>
+			</Uploader>
+		</ActionMenu>
+	</ContextMenu>
 </div>
 
 <style>

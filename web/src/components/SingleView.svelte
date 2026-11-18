@@ -19,11 +19,11 @@
   import { getStoredOmdKey } from "../lib/omd-key.js";
   import { getViewerSettings } from "../lib/viewer-settings.js";
   import { isCameraRollFolder, isImageOrVideo, isVideoFile, formatDuration, isIgnoredFile } from "../lib/svar-filemanager/components/CameraRoll/media-utils.js";
-  import { isStoryOrLongReadme } from "../lib/story-composer.js";
+  import { isStoryOrLongReadme, buildMarkdownFromStoryJson, readTextFromDrive } from "../lib/story-composer.js";
   import StoryComicView from "./StoryComicView.svelte";
   import { resolveAppMode, APP_MODE_CHAT } from "../lib/app-mode.js";
   import { gatewayConfig } from "../lib/gateway-config.js";
-  import { hasSensitiveReadmeContent, hasSensitiveTag } from "../lib/content-mode.js";
+  import { nsfwUnblurStore, hasSensitiveReadmeContent, hasSensitiveTag } from "../lib/content-mode.js";
 
   $: isChatDomain = resolveAppMode() === APP_MODE_CHAT;
   $: brandName = isChatDomain
@@ -55,28 +55,18 @@
   $: crMediaFiles = isCameraRoll ? crRealFiles.filter(f => isImageOrVideo(f)).slice().sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime()) : [];
 
   let sharedFolderReadme = "";
-  let sharedReadmeKey = "";
+  let sharedForceUnblur = false;
+  $: effectiveSharedUnblur = Boolean(sharedForceUnblur || $nsfwUnblurStore);
   $: hasSharedStoryComic = isStoryOrLongReadme(sharedFolderReadme);
 
-  $: {
-    const readmeItem = (folderItems || []).find(
-      (f) => !f.isDir && String(f?.name || "").trim().toLowerCase() === "readme.md"
-    );
-    const nextKey = readmeItem ? `${currentSubPath}::${readmeItem.name}::${readmeItem.size || 0}` : "";
-    if (!readmeItem) {
-      sharedReadmeKey = "";
-      sharedFolderReadme = "";
-    } else if (nextKey !== sharedReadmeKey) {
-      sharedReadmeKey = nextKey;
-      const readmeUrl = getItemP2pUrl(readmeItem);
-      if (readmeUrl && typeof fetch === "function") {
-        fetch(readmeUrl)
-          .then((r) => (r.ok ? r.text() : ""))
-          .then((txt) => {
-            if (sharedReadmeKey === nextKey) sharedFolderReadme = txt || "";
-          })
-          .catch(() => {});
-      }
+  function handleSharedKeydown(e) {
+    if (!e) return;
+    if (e.ctrlKey && !e.altKey && !e.shiftKey && (e.code === "KeyF" || String(e.key || "").toLowerCase() === "f")) {
+      const tag = String(document?.activeElement?.tagName || "").toUpperCase();
+      if (tag === "INPUT" || tag === "TEXTAREA" || document?.activeElement?.isContentEditable) return;
+      e.preventDefault();
+      e.stopPropagation();
+      sharedForceUnblur = !sharedForceUnblur;
     }
   }
 
@@ -177,10 +167,12 @@
 
   $: activeItem = previewingFile || (shareData && !shareData.isDir ? shareData : null);
   $: isLockedSensitivePreview = Boolean(
+    !effectiveSharedUnblur &&
     (isImage || isVideo) &&
     (singleItemSensitive || activeItem?.isSensitive || activeItem?._checkingSensitive || checkingSingleSensitive)
   );
   $: isConfirmedSensitivePreview = Boolean(
+    !effectiveSharedUnblur &&
     (isImage || isVideo) &&
     (singleItemSensitive || activeItem?.isSensitive)
   );
@@ -348,17 +340,61 @@
         }
       }
 
+      const devPrefixForSub = devId ? (devId.startsWith("/") ? devId : "/" + devId) : "";
+      const makeChildP2pUrl = (fileName) => {
+        const sub = (subPath.endsWith("/") ? subPath.slice(0, -1) : subPath) + "/" + fileName;
+        let full = (basePath.endsWith("/") ? basePath.slice(0, -1) : basePath) + (sub.startsWith("/") ? sub : "/" + sub);
+        if (devPrefixForSub && (full === devPrefixForSub || full.startsWith(devPrefixForSub + "/"))) {
+          full = full.slice(devPrefixForSub.length);
+        }
+        return `/p2p${devPrefixForSub}` + encodeURI(full.startsWith("/") ? full : "/" + full);
+      };
+
+      // Load folder Readme.md (or fallback story.json) directly from the shared drive / P2P
+      let loadedFolderMd = "";
+      try {
+        const inlineReadme = items?.readmeFile || (items || []).find((f) => !f.isDir && /^readme\.md$/i.test(f?.name || ""));
+        const readmeName = inlineReadme?.name || "Readme.md";
+        const readmeTargetPath = `${cleanPath === "/" ? "" : cleanPath}/${readmeName}`;
+        loadedFolderMd = await readTextFromDrive(drive, readmeTargetPath, makeChildP2pUrl(readmeName));
+        if (!loadedFolderMd && !inlineReadme) {
+          loadedFolderMd = await readTextFromDrive(drive, `${cleanPath === "/" ? "" : cleanPath}/README.md`, makeChildP2pUrl("README.md"));
+        }
+        if (!loadedFolderMd) {
+          const jsonTargetPath = `${cleanPath === "/" ? "" : cleanPath}/story.json`;
+          const rawJson = await readTextFromDrive(drive, jsonTargetPath, makeChildP2pUrl("story.json"));
+          if (rawJson) {
+            try {
+              loadedFolderMd = buildMarkdownFromStoryJson(JSON.parse(rawJson));
+            } catch (_) {}
+          }
+        }
+      } catch (_) {}
+
+      sharedFolderReadme = loadedFolderMd || "";
+      const folderLevelSensitive = Boolean(
+        hasSensitiveTag(shareData) || hasSensitiveReadmeContent(sharedFolderReadme)
+      );
+
       const mappedItems = (items || []).map(item => {
         const isDir = !!(item.isDir || item.type === "folder");
         const name = item.name || item.value || (item.id ? item.id.split("/").filter(Boolean).pop() : "Item");
         const itemSubPath = (subPath.endsWith("/") ? subPath.slice(0, -1) : subPath) + "/" + name;
+        const attrSensitive = Boolean(
+          folderLevelSensitive ||
+          item.isSensitive ||
+          item.sensitive ||
+          hasSensitiveTag(item) ||
+          hasSensitiveReadmeContent(item.customAttributes?.description || "") ||
+          hasSensitiveReadmeContent(item.customAttributes?.prompt || "")
+        );
         return {
           ...item,
           name,
           isDir,
           type: isDir ? "folder" : "file",
           subPath: itemSubPath,
-          isSensitive: hasSensitiveTag(item),
+          isSensitive: attrSensitive,
           _checkingSensitive: false
         };
       });
@@ -379,9 +415,10 @@
         const stemNoExt = (it.name || "").replace(/\.[^.]+$/, "").toLowerCase();
         const stemFull = (it.name || "").toLowerCase();
         const rItem = readmeByStem.get(stemNoExt) || readmeByStem.get(stemFull);
-        if (rItem) {
+        const sidecarName = rItem?.name || (it.hasCompanionReadme ? (it.companionReadmeName || `${(it.name || "").replace(/\.[^.]+$/, "")}.Readme.md`) : "");
+        if (sidecarName) {
           it._checkingSensitive = true;
-          toVerify.push({ mediaItem: it, readmeItem: rItem });
+          toVerify.push({ mediaItem: it, sidecarName });
         } else {
           it.isSensitive = false;
         }
@@ -392,18 +429,11 @@
       if (toVerify.length > 0) {
         (async () => {
           await Promise.all(
-            toVerify.map(async ({ mediaItem, readmeItem }) => {
+            toVerify.map(async ({ mediaItem, sidecarName }) => {
               try {
-                const mdUrl = getItemP2pUrl(readmeItem);
-                if (mdUrl) {
-                  const r = await fetch(mdUrl);
-                  if (r.ok) {
-                    const md = await r.text();
-                    mediaItem.isSensitive = hasSensitiveReadmeContent(md);
-                  } else {
-                    mediaItem.isSensitive = false;
-                  }
-                }
+                const sidecarPath = `${cleanPath === "/" ? "" : cleanPath}/${sidecarName}`;
+                const md = await readTextFromDrive(drive, sidecarPath, makeChildP2pUrl(sidecarName));
+                mediaItem.isSensitive = Boolean(md && hasSensitiveReadmeContent(md));
               } catch (_) {
                 mediaItem.isSensitive = false;
               } finally {
@@ -545,12 +575,14 @@
   }
 
   function openImageGallery(file) {
-    if (file && (file.isSensitive || file._checkingSensitive)) {
+    if (file && !effectiveSharedUnblur && (file.isSensitive || file._checkingSensitive)) {
       previewingFile = file;
       return;
     }
     if (!folderItems || folderItems.length === 0) return;
-    const images = folderItems.filter(f => isImageItem(f) && !f.isSensitive && !f._checkingSensitive);
+    const images = folderItems.filter(
+      f => isImageItem(f) && (effectiveSharedUnblur || (!f.isSensitive && !f._checkingSensitive))
+    );
     if (images.length === 0) {
       previewingFile = file;
       return;
@@ -632,7 +664,7 @@
     const ext = getItemExt(item);
     const isImg = mime.startsWith("image/") || ["jpg", "jpeg", "png", "gif", "webp", "svg"].includes(ext);
 
-    if (item.isSensitive || item._checkingSensitive) {
+    if (!effectiveSharedUnblur && (item.isSensitive || item._checkingSensitive)) {
       previewingFile = item;
       return;
     }
@@ -860,6 +892,8 @@
   }
 </script>
 
+<svelte:window on:keydown={handleSharedKeydown} />
+
 <div class="singleview-wrapper {isDarkTheme ? 'dark-theme' : 'light-theme'}">
   <!-- Top Bar -->
   <header class="singleview-nav">
@@ -901,9 +935,15 @@
 
   <!-- Main Content Viewer -->
   <main class="singleview-main">
-    <div class="viewer-card">
+    <div class="viewer-card" class:is-comic-card={Boolean(shareData?.isDir && !previewingFile && hasSharedStoryComic)}>
       <!-- Media Preview -->
-      <div class="preview-stage" bind:this={stageElement} class:is-fullscreen={isFullscreen} class:is-audio-stage={isAudio}>
+      <div
+        class="preview-stage"
+        bind:this={stageElement}
+        class:is-fullscreen={isFullscreen}
+        class:is-audio-stage={isAudio}
+        class:is-comic-stage={Boolean(shareData?.isDir && !previewingFile && hasSharedStoryComic)}
+      >
         {#if (isImage || isMarkdown) && !isPdf && !isVideo && !isLockedSensitivePreview}
           <button
             class="fullscreen-toggle-btn"
@@ -983,7 +1023,7 @@
             </div>
 
             <!-- Folder Contents Stage -->
-            <div class="folder-stage-body">
+            <div class="folder-stage-body" class:is-comic-body={hasSharedStoryComic}>
               {#if loadingFolder}
                 <div class="folder-state-loading">
                   <div class="spinner"></div>
@@ -993,18 +1033,20 @@
                 <div class="folder-state-error">
                   <p>{folderError}</p>
                 </div>
-              {:else if folderItems.length === 0}
+              {:else if folderItems.length === 0 && !hasSharedStoryComic}
                 <div class="folder-state-empty">
                   <i class="wxi-folder" style="font-size: 48px; color: var(--accent, #7B86C4);"></i>
                   <p>{$_("folder_empty", {}, "This folder is empty")}</p>
                 </div>
               {:else}
                 {#if hasSharedStoryComic}
-                  <div class="shared-story-comic-wrap" style="padding: 8px 14px 4px;">
+                  <div class="shared-story-comic-wrap">
                     <StoryComicView
                       markdown={sharedFolderReadme}
                       folderTitle={currentSubPath ? currentSubPath.split("/").filter(Boolean).pop() : (shareData?.title || shareData?.name || "")}
                       {isDarkTheme}
+                      isPublicShare={true}
+                      forceUnblur={effectiveSharedUnblur}
                       resolveMediaUrl={resolveSharedComicMediaUrl}
                       resolvePosterUrl={resolveSharedComicPosterUrl}
                       isSensitiveMedia={(rel) => {
@@ -1014,6 +1056,11 @@
                       }}
                       on:image-click={handleSharedComicImageClick}
                     />
+                    {#if folderItems.length > 0}
+                      <div class="shared-story-files-divider">
+                        <span>📎 {$_("story_files_footer", {}, "Files")} · {isCameraRoll ? crMediaFiles.length : folderItems.length}</span>
+                      </div>
+                    {/if}
                   </div>
                 {/if}
                 {#if folderViewMode === 'cards'}
@@ -1040,6 +1087,7 @@
                     {#if crMediaFiles.length}
                       <div class="wx-cameraroll-grid">
                         {#each crMediaFiles as item}
+                          {@const itemBlurred = (item.isSensitive || item._checkingSensitive) && !effectiveSharedUnblur}
                           <!-- svelte-ignore a11y_click_events_have_key_events -->
                           <!-- svelte-ignore a11y_no_static_element_interactions -->
                           <div
@@ -1047,14 +1095,14 @@
                             title={item.name}
                             on:click={() => handleItemClick(item)}
                           >
-                            <div class="wx-cr-preview-wrapper" class:is-sensitive-thumb={item.isSensitive || item._checkingSensitive}>
+                            <div class="wx-cr-preview-wrapper" class:is-sensitive-thumb={itemBlurred}>
                               {#if getItemThumbnail(item) && !item._imgFailed}
                                 <img
                                   src={getItemThumbnail(item)}
                                   alt={item.name}
                                   loading="lazy"
                                   class="wx-cr-img"
-                                  class:shared-sensitive-blur={item.isSensitive || item._checkingSensitive}
+                                  class:shared-sensitive-blur={itemBlurred}
                                   on:error={() => {
                                     item._imgFailed = true;
                                     folderItems = folderItems;
@@ -1066,7 +1114,7 @@
                                 </div>
                               {/if}
 
-                              {#if item.isSensitive}
+                              {#if itemBlurred && item.isSensitive}
                                 <div class="shared-sensitive-pill">🔒 Sensitive</div>
                               {/if}
 
@@ -1103,11 +1151,12 @@
                   <!-- Cards Mode (Styled like SVAR Filemanager cards) -->
                   <div class="folder-cards-grid">
                   {#each folderItems as item}
+                    {@const cardBlurred = (item.isSensitive || item._checkingSensitive) && !effectiveSharedUnblur}
                     <div
                       class="svar-like-card {item.isDir ? 'is-folder-card' : 'is-file-card'}"
                       on:click={() => handleItemClick(item)}
                     >
-                      <div class="card-thumb-area" class:is-sensitive-thumb={item.isSensitive || item._checkingSensitive}>
+                      <div class="card-thumb-area" class:is-sensitive-thumb={cardBlurred}>
                         {#if item.isDir}
                           <div class="card-icon-area">
                             <img src={getItemIconUrl(item, "big")} alt="" class="card-mime-img is-folder" />
@@ -1117,13 +1166,13 @@
                             src={getItemThumbnail(item)}
                             alt={item.name}
                             class="card-cover-img"
-                            class:shared-sensitive-blur={item.isSensitive || item._checkingSensitive}
+                            class:shared-sensitive-blur={cardBlurred}
                             on:error={() => {
                               item._imgFailed = true;
                               folderItems = folderItems;
                             }}
                           />
-                          {#if item.isSensitive}
+                          {#if cardBlurred && item.isSensitive}
                             <div class="shared-sensitive-pill">🔒 Sensitive</div>
                           {/if}
                         {:else}
@@ -1689,6 +1738,37 @@
     min-height: 540px;
     max-height: none;
     height: auto;
+  }
+
+  .viewer-card.is-comic-card {
+    max-width: min(1060px, 95vw);
+    margin: 16px auto;
+  }
+
+  .preview-stage.is-comic-stage {
+    max-height: none;
+    height: auto;
+    overflow: visible;
+  }
+
+  .folder-stage-body.is-comic-body {
+    overflow-y: visible;
+    padding: 12px 16px 24px;
+  }
+
+  .shared-story-comic-wrap {
+    width: 100%;
+    padding: 4px 0 8px;
+  }
+
+  .shared-story-files-divider {
+    max-width: 980px;
+    margin: 4px auto 10px;
+    padding: 8px 6px 4px;
+    font-size: 13px;
+    font-weight: 650;
+    opacity: 0.76;
+    border-top: 1px solid rgba(139, 128, 163, 0.2);
   }
 
   .light-theme .preview-stage {

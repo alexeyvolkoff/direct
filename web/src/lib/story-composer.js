@@ -193,11 +193,55 @@ export function splitPrefixedFolderPath(fullId = "") {
   return { prefix, device: null, realPath: clean.startsWith("/") ? clean : "/" + clean };
 }
 
-async function readTextFromDrive(drive, realPath, p2pFallbackUrl = "") {
+export function buildMarkdownFromStoryJson(storyData = null) {
+  if (!storyData || typeof storyData !== "object") return "";
+  const title = String(storyData.story_title || storyData.title || storyData.story_slug || "Story").trim();
+  const setting = String(storyData.setting || "").trim();
+  const scenes = Array.isArray(storyData.scenes) ? storyData.scenes : [];
+  if (!scenes.length) return "";
+
+  const lines = [`# ${title}`, ""];
+  if (setting) {
+    lines.push(`> ${setting}`, "");
+  }
+  lines.push("---", "");
+
+  let anySensitive = hasSensitiveReadmeContent(setting);
+  for (let i = 0; i < scenes.length; i++) {
+    const sc = scenes[i];
+    if (!sc || typeof sc !== "object") continue;
+    const num = sc.scene_number || i + 1;
+    const scTitle = String(sc.title || `Scene ${num}`).trim();
+    const narrative = String(sc.narrative || "").trim();
+    const imgName = String(sc.image_name || "").trim();
+    const visPrompt = String(sc.visual_prompt || sc.prompt || "").trim();
+    if (hasSensitiveReadmeContent(visPrompt) || hasSensitiveReadmeContent(narrative)) {
+      anySensitive = true;
+    }
+    lines.push(`## ${num}. ${scTitle}`, "");
+    if (imgName) {
+      lines.push(`![${scTitle}](./${imgName})`, "");
+    }
+    if (narrative) {
+      lines.push(narrative, "");
+    }
+    if (visPrompt) {
+      lines.push(`<!-- scene_${num}_prompt: ${visPrompt} -->`);
+    }
+    lines.push("---", "");
+  }
+  if (anySensitive) {
+    lines.push("#sensitive");
+  }
+  return lines.join("\n").trim() + "\n";
+}
+
+export async function readTextFromDrive(drive, realPath, p2pFallbackUrl = "") {
   if (drive) {
     try {
-      if (typeof drive.homeRead === "function") {
-        const b64 = await drive.homeRead(realPath).catch(() => null);
+      if (typeof drive.readFile === "function") {
+        const res = await drive.readFile(realPath, 0, 262144).catch(() => null);
+        const b64 = res && res.data ? res.data : (typeof res === "string" ? res : null);
         if (b64) {
           const bin = atob(b64.replace(/\s+/g, ""));
           const u8 = new Uint8Array(bin.length);
@@ -211,9 +255,8 @@ async function readTextFromDrive(drive, realPath, p2pFallbackUrl = "") {
           return await blob.text();
         }
       }
-      if (typeof drive.readFile === "function") {
-        const res = await drive.readFile(realPath).catch(() => null);
-        const b64 = res && res.data ? res.data : (typeof res === "string" ? res : null);
+      if (typeof drive.homeRead === "function") {
+        const b64 = await drive.homeRead(realPath).catch(() => null);
         if (b64) {
           const bin = atob(b64.replace(/\s+/g, ""));
           const u8 = new Uint8Array(bin.length);
@@ -238,35 +281,59 @@ async function readTextFromDrive(drive, realPath, p2pFallbackUrl = "") {
 }
 
 /**
- * Checks if `files` in `folderId` contains `Readme.md` / `README.md` and loads its text.
+ * Checks if `folderId` contains `Readme.md` / `README.md` (or `story.json`) and loads its comic text.
+ * Works seamlessly even when `webrtc-drive.getFiles()` filters `Readme.md` out of the visible `files` list.
  */
 export async function loadFolderStoryReadme(folderId, files = []) {
-  if (!folderId || folderId === "/" || !Array.isArray(files) || files.length === 0) {
+  if (!folderId || folderId === "/" || folderId.startsWith("/shared-by-me") || !Array.isArray(files)) {
     return "";
   }
-  const readmeEntry = files.find((f) => {
-    if (!f || f.isDir || f.type === "folder") return false;
-    const nm = String(f.name || f.value || "").trim().toLowerCase();
-    return nm === "readme.md";
-  });
-  if (!readmeEntry) return "";
-
   const normFolder = String(folderId).replace(/\/+$/, "");
-  const stamp = `${readmeEntry.size || 0}_${readmeEntry.date ? new Date(readmeEntry.date).getTime() : 0}`;
+  const inlineEntry =
+    files.readmeFile ||
+    files.find((f) => {
+      if (!f || f.isDir || f.type === "folder") return false;
+      return String(f.name || f.value || "").trim().toLowerCase() === "readme.md";
+    }) ||
+    null;
+
+  if (files.length === 0 && !inlineEntry && !files.storyJsonFile) {
+    return "";
+  }
+
+  const stamp = `${files.length}_${inlineEntry?.size || 0}`;
   const cacheKey = `${normFolder}::${stamp}`;
   if (_folderReadmeCache.has(cacheKey)) {
     return _folderReadmeCache.get(cacheKey);
   }
 
-  const readmeName = readmeEntry.name || readmeEntry.value || "Readme.md";
   const { prefix, device, realPath } = splitPrefixedFolderPath(normFolder);
-  const readmeRealPath = `${realPath === "/" ? "" : realPath}/${readmeName}`;
+  if (!device?.drive && !prefix) return "";
+
+  const baseDir = realPath === "/" ? "" : realPath;
+  const readmeName = inlineEntry?.name || inlineEntry?.value || "Readme.md";
+  const readmeRealPath = `${baseDir}/${readmeName}`;
   const p2pUrl = prefix && !device?.local ? `/p2p/${prefix}${encodeURI(readmeRealPath)}` : "";
 
-  const text = await readTextFromDrive(device?.drive || null, readmeRealPath, p2pUrl);
-  if (text) {
-    _folderReadmeCache.set(cacheKey, text);
+  let text = await readTextFromDrive(device?.drive || null, readmeRealPath, p2pUrl);
+  if (!text && readmeName !== "README.md" && !inlineEntry) {
+    const upperPath = `${baseDir}/README.md`;
+    const upperP2p = prefix && !device?.local ? `/p2p/${prefix}${encodeURI(upperPath)}` : "";
+    text = await readTextFromDrive(device?.drive || null, upperPath, upperP2p);
   }
+
+  if (!text && (files.storyJsonFile || /\/(generated|creations|onmychat)(\/|$)/i.test(normFolder))) {
+    const jsonPath = `${baseDir}/story.json`;
+    const jsonP2p = prefix && !device?.local ? `/p2p/${prefix}${encodeURI(jsonPath)}` : "";
+    const rawJson = await readTextFromDrive(device?.drive || null, jsonPath, jsonP2p);
+    if (rawJson) {
+      try {
+        text = buildMarkdownFromStoryJson(JSON.parse(rawJson));
+      } catch (_) {}
+    }
+  }
+
+  _folderReadmeCache.set(cacheKey, text || "");
   return text || "";
 }
 

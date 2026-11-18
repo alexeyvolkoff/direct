@@ -1,9 +1,8 @@
 <script>
 	import { getContext } from "svelte";
-	import { Segmented, TwoState } from "@svar-ui/svelte-core";
+	import { Segmented } from "@svar-ui/svelte-core";
 	import { setID } from "@svar-ui/lib-dom";
 	import Search from "./ui/Search.svelte";
-	import Icon from "./ui/Icon.svelte";
 	import { translate } from "../../i18n/index.js";
 	import { unreadCount, openNotificationsModal } from "../../notification-inbox.js";
 
@@ -11,7 +10,7 @@
 
 	const api = getContext("filemanager-store");
 
-	const { mode, preview: info, search: searchValue, searchViewMode } = api.getReactiveState();
+	const { mode, search: searchValue, searchViewMode } = api.getReactiveState();
 
 	const _ = getContext("wx-i18n").getGroup("filemanager");
 
@@ -26,10 +25,6 @@
 		} else {
 			api.exec("set-mode", { mode: value });
 		}
-	}
-	function toggleInfo(e) {
-		e.preventDefault();
-		api.exec("show-preview", { mode: !$info });
 	}
 	function search(e) {
 		api.exec("filter-files", { text: e.value });
@@ -73,13 +68,6 @@
 				</svg>
 				<span class="wx-toolbar-bell-badge">{$unreadCount}</span>
 			</button>
-		{/if}
-		{#if !narrowMode && $mode !== "search"}
-			<div class="wx-preview-icon">
-				<TwoState onclick={toggleInfo} value={$info}>
-					<i class="wxi-eye"></i>
-				</TwoState>
-			</div>
 		{/if}
 		<div class="wx-modes">
 			<Segmented

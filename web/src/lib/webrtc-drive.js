@@ -3,6 +3,7 @@ import { getSharedGatewayChannel } from "./gateway-channel.js";
 import { getOrCreateLocalLinkId } from "./local-client.js";
 import { getViewerSettings } from "./viewer-settings.js";
 import { getGatewayTurnHost } from "./gateway-config.js";
+import { hasSensitiveTag, hasSensitiveReadmeContent } from "./content-mode.js";
 
 
 let _cachedPublicNodeLinkId = null;
@@ -1002,15 +1003,26 @@ export class WebRTCDataChannelDrive {
         }
         const items = (res && res.result && Array.isArray(res.result.files)) ? res.result.files : [];
         const dirRealPath = (res && res.result && res.result.realPath) || "";
+        const folderReadmeEntry = items.find(f => f && !f.isDir && /^readme\.md$/i.test(f.name || "")) || null;
+        const storyJsonEntry = items.find(f => f && !f.isDir && /^story\.json$/i.test(f.name || "")) || null;
+        const sidecarMap = new Map();
+        for (const f of items) {
+            if (f && !f.isDir && /\.readme\.md$/i.test(f.name || "")) {
+                const stem = (f.name || "").replace(/\.readme\.md$/i, "").toLowerCase();
+                if (stem) sidecarMap.set(stem, f);
+            }
+        }
         const filteredResult = items.filter(f => {
             if (!f || typeof f !== "object") return false;
             const name = f.name || "";
             if (name === "" || name === "." || name === "..") return false;
-            return !(name === 'folder.jpg' || name === 'cover.png' || name === 'cover.jpg' || name.endsWith('.cover.jpg') || name.endsWith('.cover.png') || name.endsWith('Readme.md') || name.endsWith('.Readme.md'));
+            return !(name === 'folder.jpg' || name === 'cover.png' || name === 'cover.jpg' || name === 'story.json' || name.endsWith('.cover.jpg') || name.endsWith('.cover.png') || /^readme\.md$/i.test(name) || /\.readme\.md$/i.test(name));
         });
 
         const result = filteredResult.map(f => {
             const fileName = f.name || "Untitled";
+            const stemLow = fileName.replace(/\.[^.]+$/, "").toLowerCase();
+            const matchedSidecar = sidecarMap.get(stemLow) || sidecarMap.get(fileName.toLowerCase()) || null;
             const id = folderId === "/" ? "/" + fileName : folderId + "/" + fileName;
             const p2pUrl = "/p2p" + encodeURI(id);
             const isMedia = !f.isDir && f.mimeType && (f.mimeType.startsWith("image/") || f.mimeType.startsWith("video/"));
@@ -1045,6 +1057,14 @@ export class WebRTCDataChannelDrive {
                 mimeType: f.mimeType,
                 hasCover,
                 realPath: itemRealPath,
+                hasCompanionReadme: Boolean(matchedSidecar),
+                companionReadmeName: matchedSidecar?.name || "",
+                isSensitive: Boolean(
+                    f.isSensitive ||
+                    f.sensitive ||
+                    hasSensitiveTag(f) ||
+                    hasSensitiveReadmeContent(f.customAttributes?.description || "")
+                ),
                 customAttributes: f.customAttributes || {},
                 ...(() => {
                     const vs = getViewerSettings();
@@ -1071,6 +1091,8 @@ export class WebRTCDataChannelDrive {
         // Expose the current directory's absolute real path on the array itself
         // so a picker can navigate the real filesystem and build full paths.
         result.realPath = dirRealPath;
+        result.readmeFile = folderReadmeEntry;
+        result.storyJsonFile = storyJsonEntry;
         return result;
     }
 

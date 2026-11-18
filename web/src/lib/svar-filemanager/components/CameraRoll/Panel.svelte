@@ -10,7 +10,7 @@
 		resolveFolderMediaAssetUrl,
 	} from "../../../story-composer.js";
 	import { _ as i18nT, locale as i18nLocale } from "../../../i18n/index.js";
-	import { contentModeStore, hasSensitiveTag } from "../../../content-mode.js";
+	import { contentModeStore, nsfwUnblurStore, hasSensitiveTag, hasSensitiveReadmeContent } from "../../../content-mode.js";
 	import {
 		pushSubViewHistory,
 		dismissSubViewHistory,
@@ -78,7 +78,14 @@
 			folderReadme = "";
 		} else {
 			loadFolderStoryReadme(curPath, curFiles).then((txt) => {
-				if (!cancelled) folderReadme = txt || "";
+				if (!cancelled) {
+					folderReadme = txt || "";
+					if (txt && (hasSensitiveTag(txt) || hasSensitiveReadmeContent(txt))) {
+						for (const f of curFiles) {
+							if (f && isImageOrVideo(f)) f.isSensitive = true;
+						}
+					}
+				}
 			});
 		}
 		return () => {
@@ -643,7 +650,7 @@
 	}
 
 	function isCoverBlurred(fileObj) {
-		if (!fileObj) return false;
+		if (!fileObj || $nsfwUnblurStore) return false;
 		const sharedLock = Boolean(
 			fileObj.isShared ||
 			String(fileObj.id || "").startsWith("/shared-to-me") ||

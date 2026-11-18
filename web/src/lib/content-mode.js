@@ -1,4 +1,4 @@
-import { writable } from "svelte/store";
+import { writable, get } from "svelte/store";
 
 const STORAGE_KEY = "onmychat_mode";
 
@@ -12,6 +12,16 @@ function readInitialMode() {
 }
 
 export const contentModeStore = writable(readInitialMode());
+export const nsfwUnblurStore = writable(false);
+
+export function toggleNsfwUnblur({ syncContentMode = false } = {}) {
+    const next = !get(nsfwUnblurStore);
+    nsfwUnblurStore.set(next);
+    if (syncContentMode) {
+        setGlobalContentMode(next ? "fun" : "work");
+    }
+    return next;
+}
 
 if (typeof window !== "undefined") {
     window.addEventListener("storage", (e) => {
@@ -50,7 +60,7 @@ const SFW_GUARD_STRIP_RE =
     /\b(?:modest\s+(?:opaque\s+)?buttoned\s+(?:outfit|clothing)|modest\s+opaque\s+clothing|covered\s+chest|wholesome\s+(?:safe\s+)?attire|plain\s+unprinted\s+clothing|rating_safe|sfw)\b/gi;
 
 const SENSITIVE_TEXT_MARKERS_RE =
-    /\b(?:nsfw|nude|nudity|naked|topless|nipples?|pokies|areolas?|underboob|sideboob|exposed\s+(?:breasts?|chest|buttocks?|genitals?|genitalia)|bare\s+(?:breasts?|chest|buttocks?)|deep\s+cleavage|unbuttoned\s+(?:shirt|blouse)|open\s+(?:shirt|blouse)\s+exposing|sheer\s+(?:lingerie|transparent|see[- ]through)|see[- ]through\s+(?:top|blouse|lingerie|dress|bra)|lingerie|thong|panties|micro[- ]?bikini|pussy|vagina|penis|cock|dick|anus|anal|blowjob|fellatio|cunnilingus|masturbat\w*|orgasm|cumshot|erotic|sexually\s+explicit|hentai|ecchi|bdsm|bondage)\b|(?:обнажен|голая|голый|голые|топлес|соски|сосков|сиськ|интимн\w+\s+мест|пизд|влагалищ|пенис|минет|оргазм|мастурб|эротич|эротик|кружевн\w+\s+бель|нижне\w+\s+бель|стринг|трусик)/i;
+    /\b(?:nsfw|uncensored|nude|nudity|naked|topless|nipples?|pokies|areolas?|underboob|sideboob|exposed\s+(?:breasts?|chest|buttocks?|genitals?|genitalia)|bare\s+(?:breasts?|chest|buttocks?|body)|uncovered\s+breasts?|deep\s+cleavage|unbuttoned\s+(?:shirt|blouse)|open\s+(?:shirt|blouse)\s+exposing|sheer\s+(?:lingerie|transparent|see[- ]through)|see[- ]through\s+(?:top|blouse|lingerie|dress|bra)|lingerie|thong|panties|micro[- ]?bikini|pussy|vagina|penis|cock|dick|anus|anal|blowjob|fellatio|cunnilingus|masturbat\w*|orgasm|cumshot|threesome|making\s+love|intercourse|erotic|sexually\s+explicit|hentai|ecchi|bdsm|bondage)\b|(?:обнажен|голая|голый|голые|топлес|соски|сосков|сиськ|интимн\w+\s+мест|пизд|влагалищ|пенис|минет|оргазм|мастурб|эротич|эротик|кружевн\w+\s+бель|нижне\w+\s+бель|стринг|трусик)/i;
 
 export function hasSensitiveTag(input) {
     if (!input) return false;

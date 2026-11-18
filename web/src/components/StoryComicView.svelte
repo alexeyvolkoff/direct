@@ -2,7 +2,12 @@
   import { createEventDispatcher } from "svelte";
   import { marked } from "marked";
   import { translate } from "../lib/i18n/index.js";
-  import { contentModeStore, hasSensitiveReadmeContent, hasSensitiveTag } from "../lib/content-mode.js";
+  import {
+    contentModeStore,
+    nsfwUnblurStore,
+    hasSensitiveReadmeContent,
+    hasSensitiveTag,
+  } from "../lib/content-mode.js";
 
   export let markdown = "";
   export let folderTitle = "";
@@ -14,6 +19,8 @@
   export let canShare = false;
   export let canPublishCivitai = false;
   export let defaultCollapsed = false;
+  export let forceUnblur = false;
+  export let isPublicShare = false;
   export let onImageClick = null;
   export let onShare = null;
   export let onPublishCivitai = null;
@@ -27,6 +34,7 @@
   let revealedPanels = new Set();
 
   $: effectiveMode = $contentModeStore || "work";
+  $: unblurredByShortcut = Boolean(forceUnblur || $nsfwUnblurStore);
   $: storyLevelSensitive = Boolean(
     hasSensitiveTag(markdown) || hasSensitiveReadmeContent(markdown)
   );
@@ -62,8 +70,9 @@
     return "";
   }
 
-  function checkPanelSensitive(target) {
-    if (effectiveMode === "fun") return false;
+  function checkPanelSensitive(target, _unblur = unblurredByShortcut, _mode = effectiveMode, _ver = mediaVersion) {
+    if (_unblur) return false;
+    if (!isPublicShare && _mode === "fun") return false;
     if (storyLevelSensitive) return true;
     if (target && !target.isExternal && typeof isSensitiveMedia === "function") {
       return Boolean(isSensitiveMedia(target.relPath || target.filename, target.filename));
@@ -73,6 +82,7 @@
 
   function revealPanel(idx, e) {
     if (e) e.stopPropagation();
+    if (isPublicShare) return;
     const next = new Set(revealedPanels);
     next.add(idx);
     revealedPanels = next;
@@ -204,7 +214,7 @@
 
   function handlePanelClick(block, idx) {
     if (checkPanelSensitive(block.target) && !revealedPanels.has(idx)) {
-      revealPanel(idx);
+      if (!isPublicShare) revealPanel(idx);
       return;
     }
     const payload = {
@@ -276,7 +286,7 @@
           {:else if block.type === "video"}
             {@const vidUrl = lookupUrl(block.target, mediaVersion)}
             {@const posterUrl = lookupPoster(block.target, mediaVersion)}
-            {@const blurred = checkPanelSensitive(block.target) && !revealedPanels.has(idx)}
+            {@const blurred = checkPanelSensitive(block.target, unblurredByShortcut, effectiveMode, mediaVersion) && !revealedPanels.has(idx)}
             <figure class="omd-comic-panel video-panel">
               <div class="omd-comic-stage" class:is-blurred={blurred}>
                 {#if vidUrl}
@@ -293,8 +303,8 @@
                   <div class="omd-comic-placeholder">🎬 {block.target?.filename || "Video"}</div>
                 {/if}
                 {#if blurred}
-                  <button type="button" class="omd-comic-sensitive-shield" on:click={(e) => revealPanel(idx, e)}>
-                    <span>🔒 Sensitive frame · Click to reveal</span>
+                  <button type="button" class="omd-comic-sensitive-shield" class:static-shield={isPublicShare} on:click={(e) => revealPanel(idx, e)}>
+                    <span>{isPublicShare ? "🔒 Sensitive" : "🔒 Sensitive frame · Click to reveal"}</span>
                   </button>
                 {/if}
               </div>
@@ -304,12 +314,13 @@
             </figure>
           {:else if block.type === "image"}
             {@const imgUrl = lookupUrl(block.target, mediaVersion)}
-            {@const blurred = checkPanelSensitive(block.target) && !revealedPanels.has(idx)}
+            {@const blurred = checkPanelSensitive(block.target, unblurredByShortcut, effectiveMode, mediaVersion) && !revealedPanels.has(idx)}
             <figure class="omd-comic-panel image-panel">
               <!-- svelte-ignore a11y-click-events-have-key-events -->
               <!-- svelte-ignore a11y-no-static-element-interactions -->
               <div
-                class="omd-comic-stage clickable"
+                class="omd-comic-stage"
+                class:clickable={!blurred || !isPublicShare}
                 class:is-blurred={blurred}
                 on:click={() => handlePanelClick(block, idx)}
               >
@@ -329,8 +340,8 @@
                   <div class="omd-comic-placeholder">🖼️ {block.target?.filename || ""}</div>
                 {/if}
                 {#if blurred}
-                  <button type="button" class="omd-comic-sensitive-shield" on:click={(e) => revealPanel(idx, e)}>
-                    <span>🔒 Sensitive frame · Click to reveal</span>
+                  <button type="button" class="omd-comic-sensitive-shield" class:static-shield={isPublicShare} on:click={(e) => revealPanel(idx, e)}>
+                    <span>{isPublicShare ? "🔒 Sensitive" : "🔒 Sensitive frame · Click to reveal"}</span>
                   </button>
                 {/if}
               </div>
@@ -595,6 +606,10 @@
     display: flex;
     align-items: center;
     justify-content: center;
+  }
+
+  .omd-comic-sensitive-shield.static-shield {
+    cursor: default;
   }
 
   .omd-comic-sensitive-shield span {

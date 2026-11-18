@@ -2,7 +2,7 @@
 	import { getContext } from "svelte";
 	import { setID } from "@svar-ui/lib-dom";
 	import { isVideoFile, formatDuration } from "./media-utils.js";
-	import { contentModeStore, hasSensitiveTag } from "../../../content-mode.js";
+	import { contentModeStore, nsfwUnblurStore, hasSensitiveTag } from "../../../content-mode.js";
 
 	let { item } = $props();
 
@@ -64,7 +64,7 @@
 		Boolean(item.isSensitive || item._checkingSensitive || hasSensitiveTag(item))
 	);
 	const shouldBlurSensitive = $derived(
-		Boolean(isSensitiveMedia && (isSharedLocked || $contentModeStore !== "fun"))
+		Boolean(isSensitiveMedia && !$nsfwUnblurStore && (isSharedLocked || $contentModeStore !== "fun"))
 	);
 </script>
 
