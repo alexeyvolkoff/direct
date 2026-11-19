@@ -227,7 +227,15 @@
     }
     const ct = String(k.contentType || "").toLowerCase();
     const mime = String(k.mimeType || "").toLowerCase();
-    const ext = docId.split("?")[0].split("#")[0].split(".").pop().toLowerCase();
+    const cleanDoc = docId.split("?")[0].split("#")[0];
+    const cleanDocLow = cleanDoc.toLowerCase();
+    const ext = cleanDocLow.split(".").pop();
+    if (
+      cleanDocLow.endsWith(".readme.md") ||
+      ["md", "txt", "json", "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "csv", "html", "xml", "yaml", "yml"].includes(ext)
+    ) {
+      return "";
+    }
     const tagsLow = Array.isArray(k.tags) ? k.tags.map((t) => String(t).toLowerCase()) : [];
 
     if (ct === "video" || mime.startsWith("video/") || VIDEO_EXTS.has(ext) || tagsLow.includes("video")) {
