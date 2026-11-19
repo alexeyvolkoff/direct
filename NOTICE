@@ -1,0 +1,26 @@
+Direct (Disk Direct & AI Agent Direct)
+Copyright 2026 Alexey Volkov
+
+This product includes and is substantially derived from open-source
+components of On My Disk:
+  Copyright 2015 - 2026 Bineon d.o.o.
+  Licensed under the Apache License, Version 2.0.
+  Modified and substantially extended by Alexey Volkov, 2026.
+
+The new subsystems (`ai/`, `web/` Svelte 5 PWA, `mobile/` Capacitor apps,
+and `services/`) are original works authored by Alexey Volkov (2026) and
+licensed under the Apache License, Version 2.0, except where noted below:
+
+Third-Party Notices:
+- Qt 5 (used in `core/`): dynamically linked under the GNU Lesser General
+  Public License v3.0 (LGPL-3.0). Users may relink against modified Qt
+  libraries in accordance with LGPL-3.0 Section 4. Source code for Qt is
+  available at https://www.qt.io/licensing/.
+- InsightFace (`ai/face_engine.py`): the `insightface` Python package is
+  licensed under MIT, while pretrained face recognition weights
+  (`buffalo_s`) are subject to InsightFace's Non-Commercial license and
+  are intended solely for optional, local, non-commercial personal photo
+  organization on self-hosted user nodes (not executed on public hosted
+  services).
+- lightGallery (`web/package.json`): dual-licensed under GPLv3 (for
+  open-source Apache-2.0/GPL-compatible distributions) or commercial license.

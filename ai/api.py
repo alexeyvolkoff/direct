@@ -3437,7 +3437,7 @@ DEVICE_CARD_TEXT_LIMIT = 300
 def _request_public_tags(request: Request) -> list[str]:
     """Resolves public knowledge tags (`omd` vs `direct`) from trusted node/host headers."""
     server_hint = (
-        request.headers.get("X-OMD-Server")
+        request.headers.get("X-Direct-Server") or request.headers.get("X-OMD-Server")
         or request.headers.get("X-Forwarded-Host")
         or request.headers.get("Origin")
         or request.headers.get("Referer")
