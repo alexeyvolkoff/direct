@@ -1115,6 +1115,7 @@
     if (!relPath) return "";
     const storage = resolveEffectiveStorage(DEFAULT_STORAGE_PATH);
     const { device } = parseStoragePath(storage);
+    if (device && device.local) return "";
     const seg = device ? (device.prefix ? device.prefix.replace(/^\//, "") : device.name) : (localDeviceSegment() || null);
     return deviceShareUrl(relPath, mode, seg) || deviceShareUrl(relPath, mode);
   }
@@ -1949,6 +1950,34 @@
 
     imgLoadingState[key] = "loading";
     imgLoadingState = { ...imgLoadingState };
+
+    // Read directly from local OPFS / native device storage if available (never expires with ephemeral cache)
+    try {
+      const storage = resolveEffectiveStorage(DEFAULT_STORAGE_PATH);
+      const { device: parsedDev } = parseStoragePath(storage);
+      const localDev = (parsedDev && parsedDev.local && parsedDev.drive)
+        ? parsedDev
+        : ((storageDevice && storageDevice.local && storageDevice.drive) ? storageDevice : null);
+      if (localDev && typeof localDev.drive.readFile === "function") {
+        const relPath = generatedSharePath(data);
+        if (relPath) {
+          const bytes = await localDev.drive.readFile(relPath.startsWith("/") ? relPath : "/" + relPath);
+          if (bytes && (bytes.byteLength || bytes.length)) {
+            const mime = /\.jpe?g$/i.test(relPath) ? "image/jpeg" : /\.webp$/i.test(relPath) ? "image/webp" : "image/png";
+            const objectUrl = URL.createObjectURL(new Blob([bytes], { type: mime }));
+            imageBlobCache[key] = objectUrl;
+            if (data.path) imageBlobCache[data.path] = objectUrl;
+            if (data.url) imageBlobCache[data.url] = objectUrl;
+            imageBlobCache = { ...imageBlobCache };
+            imgLoadingState[key] = "loaded";
+            if (data.path) imgLoadingState[data.path] = "loaded";
+            if (data.url) imgLoadingState[data.url] = "loaded";
+            imgLoadingState = { ...imgLoadingState };
+            return objectUrl;
+          }
+        }
+      }
+    } catch (_) {}
 
     let rawEndpoint = data.url && data.url.startsWith("/chat/image/")
       ? data.url
