@@ -1114,9 +1114,17 @@
   function generatedDeviceShareUrl(relPath, mode = "view") {
     if (!relPath) return "";
     const storage = resolveEffectiveStorage(DEFAULT_STORAGE_PATH);
-    const { device } = parseStoragePath(storage);
+    const { device, isDeviceQualified, deviceName } = parseStoragePath(storage, storageDevice);
     if (device && device.local) return "";
-    const seg = device ? (device.prefix ? device.prefix.replace(/^\//, "") : device.name) : (localDeviceSegment() || null);
+    if (!device && !isDeviceQualified) {
+      const fallbackDev = storageDevice
+        || deviceRegistry.list().find((x) => x && x.local)
+        || null;
+      if (fallbackDev && fallbackDev.local) return "";
+    }
+    const seg = device
+      ? (device.prefix ? device.prefix.replace(/^\//, "") : device.name)
+      : (isDeviceQualified ? (deviceName || null) : (localDeviceSegment() || null));
     return deviceShareUrl(relPath, mode, seg) || deviceShareUrl(relPath, mode);
   }
 
@@ -1954,17 +1962,41 @@
     // Read directly from local OPFS / native device storage if available (never expires with ephemeral cache)
     try {
       const storage = resolveEffectiveStorage(DEFAULT_STORAGE_PATH);
-      const { device: parsedDev } = parseStoragePath(storage);
+      const { device: parsedDev, isDeviceQualified } = parseStoragePath(storage, storageDevice);
       const localDev = (parsedDev && parsedDev.local && parsedDev.drive)
         ? parsedDev
-        : ((storageDevice && storageDevice.local && storageDevice.drive) ? storageDevice : null);
-      if (localDev && typeof localDev.drive.readFile === "function") {
+        : ((!parsedDev && !isDeviceQualified)
+            ? ((storageDevice && storageDevice.local && storageDevice.drive)
+                ? storageDevice
+                : (deviceRegistry.list().find((x) => x && x.local && x.drive) || null))
+            : null);
+      if (localDev && localDev.drive) {
         const relPath = generatedSharePath(data);
         if (relPath) {
-          const bytes = await localDev.drive.readFile(relPath.startsWith("/") ? relPath : "/" + relPath);
-          if (bytes && (bytes.byteLength || bytes.length)) {
-            const mime = /\.jpe?g$/i.test(relPath) ? "image/jpeg" : /\.webp$/i.test(relPath) ? "image/webp" : "image/png";
-            const objectUrl = URL.createObjectURL(new Blob([bytes], { type: mime }));
+          const normRel = relPath.startsWith("/") ? relPath : "/" + relPath;
+          let blob = null;
+          if (typeof localDev.drive.getFileContent === "function") {
+            blob = await localDev.drive.getFileContent(normRel).catch(() => null);
+          }
+          if (!blob && typeof localDev.drive.readFile === "function") {
+            const res = await localDev.drive.readFile(normRel);
+            const mime = /\.jpe?g$/i.test(normRel) ? "image/jpeg" : /\.webp$/i.test(normRel) ? "image/webp" : "image/png";
+            if (res instanceof Blob) {
+              blob = res;
+            } else if (res && (res.byteLength || res.length) && typeof res !== "string") {
+              blob = new Blob([res], { type: mime });
+            } else {
+              const b64 = res && res.data ? res.data : (typeof res === "string" ? res : null);
+              if (b64) {
+                const bin = atob(b64.replace(/\s+/g, ""));
+                const u8 = new Uint8Array(bin.length);
+                for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+                blob = new Blob([u8], { type: mime });
+              }
+            }
+          }
+          if (blob && blob.size > 0) {
+            const objectUrl = URL.createObjectURL(blob);
             imageBlobCache[key] = objectUrl;
             if (data.path) imageBlobCache[data.path] = objectUrl;
             if (data.url) imageBlobCache[data.url] = objectUrl;
