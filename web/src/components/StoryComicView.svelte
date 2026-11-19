@@ -17,12 +17,14 @@
   export let isSensitiveMedia = null; // (relPath) => boolean
   export let mediaVersion = 0; // reactive bump when async blob URLs resolve
   export let canShare = false;
+  export let canEdit = false;
   export let canPublishCivitai = false;
   export let defaultCollapsed = false;
   export let forceUnblur = false;
   export let isPublicShare = false;
   export let onImageClick = null;
   export let onShare = null;
+  export let onSave = null;
   export let onPublishCivitai = null;
 
   const dispatch = createEventDispatcher();
@@ -32,6 +34,10 @@
 
   let collapsed = defaultCollapsed;
   let revealedPanels = new Set();
+  let isEditing = false;
+  let editDraft = "";
+  let isSavingEdit = false;
+  let editError = "";
 
   $: effectiveMode = $contentModeStore || "work";
   $: unblurredByShortcut = Boolean(forceUnblur || $nsfwUnblurStore);
@@ -243,18 +249,58 @@
     if (typeof onPublishCivitai === "function") onPublishCivitai();
     dispatch("publish-civitai");
   }
+
+  function startEditing() {
+    editDraft = String(markdown || "");
+    editError = "";
+    collapsed = false;
+    isEditing = true;
+  }
+
+  function cancelEditing() {
+    if (isSavingEdit) return;
+    isEditing = false;
+    editError = "";
+  }
+
+  async function saveEditing() {
+    if (isSavingEdit) return;
+    isSavingEdit = true;
+    editError = "";
+    try {
+      if (typeof onSave === "function") {
+        await onSave(editDraft);
+      }
+      dispatch("save", { markdown: editDraft });
+      markdown = editDraft;
+      isEditing = false;
+    } catch (err) {
+      editError = err?.message || String(err);
+    } finally {
+      isSavingEdit = false;
+    }
+  }
 </script>
 
-{#if parsedDoc.blocks.length > 0}
-  <section class="omd-story-comic {isDarkTheme ? 'dark-theme' : 'light-theme'}" class:is-collapsed={collapsed}>
+{#if parsedDoc.blocks.length > 0 || isEditing}
+  <section class="omd-story-comic {isDarkTheme ? 'dark-theme' : 'light-theme'}" class:is-collapsed={collapsed && !isEditing}>
     <header class="omd-story-comic-bar">
-      <div class="omd-story-comic-heading" on:click={() => (collapsed = !collapsed)} role="button" tabindex="0" on:keydown={(e) => e.key === "Enter" && (collapsed = !collapsed)}>
+      <div class="omd-story-comic-heading" on:click={() => { if (!isEditing) collapsed = !collapsed; }} role="button" tabindex="0" on:keydown={(e) => e.key === "Enter" && !isEditing && (collapsed = !collapsed)}>
         <span class="omd-story-badge">📖</span>
         <h1 class="omd-story-title">{parsedDoc.title}</h1>
       </div>
 
       <div class="omd-story-actions">
-        {#if canPublishCivitai}
+        {#if canEdit && !isEditing}
+          <button
+            type="button"
+            class="omd-story-btn edit"
+            on:click|stopPropagation={startEditing}
+          >
+            ✏️ {translate("edit", {}, "Edit")}
+          </button>
+        {/if}
+        {#if canPublishCivitai && !isEditing}
           <button
             type="button"
             class="omd-story-btn civitai"
@@ -263,7 +309,7 @@
             🚀 {translate("story_publish_civitai_btn", {}, "Publish to CivitAI")}
           </button>
         {/if}
-        {#if canShare}
+        {#if canShare && !isEditing}
           <button
             type="button"
             class="omd-story-btn share"
@@ -272,19 +318,42 @@
             🔗 {translate("story_share_link_btn", {}, "Share Link")}
           </button>
         {/if}
-        <button
-          type="button"
-          class="omd-story-btn toggle"
-          on:click={() => (collapsed = !collapsed)}
-          aria-label={collapsed ? "Expand story" : "Collapse story"}
-          title={collapsed ? "Expand story" : "Collapse story"}
-        >
-          {collapsed ? "▾" : "▴"}
-        </button>
+        {#if !isEditing}
+          <button
+            type="button"
+            class="omd-story-btn toggle"
+            on:click={() => (collapsed = !collapsed)}
+            aria-label={collapsed ? "Expand story" : "Collapse story"}
+            title={collapsed ? "Expand story" : "Collapse story"}
+          >
+            {collapsed ? "▾" : "▴"}
+          </button>
+        {/if}
       </div>
     </header>
 
-    {#if !collapsed}
+    {#if isEditing}
+      <div class="omd-comic-editor-wrap" on:click|stopPropagation>
+        <textarea
+          class="omd-comic-editor-ta"
+          bind:value={editDraft}
+          disabled={isSavingEdit}
+          rows="16"
+          spellcheck="true"
+        ></textarea>
+        {#if editError}
+          <div class="omd-comic-editor-error">{editError}</div>
+        {/if}
+        <div class="omd-comic-editor-actions">
+          <button type="button" class="omd-story-btn toggle" disabled={isSavingEdit} on:click={cancelEditing}>
+            {translate("cancel", {}, "Cancel")}
+          </button>
+          <button type="button" class="omd-story-btn save" disabled={isSavingEdit} on:click={saveEditing}>
+            {isSavingEdit ? "⏳" : "💾"} {translate("save", {}, "Save")}
+          </button>
+        </div>
+      </div>
+    {:else if !collapsed}
       <div class="omd-story-comic-body">
         {#each parsedDoc.blocks as block, idx}
           {#if block.type === "prose"}
@@ -465,6 +534,69 @@
     padding: 6px 10px;
     border-color: rgba(128, 128, 150, 0.25);
     background: rgba(128, 128, 150, 0.1);
+  }
+
+  .omd-story-btn.edit {
+    border-color: rgba(128, 128, 150, 0.32);
+    background: rgba(128, 128, 150, 0.14);
+  }
+
+  .omd-story-btn.save {
+    background: linear-gradient(135deg, #7c3aed, #6d28d9);
+    border-color: transparent;
+    color: #fff;
+  }
+
+  .omd-comic-editor-wrap {
+    padding: 16px 20px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .omd-comic-editor-ta {
+    width: 100%;
+    min-height: 280px;
+    box-sizing: border-box;
+    border-radius: 12px;
+    border: 1px solid rgba(139, 92, 246, 0.38);
+    background: rgba(12, 12, 20, 0.55);
+    color: inherit;
+    padding: 12px 14px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 13.5px;
+    line-height: 1.55;
+    resize: vertical;
+    outline: none;
+  }
+
+  .light-theme .omd-comic-editor-ta {
+    background: #f8fafc;
+    border-color: rgba(109, 40, 217, 0.28);
+  }
+
+  .omd-comic-editor-ta:focus {
+    border-color: #8b5cf6;
+  }
+
+  .omd-comic-editor-error {
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: rgba(239, 68, 68, 0.16);
+    border: 1px solid rgba(239, 68, 68, 0.35);
+    color: #fca5a5;
+    font-size: 12.5px;
+  }
+
+  .light-theme .omd-comic-editor-error {
+    color: #b91c1c;
+  }
+
+  .omd-comic-editor-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
   }
 
   .omd-story-comic-body {

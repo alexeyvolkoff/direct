@@ -7,6 +7,7 @@
 	import {
 		isStoryOrLongReadme,
 		loadFolderStoryReadme,
+		saveFolderStoryReadme,
 		resolveFolderMediaAssetUrl,
 	} from "../../../story-composer.js";
 	import { _ as i18nT, locale as i18nLocale } from "../../../i18n/index.js";
@@ -69,6 +70,11 @@
 	const hasStoryComic = $derived(
 		$mode !== "search" && isStoryOrLongReadme(folderReadme)
 	);
+
+	async function handleSaveFolderReadme(nextMd) {
+		await saveFolderStoryReadme(path, nextMd);
+		folderReadme = nextMd;
+	}
 
 	$effect(() => {
 		const curPath = path || "";
@@ -1170,9 +1176,11 @@
 								return Boolean(f && (f.isSensitive || hasSensitiveTag(f)));
 							}}
 							canShare={Boolean(path && path !== "/" && !path.startsWith("/shared-to-me"))}
+							canEdit={Boolean(path && path !== "/" && !path.startsWith("/shared-"))}
 							canPublishCivitai={Boolean(isCreationsDir && path && path.split("/").filter(Boolean).length >= 3)}
 							onImageClick={handleComicImageClick}
 							onShare={handleShareCurrentFolder}
+							onSave={handleSaveFolderReadme}
 							onPublishCivitai={handlePublishCurrentStoryToCivitai}
 						/>
 					</div>

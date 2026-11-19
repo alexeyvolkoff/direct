@@ -61,7 +61,7 @@
 
   function handleSharedKeydown(e) {
     if (!e) return;
-    if (e.ctrlKey && !e.altKey && !e.shiftKey && (e.code === "KeyF" || String(e.key || "").toLowerCase() === "f")) {
+    if (e.ctrlKey && e.altKey && e.shiftKey && (e.code === "KeyU" || String(e.key || "").toLowerCase() === "u")) {
       const tag = String(document?.activeElement?.tagName || "").toUpperCase();
       if (tag === "INPUT" || tag === "TEXTAREA" || document?.activeElement?.isContentEditable) return;
       e.preventDefault();

@@ -8,6 +8,7 @@
 	import {
 		isStoryOrLongReadme,
 		loadFolderStoryReadme,
+		saveFolderStoryReadme,
 		resolveFolderMediaAssetUrl,
 	} from "../../../story-composer.js";
 	import StoryComicView from "../../../../components/StoryComicView.svelte";
@@ -210,6 +211,11 @@
 			})
 		);
 	}
+
+	async function handleSaveFolderReadme(nextMd) {
+		await saveFolderStoryReadme(path, nextMd);
+		folderReadme = nextMd;
+	}
 </script>
 
 {#if $mode == "search" && !renderedFiles.length}
@@ -249,8 +255,10 @@
 						return Boolean(f && (f.isSensitive || hasSensitiveTag(f)));
 					}}
 					canShare={Boolean(path && path !== "/" && !path.startsWith("/shared-to-me"))}
+					canEdit={Boolean(path && path !== "/" && !path.startsWith("/shared-"))}
 					onImageClick={handleComicImageClick}
 					onShare={handleShareCurrentFolder}
+					onSave={handleSaveFolderReadme}
 				/>
 				<div class="wx-cards-comic-footer-label">
 					<span>📎 {$i18nT("story_files_footer", {}, "Files")} · {renderedFiles.length}</span>

@@ -5111,6 +5111,16 @@
     }
   }
 
+  async function handleSaveKreaStoryReadme(nextMd) {
+    if (!activeStorySubfolder) return;
+    const drive = getTargetDrive();
+    if (!drive) throw new Error("Target drive is not connected");
+    const folderReal = `${getTargetFolder()}/${activeStorySubfolder}`.replace(/\/+/g, "/");
+    const readmeReal = `${folderReal}/Readme.md`;
+    await writeDriveText(drive, readmeReal, String(nextMd || ""));
+    activeStoryReadme = String(nextMd || "");
+  }
+
   $: if (!activeStorySubfolder) {
     activeStoryReadme = "";
   }
@@ -7779,7 +7789,9 @@
                     return Boolean(m && m.sensitive);
                   }}
                   canShare={true}
+                  canEdit={true}
                   canPublishCivitai={true}
+                  onSave={handleSaveKreaStoryReadme}
                   on:image-click={handleKreaComicImageClick}
                   on:share={() => shareKreaStoryFolder(activeStorySubfolder)}
                   on:publish-civitai={() => openPublishStoryFolderToCivitai(activeStorySubfolder)}

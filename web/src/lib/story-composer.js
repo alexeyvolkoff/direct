@@ -473,6 +473,12 @@ async function blobToBase64(blob) {
 
 async function writeBase64ToDrive(drive, filePath, b64Data) {
   if (!drive) throw new Error("Storage drive is not connected");
+  if (typeof drive.writeFileChunked === "function") {
+    try {
+      await drive.writeFileChunked(filePath, b64Data);
+      return;
+    } catch (_) {}
+  }
   if (typeof drive.homeWrite === "function") {
     await drive.homeWrite(filePath, b64Data);
     return;
@@ -490,6 +496,40 @@ async function writeBase64ToDrive(drive, filePath, b64Data) {
 async function writeUtf8ToDrive(drive, filePath, text) {
   const u8 = new TextEncoder().encode(String(text || ""));
   await writeBase64ToDrive(drive, filePath, uint8ToBase64(u8));
+}
+
+/**
+ * Saves an edited Readme.md back into `folderId` and invalidates the folder Readme cache.
+ */
+export async function saveFolderStoryReadme(folderId, markdownText = "") {
+  if (!folderId || folderId === "/" || folderId.startsWith("/shared-")) {
+    throw new Error("This folder is read-only");
+  }
+  const normFolder = String(folderId).replace(/\/+$/, "");
+  const trackedMeta =
+    typeof window !== "undefined" && window._folderReadmeMeta
+      ? window._folderReadmeMeta[normFolder] || null
+      : null;
+  const split = splitPrefixedFolderPath(normFolder);
+  const drive = trackedMeta?.drive || split.device?.drive || null;
+  const realPath = trackedMeta?.realPath || split.realPath || "/";
+  if (!drive) {
+    throw new Error("Storage drive is not connected");
+  }
+  const readmeName = trackedMeta?.readmeFile?.name || "Readme.md";
+  const targetPath = `${realPath === "/" ? "" : realPath}/${readmeName}`;
+  await writeUtf8ToDrive(drive, targetPath, String(markdownText || ""));
+  invalidateFolderReadmeCache(normFolder);
+  if (typeof window !== "undefined" && window._folderReadmeMeta && window._folderReadmeMeta[normFolder]) {
+    window._folderReadmeMeta[normFolder] = {
+      ...window._folderReadmeMeta[normFolder],
+      readmeFile: {
+        ...(window._folderReadmeMeta[normFolder].readmeFile || { name: readmeName }),
+        size: String(markdownText || "").length,
+      },
+    };
+  }
+  return targetPath;
 }
 
 async function fetchSourceItemBlob(item) {

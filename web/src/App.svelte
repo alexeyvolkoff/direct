@@ -7208,7 +7208,7 @@ async function blobToBase64(blob) {
   }
 
   function handleKeydown(event) {
-    if (!isSharedRoute && currentApp !== 'code' && currentApp !== 'terminal' && event.ctrlKey && !event.altKey && !event.shiftKey && (event.code === 'KeyF' || String(event.key || '').toLowerCase() === 'f')) {
+    if (!isSharedRoute && currentApp !== 'code' && currentApp !== 'terminal' && event.ctrlKey && event.altKey && event.shiftKey && (event.code === 'KeyU' || String(event.key || '').toLowerCase() === 'u')) {
       const activeEl = typeof document !== 'undefined' ? document.activeElement : null;
       const tag = String(activeEl?.tagName || '').toUpperCase();
       if (tag !== 'INPUT' && tag !== 'TEXTAREA' && !activeEl?.isContentEditable && !activeEl?.closest?.('.monaco-editor')) {
