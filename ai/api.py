@@ -2207,7 +2207,7 @@ def cleanup_ephemeral_images():
 
 def schedule_generated_image_push(omd_key: str, device_push, filename: str, image_data: bytes,
                                   title: str = "", description: str = "", ctx: user_context.UserContext | None = None,
-                                  prompt: str = ""):
+                                  prompt: str = "", sensitive: bool = False):
     """Fire-and-forget p2p-пуш сгенерированного фото на устройство пользователя.
 
     `device_push` клиент выдаёт заранее: `{linkId, consentToken, folder}` из
@@ -2225,7 +2225,7 @@ def schedule_generated_image_push(omd_key: str, device_push, filename: str, imag
             return
         logging.info(f"[device_push] Scheduling P2P push for {filename} to {device_push.get('linkId')} (folder={device_push.get('folder')})")
         _dp.schedule_generated_image_push(
-            omd_key, device_push, filename, image_data, title, description, ctx=ctx, prompt=prompt
+            omd_key, device_push, filename, image_data, title, description, ctx=ctx, prompt=prompt, sensitive=sensitive
         )
     except Exception as exc:
         logging.warning(f"device_push scheduling failed: {exc}")
