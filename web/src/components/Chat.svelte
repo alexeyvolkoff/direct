@@ -6738,7 +6738,7 @@ function lastFreshTitle(messages) {
             : (resolveAppMode() !== APP_MODE_CHAT && $gatewayConfig?.skin?.preset === "custom" && $gatewayConfig?.brandName)
               ? $_("chat_disclaimer", {}, "AI Assistant · AI that keeps your data yours").replace(/^AI Assistant\b/, $gatewayConfig.brandName)
               : $_("chat_disclaimer", {}, "AI Assistant · AI that keeps your data yours")
-        }</span>
+        } · {$_("ai_generated_disclaimer", {}, "AI responses may be inaccurate")}</span>
       </div>
     </div>
   </div>

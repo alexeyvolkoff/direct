@@ -181,8 +181,13 @@
   let knownPeopleList = [];
   let lastPeopleDrive = null;
 
+  $: canUseNodeFaces = Boolean(isOwner && httpDrive && typeof httpDrive.fetch === "function" && !targetDevice?.isAiNode);
+
   async function loadKnownPeople() {
-    if (!httpDrive || typeof httpDrive.fetch !== "function") return;
+    if (!canUseNodeFaces) {
+      knownPeopleList = [];
+      return;
+    }
     try {
       const res = await httpDrive.fetch("/api/faces/people");
       if (res.ok) {
@@ -192,9 +197,12 @@
     } catch (_) {}
   }
 
-  $: if (httpDrive && httpDrive !== lastPeopleDrive) {
+  $: if (canUseNodeFaces && httpDrive !== lastPeopleDrive) {
     lastPeopleDrive = httpDrive;
     loadKnownPeople();
+  } else if (!canUseNodeFaces) {
+    lastPeopleDrive = null;
+    knownPeopleList = [];
   }
 
   const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "webp", "gif", "avif", "heic", "heif", "bmp", "tiff"]);
@@ -2554,6 +2562,9 @@
                         </div>
                       {/if}
 
+                      {#if item.isCreation}
+                        <span class="tile-ai-badge" title={$_("ai_generated_notice", {}, "AI-generated synthetic media")}>✨ AI</span>
+                      {/if}
                       {#if isBlurred}
                         <div class="sensitive-overlay">
                           <span class="sensitive-pill">🔒 Sensitive</span>
@@ -2657,6 +2668,7 @@
       deviceDrive={localDeviceDrive}
       {httpDrive}
       {chatStore}
+      allowFaceMatch={canUseNodeFaces}
       extraCards={knowledgeList}
       deviceName={getDefaultWebDeviceName()}
       on:close={() => {
@@ -3537,6 +3549,22 @@
 
   .tile-info-btn:hover {
     background: var(--ml-accent);
+  }
+
+  .tile-ai-badge {
+    position: absolute;
+    bottom: 6px;
+    left: 6px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    padding: 2px 6px;
+    border-radius: 6px;
+    background: rgba(15, 10, 16, 0.72);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    color: #f3e8ff;
+    pointer-events: none;
+    z-index: 2;
   }
 
   /* Date Scrubber */

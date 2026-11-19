@@ -263,6 +263,38 @@ STYLE_MODELS = {
     "tooned": SETTINGS.get("TOONED_MODEL", "CyberRealistic_PonySemi_V5.safetensors"),
 }
 
+WORK_STYLE_MODELS = {
+    "realistic": SETTINGS.get("WORK_REALISTIC_MODEL", "RealVisXL_V5.0_Lightning_fp16.safetensors"),
+    "realistic2": SETTINGS.get("WORK_REALISTIC2_MODEL", SETTINGS.get("WORK_REALISTIC_MODEL", "RealVisXL_V5.0_Lightning_fp16.safetensors")),
+    "perfect": SETTINGS.get("WORK_PERFECT_MODEL", "DreamShaperXL_Turbo-Lightning.safetensors"),
+    "fantasy": SETTINGS.get("WORK_FANTASY_MODEL", "zavychromaxl_v100.safetensors"),
+    "tooned": SETTINGS.get("WORK_TOONED_MODEL", "RealCartoonXLV7.safetensors"),
+}
+
+_WORK_CKPT_DIRS = (
+    "/home/alexey/projects/ComfyUI/models/checkpoints",
+    "/home/alexey/models/comfyui_models/checkpoints",
+)
+
+
+def _checkpoint_exists(filename: str) -> bool:
+    if not filename:
+        return False
+    return any(os.path.isfile(os.path.join(d, filename)) for d in _WORK_CKPT_DIRS)
+
+
+def resolve_style_checkpoint(style_key: str, *, allow_fun: bool = False) -> str:
+    """Returns SFW Work checkpoint unless allow_fun=True; falls back to another downloaded Work model before STYLE_MODELS."""
+    key = str(style_key or "realistic").strip().lower()
+    if not allow_fun:
+        work_ckpt = WORK_STYLE_MODELS.get(key) or WORK_STYLE_MODELS["realistic"]
+        if _checkpoint_exists(work_ckpt):
+            return work_ckpt
+        for candidate in WORK_STYLE_MODELS.values():
+            if _checkpoint_exists(candidate):
+                return candidate
+    return STYLE_MODELS.get(key, STYLE_MODELS["realistic"])
+
 NEGATIVE_PROMPTS = get_json_prompt("negative_prompts.json")
 INTENT_PROMPT = get_prompt("intent.txt")
 CHAT_SUMMARY_PROMPT = get_prompt("chat_summary.txt")
@@ -4793,7 +4825,7 @@ async def generate_sdxl_studio_image(
     if chosen_ckpt_key is None:
         chosen_ckpt_key = (ctx.settings.get("style") if ctx and isinstance(getattr(ctx, "settings", None), dict) else None) or "realistic"
 
-    ckpt_model = STYLE_MODELS.get(chosen_ckpt_key, STYLE_MODELS["realistic"])
+    ckpt_model = resolve_style_checkpoint(chosen_ckpt_key, allow_fun=bool(is_uncensored))
     workflow_json["127"]["inputs"]["ckpt_name"] = ckpt_model
 
     # Карта LoRA в ноде "103" (Power Lora Loader)
@@ -4958,10 +4990,13 @@ async def generate_sdxl_studio_image(
         for k in active_lora_strengths
     )
 
-    # Balance DMD2 distillation LoRA vs character/style LoRAs so Pony/Illustrious do not flatten faces
+    # Balance DMD2 distillation LoRA vs character/style LoRAs so Pony/Illustrious do not flatten faces;
+    # disable DMD2 on Lightning/Turbo checkpoints which already have built-in step distillation.
     if "126" in workflow_json and "inputs" in workflow_json["126"]:
         workflow_json["126"]["inputs"]["strength_clip"] = 0.0
-        if has_active_char_lora:
+        if "lightning" in ckpt_low or "turbo" in ckpt_low:
+            workflow_json["126"]["inputs"]["strength_model"] = 0.0
+        elif has_active_char_lora:
             workflow_json["126"]["inputs"]["strength_model"] = 0.76 if (is_pony_ckpt or is_illus_ckpt) else 0.85
         else:
             workflow_json["126"]["inputs"]["strength_model"] = 0.85 if (is_pony_ckpt or is_illus_ckpt) else 0.95
@@ -12217,7 +12252,7 @@ async def generate_image(ctx: UserContext, prompt, chat: str = 'default', update
             style = tag_lower
             break
 
-    model = STYLE_MODELS.get(style, STYLE_MODELS["realistic"]) # Fallback just in case
+    model = resolve_style_checkpoint(style, allow_fun=is_effective_fun_mode_sync(ctx))
     workflow_json["127"]["inputs"]["ckpt_name"] = model
     #workflow_json["103"]["inputs"][lora]["on"] = True
     
@@ -13637,7 +13672,7 @@ async def generate_avatar(ctx: UserContext, style: str, character_lora: str, pro
         }
         backend_style = style_map.get(style, "realistic")
         
-        ckpt_filename = STYLE_MODELS.get(backend_style, STYLE_MODELS["realistic"])
+        ckpt_filename = resolve_style_checkpoint(backend_style, allow_fun=is_effective_fun_mode_sync(ctx))
     
         # 3. Setup Workflow Parameters
         seed = random.randint(1, 9999999999)

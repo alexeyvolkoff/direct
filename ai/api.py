@@ -2340,6 +2340,21 @@ def trusted_private_access(request: Request, ctx: user_context.UserContext | Non
     return validated_node_owner(ctx)
 
 
+def require_node_owner(request: Request, ctx: user_context.UserContext | None) -> bool:
+    """Strict node-owner check for local biometric/face endpoints: never allows guest or shared roles."""
+    role = trusted_caller_role(request)
+    if role in ("guest", "shared"):
+        return False
+    caller_did = (request.headers.get("X-OMD-Caller-DID") or request.headers.get("X-OMD-DID") or "").strip()
+    if role == "owner" or (caller_did and is_did_paired(caller_did)):
+        return True
+    client_host = request.client.host if request.client else ""
+    if client_host in ("127.0.0.1", "::1", "localhost"):
+        if request.headers.get("x-client") == "svar" or request.headers.get("X-OMD-Private-Mode") == "1":
+            return True
+    return validated_node_owner(ctx)
+
+
 def trusted_owner_access(request: Request) -> bool:
     """Вызывающий — ВЛАДЕЛЕЦ ноды по доверенным заголовкам туннеля
     (role=owner, или DID, спаренный на самой ноде)."""
@@ -3786,7 +3801,7 @@ async def faces_detect_endpoint(
 ):
     """Обнаружение лиц на фото, извлечение BBox и сопоставление с известными персонами."""
     ctx = get_ctx(omd_key)
-    if not trusted_private_access(request, ctx):
+    if not require_node_owner(request, ctx):
         raise HTTPException(status_code=403, detail="Forbidden")
 
     try:
@@ -3841,7 +3856,7 @@ async def faces_register_endpoint(
 ):
     """Регистрация лица (привязка имени к BBox на фотографии) в omd_faces."""
     ctx = get_ctx(omd_key)
-    if not trusted_private_access(request, ctx):
+    if not require_node_owner(request, ctx):
         raise HTTPException(status_code=403, detail="Forbidden")
 
     body = await request.json()
@@ -3908,7 +3923,7 @@ async def faces_people_endpoint(
 ):
     """Список известных персон для текущего владельца устройства."""
     ctx = get_ctx(omd_key)
-    if not trusted_private_access(request, ctx):
+    if not require_node_owner(request, ctx):
         raise HTTPException(status_code=403, detail="Forbidden")
 
     try:
@@ -3931,7 +3946,7 @@ async def faces_rename_person_endpoint(
 ):
     """Переименование известной персоны."""
     ctx = get_ctx(omd_key)
-    if not trusted_private_access(request, ctx):
+    if not require_node_owner(request, ctx):
         raise HTTPException(status_code=403, detail="Forbidden")
 
     body = await request.json()
@@ -3959,7 +3974,7 @@ async def faces_delete_person_endpoint(
 ):
     """Удаление персоны из базы лиц."""
     ctx = get_ctx(omd_key)
-    if not trusted_private_access(request, ctx):
+    if not require_node_owner(request, ctx):
         raise HTTPException(status_code=403, detail="Forbidden")
 
     try:
@@ -4057,7 +4072,7 @@ async def faces_scan_archive_endpoint(
     Фоновый поиск персоны на других фотографиях архива (авто-разметка).
     """
     ctx = get_ctx(omd_key)
-    if not trusted_private_access(request, ctx):
+    if not require_node_owner(request, ctx):
         raise HTTPException(status_code=403, detail="Forbidden")
 
     global _face_scan_state
@@ -4117,7 +4132,7 @@ async def faces_scan_status_endpoint(
 ):
     """Текущий статус фонового сканирования архива лиц."""
     ctx = get_ctx(omd_key)
-    if not trusted_private_access(request, ctx):
+    if not require_node_owner(request, ctx):
         raise HTTPException(status_code=403, detail="Forbidden")
 
     global _face_scan_state
@@ -5518,6 +5533,9 @@ async def _run_civitai_lora_search(
                 allow_nsfw = True
         except Exception:
             pass
+
+    if core_service.resolve_requested_content_mode(ctx) != "fun":
+        allow_nsfw = False
 
     civitai_token = core_service._resolve_civitai_token(ctx)
     items = await core_service.horde_image_mapper.search_civitai_loras(

@@ -538,7 +538,7 @@ async function matchPeopleOnNode(httpDrive, drive, path, signal) {
   }
 }
 
-export async function recognizeImageNative(drive, path, { filename = "", exif = null, httpDrive = null, signal = null } = {}) {
+export async function recognizeImageNative(drive, path, { filename = "", exif = null, httpDrive = null, signal = null, allowFaces = false } = {}) {
   if (!isLocalVisionEnabled()) {
     throw new Error("Local vision disabled");
   }
@@ -562,7 +562,7 @@ export async function recognizeImageNative(drive, path, { filename = "", exif = 
   }
 
   const [people, landmarkInfo] = await Promise.all([
-    faceCount > 0 && httpDrive ? matchPeopleOnNode(httpDrive, drive, path, signal) : Promise.resolve([]),
+    faceCount > 0 && allowFaces && httpDrive ? matchPeopleOnNode(httpDrive, drive, path, signal) : Promise.resolve([]),
     Number.isFinite(mergedExif.gpsLat) && Number.isFinite(mergedExif.gpsLon)
       ? resolveLandmarkFromGps(mergedExif.gpsLat, mergedExif.gpsLon, {
           city: location,

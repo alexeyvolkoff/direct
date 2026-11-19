@@ -514,6 +514,7 @@ class ClientIndexerRunner {
     includePhotos = true,
     timelineDays = 30,
     reindexExisting = false,
+    allowFaceMatch = false,
   }) {
     if (!drive || !httpDrive || !chatStore) {
       indexerStore.set({ ...initialState, status: "error", error: "Drive, AI node, or ChatStore unavailable" });
@@ -672,6 +673,7 @@ class ClientIndexerRunner {
                   exif,
                   httpDrive,
                   signal,
+                  allowFaces: Boolean(allowFaceMatch),
                 });
                 if (typeof drive.getThumbnail === "function") {
                   previewDataUrl = (await drive.getThumbnail(item.path, 240, 240)) || "";

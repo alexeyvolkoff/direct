@@ -13,6 +13,7 @@
   export let extraCards = [];
   export let deviceName = "Mobile";
   export let owner = "anonymous";
+  export let allowFaceMatch = false;
 
   const dispatch = createEventDispatcher();
 
@@ -100,6 +101,7 @@
       includePhotos,
       timelineDays,
       reindexExisting,
+      allowFaceMatch,
     });
     dispatch("indexed");
   }

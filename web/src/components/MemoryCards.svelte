@@ -53,8 +53,13 @@
   let scanPollTimer = null;
   let scanningPersonId = "";
 
+  $: canUseNodeFaces = Boolean(isOwner && httpDrive && !targetDevice?.isAiNode);
+
   async function loadKnownPeople() {
-    if (!httpDrive) return;
+    if (!canUseNodeFaces) {
+      knownPeopleList = [];
+      return;
+    }
     loadingPeople = true;
     try {
       const res = await httpDrive.fetch("/api/faces/people");
@@ -70,7 +75,7 @@
   }
 
   async function checkScanStatus() {
-    if (!httpDrive) return;
+    if (!canUseNodeFaces) return;
     try {
       const res = await httpDrive.fetch("/api/faces/scan_status");
       if (res.ok) {
@@ -101,7 +106,7 @@
   }
 
   async function startScanArchive(personId) {
-    if (!httpDrive || (scanStatus && scanStatus.running)) return;
+    if (!canUseNodeFaces || (scanStatus && scanStatus.running)) return;
     scanningPersonId = personId;
     try {
       const res = await httpDrive.fetch("/api/faces/scan_archive", {
@@ -118,6 +123,7 @@
   }
 
   async function deletePerson(personId) {
+    if (!canUseNodeFaces) return;
     if (!confirm($_("confirm_delete_person", {}, "Delete this person and their face records?"))) return;
     try {
       const res = await httpDrive.fetch(`/api/faces/people/${encodeURIComponent(personId)}`, {
@@ -143,9 +149,12 @@
     dispatch("refresh");
   }
 
-  $: if (httpDrive) {
+  $: if (canUseNodeFaces) {
     loadKnownPeople();
     checkScanStatus();
+  } else {
+    knownPeopleList = [];
+    scanStatus = null;
   }
 
   let viewMode = typeof localStorage !== "undefined"
@@ -826,7 +835,7 @@
             🖼️ {$_("filter_images", {}, "Photos")} ({imagesCount})
           </button>
         {/if}
-        {#if isOwner || knownPeopleList.length > 0}
+        {#if canUseNodeFaces}
           <button
             class="cat-pill"
             class:active={selectedKindFilter === "people"}
@@ -1387,6 +1396,7 @@
   deviceDrive={localDeviceDrive}
   {httpDrive}
   {chatStore}
+  allowFaceMatch={canUseNodeFaces}
   extraCards={knowledgeList}
   deviceName={getDefaultWebDeviceName()}
   on:close={() => { showDeviceIndexModal = false; }}

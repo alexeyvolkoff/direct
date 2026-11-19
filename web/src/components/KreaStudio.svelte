@@ -16,6 +16,7 @@
   import { issueConsent, getClientDeviceServer } from "../lib/client-device-server.js";
   import { getOrCreateLocalLinkId } from "../lib/local-client.js";
   import { mcpKeysStore, getMcpPayload, saveMcpAppKey } from "../lib/mcp-keys.js";
+  import { injectPngAiMetadata } from "../lib/png-ai-meta.js";
   import { setDidStudioEnabled } from "../lib/identity/persistent.js";
   import { getClientPlatform, isNativeMobile, isPrimaryWebGateway, sanitizeExternalCheckoutText } from "../lib/platform.js";
   import {
@@ -4812,15 +4813,32 @@
     }
   }
 
-  function downloadImage(item) {
+  async function downloadImage(item) {
     if (!item) return;
     const src = item.blobUrl || `${getFullImageUrl(item)}?download=true`;
+    const fileName = item.name || (item.isVideo ? "creation.mp4" : "creation.png");
+    let href = src;
+    let objectUrl = null;
+    if (!item.isVideo && /\.png(\?|$)/i.test(fileName)) {
+      try {
+        const res = await fetch(src);
+        if (res.ok) {
+          const rawBlob = await res.blob();
+          const taggedBlob = await injectPngAiMetadata(rawBlob);
+          objectUrl = URL.createObjectURL(taggedBlob);
+          href = objectUrl;
+        }
+      } catch (_) {}
+    }
     const a = document.createElement("a");
-    a.href = src;
-    a.download = item.name || (item.isVideo ? "creation.mp4" : "creation.png");
+    a.href = href;
+    a.download = fileName;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+    if (objectUrl) {
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+    }
   }
 
   function shareImage(item) {
@@ -8015,18 +8033,17 @@
                   {#if itemShouldBlur}
                     <div class="sensitive-gallery-badge">🔞 Sensitive</div>
                   {/if}
-                  {#if item.persona || item.totalTime}
-                    <div class="card-thumb-badges">
-                      {#if item.persona}
-                        <span class="persona-tag">👤 {item.persona}</span>
-                      {/if}
-                      {#if item.totalTime}
-                        <span class="card-time-tag" title={$_("krea_total_time", { total: item.totalTime, gpu: item.gpuTime ? `, GPU: ${item.gpuTime}s` : "" }, `Полное время: ${item.totalTime}s${item.gpuTime ? `, генерация GPU: ${item.gpuTime}s` : ""}`)}>
-                          ⚡ {item.totalTime}s{#if item.gpuTime}<span class="gpu-sub">({item.gpuTime}s)</span>{/if}
-                        </span>
-                      {/if}
-                    </div>
-                  {/if}
+                  <div class="card-thumb-badges">
+                    <span class="ai-gen-badge" title={$_("ai_generated_notice", {}, "AI-generated synthetic media")}>✨ AI</span>
+                    {#if item.persona}
+                      <span class="persona-tag">👤 {item.persona}</span>
+                    {/if}
+                    {#if item.totalTime}
+                      <span class="card-time-tag" title={$_("krea_total_time", { total: item.totalTime, gpu: item.gpuTime ? `, GPU: ${item.gpuTime}s` : "" }, `Полное время: ${item.totalTime}s${item.gpuTime ? `, генерация GPU: ${item.gpuTime}s` : ""}`)}>
+                        ⚡ {item.totalTime}s{#if item.gpuTime}<span class="gpu-sub">({item.gpuTime}s)</span>{/if}
+                      </span>
+                    {/if}
+                  </div>
                 </div>
 
                 <div class="card-footer-info">
@@ -12140,6 +12157,20 @@
     flex-wrap: wrap;
     pointer-events: none;
     z-index: 3;
+  }
+
+  .ai-gen-badge {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    background: rgba(15, 10, 16, 0.72);
+    backdrop-filter: blur(6px);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    color: #f3e8ff;
+    padding: 2px 5px;
+    border-radius: 6px;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
   .persona-tag {

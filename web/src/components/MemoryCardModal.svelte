@@ -251,6 +251,8 @@
     }
   }
 
+  $: canUseNodeFaces = Boolean(isPrivateMode && !isViewOnly && httpDrive && device?.isOwner && !device?.isAiNode);
+
   async function toggleMarkPeople() {
     if (markPeopleActive) {
       markPeopleActive = false;
@@ -259,7 +261,7 @@
       isDrawingMode = false;
       return;
     }
-    if (!httpDrive) return;
+    if (!canUseNodeFaces) return;
     markPeopleActive = true;
     detectingFaces = true;
     selectedFaceIdx = null;
@@ -876,7 +878,7 @@
           <div class="form-group">
             <div class="preview-header-row">
               <label class="form-label">{$_("image_preview", {}, "Image")}</label>
-              {#if isPrivateMode && !isViewOnly && isImage}
+              {#if canUseNodeFaces && isImage}
                 <div class="face-actions-bar">
                   <button
                     type="button"
