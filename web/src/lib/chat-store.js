@@ -735,6 +735,18 @@ export class ChatStore {
           }
         }
 
+        const prev = this.knowledgeCache.get(key);
+        if (prev) {
+          if (!clean.annotation_embedding && prev.annotation_embedding) {
+            clean.annotation_embedding = prev.annotation_embedding;
+          }
+          if (!clean.imagePreview && prev.imagePreview) {
+            clean.imagePreview = prev.imagePreview;
+          }
+          if (!clean.landmark && prev.landmark) clean.landmark = prev.landmark;
+          if (!clean.event && prev.event) clean.event = prev.event;
+          if (!clean.location && prev.location) clean.location = prev.location;
+        }
         this.knowledgeCache.set(key, clean);
         idbPut("cards", { key: `${this.tokenHash}:${key}`, tokenHash: this.tokenHash, memoryId: key, card: clean });
         this._notifyKnowledge();
@@ -757,7 +769,56 @@ export class ChatStore {
         }
       }
       if (added) this._notifyKnowledge();
+      // Background: ensure existing locally-cached cards sync lightweight metadata (incl. landmarks) to GunDB without heavy blobs
+      setTimeout(() => {
+        this.compactKnowledgeInGun().catch(() => {});
+      }, 4000);
     } catch (_) {}
+  }
+
+  async compactKnowledgeInGun() {
+    if (this._compactingGun) return;
+    this._compactingGun = true;
+    try {
+      const flagKey = `omd_gun_compact_v2_${this.tokenHash}`;
+      if (typeof localStorage !== "undefined" && localStorage.getItem(flagKey) === "1") return;
+      let count = 0;
+      for (const [memoryId, card] of this.knowledgeCache.entries()) {
+        if (!card || card.isChunk) continue;
+        const patch = {
+          _id: memoryId,
+          memory_id: memoryId,
+          document_id: card.document_id || "",
+          title: card.title || "",
+          contentType: card.contentType || "",
+          mimeType: card.mimeType || "",
+          taken_at: card.taken_at || "",
+          takenAt: card.takenAt || "",
+          location: card.location || "",
+          gps: card.gps || "",
+          landmark: card.landmark || "",
+          event: card.event || "",
+          duration: Number(card.duration || 0),
+          content_hash: card.content_hash || "",
+          timestamp: String(card.timestamp || ""),
+          hasPreview: Boolean(card.imagePreview || card.hasPreview),
+          imagePreview: null,
+          annotation_embedding: null,
+        };
+        if (Number.isFinite(card.gpsLat) && Number.isFinite(card.gpsLon)) {
+          patch.gpsLat = card.gpsLat;
+          patch.gpsLon = card.gpsLon;
+        }
+        this.gun.get("knowledge_" + this.tokenHash).get(memoryId).put(serializeForGun(patch));
+        count++;
+        if (count % 25 === 0) await new Promise((r) => setTimeout(r, 40));
+      }
+      if (typeof localStorage !== "undefined" && count > 0) {
+        localStorage.setItem(flagKey, "1");
+      }
+    } finally {
+      this._compactingGun = false;
+    }
   }
 
   listKnowledge() {
@@ -932,7 +993,16 @@ export class ChatStore {
     await idbPut("cards", { key: `${this.tokenHash}:${memoryId}`, tokenHash: this.tokenHash, memoryId, card: cacheEntry });
     this._notifyKnowledge();
 
-    const serialized = serializeForGun(entry);
+    // Keep GunDB knowledge_${tokenHash} lightweight (~500B/card) so all devices sync 3000+ cards reliably:
+    // omit large base64 imagePreview and 768-d annotation_embedding from the GunDB node (they stay in local IndexedDB).
+    const gunEntry = { ...entry };
+    if (gunEntry.imagePreview) {
+      gunEntry.hasPreview = true;
+      delete gunEntry.imagePreview;
+    }
+    delete gunEntry.annotation_embedding;
+
+    const serialized = serializeForGun(gunEntry);
     return new Promise((resolve) => {
       let done = false;
       const finish = () => {
