@@ -713,8 +713,33 @@
 
   // Smart Auto-Albums computed from baseMediaPool
   $: autoAlbums = (() => {
-    const sortedDesc = [...baseMediaPool].sort((a, b) => (b.takenMs || 0) - (a.takenMs || 0));
-    const hasAvailThumb = (m) => Boolean(!m.isOffline || m.inlinePreview);
+    const failedMap = imgFailed;
+    const inlineFailedMap = inlineImgFailed;
+    const blobFailedMap = thumbBlobFailed;
+    const thumbsMap = thumbUrls;
+
+    const isOnlineFileMissing = (m) => {
+      if (!m || m.isOffline) return false;
+      const p2pFailed = Boolean(failedMap[m.id]);
+      const fetchedUrl = thumbsMap[m.docId];
+      const noBlob = fetchedUrl === "" || Boolean(fetchedUrl && blobFailedMap[m.id]);
+      const noInline = !m.inlinePreview || Boolean(inlineFailedMap[m.id]);
+      return p2pFailed && noBlob && noInline;
+    };
+
+    const sortedDesc = [...baseMediaPool]
+      .filter((m) => !isOnlineFileMissing(m))
+      .sort((a, b) => (b.takenMs || 0) - (a.takenMs || 0));
+
+    const hasAvailThumb = (m) => {
+      if (!m) return false;
+      const validInline = Boolean(m.inlinePreview && !inlineFailedMap[m.id]);
+      if (m.isOffline) return validInline;
+      const validBlob = Boolean(thumbsMap[m.docId] && !blobFailedMap[m.id]);
+      if (validBlob) return true;
+      if (failedMap[m.id]) return validInline;
+      return true;
+    };
     const pickCoverItem = (arr) => {
       return (
         arr.find((m) => (!m.isSensitive || effectiveContentMode === "fun") && hasAvailThumb(m)) ||

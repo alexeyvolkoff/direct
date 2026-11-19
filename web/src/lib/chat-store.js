@@ -886,6 +886,22 @@ export class ChatStore {
     if (memo.content_hash) {
       entry.content_hash = String(memo.content_hash);
     }
+    if (memo.landmark) {
+      entry.landmark = String(memo.landmark);
+    }
+    if (memo.event) {
+      entry.event = String(memo.event);
+    }
+    if (memo.location) {
+      entry.location = String(memo.location);
+    }
+    if (memo.takenAt) {
+      entry.takenAt = String(memo.takenAt);
+    }
+    if (Number.isFinite(memo.gpsLat) && Number.isFinite(memo.gpsLon)) {
+      entry.gpsLat = memo.gpsLat;
+      entry.gpsLon = memo.gpsLon;
+    }
     if (Array.isArray(memo.annotation_embedding) && memo.annotation_embedding.length > 0) {
       entry.annotation_embedding = JSON.stringify(memo.annotation_embedding);
     }

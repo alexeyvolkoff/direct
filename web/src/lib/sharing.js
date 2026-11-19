@@ -714,18 +714,24 @@ export async function loadSharedByMe(identity) {
       }, 1200);
 
       try {
-        identity.gun
-          .get("~" + mainPub)
-          .get("sharing")
-          .map()
-          .once((data, key) => {
-            if (!data || key === "_" || key === "undefined" || typeof data !== "object") return;
-            const shareId = data.id || data.shareId || key;
-            if (!shareId || shareId === "undefined" || shareId === "_") return;
-            const existing = sharesMap.get(shareId);
-            const merged = { ...existing, ...data };
-            sharesMap.set(shareId, normalizeShareItem(merged, mainPub, shareId));
-          });
+        const onGunShare = (data, key) => {
+          if (!key || key === "_" || key === "undefined") return;
+          if (data === null || (data && typeof data === "object" && data.revoked)) {
+            sharesMap.delete(key);
+            return;
+          }
+          if (typeof data !== "object") return;
+          const shareId = data.id || data.shareId || key;
+          if (!shareId || shareId === "undefined" || shareId === "_") return;
+          const existing = sharesMap.get(shareId);
+          const merged = { ...existing, ...data };
+          sharesMap.set(shareId, normalizeShareItem(merged, mainPub, shareId));
+        };
+        identity.gun.get("~" + mainPub).get("sharing").map().once(onGunShare);
+        identity.gun.get("sharing:" + mainPub).map().once(onGunShare);
+        if (identity.gun.user && identity.gun.user().is) {
+          identity.gun.user().get("sharing").map().once(onGunShare);
+        }
       } catch (err) {
         if (!finished) {
           finished = true;
@@ -822,7 +828,14 @@ export function subscribeSharedByMe(identity, callback) {
   };
 
   const handleGunItem = (data, key) => {
-    if (!data || key === "_" || key === "undefined" || typeof data !== "object") return;
+    if (!key || key === "_" || key === "undefined") return;
+    if (data === null || (data && typeof data === "object" && data.revoked)) {
+      if (sharesMap.delete(key)) {
+        notify();
+      }
+      return;
+    }
+    if (typeof data !== "object") return;
     const shareId = data.id || data.shareId || key;
     if (!shareId || shareId === "undefined" || shareId === "_") return;
 
@@ -833,13 +846,23 @@ export function subscribeSharedByMe(identity, callback) {
     notify();
   };
 
-  const sub = identity.gun.get("~" + mainPub).get("sharing").map().on(handleGunItem);
+  const subs = [
+    identity.gun.get("~" + mainPub).get("sharing").map().on(handleGunItem),
+    identity.gun.get("sharing:" + mainPub).map().on(handleGunItem),
+  ];
+  try {
+    if (identity.gun.user && identity.gun.user().is) {
+      subs.push(identity.gun.user().get("sharing").map().on(handleGunItem));
+    }
+  } catch (_) {}
 
   return () => {
     if (debounceTimer) clearTimeout(debounceTimer);
-    try {
-      if (sub && sub.off) sub.off();
-    } catch (_) {}
+    for (const sub of subs) {
+      try {
+        if (sub && sub.off) sub.off();
+      } catch (_) {}
+    }
   };
 }
 
