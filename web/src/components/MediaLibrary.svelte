@@ -1878,7 +1878,7 @@
             <rect x="3" y="14" width="7" height="7" rx="1" />
             <rect x="14" y="14" width="7" height="7" rx="1" />
           </svg>
-          <span>{$_("media_timeline", {}, "Timeline")}</span>
+          <span class="seg-label">{$_("media_timeline", {}, "Timeline")}</span>
           <span class="seg-count">{baseMediaPool.length}</span>
         </button>
         <button
@@ -1886,12 +1886,13 @@
           role="tab"
           class="seg-btn"
           class:active={activeTab === "albums" || Boolean(activeAlbum)}
+          title={$_("media_auto_albums", {}, "Auto-Albums")}
           on:click={() => setTab("albums")}
         >
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 16.8l-6.2 4.5 2.4-7.4L2 9.4h7.6z" />
           </svg>
-          <span>{$_("media_auto_albums", {}, "Auto-Albums")}</span>
+          <span class="seg-label">{$_("media_auto_albums", {}, "Auto-Albums")}</span>
           {#if autoAlbums.totalCount > 0}
             <span class="seg-count">{autoAlbums.totalCount}</span>
           {/if}
@@ -1925,13 +1926,14 @@
         <button
           type="button"
           class="story-cta-pill"
+          title={$_("share_a_story", {}, "Share a story")}
           on:click={() =>
             openShareStoryFromLibrary(
               baseMediaPool.filter((m) => selectedTileIds.has(m.id)),
               activeAlbum?.title || ""
             )}
         >
-          📖 {$_("share_a_story", {}, "Share a story")} ({selectedTileIds.size})
+          <span>📖</span><span class="btn-label"> {$_("share_a_story", {}, "Share a story")}</span><span>({selectedTileIds.size})</span>
         </button>
       {/if}
 
@@ -1940,9 +1942,10 @@
           type="button"
           class="pill-toggle-btn"
           class:active={selectMode || selectedTileIds.size > 0}
+          title={$_("select", {}, "Select")}
           on:click={toggleSelectMode}
         >
-          <span>✓ {$_("select", {}, "Select")}</span>
+          <span>✓</span><span class="btn-label"> {$_("select", {}, "Select")}</span>
         </button>
       {/if}
 
@@ -1954,7 +1957,7 @@
           title={$_("media_include_creations_hint", {}, "Include AI-generated images and videos from Creations")}
           on:click={toggleIncludeCreations}
         >
-          <span>+ {$_("generated", {}, "Creations")}</span>
+          <span>🎨</span><span class="btn-label"> {$_("generated", {}, "Creations")}</span>
         </button>
       {/if}
 
@@ -1966,7 +1969,7 @@
           title="Work / Fun"
           on:click={toggleContentMode}
         >
-          <span>{effectiveContentMode === "fun" ? "✨ Fun" : "💼 Work"}</span>
+          <span>{effectiveContentMode === "fun" ? "✨" : "💼"}</span><span class="btn-label"> {effectiveContentMode === "fun" ? "Fun" : "Work"}</span>
         </button>
       {/if}
 
@@ -3750,6 +3753,37 @@
 
     .tile-info-btn {
       opacity: 0.85;
+    }
+
+    .media-header {
+      padding: 8px 10px;
+      gap: 6px;
+    }
+
+    .header-left,
+    .header-right {
+      gap: 4px;
+    }
+
+    .seg-label,
+    .btn-label {
+      display: none;
+    }
+
+    .seg-btn {
+      padding: 5px 8px;
+      gap: 4px;
+    }
+
+    .pill-toggle-btn,
+    .story-cta-pill {
+      padding: 5px 8px;
+      font-size: 12px;
+    }
+
+    .header-icon-btn {
+      width: 30px;
+      height: 30px;
     }
 
     .header-search {
