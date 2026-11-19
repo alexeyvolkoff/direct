@@ -497,8 +497,8 @@
     }
   }
 
-  function openPairModal(linkId, name = "") {
-    if (isSyncingHash || _isRestoringFolder) {
+  function openPairModal(linkId, name = "", { force = false } = {}) {
+    if (!force && (isSyncingHash || _isRestoringFolder)) {
       console.log("[App] openPairModal blocked during hash sync or folder restore:", linkId);
       return;
     }
@@ -546,7 +546,7 @@
     }
     if (linkId) {
       closeConnectModal();
-      openPairModal(linkId, name);
+      openPairModal(linkId, name, { force: true });
     }
   }
 
@@ -7444,7 +7444,7 @@ async function blobToBase64(blob) {
                     const id = emptyStateLinkId.trim();
                     emptyStateLinkId = "";
                     closeConnectModal();
-                    openPairModal(id);
+                    openPairModal(id, "", { force: true });
                   }
                 }}
                 class="empty-root-form"
@@ -7484,7 +7484,7 @@ async function blobToBase64(blob) {
                           class="empty-root-detected-btn"
                           on:click={() => {
                             closeConnectModal();
-                            openPairModal(dev.linkId, dev.name);
+                            openPairModal(dev.linkId, dev.name, { force: true });
                           }}
                         >
                           {$_("pair_connect_btn", {}, "Connect")}
@@ -7631,8 +7631,8 @@ async function blobToBase64(blob) {
             on:logout={logoutIdentity}
             on:delete-account={deleteAccount}
             on:toggleTheme={(e) => { isDarkTheme = e.detail.dark; }}
-            on:connectDevice={(e) => { openPairModal(e.detail.linkId, e.detail.name || ""); }}
-            on:pairDevice={(e) => { openPairModal(e.detail.linkId, e.detail.name); }}
+            on:connectDevice={(e) => { openPairModal(e.detail.linkId, e.detail.name || "", { force: true }); }}
+            on:pairDevice={(e) => { openPairModal(e.detail.linkId, e.detail.name, { force: true }); }}
             on:disconnectDevice={(e) => { disconnectDevice(e.detail.linkId); }}
 
             on:googleLogin={(e) => handleGoogleCredential({ credential: e.detail.credential })}
