@@ -2777,6 +2777,10 @@
     gap: 6px;
   }
 
+  .header-right {
+    margin-left: auto;
+  }
+
   .view-seg-pill {
     display: inline-flex;
     align-items: center;
@@ -3733,7 +3737,7 @@
     background: #000000;
   }
 
-  @media (max-width: 768px) {
+  @media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
     .media-scroll {
       padding: 10px 10px 36px;
     }
@@ -3757,13 +3761,17 @@
 
     .media-header {
       padding: 6px 8px;
-      gap: 4px;
+      gap: 6px;
     }
 
     .header-left,
     .header-right {
       gap: 3px;
       flex-wrap: nowrap;
+    }
+
+    .header-right {
+      margin-left: auto;
     }
 
     .seg-label,
@@ -3790,8 +3798,16 @@
     }
 
     .header-search {
-      order: 3;
+      order: 0;
+      flex: 1 1 140px;
+      min-width: 120px;
       max-width: none;
+    }
+  }
+
+  @media (max-width: 600px) {
+    .header-search {
+      order: 3;
       flex-basis: 100%;
     }
   }
