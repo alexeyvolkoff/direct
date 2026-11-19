@@ -886,6 +886,21 @@ export class ChatStore {
     if (memo.content_hash) {
       entry.content_hash = String(memo.content_hash);
     }
+    if (memo.contentType) {
+      entry.contentType = String(memo.contentType);
+    }
+    if (memo.mimeType) {
+      entry.mimeType = String(memo.mimeType);
+    }
+    if (memo.taken_at) {
+      entry.taken_at = String(memo.taken_at);
+    }
+    if (memo.gps) {
+      entry.gps = String(memo.gps);
+    }
+    if (Number(memo.duration) > 0) {
+      entry.duration = Number(memo.duration);
+    }
     if (memo.landmark) {
       entry.landmark = String(memo.landmark);
     }
