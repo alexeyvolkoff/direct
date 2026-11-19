@@ -1995,5 +1995,6 @@
   "story_publish_civitai_btn": "Опубликовать в CivitAI",
   "story_files_footer": "Файлы",
   "story_select_items": "Выберите хотя бы одно фото или видео",
-  "story_selected_count": "Выбрано медиа: {count}"
+  "story_selected_count": "Выбрано медиа: {count}",
+  "knowledge_enable_indexing_banner": "Включите оффлайн-индексацию на этом устройстве, чтобы создать карточки памяти из ваших фото и документов, или установите свою ноду для автоматической индексации 24/7."
 }

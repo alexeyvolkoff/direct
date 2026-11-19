@@ -1989,5 +1989,6 @@
   "story_publish_civitai_btn": "Опублікувати в CivitAI",
   "story_files_footer": "Файли",
   "story_select_items": "Виберіть хоча б одне фото чи відео",
-  "story_selected_count": "Вибрано медіа: {count}"
+  "story_selected_count": "Вибрано медіа: {count}",
+  "knowledge_enable_indexing_banner": "Увімкніть офлайн-індексацію на цьому пристрої, щоб створити картки пам'яті з ваших фото та документів, або встановіть власну ноду для автоматичної індексації 24/7."
 }

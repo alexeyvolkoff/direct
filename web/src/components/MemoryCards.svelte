@@ -38,7 +38,12 @@
 
   $: docsNodeInstallUrl = ($gatewayConfig, getGatewayDocsUrl("/advanced/"));
   let nodeBannerDismissed = false;
-  $: showOwnNodeBanner = !hasOwnHardwareNode && !isOwner && !nodeBannerDismissed;
+  $: showOwnNodeBanner =
+    !hasOwnHardwareNode &&
+    !isOwner &&
+    !nodeBannerDismissed &&
+    !loading &&
+    knowledgeList.length === 0;
 
   const dispatch = createEventDispatcher();
 
@@ -1342,14 +1347,21 @@
           </svg>
         </div>
         <p class="own-node-banner-text">
-          {$_("knowledge_install_node_banner", {}, "Install your own node to build a knowledge base from your photos and documents automatically.")}
+          {$_("knowledge_enable_indexing_banner", {}, "Enable offline indexing on this device to build Memory Cards from your photos and documents, or install a self-hosted node for 24/7 automatic indexing.")}
         </p>
         <div class="own-node-banner-actions">
+          <button
+            type="button"
+            class="own-node-banner-cta"
+            on:click={() => { showDeviceIndexModal = true; }}
+          >
+            <span>📱 {$_("menu_index_device", {}, "Index this device")}</span>
+          </button>
           <a
             href={docsNodeInstallUrl}
             target="_blank"
             rel="noopener noreferrer"
-            class="own-node-banner-cta"
+            class="own-node-banner-cta secondary"
           >
             <span>{$_("knowledge_install_node_cta", {}, "Install a node")}</span>
             <span class="own-node-banner-arrow" aria-hidden="true">↗</span>
@@ -2932,13 +2944,27 @@
     gap: 6px;
     padding: 7px 14px;
     border-radius: 8px;
+    border: none;
     background: var(--accent-blue, #EC4899);
     color: #ffffff;
     font-size: 12.5px;
     font-weight: 600;
     text-decoration: none;
     white-space: nowrap;
-    transition: filter 0.15s ease, transform 0.15s ease;
+    cursor: pointer;
+    transition: filter 0.15s ease, transform 0.15s ease, background-color 0.15s ease;
+  }
+
+  .own-node-banner-cta.secondary {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    color: var(--text-primary, #FAF8FC);
+  }
+
+  .memory-app.light-theme .own-node-banner-cta.secondary {
+    background: rgba(29, 24, 35, 0.05);
+    border: 1px solid rgba(29, 24, 35, 0.16);
+    color: var(--text-primary, #1D1823);
   }
 
   .own-node-banner-cta:hover {

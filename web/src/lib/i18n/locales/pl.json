@@ -1989,5 +1989,6 @@
   "story_publish_civitai_btn": "Opublikuj na CivitAI",
   "story_files_footer": "Pliki",
   "story_select_items": "Wybierz co najmniej jedno zdjęcie lub wideo",
-  "story_selected_count": "Wybrano: {count}"
+  "story_selected_count": "Wybrano: {count}",
+  "knowledge_enable_indexing_banner": "Włącz indeksowanie offline na tym urządzeniu, aby tworzyć karty pamięci ze zdjęć i dokumentów, lub zainstaluj własny węzeł do automatycznego indeksowania 24/7."
 }

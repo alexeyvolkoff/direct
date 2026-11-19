@@ -1989,5 +1989,6 @@
   "story_publish_civitai_btn": "Publiceren op CivitAI",
   "story_files_footer": "Bestanden",
   "story_select_items": "Selecteer minimaal één foto of video",
-  "story_selected_count": "{count} geselecteerd"
+  "story_selected_count": "{count} geselecteerd",
+  "knowledge_enable_indexing_banner": "Schakel offline indexering op dit apparaat in om Memory Cards van je foto's en documenten te maken, of installeer je eigen node voor automatische 24/7-indexering."
 }

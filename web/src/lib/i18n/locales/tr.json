@@ -1989,5 +1989,6 @@
   "story_publish_civitai_btn": "CivitAI'da Yayınla",
   "story_files_footer": "Dosyalar",
   "story_select_items": "En az bir fotoğraf veya video seçin",
-  "story_selected_count": "{count} medya seçildi"
+  "story_selected_count": "{count} medya seçildi",
+  "knowledge_enable_indexing_banner": "Fotoğraflarınızdan ve belgelerinizden Anı Kartları oluşturmak için bu cihazda çevrimdışı indekslemeyi etkinleştirin veya 7/24 otomatik indeksleme için kendi düğümünüzü kurun."
 }

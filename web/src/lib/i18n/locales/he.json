@@ -1989,5 +1989,6 @@
   "story_publish_civitai_btn": "פרסם ב-CivitAI",
   "story_files_footer": "קבצים",
   "story_select_items": "בחר לפחות תמונה או סרטון אחד",
-  "story_selected_count": "נבחרו {count} פריטי מדיה"
+  "story_selected_count": "נבחרו {count} פריטי מדיה",
+  "knowledge_enable_indexing_banner": "הפעל אינדוקס לא מקוון במכשיר זה כדי ליצור כרטיסי זיכרון מהתמונות והמסמכים שלך, או התקן צומת משלך לאינדוקס אוטומטי 24/7."
 }

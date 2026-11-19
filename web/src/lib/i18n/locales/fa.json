@@ -1989,5 +1989,6 @@
   "story_publish_civitai_btn": "انتشار در CivitAI",
   "story_files_footer": "فایل‌ها",
   "story_select_items": "حداقل یک عکس یا ویدیو انتخاب کنید",
-  "story_selected_count": "{count} مورد انتخاب شد"
+  "story_selected_count": "{count} مورد انتخاب شد",
+  "knowledge_enable_indexing_banner": "نمایه سازی آفلاین را در این دستگاه فعال کنید تا از عکس ها و اسناد خود کارت حافظه بسازید، یا برای نمایه سازی خودکار ۲۴/۷ نود شخصی خود را نصب کنید."
 }

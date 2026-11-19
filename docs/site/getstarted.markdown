@@ -77,7 +77,7 @@ Whether you open **Disk Direct** in Files mode (`disk.direct`) or AI mode (`ai-a
 * **Shared with me / Shared by me**: Direct DID user-to-user shares and public P2P links you created.
 * **Chats**: Private AI assistant (`June`) with SSE streaming, RAG source chips, and autonomous MCP document tools.
 * **Creations**: Generative image & studio workspace (`Express`, `Studio`, and `Video` galleries).
-* **Knowledge**: Visual & semantic **Memory Cards** across your documents, notes, photos, videos, and people *(if you haven't paired a self-hosted node yet, a banner at the bottom guides you to set up your own node for automatic indexing)*.
+* **Knowledge**: Visual & semantic **Memory Cards** across your documents, notes, photos, videos, and people *(when your Knowledge Base is empty, a banner at the bottom guides you to enable offline indexing on this device or set up your own self-hosted node for 24/7 automatic indexing)*.
 * **Media Library**: Chronological photo & video **Timeline** with a Year-Month scrubber and smart **Auto-Albums** (**People**, **Moments & Trips**, **Places**, and **Themes & Tags**) built automatically from your indexed Knowledge Base.
 * **Settings**: Manage your DID profile, paired devices, camera/folder backup, network gateway (BYOS), theme appearance, **AI Node** compute & Horde routing, and **AI Assistant** persona.
 * **Terminal**: Built-in browser **WebSSH** terminal (`xterm.js` + `libssh2` WebAssembly over P2P DataChannel) for paired nodes running an SSH server.

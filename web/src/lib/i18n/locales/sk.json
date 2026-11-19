@@ -1989,5 +1989,6 @@
   "story_publish_civitai_btn": "Publikovať na CivitAI",
   "story_files_footer": "Súbory",
   "story_select_items": "Vyberte aspoň jednu fotku alebo video",
-  "story_selected_count": "Vybrané: {count}"
+  "story_selected_count": "Vybrané: {count}",
+  "knowledge_enable_indexing_banner": "Povoľte offline indexovanie na tomto zariadení na vytváranie kariet pamäte z vašich fotiek a dokumentov, alebo si nainštalujte vlastný uzol na automatické indexovanie 24/7."
 }

@@ -1989,5 +1989,6 @@
   "story_publish_civitai_btn": "Publier sur CivitAI",
   "story_files_footer": "Fichiers",
   "story_select_items": "Sélectionnez au moins une photo ou vidéo",
-  "story_selected_count": "{count} médias sélectionnés"
+  "story_selected_count": "{count} médias sélectionnés",
+  "knowledge_enable_indexing_banner": "Activez l'indexation hors ligne sur cet appareil pour créer des Memory Cards à partir de vos photos et documents, ou installez votre propre nœud pour une indexation automatique 24h/24."
 }

@@ -1995,5 +1995,6 @@
   "story_publish_civitai_btn": "Publish to CivitAI",
   "story_files_footer": "Files",
   "story_select_items": "Select at least one photo or video",
-  "story_selected_count": "{count} media selected"
+  "story_selected_count": "{count} media selected",
+  "knowledge_enable_indexing_banner": "Enable offline indexing on this device to build Memory Cards from your photos and documents, or install a self-hosted node for 24/7 automatic indexing."
 }

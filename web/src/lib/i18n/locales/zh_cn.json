@@ -1989,5 +1989,6 @@
   "story_publish_civitai_btn": "发布到 CivitAI",
   "story_files_footer": "文件",
   "story_select_items": "请至少选择一张照片或视频",
-  "story_selected_count": "已选择 {count} 项媒体"
+  "story_selected_count": "已选择 {count} 项媒体",
+  "knowledge_enable_indexing_banner": "在此设备上启用离线索引，从您的照片和文档创建记忆卡片，或安装自己的节点以实现 24/7 自动索引。"
 }

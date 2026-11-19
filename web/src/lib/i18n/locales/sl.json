@@ -1989,5 +1989,6 @@
   "story_publish_civitai_btn": "Objavi na CivitAI",
   "story_files_footer": "Datoteke",
   "story_select_items": "Izberite vsaj eno fotografijo ali video",
-  "story_selected_count": "Izbrano: {count}"
+  "story_selected_count": "Izbrano: {count}",
+  "knowledge_enable_indexing_banner": "Omogočite indeksiranje brez povezave na tej napravi za ustvarjanje spominskih kartic iz fotografij in dokumentov ali namestite lastno vozlišče za samodejno indeksiranje 24/7."
 }

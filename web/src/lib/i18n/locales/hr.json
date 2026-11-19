@@ -1989,5 +1989,6 @@
   "story_publish_civitai_btn": "Objavi na CivitAI",
   "story_files_footer": "Datoteke",
   "story_select_items": "Odaberite barem jednu fotografiju ili video",
-  "story_selected_count": "Odabrano: {count}"
+  "story_selected_count": "Odabrano: {count}",
+  "knowledge_enable_indexing_banner": "Omogućite izvanmrežno indeksiranje na ovom uređaju za izradu kartica memorije iz fotografija i dokumenata ili instalirajte vlastiti čvor za automatsko indeksiranje 24/7."
 }

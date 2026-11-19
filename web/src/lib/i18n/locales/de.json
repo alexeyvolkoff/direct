@@ -1989,5 +1989,6 @@
   "story_publish_civitai_btn": "Auf CivitAI veröffentlichen",
   "story_files_footer": "Dateien",
   "story_select_items": "Mindestens ein Foto oder Video auswählen",
-  "story_selected_count": "{count} Medien ausgewählt"
+  "story_selected_count": "{count} Medien ausgewählt",
+  "knowledge_enable_indexing_banner": "Aktivieren Sie die Offline-Indizierung auf diesem Gerät, um Memory Cards aus Ihren Fotos und Dokumenten zu erstellen, oder installieren Sie einen eigenen Knoten für automatische 24/7-Indizierung."
 }
