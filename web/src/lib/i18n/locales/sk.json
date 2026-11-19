@@ -1990,5 +1990,12 @@
   "story_files_footer": "Súbory",
   "story_select_items": "Vyberte aspoň jednu fotku alebo video",
   "story_selected_count": "Vybrané: {count}",
-  "knowledge_enable_indexing_banner": "Povoľte offline indexovanie na tomto zariadení na vytváranie kariet pamäte z vašich fotiek a dokumentov, alebo si nainštalujte vlastný uzol na automatické indexovanie 24/7."
+  "knowledge_enable_indexing_banner": "Povoľte offline indexovanie na tomto zariadení na vytváranie kariet pamäte z vašich fotiek a dokumentov, alebo si nainštalujte vlastný uzol na automatické indexovanie 24/7.",
+  "rate_app_label": "Ohodnotiť Disk Direct",
+  "rate_app_sub": "Páči sa vám aplikácia? Zanechajte krátku recenziu v obchode",
+  "rate_app_btn": "Ohodnotiť",
+  "share_app_label": "Zdieľať aplikáciu",
+  "share_app_sub": "Pozvite priateľov vyskúšať Disk Direct",
+  "share_app_btn": "Zdieľať",
+  "share_app_text": "Vyskúšajte Disk Direct: súkromné P2P úložisko, inteligentné fotoalbumy a lokálna AI bez závislosti od cloudu."
 }

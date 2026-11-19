@@ -1990,5 +1990,12 @@
   "story_files_footer": "קבצים",
   "story_select_items": "בחר לפחות תמונה או סרטון אחד",
   "story_selected_count": "נבחרו {count} פריטי מדיה",
-  "knowledge_enable_indexing_banner": "הפעל אינדוקס לא מקוון במכשיר זה כדי ליצור כרטיסי זיכרון מהתמונות והמסמכים שלך, או התקן צומת משלך לאינדוקס אוטומטי 24/7."
+  "knowledge_enable_indexing_banner": "הפעל אינדוקס לא מקוון במכשיר זה כדי ליצור כרטיסי זיכרון מהתמונות והמסמכים שלך, או התקן צומת משלך לאינדוקס אוטומטי 24/7.",
+  "rate_app_label": "דרג את Disk Direct",
+  "rate_app_sub": "נהנה מהאפליקציה? השאר ביקורת קצרה בחנות",
+  "rate_app_btn": "דרג",
+  "share_app_label": "שתף אפליקציה",
+  "share_app_sub": "הזמן חברים לנסות את Disk Direct",
+  "share_app_btn": "שתף",
+  "share_app_text": "נסה את Disk Direct: אחסון P2P פרטי, אלבומי תמונות חכמים ומרחב AI מקומי ללא תלות בענן."
 }

@@ -1990,5 +1990,12 @@
   "story_files_footer": "Bestanden",
   "story_select_items": "Selecteer minimaal één foto of video",
   "story_selected_count": "{count} geselecteerd",
-  "knowledge_enable_indexing_banner": "Schakel offline indexering op dit apparaat in om Memory Cards van je foto's en documenten te maken, of installeer je eigen node voor automatische 24/7-indexering."
+  "knowledge_enable_indexing_banner": "Schakel offline indexering op dit apparaat in om Memory Cards van je foto's en documenten te maken, of installeer je eigen node voor automatische 24/7-indexering.",
+  "rate_app_label": "Disk Direct beoordelen",
+  "rate_app_sub": "Bevalt de app? Laat een korte review achter in de store",
+  "rate_app_btn": "Beoordelen",
+  "share_app_label": "App delen",
+  "share_app_sub": "Nodig vrienden uit om Disk Direct te proberen",
+  "share_app_btn": "Delen",
+  "share_app_text": "Probeer Disk Direct: privé P2P-opslag, slimme fotoalbums en lokale AI-werkruimte zonder cloud-lock-in."
 }

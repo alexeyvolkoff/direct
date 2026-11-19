@@ -1990,5 +1990,12 @@
   "story_files_footer": "Dosyalar",
   "story_select_items": "En az bir fotoğraf veya video seçin",
   "story_selected_count": "{count} medya seçildi",
-  "knowledge_enable_indexing_banner": "Fotoğraflarınızdan ve belgelerinizden Anı Kartları oluşturmak için bu cihazda çevrimdışı indekslemeyi etkinleştirin veya 7/24 otomatik indeksleme için kendi düğümünüzü kurun."
+  "knowledge_enable_indexing_banner": "Fotoğraflarınızdan ve belgelerinizden Anı Kartları oluşturmak için bu cihazda çevrimdışı indekslemeyi etkinleştirin veya 7/24 otomatik indeksleme için kendi düğümünüzü kurun.",
+  "rate_app_label": "Disk Direct'i Değerlendir",
+  "rate_app_sub": "Uygulamayı beğendiniz mi? Mağazada kısa bir yorum bırakın",
+  "rate_app_btn": "Değerlendir",
+  "share_app_label": "Uygulamayı Paylaş",
+  "share_app_sub": "Arkadaşlarınızı Disk Direct'i denemeye davet edin",
+  "share_app_btn": "Paylaş",
+  "share_app_text": "Disk Direct'i deneyin: özel P2P dosya depolama, akıllı fotoğraf albümleri ve yerel yapay zeka çalışma alanı."
 }

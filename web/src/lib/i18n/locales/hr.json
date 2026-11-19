@@ -1990,5 +1990,12 @@
   "story_files_footer": "Datoteke",
   "story_select_items": "Odaberite barem jednu fotografiju ili video",
   "story_selected_count": "Odabrano: {count}",
-  "knowledge_enable_indexing_banner": "Omogućite izvanmrežno indeksiranje na ovom uređaju za izradu kartica memorije iz fotografija i dokumenata ili instalirajte vlastiti čvor za automatsko indeksiranje 24/7."
+  "knowledge_enable_indexing_banner": "Omogućite izvanmrežno indeksiranje na ovom uređaju za izradu kartica memorije iz fotografija i dokumenata ili instalirajte vlastiti čvor za automatsko indeksiranje 24/7.",
+  "rate_app_label": "Ocijeni Disk Direct",
+  "rate_app_sub": "Sviđa vam se aplikacija? Ostavite kratku recenziju u trgovini",
+  "rate_app_btn": "Ocijeni",
+  "share_app_label": "Podijeli aplikaciju",
+  "share_app_sub": "Pozovite prijatelje da isprobaju Disk Direct",
+  "share_app_btn": "Podijeli",
+  "share_app_text": "Isprobajte Disk Direct: privatna P2P pohrana, pametni foto albumi i lokalni AI bez ovisnosti o oblaku."
 }

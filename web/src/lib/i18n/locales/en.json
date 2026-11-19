@@ -1996,5 +1996,12 @@
   "story_files_footer": "Files",
   "story_select_items": "Select at least one photo or video",
   "story_selected_count": "{count} media selected",
-  "knowledge_enable_indexing_banner": "Enable offline indexing on this device to build Memory Cards from your photos and documents, or install a self-hosted node for 24/7 automatic indexing."
+  "knowledge_enable_indexing_banner": "Enable offline indexing on this device to build Memory Cards from your photos and documents, or install a self-hosted node for 24/7 automatic indexing.",
+  "rate_app_label": "Rate Disk Direct",
+  "rate_app_sub": "Enjoying the app? Leave a quick review on the store",
+  "rate_app_btn": "Rate App",
+  "share_app_label": "Share App",
+  "share_app_sub": "Invite friends to try Disk Direct",
+  "share_app_btn": "Share",
+  "share_app_text": "Try Disk Direct: private P2P file storage, smart photo albums, and local AI workspace with zero cloud lock-in."
 }

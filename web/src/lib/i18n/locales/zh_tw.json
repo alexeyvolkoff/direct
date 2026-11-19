@@ -1990,5 +1990,12 @@
   "story_files_footer": "檔案",
   "story_select_items": "請至少選擇一張照片或影片",
   "story_selected_count": "已選擇 {count} 項媒體",
-  "knowledge_enable_indexing_banner": "在此裝置上啟用離線索引，從您的照片和文件建立記憶卡片，或安裝您自己的節點以實現 24/7 自動索引。"
+  "knowledge_enable_indexing_banner": "在此裝置上啟用離線索引，從您的照片和文件建立記憶卡片，或安裝您自己的節點以實現 24/7 自動索引。",
+  "rate_app_label": "評價 Disk Direct",
+  "rate_app_sub": "喜歡這款應用？在應用商店留下簡短評價",
+  "rate_app_btn": "去評價",
+  "share_app_label": "分享應用",
+  "share_app_sub": "邀請朋友體驗 Disk Direct",
+  "share_app_btn": "分享",
+  "share_app_text": "試試 Disk Direct：私密 P2P 檔案儲存、智慧相簿與本地 AI 工作區，無雲端鎖定。"
 }

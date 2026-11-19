@@ -1990,5 +1990,12 @@
   "story_files_footer": "Arquivos",
   "story_select_items": "Selecione pelo menos uma foto ou vídeo",
   "story_selected_count": "{count} selecionados",
-  "knowledge_enable_indexing_banner": "Ative a indexação offline neste dispositivo para criar Memory Cards das suas fotos e documentos, ou instale o seu próprio nó para indexação automática 24/7."
+  "knowledge_enable_indexing_banner": "Ative a indexação offline neste dispositivo para criar Memory Cards das suas fotos e documentos, ou instale o seu próprio nó para indexação automática 24/7.",
+  "rate_app_label": "Avaliar Disk Direct",
+  "rate_app_sub": "A gostar da app? Deixe uma breve avaliação na loja",
+  "rate_app_btn": "Avaliar",
+  "share_app_label": "Partilhar app",
+  "share_app_sub": "Convide amigos para experimentar o Disk Direct",
+  "share_app_btn": "Partilhar",
+  "share_app_text": "Experimente o Disk Direct: armazenamento P2P privado, álbuns inteligentes e espaço de IA local sem depender da nuvem."
 }

@@ -1990,5 +1990,12 @@
   "story_files_footer": "Dateien",
   "story_select_items": "Mindestens ein Foto oder Video auswählen",
   "story_selected_count": "{count} Medien ausgewählt",
-  "knowledge_enable_indexing_banner": "Aktivieren Sie die Offline-Indizierung auf diesem Gerät, um Memory Cards aus Ihren Fotos und Dokumenten zu erstellen, oder installieren Sie einen eigenen Knoten für automatische 24/7-Indizierung."
+  "knowledge_enable_indexing_banner": "Aktivieren Sie die Offline-Indizierung auf diesem Gerät, um Memory Cards aus Ihren Fotos und Dokumenten zu erstellen, oder installieren Sie einen eigenen Knoten für automatische 24/7-Indizierung.",
+  "rate_app_label": "Disk Direct bewerten",
+  "rate_app_sub": "Gefällt dir die App? Hinterlasse eine kurze Bewertung im Store",
+  "rate_app_btn": "Bewerten",
+  "share_app_label": "App teilen",
+  "share_app_sub": "Lade Freunde ein, Disk Direct auszuprobieren",
+  "share_app_btn": "Teilen",
+  "share_app_text": "Probiere Disk Direct: privater P2P-Dateispeicher, intelligente Fotoalben und lokaler KI-Workspace ohne Cloud-Zwang."
 }

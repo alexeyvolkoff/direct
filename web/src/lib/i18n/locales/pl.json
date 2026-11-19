@@ -1990,5 +1990,12 @@
   "story_files_footer": "Pliki",
   "story_select_items": "Wybierz co najmniej jedno zdjęcie lub wideo",
   "story_selected_count": "Wybrano: {count}",
-  "knowledge_enable_indexing_banner": "Włącz indeksowanie offline na tym urządzeniu, aby tworzyć karty pamięci ze zdjęć i dokumentów, lub zainstaluj własny węzeł do automatycznego indeksowania 24/7."
+  "knowledge_enable_indexing_banner": "Włącz indeksowanie offline na tym urządzeniu, aby tworzyć karty pamięci ze zdjęć i dokumentów, lub zainstaluj własny węzeł do automatycznego indeksowania 24/7.",
+  "rate_app_label": "Oceń Disk Direct",
+  "rate_app_sub": "Podoba Ci się aplikacja? Zostaw krótką opinię w sklepie",
+  "rate_app_btn": "Oceń",
+  "share_app_label": "Udostępnij aplikację",
+  "share_app_sub": "Zaproś znajomych do wypróbowania Disk Direct",
+  "share_app_btn": "Udostępnij",
+  "share_app_text": "Wypróbuj Disk Direct: prywatny dysk P2P, inteligentne albumy zdjęć i lokalne AI bez uzależnienia od chmury."
 }

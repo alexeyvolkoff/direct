@@ -185,6 +185,42 @@
     setMcpKeysIdentity(identity);
   }
   const isMobileApp = isNativeMobile();
+  const isAndroidUa = typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent || "");
+  const rateAppUrl = isAndroidUa
+    ? "https://play.google.com/store/apps/details?id=net.onmydisk.app"
+    : "https://disk.direct";
+  let shareAppCopied = false;
+  let shareAppCopyTimer = null;
+
+  async function handleShareApp() {
+    const shareUrl = isAndroidUa
+      ? "https://play.google.com/store/apps/details?id=net.onmydisk.app"
+      : "https://disk.direct";
+    const shareTitle = "Disk Direct";
+    const shareText = $_(
+      "share_app_text",
+      {},
+      "Try Disk Direct: private P2P file storage, smart photo albums, and local AI workspace with zero cloud lock-in."
+    );
+    try {
+      if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+        await navigator.share({ title: shareTitle, text: shareText, url: shareUrl });
+        return;
+      }
+    } catch (e) {
+      if (e && e.name === "AbortError") return;
+    }
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(`${shareText} ${shareUrl}`);
+        shareAppCopied = true;
+        if (shareAppCopyTimer) clearTimeout(shareAppCopyTimer);
+        shareAppCopyTimer = setTimeout(() => {
+          shareAppCopied = false;
+        }, 2500);
+      }
+    } catch (_) {}
+  }
   $: activeMcpPresets = getActiveMcpPresets($gatewayConfig);
   let mcpSelectedPreset = "civitai";
   let mcpCustomName = "";
@@ -2337,6 +2373,47 @@
                     <span>{$_("contact_support", {}, "Discord")}</span>
                     <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>
                   </a>
+                </div>
+              </div>
+
+              <!-- Rate App Row (Mobile) -->
+              {#if $otaState.isNative || isMobileApp}
+                <div class="setting-row">
+                  <div class="row-text">
+                    <span class="row-label">{$_("rate_app_label", {}, "Rate Disk Direct")}</span>
+                    <span class="row-sub">{$_("rate_app_sub", {}, "Enjoying the app? Leave a quick review on the store")}</span>
+                  </div>
+                  <div class="row-value-badge">
+                    <a
+                      href={rateAppUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="btn-secondary-action btn-sm"
+                      style="text-decoration: none; display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; font-size: 12px;"
+                    >
+                      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                      <span>{$_("rate_app_btn", {}, "Rate App")}</span>
+                    </a>
+                  </div>
+                </div>
+              {/if}
+
+              <!-- Share App Row -->
+              <div class="setting-row">
+                <div class="row-text">
+                  <span class="row-label">{$_("share_app_label", {}, "Share App")}</span>
+                  <span class="row-sub">{$_("share_app_sub", {}, "Invite friends to try Disk Direct")}</span>
+                </div>
+                <div class="row-value-badge">
+                  <button
+                    type="button"
+                    class="btn-secondary-action btn-sm"
+                    on:click={handleShareApp}
+                    style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; font-size: 12px;"
+                  >
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                    <span>{shareAppCopied ? $_("copied", {}, "Copied!") : $_("share_app_btn", {}, "Share")}</span>
+                  </button>
                 </div>
               </div>
 
