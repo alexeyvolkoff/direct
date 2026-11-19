@@ -38,6 +38,8 @@
   import { isStoryOrLongReadme, parseStoryReadmeMeta } from "../lib/story-composer.js";
   import StoryComicView from "./StoryComicView.svelte";
   import ShareStoryModal from "./ShareStoryModal.svelte";
+  import ReportContentModal from "./ReportContentModal.svelte";
+  let reportStudioItem = null;
   import defaultKreaPresets from "../lib/krea_presets.json";
 
   let civitaiAccounts = [];
@@ -8120,6 +8122,18 @@
                       </svg>
                     </button>
 
+                    <button
+                      type="button"
+                      class="toolbar-btn"
+                      title={$_("report_ai_content", {}, "Report offensive content")}
+                      on:click|stopPropagation={() => { reportStudioItem = item; }}
+                    >
+                      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+                        <line x1="4" y1="22" x2="4" y2="15" />
+                      </svg>
+                    </button>
+
                     {#if canPublishCivitai}
                       <button
                         type="button"
@@ -10884,6 +10898,19 @@
         </div>
       </div>
     </div>
+  {/if}
+
+  {#if reportStudioItem}
+    <ReportContentModal
+      open={true}
+      {isDarkTheme}
+      {httpDrive}
+      kind={reportStudioItem.isVideo ? "video" : "image"}
+      prompt={reportStudioItem.prompt || reportStudioItem.title || ""}
+      itemPath={reportStudioItem.path || ""}
+      model={reportStudioItem.model || ""}
+      on:close={() => { reportStudioItem = null; }}
+    />
   {/if}
 
   <ShareStoryModal

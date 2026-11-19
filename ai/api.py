@@ -7191,6 +7191,42 @@ async def synthesize_speech(data: TTSRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class ContentReportInput(BaseModel):
+    kind: str = "chat"
+    reason: str = "offensive"
+    details: Optional[str] = ""
+    message_id: Optional[str] = ""
+    prompt: Optional[str] = ""
+    content_excerpt: Optional[str] = ""
+    item_path: Optional[str] = ""
+    model: Optional[str] = ""
+
+
+@app.post("/api/report_content")
+async def report_content_endpoint(request: Request, data: ContentReportInput):
+    """Stores user-submitted offensive AI content reports for developer moderation and filtering."""
+    report = {
+        "ts": datetime.datetime.utcnow().isoformat() + "Z",
+        "kind": (data.kind or "chat")[:32],
+        "reason": (data.reason or "offensive")[:128],
+        "details": (data.details or "")[:1000],
+        "message_id": (data.message_id or "")[:128],
+        "prompt": (data.prompt or "")[:500],
+        "content_excerpt": (data.content_excerpt or "")[:500],
+        "item_path": (data.item_path or "")[:300],
+        "model": (data.model or "")[:128],
+        "role": trusted_caller_role(request),
+    }
+    logging.warning(f"[MODERATION REPORT] kind={report['kind']} reason={report['reason']} model={report['model']}")
+    try:
+        rep_path = os.path.join(os.path.dirname(__file__), "moderation_reports.jsonl")
+        with open(rep_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(report, ensure_ascii=False) + "\n")
+    except Exception as e:
+        logging.error(f"[MODERATION REPORT] failed to write report: {e}")
+    return {"status": "ok", "reported": True}
+
+
 # --- Custom Web Push Notifications (RFC 8291 VAPID) ---
 class PushSubscribeInput(BaseModel):
     subscription: dict

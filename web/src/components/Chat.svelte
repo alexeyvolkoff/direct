@@ -11,6 +11,7 @@
   import { OnmyChatTransport } from "../lib/onmychat-transport.js";
   import { ttsPlayer, ttsState } from "../lib/tts-player.js";
   import AssistantAvatarModal from "./AssistantAvatarModal.svelte";
+  import ReportContentModal from "./ReportContentModal.svelte";
   import { getViewerSettings } from "../lib/viewer-settings.js";
   import { deviceRegistry } from "../lib/device-registry.js";
   import { profileStore, resolveChatUserName } from "../lib/profile-store.js";
@@ -23,6 +24,7 @@
   import { issueConsent, getClientDeviceServer } from "../lib/client-device-server.js";
   import { DEFAULT_STORAGE_PATH, parseStoragePath, cleanStoragePath, getLocalDevice, formatStoragePath, persistStoragePath, getDefaultStoragePath } from "../lib/storage-path.js";
   import { getStoredOmdKey } from "../lib/omd-key.js";
+  let reportModalTarget = null;
   import { sanitizeExternalCheckoutText } from "../lib/platform.js";
   import { DEFAULT_JUNE_SYSTEM_PROMPT, DEFAULT_JUNE_FUN_PROMPT, blobToDataUrl } from "../lib/assistant-defaults.js";
   import { gatewayConfig } from "../lib/gateway-config.js";
@@ -6146,6 +6148,25 @@ function lastFreshTitle(messages) {
 
                       <button
                         type="button"
+                        class="tool-btn"
+                        title={$_("report_ai_content", {}, "Report offensive content")}
+                        on:click={() => {
+                          const fullText = (m.parts || []).filter((p) => p.type === "text").map((p) => p.text || "").join("\n");
+                          reportModalTarget = {
+                            kind: "chat",
+                            messageId: m.id || "",
+                            contentExcerpt: fullText.slice(0, 500),
+                          };
+                        }}
+                      >
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+                          <line x1="4" y1="22" x2="4" y2="15" />
+                        </svg>
+                      </button>
+
+                      <button
+                        type="button"
                         class="tool-btn delete-btn"
                         title={$_("remove", {}, "Delete")}
                         on:click={() => handleDeleteMessage(m)}
@@ -6742,6 +6763,18 @@ function lastFreshTitle(messages) {
       </div>
     </div>
   </div>
+
+  {#if reportModalTarget}
+    <ReportContentModal
+      open={true}
+      {isDarkTheme}
+      {httpDrive}
+      kind={reportModalTarget.kind}
+      messageId={reportModalTarget.messageId}
+      contentExcerpt={reportModalTarget.contentExcerpt}
+      on:close={() => { reportModalTarget = null; }}
+    />
+  {/if}
 
   {#if sourceChooserMode}
     <!-- svelte-ignore a11y-click-events-have-key-events -->
