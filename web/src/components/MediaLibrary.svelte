@@ -3756,34 +3756,37 @@
     }
 
     .media-header {
-      padding: 8px 10px;
-      gap: 6px;
+      padding: 6px 8px;
+      gap: 4px;
     }
 
     .header-left,
     .header-right {
-      gap: 4px;
+      gap: 3px;
+      flex-wrap: nowrap;
     }
 
     .seg-label,
+    .seg-count,
     .btn-label {
       display: none;
     }
 
     .seg-btn {
-      padding: 5px 8px;
-      gap: 4px;
+      padding: 5px 7px;
+      gap: 0;
     }
 
     .pill-toggle-btn,
     .story-cta-pill {
-      padding: 5px 8px;
+      padding: 4px 7px;
       font-size: 12px;
+      height: 28px;
     }
 
     .header-icon-btn {
-      width: 30px;
-      height: 30px;
+      width: 28px;
+      height: 28px;
     }
 
     .header-search {
