@@ -6146,24 +6146,26 @@ function lastFreshTitle(messages) {
                         {/if}
                       </button>
 
-                      <button
-                        type="button"
-                        class="tool-btn"
-                        title={$_("report_ai_content", {}, "Report offensive content")}
-                        on:click={() => {
-                          const fullText = (m.parts || []).filter((p) => p.type === "text").map((p) => p.text || "").join("\n");
-                          reportModalTarget = {
-                            kind: "chat",
-                            messageId: m.id || "",
-                            contentExcerpt: fullText.slice(0, 500),
-                          };
-                        }}
-                      >
-                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-                          <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
-                          <line x1="4" y1="22" x2="4" y2="15" />
-                        </svg>
-                      </button>
+                      {#if targetDevice?.isAiNode || !targetDevice?.isOwner}
+                        <button
+                          type="button"
+                          class="tool-btn"
+                          title={$_("report_ai_content", {}, "Report offensive content")}
+                          on:click={() => {
+                            const fullText = (m.parts || []).filter((p) => p.type === "text").map((p) => p.text || "").join("\n");
+                            reportModalTarget = {
+                              kind: "chat",
+                              messageId: m.id || "",
+                              contentExcerpt: fullText.slice(0, 500),
+                            };
+                          }}
+                        >
+                          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+                            <line x1="4" y1="22" x2="4" y2="15" />
+                          </svg>
+                        </button>
+                      {/if}
 
                       <button
                         type="button"

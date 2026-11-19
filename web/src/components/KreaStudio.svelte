@@ -8122,17 +8122,19 @@
                       </svg>
                     </button>
 
-                    <button
-                      type="button"
-                      class="toolbar-btn"
-                      title={$_("report_ai_content", {}, "Report offensive content")}
-                      on:click|stopPropagation={() => { reportStudioItem = item; }}
-                    >
-                      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
-                        <line x1="4" y1="22" x2="4" y2="15" />
-                      </svg>
-                    </button>
+                    {#if targetDevice?.isAiNode || !targetDevice?.isOwner}
+                      <button
+                        type="button"
+                        class="toolbar-btn"
+                        title={$_("report_ai_content", {}, "Report offensive content")}
+                        on:click|stopPropagation={() => { reportStudioItem = item; }}
+                      >
+                        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+                          <line x1="4" y1="22" x2="4" y2="15" />
+                        </svg>
+                      </button>
+                    {/if}
 
                     {#if canPublishCivitai}
                       <button
