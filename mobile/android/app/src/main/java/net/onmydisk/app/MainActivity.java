@@ -52,6 +52,7 @@ public class MainActivity extends BridgeActivity {
         androidx.core.splashscreen.SplashScreen.installSplashScreen(this);
         setTheme(R.style.AppTheme_NoActionBar);
         supportRequestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
+        enableModernEdgeToEdge();
         registerPlugin(NativeStoragePlugin.class);
         registerPlugin(NativeGoogleAuthPlugin.class);
         super.onCreate(savedInstanceState);
@@ -62,7 +63,6 @@ public class MainActivity extends BridgeActivity {
         if (getActionBar() != null) {
             getActionBar().hide();
         }
-        enableModernEdgeToEdge();
 
         // Match system navigation bar and status bar to system dark/light theme
         applySystemBarsTheme();
@@ -463,15 +463,13 @@ public class MainActivity extends BridgeActivity {
     private void enableModernEdgeToEdge() {
         int nightModeFlags = getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
         boolean isNight = nightModeFlags == android.content.res.Configuration.UI_MODE_NIGHT_YES;
-        int darkColor = android.graphics.Color.parseColor("#151821");
-        int lightColor = android.graphics.Color.parseColor("#F6F7FA");
 
         SystemBarStyle statusBarStyle = isNight
-            ? SystemBarStyle.dark(darkColor)
-            : SystemBarStyle.light(lightColor, darkColor);
+            ? SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+            : SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT);
         SystemBarStyle navBarStyle = isNight
-            ? SystemBarStyle.dark(darkColor)
-            : SystemBarStyle.light(lightColor, darkColor);
+            ? SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+            : SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT);
 
         EdgeToEdge.enable(this, statusBarStyle, navBarStyle);
     }
