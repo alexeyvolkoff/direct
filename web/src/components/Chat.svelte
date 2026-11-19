@@ -25,6 +25,7 @@
   import { DEFAULT_STORAGE_PATH, parseStoragePath, cleanStoragePath, getLocalDevice, formatStoragePath, persistStoragePath, getDefaultStoragePath } from "../lib/storage-path.js";
   import { getStoredOmdKey } from "../lib/omd-key.js";
   let reportModalTarget = null;
+  export let isPublicAiNode = false;
   import { sanitizeExternalCheckoutText } from "../lib/platform.js";
   import { DEFAULT_JUNE_SYSTEM_PROMPT, DEFAULT_JUNE_FUN_PROMPT, blobToDataUrl } from "../lib/assistant-defaults.js";
   import { gatewayConfig } from "../lib/gateway-config.js";
@@ -6146,7 +6147,7 @@ function lastFreshTitle(messages) {
                         {/if}
                       </button>
 
-                      {#if targetDevice?.isAiNode || !targetDevice?.isOwner}
+                      {#if isPublicAiNode || targetDevice?.isAiNode || !targetDevice?.isOwner}
                         <button
                           type="button"
                           class="tool-btn"

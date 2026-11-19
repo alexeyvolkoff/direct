@@ -65,6 +65,7 @@
   export let httpDrive = null;
   export let deviceDrive = null;
   export let targetDevice = null;
+  export let isPublicAiNode = false;
   export let initialStorySeed = null;
   export let initialEditPersona = null;
   export let targetLinkId = "";
@@ -8122,7 +8123,7 @@
                       </svg>
                     </button>
 
-                    {#if targetDevice?.isAiNode || !targetDevice?.isOwner}
+                    {#if isPublicAiNode || targetDevice?.isAiNode || !targetDevice?.isOwner}
                       <button
                         type="button"
                         class="toolbar-btn"

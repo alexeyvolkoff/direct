@@ -1693,6 +1693,7 @@
           targetDevice={userStorageDevice || targetDevice}
           targetLinkId={(userStorageDevice && userStorageDevice.linkId) || targetLinkId || targetDevice?.linkId || ""}
           isPrivateMode={computedPrivateMode}
+          isPublicAiNode={Boolean(targetDevice?.isAiNode || !computedPrivateMode)}
           {omdKey}
           {chatStore}
           {isDarkTheme}
@@ -1778,6 +1779,7 @@
           storageDevice={userStorageDevice}
           targetLinkId={targetLinkId || targetDevice?.linkId || ""}
           isPrivateMode={computedPrivateMode}
+          isPublicAiNode={Boolean(targetDevice?.isAiNode || !computedPrivateMode)}
           {ownLinkIds}
           {omdKey}
           thumbFetcher={fetchDeviceThumb}
