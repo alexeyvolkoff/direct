@@ -47,11 +47,11 @@ workflows:
         script: |
           RAW_NUM="${BUILD_NUMBER:-${PROJECT_BUILD_NUMBER:-1}}"
           if [ "$RAW_NUM" -lt 6000 ] 2>/dev/null; then BUILD_NUM=$((6000 + RAW_NUM)); else BUILD_NUM="$RAW_NUM"; fi
-          echo "Setting iOS Marketing Version to 3.1.0 and Build Number to $BUILD_NUM"
-          sed -i '' "s/MARKETING_VERSION = [^;]*;/MARKETING_VERSION = 3.1.0;/g" mobile/ios/App/App.xcodeproj/project.pbxproj
+          echo "Setting iOS Marketing Version to 3.1.1 and Build Number to $BUILD_NUM"
+          sed -i '' "s/MARKETING_VERSION = [^;]*;/MARKETING_VERSION = 3.1.1;/g" mobile/ios/App/App.xcodeproj/project.pbxproj
           sed -i '' "s/CURRENT_PROJECT_VERSION = [^;]*;/CURRENT_PROJECT_VERSION = ${BUILD_NUM};/g" mobile/ios/App/App.xcodeproj/project.pbxproj
           cd mobile/ios/App
-          agvtool new-marketing-version "3.1.0" || true
+          agvtool new-marketing-version "3.1.1" || true
           agvtool new-version -all "$BUILD_NUM" || true
       - name: Install CocoaPods
         script: |
