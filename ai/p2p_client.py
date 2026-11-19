@@ -394,8 +394,10 @@ class P2PConnection:
             for sig in await self._signaling.poll(self.tunnel_id, self.target_link_id):
                 kind = sig.get("kind")
                 payload = sig.get("payload") or ""
-                if kind in ("answer", "offer"):
+                if kind == "answer" and payload:
                     remote_sdp = base64.b64decode(payload).decode("utf-8", "replace")
+                    if "a=setup:actpass" in remote_sdp:
+                        remote_sdp = re.sub(r"^a=setup:actpass(\r?)$", r"a=setup:active\1", remote_sdp, flags=re.MULTILINE)
                     await self._pc.setRemoteDescription(
                         RTCSessionDescription(sdp=remote_sdp, type="answer")
                     )

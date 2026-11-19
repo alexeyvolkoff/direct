@@ -2346,7 +2346,10 @@ def require_node_owner(request: Request, ctx: user_context.UserContext | None) -
     if role in ("guest", "shared"):
         return False
     caller_did = (request.headers.get("X-OMD-Caller-DID") or request.headers.get("X-OMD-DID") or "").strip()
-    if role == "owner" or (caller_did and is_did_paired(caller_did)):
+    did_paired = is_did_paired(caller_did) if caller_did else False
+    if caller_did and not did_paired and not validated_node_owner(ctx):
+        return False
+    if role == "owner" or did_paired:
         return True
     client_host = request.client.host if request.client else ""
     if client_host in ("127.0.0.1", "::1", "localhost"):
