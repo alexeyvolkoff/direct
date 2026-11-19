@@ -932,7 +932,13 @@ export function enrichCreationAttributes({
   let resolvedStory = storyFolder || "";
   if (!resolvedStory && path) {
     const mStory = String(path).match(/\/generated\/([^\/]+)\/[^\/]+$/i);
-    if (mStory && mStory[1] && !mStory[1].startsWith(".")) {
+    if (
+      mStory &&
+      mStory[1] &&
+      !mStory[1].startsWith(".") &&
+      !/\.readme\.md$/i.test(mStory[1]) &&
+      !/\.(md|txt|json|png|jpe?g|webp|gif|mp4|mov|webm)$/i.test(mStory[1])
+    ) {
       resolvedStory = mStory[1];
     }
   }
@@ -1194,7 +1200,7 @@ export async function scanDirectCreationsFolder({
 
   const subDirs = rootEntries.filter((e) => {
     const nm = e.name || e.value || "";
-    return nm && !nm.startsWith(".") && (e.isDir || e.type === "folder");
+    return nm && !nm.startsWith(".") && !/\.readme\.md$/i.test(nm) && (e.isDir || e.type === "folder");
   });
 
   for (const dir of subDirs.slice(0, 25)) {

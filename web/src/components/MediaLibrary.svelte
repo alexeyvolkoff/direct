@@ -557,6 +557,7 @@
 
     // Merge unindexed files directly from generated/ (and its story subfolders)
     for (const ck of directCreationCards || []) {
+      if (!detectMediaKind(ck)) continue;
       const docId = String(ck.document_id || ck.path || "");
       if (!docId) continue;
       const suf = normDocSuffix(docId);
@@ -971,7 +972,7 @@
     // 4. Stories & Series (subfolders inside generated/)
     const storyBuckets = new Map();
     for (const m of sortedDesc) {
-      if (!m.storyFolder) continue;
+      if (!m.storyFolder || /\.readme\.md$/i.test(m.storyFolder)) continue;
       const key = m.storyFolder.toLowerCase();
       if (!storyBuckets.has(key)) {
         storyBuckets.set(key, {
