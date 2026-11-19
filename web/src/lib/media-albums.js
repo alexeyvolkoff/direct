@@ -498,6 +498,26 @@ function _ensureSubViewPopListener() {
   if (_subViewListenerInstalled || typeof window === "undefined") return;
   _subViewListenerInstalled = true;
 
+  window.__omdPopSubView = () => {
+    if (_subViewStack.length === 0) return false;
+    const top = _subViewStack.pop();
+    window.__omdSubViewJustPopped = true;
+    setTimeout(() => {
+      window.__omdSubViewJustPopped = false;
+    }, 150);
+    if (window.history.state?.omdSubView === top.id) {
+      try {
+        window.history.back();
+      } catch (_) {}
+    }
+    try {
+      top.onPop();
+    } catch (err) {
+      console.warn("[media-albums] subView onPop error:", err);
+    }
+    return true;
+  };
+
   window.addEventListener(
     "popstate",
     (ev) => {

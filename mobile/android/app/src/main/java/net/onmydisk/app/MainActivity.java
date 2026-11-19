@@ -72,6 +72,38 @@ public class MainActivity extends BridgeActivity {
         // Keep screen on while app is in foreground to prevent sleep and maintain WebRTC / WebSocket connections
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
+        // Handle Android 13-16+ gesture/hardware Back via OnBackPressedDispatcher
+        getOnBackPressedDispatcher().addCallback(this, new androidx.activity.OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                if (exitFullscreen()) {
+                    return;
+                }
+                WebView wv = getBridge() != null ? getBridge().getWebView() : null;
+                if (wv != null) {
+                    wv.evaluateJavascript(
+                        "(function(){return !!(window.__omdPopSubView && window.__omdPopSubView());})()",
+                        result -> {
+                            if ("true".equals(result)) {
+                                return;
+                            }
+                            if (wv.canGoBack()) {
+                                wv.goBack();
+                                return;
+                            }
+                            setEnabled(false);
+                            getOnBackPressedDispatcher().onBackPressed();
+                            setEnabled(true);
+                        }
+                    );
+                    return;
+                }
+                setEnabled(false);
+                getOnBackPressedDispatcher().onBackPressed();
+                setEnabled(true);
+            }
+        });
+
         // 1. Enable Service Worker in Android WebView and route localhost requests through Capacitor's local asset server with template parsing
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             try {

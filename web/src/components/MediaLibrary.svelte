@@ -720,11 +720,11 @@
 
     const isOnlineFileMissing = (m) => {
       if (!m || m.isOffline) return false;
-      const p2pFailed = Boolean(failedMap[m.id]);
       const fetchedUrl = thumbsMap[m.docId];
       const noBlob = fetchedUrl === "" || Boolean(fetchedUrl && blobFailedMap[m.id]);
+      const p2pFailed = Boolean(failedMap[m.id]);
       const noInline = !m.inlinePreview || Boolean(inlineFailedMap[m.id]);
-      return p2pFailed && noBlob && noInline;
+      return (p2pFailed || fetchedUrl === "") && noBlob && noInline;
     };
 
     const sortedDesc = [...baseMediaPool]
@@ -737,23 +737,18 @@
       if (m.isOffline) return validInline;
       const validBlob = Boolean(thumbsMap[m.docId] && !blobFailedMap[m.id]);
       if (validBlob) return true;
-      if (failedMap[m.id]) return validInline;
+      if (failedMap[m.id] || thumbsMap[m.docId] === "") return validInline;
       return true;
     };
     const pickCoverItem = (arr) => {
       return (
         arr.find((m) => (!m.isSensitive || effectiveContentMode === "fun") && hasAvailThumb(m)) ||
         arr.find((m) => hasAvailThumb(m)) ||
-        arr.find((m) => !m.isSensitive || effectiveContentMode === "fun") ||
-        arr[0] ||
         null
       );
     };
     const pickCollageItems = (arr, n = 3) => {
-      const withThumb = arr.filter((m) => hasAvailThumb(m));
-      if (withThumb.length >= n) return withThumb.slice(0, n);
-      const rest = arr.filter((m) => !hasAvailThumb(m));
-      return [...withThumb, ...rest].slice(0, n);
+      return arr.filter((m) => hasAvailThumb(m)).slice(0, n);
     };
 
     // 1. People & Personas albums
@@ -842,7 +837,7 @@
       landmarkBuckets.get(key).items.push(m);
     }
     const landmarkAlbums = Array.from(landmarkBuckets.values())
-      .filter((b) => b.items.length > 0)
+      .filter((b) => b.items.some((m) => hasAvailThumb(m)))
       .sort((a, b) => b.items.length - a.items.length || a.title.localeCompare(b.title))
       .map((b) => ({
         kind: "landmark",
@@ -1010,7 +1005,7 @@
       storyBuckets.get(key).items.push(m);
     }
     const storyAlbums = Array.from(storyBuckets.values())
-      .filter((b) => b.items.length > 0)
+      .filter((b) => b.items.some((m) => hasAvailThumb(m)))
       .sort((a, b) => b.items.length - a.items.length || a.title.localeCompare(b.title))
       .map((b) => ({
         kind: "story",
@@ -1073,22 +1068,30 @@
         itemIds: new Set(arr.map((x) => x.id)),
       }));
 
+    const hasCover = (a) => Boolean(a && a.coverItems && a.coverItems.length > 0);
+    const people = peopleAlbums.filter(hasCover);
+    const stories = storyAlbums.filter(hasCover);
+    const landmarks = landmarkAlbums.filter(hasCover);
+    const places = placeAlbums.filter(hasCover);
+    const moments = momentAlbums.filter(hasCover);
+    const models = modelAlbums.filter(hasCover);
+    const tags = tagAlbums.filter(hasCover);
     return {
-      people: peopleAlbums,
-      stories: storyAlbums,
-      landmarks: landmarkAlbums,
-      places: placeAlbums,
-      moments: momentAlbums,
-      models: modelAlbums,
-      tags: tagAlbums,
+      people,
+      stories,
+      landmarks,
+      places,
+      moments,
+      models,
+      tags,
       totalCount:
-        peopleAlbums.length +
-        storyAlbums.length +
-        landmarkAlbums.length +
-        placeAlbums.length +
-        momentAlbums.length +
-        modelAlbums.length +
-        tagAlbums.length,
+        people.length +
+        stories.length +
+        landmarks.length +
+        places.length +
+        moments.length +
+        models.length +
+        tags.length,
     };
   })();
 
