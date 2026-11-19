@@ -780,7 +780,7 @@ export class ChatStore {
     if (this._compactingGun) return;
     this._compactingGun = true;
     try {
-      const flagKey = `omd_gun_compact_v2_${this.tokenHash}`;
+      const flagKey = `omd_gun_compact_v3_${this.tokenHash}`;
       if (typeof localStorage !== "undefined" && localStorage.getItem(flagKey) === "1") return;
       let count = 0;
       for (const [memoryId, card] of this.knowledgeCache.entries()) {
@@ -802,7 +802,7 @@ export class ChatStore {
           content_hash: card.content_hash || "",
           timestamp: String(card.timestamp || ""),
           hasPreview: Boolean(card.imagePreview || card.hasPreview),
-          imagePreview: null,
+          ...(card.imagePreview ? { imagePreview: card.imagePreview } : {}),
           annotation_embedding: null,
         };
         if (Number.isFinite(card.gpsLat) && Number.isFinite(card.gpsLon)) {
@@ -993,12 +993,11 @@ export class ChatStore {
     await idbPut("cards", { key: `${this.tokenHash}:${memoryId}`, tokenHash: this.tokenHash, memoryId, card: cacheEntry });
     this._notifyKnowledge();
 
-    // Keep GunDB knowledge_${tokenHash} lightweight (~500B/card) so all devices sync 3000+ cards reliably:
-    // omit large base64 imagePreview and 768-d annotation_embedding from the GunDB node (they stay in local IndexedDB).
+    // Keep GunDB knowledge_${tokenHash} free of 768-d annotation_embedding (~10KB/card),
+    // while keeping compact imagePreview so offline devices can still render album covers.
     const gunEntry = { ...entry };
     if (gunEntry.imagePreview) {
       gunEntry.hasPreview = true;
-      delete gunEntry.imagePreview;
     }
     delete gunEntry.annotation_embedding;
 
