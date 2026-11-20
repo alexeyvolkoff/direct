@@ -337,6 +337,26 @@ export class WebRTCDataChannelDrive {
         return this._reconnectPromise;
     }
 
+    async forceReconnect() {
+        console.warn("[WebRTC] Force reconnecting node:", this.targetLinkId);
+        this.disconnect();
+        return await this.reconnect();
+    }
+
+    async probeAndReconnect(timeoutMs = 3000) {
+        const ice = this.pc?.iceConnectionState;
+        if (!this.isConnected || !this.dc || this.dc.readyState !== "open" || ice === "disconnected" || ice === "failed" || ice === "closed") {
+            return await this.forceReconnect();
+        }
+        try {
+            await this.sendRPC("FileInfo", { path: "/" }, timeoutMs);
+            return true;
+        } catch (err) {
+            console.warn("[WebRTC] Probe failed after wakeup, forcing reconnect:", this.targetLinkId, err?.message || err);
+            return await this.forceReconnect();
+        }
+    }
+
     async connect() {
         if (this.isConnected && this.dc && this.dc.readyState === "open") {
             return;
@@ -984,6 +1004,12 @@ export class WebRTCDataChannelDrive {
                 if (this.pendingRequests.has(id)) {
                     console.error(`[WebRTC] RPC Timeout for: ${cmd} (ID: ${id})`);
                     this.pendingRequests.delete(id);
+                    // A timed-out DataChannel RPC (e.g. half-open zombie socket after mobile sleep)
+                    // should tear down the dead transport so the next call reconnects cleanly.
+                    if (this.isConnected && timeoutMs >= 3000) {
+                        console.warn("[WebRTC] Tearing down unresponsive DataChannel after RPC timeout:", this.targetLinkId);
+                        this.disconnect();
+                    }
                     reject(new Error(`RPC timeout for command: ${cmd}`));
                 }
             }, timeoutMs);

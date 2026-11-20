@@ -1037,14 +1037,20 @@
           .filter(Boolean)
       );
 
-      // 3. Only reconnect devices that are confirmed online by gateway
+      // 3. Reconnect devices confirmed online by gateway (including probing half-open zombie channels after sleep)
       const reconnectPromises = [];
       for (const dev of deviceRegistry.list()) {
         if (!dev || !dev.drive || dev.local || dev.linkId === getOrCreateLocalLinkId()) continue;
         if (onlineLinkIds.has(dev.linkId)) {
           if (!dev.drive.isConnected || dev.drive.pc?.iceConnectionState === "disconnected" || dev.drive.pc?.iceConnectionState === "failed" || dev.drive.dc?.readyState !== "open") {
             console.log("[App] Queuing auto-reconnect for confirmed online device:", dev.name, dev.linkId);
-            reconnectPromises.push(dev.drive.connect());
+            reconnectPromises.push(
+              typeof dev.drive.forceReconnect === "function"
+                ? dev.drive.forceReconnect()
+                : (typeof dev.drive.reconnect === "function" ? dev.drive.reconnect() : dev.drive.connect())
+            );
+          } else if (typeof dev.drive.probeAndReconnect === "function") {
+            reconnectPromises.push(dev.drive.probeAndReconnect(3000));
           }
         }
       }
@@ -1053,7 +1059,13 @@
         const sDrive = window.__omdSharedDrive;
         if (!sDrive.isConnected || sDrive.pc?.iceConnectionState === "disconnected" || sDrive.pc?.iceConnectionState === "failed" || sDrive.dc?.readyState !== "open") {
           console.log("[App] Queuing auto-reconnect for P2P shared drive");
-          reconnectPromises.push(sDrive.connect());
+          reconnectPromises.push(
+            typeof sDrive.forceReconnect === "function"
+              ? sDrive.forceReconnect()
+              : (typeof sDrive.reconnect === "function" ? sDrive.reconnect() : sDrive.connect())
+          );
+        } else if (typeof sDrive.probeAndReconnect === "function") {
+          reconnectPromises.push(sDrive.probeAndReconnect(3000));
         }
       }
 
@@ -4859,20 +4871,24 @@
         const targetWidgetPath = `${widgetUrl}${sep}${q.toString()}`;
 
         let res = null;
+        let activeDriveObj = drives[0] || null;
         let activeFetchFn = fetchCandidates[0];
         let lastErrStatus = "timeout";
-        for (const candFetch of fetchCandidates) {
+        for (let ci = 0; ci < fetchCandidates.length; ci++) {
+          const candFetch = fetchCandidates[ci];
           if (reqSeq !== nodeWidgetReqSeq) return;
           try {
             const candRes = await candFetch(targetWidgetPath, { connectTimeoutMs: 6000, timeoutMs: 10000 });
             if (candRes && candRes.ok) {
               res = candRes;
               activeFetchFn = candFetch;
+              activeDriveObj = drives[ci] || null;
               break;
             }
             lastErrStatus = candRes ? candRes.status : "timeout";
             if (candRes && candRes.status !== 404) {
               res = candRes;
+              activeDriveObj = drives[ci] || null;
               break;
             }
           } catch (e) {
@@ -4896,9 +4912,30 @@
           extra,
           omdKey: key,
           defaultStorage: curSt,
-          nodeFetch: (p, opts) => {
+          nodeFetch: async (p, opts) => {
             if (!isSafeNodeRelativePath(p)) throw new Error("Blocked non-relative node path");
-            return activeFetchFn(p, opts);
+            try {
+              const r1 = await activeFetchFn(p, opts);
+              if (r1) return r1;
+            } catch (firstErr) {
+              // Retry once after reconnecting the underlying P2P/HTTP drive (handles mobile background resume)
+              try {
+                if (activeDriveObj) {
+                  if (typeof activeDriveObj.forceReconnect === "function") {
+                    await activeDriveObj.forceReconnect();
+                  } else if (typeof activeDriveObj.reconnect === "function") {
+                    await activeDriveObj.reconnect();
+                  } else if (typeof activeDriveObj.disconnect === "function" && typeof activeDriveObj.connect === "function") {
+                    activeDriveObj.disconnect();
+                    await activeDriveObj.connect();
+                  }
+                }
+                return await activeFetchFn(p, opts);
+              } catch (_) {
+                throw firstErr;
+              }
+            }
+            return await activeFetchFn(p, opts);
           },
           buildP2pPath: (st, rel) => buildNodeP2pPath(st, rel),
           showToast: (msg, ms) => showNodePushToast(msg, ms),

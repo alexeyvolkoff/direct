@@ -845,6 +845,33 @@
     }
   }
 
+  function cycleEngineMode() {
+    const modes = [];
+    if (sdxlSupported !== false) modes.push("sdxl");
+    if (canShowStudioTab) modes.push("dit");
+    if (canShowVideoTab) modes.push("video");
+    if (modes.length <= 1) return;
+    const idx = modes.indexOf(studioEngineMode);
+    const next = modes[(idx + 1) % modes.length];
+    switchEngineMode(next);
+  }
+
+  async function refreshCreationsWithReconnect() {
+    try {
+      const resDev = resolveDevice();
+      const drv = resDev?.drive || deviceDrive;
+      if (drv && !resDev?.local) {
+        if (typeof drv.probeAndReconnect === "function") {
+          await drv.probeAndReconnect(3000).catch(() => {});
+        } else if (!drv.isConnected && typeof drv.reconnect === "function") {
+          await drv.reconnect().catch(() => {});
+        }
+      }
+    } catch (_) {}
+    loadPersonas();
+    loadCreations();
+  }
+
   function setVideoQuality(q) {
     videoQuality = q === "fast" ? "fast" : "hd";
     sliders.video_quality = videoQuality;
@@ -3151,8 +3178,12 @@
     const resDev = resolveDevice();
     let activeDrive = resDev?.drive || deviceDrive;
 
-    if (activeDrive && !activeDrive.isConnected && typeof activeDrive.waitUntilConnected === "function") {
-      await activeDrive.waitUntilConnected(2000).catch(() => {});
+    if (activeDrive && !activeDrive.isConnected) {
+      if (typeof activeDrive.reconnect === "function") {
+        await activeDrive.reconnect().catch(() => {});
+      } else if (typeof activeDrive.waitUntilConnected === "function") {
+        await activeDrive.waitUntilConnected(2000).catch(() => {});
+      }
     }
 
     const rawStorage = (defaultStorage || "").trim();
@@ -3198,6 +3229,7 @@
 
     try {
       if (activeDrive && typeof activeDrive.getFiles === "function" && (activeDrive.isConnected || activeDrive.status === "connected")) {
+        let retriedReconnect = false;
         for (const cand of candidateFolders) {
           try {
             const devFiles = await activeDrive.getFiles(cand);
@@ -3206,7 +3238,22 @@
               effectiveFolder = cand;
               break;
             }
-          } catch (e) {}
+          } catch (e) {
+            if (!retriedReconnect && !isLocalOpfsDrive && typeof activeDrive.forceReconnect === "function") {
+              retriedReconnect = true;
+              const ok = await activeDrive.forceReconnect().catch(() => false);
+              if (ok) {
+                try {
+                  const devFiles = await activeDrive.getFiles(cand);
+                  if (Array.isArray(devFiles) && devFiles.length > 0) {
+                    rawList = devFiles;
+                    effectiveFolder = cand;
+                    break;
+                  }
+                } catch (_) {}
+              }
+            }
+          }
         }
       }
 
@@ -6946,7 +6993,18 @@
     }
   }
 
+  const handleP2pReconnected = () => {
+    if (_studioRuntime.isDestroyed) return;
+    foundDevice = null;
+    loadCreations();
+    loadPersonas();
+    checkKreaStatus().catch(() => {});
+  };
+
   onMount(async () => {
+    if (typeof window !== "undefined") {
+      window.addEventListener("omd-p2p-reconnected", handleP2pReconnected);
+    }
     if (chatStore && typeof chatStore.onPromptsChanged === "function") {
       unsubPrompts = chatStore.onPromptsChanged((list) => {
         if (Array.isArray(list) && list.length > 0) {
@@ -7142,6 +7200,9 @@
 
   onDestroy(() => {
     _studioRuntime.isDestroyed = true;
+    if (typeof window !== "undefined") {
+      window.removeEventListener("omd-p2p-reconnected", handleP2pReconnected);
+    }
     if (_studioRuntime.driveCleanup) {
       try { _studioRuntime.driveCleanup(); } catch (_) {}
       _studioRuntime.driveCleanup = null;
@@ -7185,6 +7246,20 @@
 
       <div class="header-mode-toggle-group">
         {#if sdxlSupported !== false && (canShowStudioTab || canShowVideoTab)}
+          {#if isMobile}
+            <button
+              type="button"
+              class="mode-toggle-btn active mobile-single-toggle"
+              title={studioEngineMode === "sdxl"
+                ? $_("studio_mode_express_hint", {}, "Express (SDXL Turbo) — tap to switch mode")
+                : studioEngineMode === "dit"
+                  ? $_("studio_mode_studio_hint", {}, "Studio (DiT) — tap to switch mode")
+                  : $_("studio_mode_video_hint", {}, "Video — tap to switch mode")}
+              on:click={cycleEngineMode}
+            >
+              <span class="mode-icon">{studioEngineMode === "sdxl" ? "⚡" : studioEngineMode === "dit" ? "✨" : "🎬"}</span>
+            </button>
+          {:else}
           <div class="header-mode-toggle" role="tablist" aria-label={$_("studio_mode_aria", {}, "Generation mode")}>
             <button
               type="button"
@@ -7227,6 +7302,7 @@
               </button>
             {/if}
           </div>
+          {/if}
         {:else}
           <div class="studio-brand-pill" title={$_("krea_studio", {}, "Creative Studio")}>
             <span class="mode-icon">⚡</span>
@@ -7258,6 +7334,31 @@
     </div>
 
     <!-- Centered Mode Switcher: Gallery vs Personas -->
+    {#if isMobile}
+      <button
+        type="button"
+        class="icon-btn mobile-tab-toggle-btn"
+        class:is-active={activeTab === "personas"}
+        title={activeTab === "gallery" ? $_("krea_tab_personas", {}, "Персоны") : $_("krea_tab_gallery", {}, "Галерея")}
+        aria-label={activeTab === "gallery" ? $_("krea_tab_personas", {}, "Персоны") : $_("krea_tab_gallery", {}, "Галерея")}
+        on:click={() => (activeTab = activeTab === "gallery" ? "personas" : "gallery")}
+      >
+        {#if activeTab === "gallery"}
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+            <circle cx="9" cy="7" r="4" />
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+            <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+          </svg>
+        {:else}
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+            <circle cx="8.5" cy="8.5" r="1.5" />
+            <polyline points="21 15 16 10 5 21" />
+          </svg>
+        {/if}
+      </button>
+    {:else}
     <div class="header-tabs">
       <button
         class="tab-btn"
@@ -7296,6 +7397,7 @@
         {/if}
       </button>
     </div>
+    {/if}
 
     <div class="header-right">
       {#if canToggleWorkFun}
@@ -7313,8 +7415,8 @@
         </button>
       {/if}
 
-      <!-- AI Director's Chair Toggle -->
-      {#if canShowDirector}
+      <!-- AI Director's Chair Toggle (hidden on mobile header; available in bottom composer) -->
+      {#if canShowDirector && !isMobile}
         <button
           type="button"
           class="icon-btn director-icon-btn"
@@ -7359,7 +7461,7 @@
         class="icon-btn"
         class:spinning={isLoadingFiles}
         title={$_("krea_refresh", {}, "Обновить")}
-        on:click={() => { loadPersonas(); loadCreations(); }}
+        on:click={refreshCreationsWithReconnect}
       >
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="23 4 23 10 17 10" />
@@ -15522,6 +15624,22 @@
       padding: 4px 7px;
       font-size: 0.85rem;
       gap: 0;
+    }
+
+    .mobile-single-toggle {
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      border-radius: 999px;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .mobile-tab-toggle-btn {
+      width: 32px;
+      height: 32px;
+      padding: 4px;
+      flex-shrink: 0;
     }
 
     .mode-toggle-label,
