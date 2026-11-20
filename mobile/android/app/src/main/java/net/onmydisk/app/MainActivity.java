@@ -600,7 +600,7 @@ public class MainActivity extends BridgeActivity {
                 } catch (Exception ignored) {}
             }
 
-            final android.app.Dialog dialog = new android.app.Dialog(this, android.R.style.Theme_DeviceDefault_NoActionBar);
+            final android.app.Dialog dialog = new android.app.Dialog(this, R.style.AppTheme_NoActionBar);
             activeWebSheetDialog = dialog;
 
             android.widget.LinearLayout root = new android.widget.LinearLayout(this);

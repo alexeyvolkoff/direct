@@ -936,7 +936,7 @@
     saveLocalSliders(sliders);
   }
 
-  let showSlidersPanel = true;
+  let showSlidersPanel = typeof window !== "undefined" ? window.innerWidth >= 768 : true;
   let showPromptTokensPreview = false;
   let showStyleDropdown = false;
   let showArchetypeDropdown = false;
@@ -7181,7 +7181,7 @@
               on:click={() => switchEngineMode("sdxl")}
             >
               <span class="mode-icon">⚡</span>
-              <span>{$_("studio_mode_express", {}, "Express")}</span>
+              <span class="mode-toggle-label">{$_("studio_mode_express", {}, "Express")}</span>
             </button>
             {#if canShowStudioTab}
               <button
@@ -7194,7 +7194,7 @@
                 on:click={() => switchEngineMode("dit")}
               >
                 <span class="mode-icon">✨</span>
-                <span>{$_("studio_mode_studio", {}, "Studio")}</span>
+                <span class="mode-toggle-label">{$_("studio_mode_studio", {}, "Studio")}</span>
               </button>
             {/if}
             {#if canShowVideoTab}
@@ -7208,7 +7208,7 @@
                 on:click={() => switchEngineMode("video")}
               >
                 <span class="mode-icon">🎬</span>
-                <span>{$_("studio_mode_video", {}, "Video")}</span>
+                <span class="mode-toggle-label">{$_("studio_mode_video", {}, "Video")}</span>
               </button>
             {/if}
           </div>
@@ -7247,6 +7247,8 @@
       <button
         class="tab-btn"
         class:active={activeTab === "gallery"}
+        title={$_("krea_tab_gallery", {}, "Галерея")}
+        aria-label={$_("krea_tab_gallery", {}, "Галерея")}
         on:click={() => (activeTab = "gallery")}
       >
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
@@ -7254,7 +7256,7 @@
           <circle cx="8.5" cy="8.5" r="1.5" />
           <polyline points="21 15 16 10 5 21" />
         </svg>
-        <span>{$_("krea_tab_gallery", {}, "Галерея")}</span>
+        <span class="tab-label">{$_("krea_tab_gallery", {}, "Галерея")}</span>
         {#if items.length > 0}
           <span class="badge">{items.length}</span>
         {/if}
@@ -7263,6 +7265,8 @@
       <button
         class="tab-btn"
         class:active={activeTab === "personas"}
+        title={$_("krea_tab_personas", {}, "Персоны")}
+        aria-label={$_("krea_tab_personas", {}, "Персоны")}
         on:click={() => (activeTab = "personas")}
       >
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
@@ -7271,7 +7275,7 @@
           <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
           <path d="M16 3.13a4 4 0 0 1 0 7.75" />
         </svg>
-        <span>{$_("krea_tab_personas", {}, "Персоны")}</span>
+        <span class="tab-label">{$_("krea_tab_personas", {}, "Персоны")}</span>
         {#if personas.length > 0}
           <span class="badge">{personas.length}</span>
         {/if}
@@ -7289,7 +7293,8 @@
             : $_("work_mode_active", {}, "Режим Work: безопасные фильтры и блюр #sensitive")}
           on:click={toggleStudioContentMode}
         >
-          <span>{effectiveContentMode === "fun" ? "✨ Fun" : "💼 Work"}</span>
+          <span class="studio-mode-icon">{effectiveContentMode === "fun" ? "✨" : "💼"}</span>
+          <span class="studio-mode-label">{effectiveContentMode === "fun" ? "Fun" : "Work"}</span>
         </button>
       {/if}
 
@@ -8123,7 +8128,7 @@
                       </svg>
                     </button>
 
-                    {#if isPublicAiNode || targetDevice?.isAiNode || !targetDevice?.isOwner}
+                    {#if !isPrivateMode && targetDevice?.isOwner !== true}
                       <button
                         type="button"
                         class="toolbar-btn"
@@ -15474,22 +15479,23 @@
     display: none;
   }
 
-  /* Responsive Mobile Layout (max-width: 640px) */
-  @media (max-width: 640px) {
+  /* Responsive Mobile Layout (max-width: 768px) */
+  @media (max-width: 768px) {
     .studio-header {
-      flex-wrap: wrap;
-      padding: 8px 10px;
-      gap: 6px 8px;
+      flex-wrap: nowrap;
+      padding: 6px 8px;
+      gap: 4px;
     }
 
     .header-left {
-      gap: 6px;
-      flex: 1;
+      gap: 4px;
+      flex: 0 1 auto;
       min-width: 0;
     }
 
     .header-mode-toggle-group {
       gap: 4px;
+      min-width: 0;
     }
 
     .header-mode-toggle {
@@ -15498,43 +15504,60 @@
     }
 
     .mode-toggle-btn {
-      padding: 4px 8px;
-      font-size: 0.8rem;
-      gap: 4px;
+      padding: 4px 7px;
+      font-size: 0.85rem;
+      gap: 0;
     }
 
+    .mode-toggle-label,
+    .header-tabs .tab-label,
+    .header-tabs .tab-btn .badge,
+    .studio-mode-label,
     .header-count-pill {
       display: none;
     }
 
+    .studio-mode-toggle-btn {
+      padding: 4px 7px;
+      font-size: 0.85rem;
+      min-width: 30px;
+      justify-content: center;
+    }
+
+    .studio-tier-badge {
+      padding: 2px 6px;
+      font-size: 11px;
+    }
+
     .header-right {
-      gap: 4px;
+      gap: 3px;
       flex-shrink: 0;
+      margin-left: auto;
     }
 
     .header-right .icon-btn {
-      width: 34px;
-      height: 34px;
+      width: 30px;
+      height: 30px;
       padding: 4px;
     }
 
-    /* Tabs (Gallery vs Personas) become a sleek full-width segmented control on row 2 */
+    /* Compact single-row segmented control matching MediaLibrary */
     .header-tabs {
-      order: 3;
-      width: 100%;
-      margin-top: 2px;
-      padding: 3px;
-      gap: 4px;
-      border-radius: 12px;
-      box-sizing: border-box;
+      order: 0;
+      width: auto;
+      margin-top: 0;
+      padding: 2px;
+      gap: 2px;
+      border-radius: 10px;
+      flex-shrink: 0;
     }
 
     .header-tabs .tab-btn {
-      flex: 1;
+      flex: 0 0 auto;
       justify-content: center;
-      padding: 6px 8px;
+      padding: 5px 8px;
       font-size: 12px;
-      gap: 6px;
+      gap: 0;
     }
 
     /* Sticky Bottom Composer */

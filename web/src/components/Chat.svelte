@@ -6208,7 +6208,7 @@ function lastFreshTitle(messages) {
                         {/if}
                       </button>
 
-                      {#if isPublicAiNode || targetDevice?.isAiNode || !targetDevice?.isOwner}
+                      {#if !isPrivateMode && !isOwnerMode && targetDevice?.isOwner !== true && !(targetLinkId && ownLinkIds?.includes(targetLinkId))}
                         <button
                           type="button"
                           class="tool-btn"
