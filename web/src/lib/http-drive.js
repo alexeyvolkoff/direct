@@ -269,35 +269,41 @@ export function createWebRTCTransport(targetLinkId, signalingUrl = '/api/signali
             return drive && drive.dc ? drive.dc.bufferedAmount : 0;
         },
         async connect(onData, onClose, timeoutMs = 30000) {
-            drive = new WebRTCDataChannelDrive(targetLinkId, signalingUrl, port, '');
+            const localDrive = new WebRTCDataChannelDrive(targetLinkId, signalingUrl, port, '');
+            drive = localDrive;
             // One-shot tunnel per request - never auto-reconnect
-            drive.autoReconnectEnabled = false;
+            localDrive.autoReconnectEnabled = false;
             let disconnected = false;
-            drive.onRawMessage = (data) => {
+            localDrive.onRawMessage = (data) => {
                 let bytes = null;
                 if (data instanceof ArrayBuffer) bytes = new Uint8Array(data);
                 else if (ArrayBuffer.isView(data)) bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
                 if (bytes) onData(bytes);
             };
-            drive.onStatusChange = (status) => {
+            localDrive.onStatusChange = (status) => {
                 if (status === 'disconnected' || status === 'error') {
                     disconnected = true;
                     onClose();
                 }
             };
-            await drive.connect();
+            await localDrive.connect();
             const deadline = Date.now() + timeoutMs;
             while (Date.now() < deadline) {
-                if (drive.dc && drive.dc.readyState === 'open') return;
-                if (disconnected || drive._disposed || (!drive.pc && !drive._isConnecting && !drive.isConnected)) {
-                    try { drive.disconnect(true); } catch (_) {}
-                    drive = null;
+                if (!drive || drive !== localDrive || disconnected || localDrive._disposed) {
+                    try { localDrive.disconnect(true); } catch (_) {}
+                    if (drive === localDrive) drive = null;
+                    throw new Error('Target node offline or unreachable');
+                }
+                if (localDrive.dc && localDrive.dc.readyState === 'open') return;
+                if (!localDrive.pc && !localDrive._isConnecting && !localDrive.isConnected) {
+                    try { localDrive.disconnect(true); } catch (_) {}
+                    if (drive === localDrive) drive = null;
                     throw new Error('Target node offline or unreachable');
                 }
                 await sleep(40);
             }
-            try { drive.disconnect(true); } catch (_) {}
-            drive = null;
+            try { localDrive.disconnect(true); } catch (_) {}
+            if (drive === localDrive) drive = null;
             throw new Error('P2P tunnel did not open in time');
         },
         send(bytes) {

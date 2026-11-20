@@ -91,6 +91,7 @@
   let uncensoredEntitled = false;
   $: effectiveContentMode = $contentModeStore || contentMode || "work";
   $: canToggleWorkFun = Boolean(isPrivateMode || uncensoredEntitled || canShowStudioTab);
+  $: canImportCivitaiLoras = Boolean(isPrivateMode || targetDevice?.isOwner === true || studioTier === "owner");
 
   let _lastSyncedPresetsMode = "";
   $: if (statusLoadedOnce && effectiveContentMode && effectiveContentMode !== _lastSyncedPresetsMode) {
@@ -1083,7 +1084,33 @@
     }
   }
 
+  function prefetchCivitaiLoras(cards) {
+    if (!canImportCivitaiLoras || !Array.isArray(cards) || cards.length === 0) return;
+    const sdxlCards = cards.filter((c) => {
+      if (!c || !c.civitai_version_id) return false;
+      const eco = (Array.isArray(c.models) && c.models[0]) ? String(c.models[0]).toLowerCase() : "sdxl";
+      return eco === "sdxl";
+    });
+    if (sdxlCards.length === 0) return;
+    try {
+      const fetchFn = getKreaFetch();
+      const mcpPayload = getMcpPayload();
+      fetchFn("/horde/civitai/loras/prefetch", {
+        method: "POST",
+        headers: { ...buildAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          loras: sdxlCards,
+          ecosystem: "sdxl",
+          omd_key: omdKey || "",
+          mcp_keys: mcpPayload,
+          settings: { mcp_keys: mcpPayload }
+        })
+      }).catch(() => {});
+    } catch {}
+  }
+
   function openCivitaiLoraModal(mode = "character", targetContext = "toolbar") {
+    if (!canImportCivitaiLoras) return;
     civitaiModalMode = mode === "style" ? "style" : "character";
     civitaiModalContext = targetContext || "toolbar";
     if (targetContext === "persona_form") {
@@ -1148,6 +1175,7 @@
       customCivitaiLoras = [norm, ...customCivitaiLoras];
     }
     persistCustomCivitaiLoras(customCivitaiLoras);
+    prefetchCivitaiLoras([norm]);
 
     // Immediately select in the caller context
     if (civitaiModalContext === "factory") {
@@ -1324,8 +1352,9 @@
   $: effectivePresets = (() => {
     const rawStyles = (kreaPresets && Array.isArray(kreaPresets.art_styles)) ? kreaPresets.art_styles : [];
     const rawArchs = (kreaPresets && Array.isArray(kreaPresets.archetypes)) ? kreaPresets.archetypes : [];
-    const customStyles = customCivitaiLoras.filter((x) => x.category === "style");
-    const customChars = customCivitaiLoras.filter((x) => x.category !== "style");
+    const visibleCustomLoras = canImportCivitaiLoras ? customCivitaiLoras : [];
+    const customStyles = visibleCustomLoras.filter((x) => x.category === "style");
+    const customChars = visibleCustomLoras.filter((x) => x.category !== "style");
 
     const enrichItem = (item) => {
       if (!item) return item;
@@ -1353,12 +1382,6 @@
 
     if (!canShowStudioTab) {
       if (baseStyles.length <= 1) baseStyles = [...STANDARD_SDXL_PRESETS.art_styles];
-      else {
-        const seenS = new Set(baseStyles.map((s) => s.id));
-        for (const stdS of STANDARD_SDXL_PRESETS.art_styles) {
-          if (!seenS.has(stdS.id)) baseStyles.push(stdS);
-        }
-      }
       if (baseArchs.length === 0) baseArchs = [...STANDARD_SDXL_PRESETS.archetypes];
     }
 
@@ -2308,6 +2331,9 @@
       if (addedAny) {
         customCivitaiLoras = mergedCustom;
         persistCustomCivitaiLoras(customCivitaiLoras);
+      }
+      if (canImportCivitaiLoras) {
+        prefetchCivitaiLoras(rp.custom_loras);
       }
     }
     const nextModel = rp.base_model || sliders.base_model || "realism";
@@ -4338,16 +4364,26 @@
 
       // 1. Via P2P tunnel to node (httpDrive)
       if (httpDrive && typeof httpDrive.fetch === "function") {
+        const fetchOpts = {
+          method: "POST",
+          headers: requestHeaders,
+          body: JSON.stringify(payload),
+          signal: abortCtrl.signal,
+          timeoutMs: reqTimeoutMs
+        };
         try {
-          res = await httpDrive.fetch(endpointPath, {
-            method: "POST",
-            headers: requestHeaders,
-            body: JSON.stringify(payload),
-            signal: abortCtrl.signal,
-            timeoutMs: reqTimeoutMs
-          });
+          res = await httpDrive.fetch(endpointPath, fetchOpts);
         } catch (driveErr) {
-          throw new Error($_("krea_err_p2p_node", { err: driveErr.message || driveErr }, `P2P node connection error: ${driveErr.message || driveErr}. Please reload the page (F5).`));
+          if (driveErr?.name === "AbortError" || abortCtrl.signal.aborted) {
+            throw driveErr;
+          }
+          // One automatic retry with a fresh P2P tunnel in case the cached channel closed after sleep
+          try {
+            await new Promise((r) => setTimeout(r, 400));
+            res = await httpDrive.fetch(endpointPath, fetchOpts);
+          } catch (retryErr) {
+            throw new Error($_("krea_err_p2p_node", { err: retryErr.message || retryErr }, `P2P node connection error: ${retryErr.message || retryErr}. Please reload the page (F5).`));
+          }
         }
       } else {
         // 2. Direct HTTP request (fallback when running without P2P drive)
@@ -9034,13 +9070,15 @@
                 <div class="popup-menu-header">
                   <span>{$_("krea_image_style", {}, "Styles & Concepts (LoRA)")}</span>
                   <div class="popup-header-actions">
-                    <button
-                      type="button"
-                      class="civitai-add-inline-btn"
-                      on:click={() => openCivitaiLoraModal("style", "toolbar")}
-                    >
-                      + CivitAI
-                    </button>
+                    {#if canImportCivitaiLoras}
+                      <button
+                        type="button"
+                        class="civitai-add-inline-btn"
+                        on:click={() => openCivitaiLoraModal("style", "toolbar")}
+                      >
+                        + CivitAI
+                      </button>
+                    {/if}
                     {#if (sliders.styles || []).length > 0}
                       <button
                         type="button"
@@ -9140,13 +9178,15 @@
                   {/each}
                 </div>
                 <div class="popup-menu-footer">
-                  <button
-                    type="button"
-                    class="civitai-footer-btn"
-                    on:click={() => openCivitaiLoraModal("style", "toolbar")}
-                  >
-                    {$_("krea_civitai_add_style_btn", {}, "+ Add Style / Concept from CivitAI")}
-                  </button>
+                  {#if canImportCivitaiLoras}
+                    <button
+                      type="button"
+                      class="civitai-footer-btn"
+                      on:click={() => openCivitaiLoraModal("style", "toolbar")}
+                    >
+                      {$_("krea_civitai_add_style_btn", {}, "+ Add Style / Concept from CivitAI")}
+                    </button>
+                  {/if}
                   <button
                     type="button"
                     class="popup-done-btn"
@@ -9193,13 +9233,15 @@
                 <div class="popup-menu-header">
                   <span>{$_("krea_appearance_lora", {}, "Characters (LoRA)")}</span>
                   <div class="popup-header-actions">
-                    <button
-                      type="button"
-                      class="civitai-add-inline-btn"
-                      on:click={() => openCivitaiLoraModal("character", "toolbar")}
-                    >
-                      + CivitAI
-                    </button>
+                    {#if canImportCivitaiLoras}
+                      <button
+                        type="button"
+                        class="civitai-add-inline-btn"
+                        on:click={() => openCivitaiLoraModal("character", "toolbar")}
+                      >
+                        + CivitAI
+                      </button>
+                    {/if}
                     {#if (sliders.archetypes || []).length > 0}
                       <button
                         type="button"
@@ -9296,13 +9338,15 @@
                   {/each}
                 </div>
                 <div class="popup-menu-footer">
-                  <button
-                    type="button"
-                    class="civitai-footer-btn"
-                    on:click={() => openCivitaiLoraModal("character", "toolbar")}
-                  >
-                    {$_("krea_civitai_add_char_btn", {}, "+ Add Character from CivitAI")}
-                  </button>
+                  {#if canImportCivitaiLoras}
+                    <button
+                      type="button"
+                      class="civitai-footer-btn"
+                      on:click={() => openCivitaiLoraModal("character", "toolbar")}
+                    >
+                      {$_("krea_civitai_add_char_btn", {}, "+ Add Character from CivitAI")}
+                    </button>
+                  {/if}
                   <button
                     type="button"
                     class="popup-done-btn"
@@ -10702,13 +10746,15 @@
                 <div>
                   <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
                     <span style="font-size: 11.5px; opacity: 0.85;">{$_("krea_persona_archetypes", {}, "Characters (LoRA):")}</span>
-                    <button
-                      type="button"
-                      class="civitai-add-inline-btn"
-                      on:click={() => openCivitaiLoraModal("character", "persona_form")}
-                    >
-                      {$_("krea_civitai_add_char_btn", {}, "+ Add Character from CivitAI")}
-                    </button>
+                    {#if canImportCivitaiLoras}
+                      <button
+                        type="button"
+                        class="civitai-add-inline-btn"
+                        on:click={() => openCivitaiLoraModal("character", "persona_form")}
+                      >
+                        {$_("krea_civitai_add_char_btn", {}, "+ Add Character from CivitAI")}
+                      </button>
+                    {/if}
                   </div>
                   <div class="persona-lora-chip-grid">
                     {#each personaModalArchetypes as arch}
@@ -10747,13 +10793,15 @@
                 <div>
                   <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
                     <span style="font-size: 11.5px; opacity: 0.85;">{$_("krea_persona_styles", {}, "Style / Concept LoRAs (optional):")}</span>
-                    <button
-                      type="button"
-                      class="civitai-add-inline-btn"
-                      on:click={() => openCivitaiLoraModal("style", "persona_form")}
-                    >
-                      {$_("krea_civitai_add_style_short", {}, "+ Add Style from CivitAI")}
-                    </button>
+                    {#if canImportCivitaiLoras}
+                      <button
+                        type="button"
+                        class="civitai-add-inline-btn"
+                        on:click={() => openCivitaiLoraModal("style", "persona_form")}
+                      >
+                        {$_("krea_civitai_add_style_short", {}, "+ Add Style from CivitAI")}
+                      </button>
+                    {/if}
                   </div>
                   <div class="persona-lora-chip-grid">
                     {#each personaModalStyles as st}
@@ -11093,13 +11141,15 @@
           <div class="modal-field">
             <div class="factory-section-head">
               <label style="margin: 0;">{$_("krea_select_archetype", {}, "Character:")}</label>
-              <button
-                type="button"
-                class="civitai-add-inline-btn"
-                on:click={() => openCivitaiLoraModal("character", "factory")}
-              >
-                {$_("krea_civitai_add_char_btn", {}, "+ Add Character from CivitAI")}
-              </button>
+              {#if canImportCivitaiLoras}
+                <button
+                  type="button"
+                  class="civitai-add-inline-btn"
+                  on:click={() => openCivitaiLoraModal("character", "factory")}
+                >
+                  {$_("krea_civitai_add_char_btn", {}, "+ Add Character from CivitAI")}
+                </button>
+              {/if}
             </div>
             <div class="archetype-grid visual-lora-grid">
               {#each aiArchetypes as arch}
@@ -11118,15 +11168,17 @@
                   </div>
                 </button>
               {/each}
-              <button
-                type="button"
-                class="archetype-card add-civitai-factory-card"
-                on:click={() => openCivitaiLoraModal("character", "factory")}
-              >
-                <span class="add-plus-circle">+</span>
-                <span class="arch-name">{$_("krea_civitai_add_card_title", {}, "Add from CivitAI")}</span>
-                <span class="arch-hint">{currentBaseCategory === "anima" ? "Anima LoRAs" : (currentBaseCategory === "krea2" ? "Krea 2 LoRAs" : $_("krea_civitai_add_card_hint", {}, "Browse SDXL character LoRAs"))}</span>
-              </button>
+              {#if canImportCivitaiLoras}
+                <button
+                  type="button"
+                  class="archetype-card add-civitai-factory-card"
+                  on:click={() => openCivitaiLoraModal("character", "factory")}
+                >
+                  <span class="add-plus-circle">+</span>
+                  <span class="arch-name">{$_("krea_civitai_add_card_title", {}, "Add from CivitAI")}</span>
+                  <span class="arch-hint">{currentBaseCategory === "anima" ? "Anima LoRAs" : (currentBaseCategory === "krea2" ? "Krea 2 LoRAs" : $_("krea_civitai_add_card_hint", {}, "Browse SDXL character LoRAs"))}</span>
+                </button>
+              {/if}
             </div>
           </div>
 
@@ -11134,13 +11186,15 @@
             <div class="modal-field">
               <div class="factory-section-head">
                 <label style="margin: 0;">{$_("krea_persona_styles", {}, "Style / Concept LoRAs (optional):")}</label>
-                <button
-                  type="button"
-                  class="civitai-add-inline-btn"
-                  on:click={() => openCivitaiLoraModal("style", "factory")}
-                >
-                  {$_("krea_civitai_add_style_short", {}, "+ Add Style from CivitAI")}
-                </button>
+                {#if canImportCivitaiLoras}
+                  <button
+                    type="button"
+                    class="civitai-add-inline-btn"
+                    on:click={() => openCivitaiLoraModal("style", "factory")}
+                  >
+                    {$_("krea_civitai_add_style_short", {}, "+ Add Style from CivitAI")}
+                  </button>
+                {/if}
               </div>
               <div class="persona-lora-chip-grid">
                 {#each aiStyles as st}
@@ -11222,7 +11276,7 @@
   {/if}
 
   <!-- Modal: CivitAI LoRA Browser (Characters & Styles/Concepts) -->
-  {#if showCivitaiLoraModal}
+  {#if showCivitaiLoraModal && canImportCivitaiLoras}
     <!-- svelte-ignore a11y-click-events-have-key-events -->
     <!-- svelte-ignore a11y-no-static-element-interactions -->
     <div class="modal-backdrop" on:click={() => { showCivitaiSortMenu = false; showCivitaiLoraModal = false; }}>
