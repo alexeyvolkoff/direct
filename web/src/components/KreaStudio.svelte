@@ -8601,13 +8601,13 @@
                 <span class="popup-count-hint">
                   {$_("krea_model_label", {}, "Модель:")}
                   {#if sliders.base_model === "sdxl_realistic"}
-                    CyberRealistic XL
+                    {effectiveContentMode === "fun" ? "CyberRealistic XL" : "RealVisXL V5"}
                   {:else if sliders.base_model === "sdxl_perfect"}
-                    CyberPony v18
+                    {effectiveContentMode === "fun" ? "CyberPony v18" : "DreamShaper XL"}
                   {:else if sliders.base_model === "sdxl_fantasy"}
-                    CyberIllustrious V12
+                    {effectiveContentMode === "fun" ? "CyberIllustrious V12" : "ZavyChroma XL"}
                   {:else if sliders.base_model === "sdxl_tooned"}
-                    CyberPony Semi V5
+                    {effectiveContentMode === "fun" ? "CyberPony Semi V5" : "RealCartoon XL"}
                   {:else if sliders.base_model === "anima"}
                     {$_("krea_anima", {}, "Анима")}
                   {:else if sliders.base_model === "semi_realism"}
@@ -8786,13 +8786,13 @@
               <span class="model-pill-hint">
                 {#if studioEngineMode === "sdxl" || !canShowStudioTab}
                   {#if sliders.base_model === "sdxl_perfect"}
-                    CyberPony v18
+                    {effectiveContentMode === "fun" ? "CyberPony v18" : "DreamShaper XL"}
                   {:else if sliders.base_model === "sdxl_fantasy"}
-                    CyberIllustrious V12
+                    {effectiveContentMode === "fun" ? "CyberIllustrious V12" : "ZavyChroma XL"}
                   {:else if sliders.base_model === "sdxl_tooned"}
-                    CyberPony Semi V5
+                    {effectiveContentMode === "fun" ? "CyberPony Semi V5" : "RealCartoon XL"}
                   {:else}
-                    CyberRealistic XL
+                    {effectiveContentMode === "fun" ? "CyberRealistic XL" : "RealVisXL V5"}
                   {/if}
                 {:else if sliders.base_model === "anima"}
                   Anima V1.1
@@ -8810,7 +8810,9 @@
                   class="pill-btn"
                   class:active={sliders.base_model === "sdxl_realistic" || sliders.base_model === "sdxl"}
                   on:click={() => setBaseModel("sdxl_realistic")}
-                  title={$_("sdxl_realistic_title", {}, "Realistic (CyberRealistic XL): candid photography, natural light & skin texture")}
+                  title={effectiveContentMode === "fun"
+                    ? $_("sdxl_realistic_title", {}, "Realistic (CyberRealistic XL): candid photography, natural light & skin texture")
+                    : $_("sdxl_work_realistic_title", {}, "Realistic (RealVisXL V5): natural photography, crisp lighting & lifelike detail")}
                 >
                   <span class="pill-icon">📸</span>
                   <span>Realistic</span>
@@ -8820,7 +8822,9 @@
                   class="pill-btn"
                   class:active={sliders.base_model === "sdxl_perfect"}
                   on:click={() => setBaseModel("sdxl_perfect")}
-                  title={$_("sdxl_perfect_title", {}, "Perfect (CyberRealistic Pony v18): expressive anatomy, vivid looks & dynamic angles")}
+                  title={effectiveContentMode === "fun"
+                    ? $_("sdxl_perfect_title", {}, "Perfect (CyberRealistic Pony v18): expressive anatomy, vivid looks & dynamic angles")
+                    : $_("sdxl_work_perfect_title", {}, "Perfect (DreamShaper XL): balanced composition, vivid colors & cinematic lighting")}
                 >
                   <span class="pill-icon">💎</span>
                   <span>Perfect</span>
@@ -8830,7 +8834,9 @@
                   class="pill-btn"
                   class:active={sliders.base_model === "sdxl_fantasy"}
                   on:click={() => setBaseModel("sdxl_fantasy")}
-                  title={$_("sdxl_fantasy_title", {}, "Fantasy (CyberIllustrious V12): fantasy, anime & painterly illustration")}
+                  title={effectiveContentMode === "fun"
+                    ? $_("sdxl_fantasy_title", {}, "Fantasy (CyberIllustrious V12): fantasy, anime & painterly illustration")
+                    : $_("sdxl_work_fantasy_title", {}, "Fantasy (ZavyChroma XL): fantasy, concept art & painterly illustration")}
                 >
                   <span class="pill-icon">🔮</span>
                   <span>Fantasy</span>
@@ -8840,7 +8846,9 @@
                   class="pill-btn"
                   class:active={sliders.base_model === "sdxl_tooned"}
                   on:click={() => setBaseModel("sdxl_tooned")}
-                  title={$_("sdxl_tooned_title", {}, "Tooned (CyberPony Semi V5): stylized 2.5D semi-realism & illustration")}
+                  title={effectiveContentMode === "fun"
+                    ? $_("sdxl_tooned_title", {}, "Tooned (CyberPony Semi V5): stylized 2.5D semi-realism & illustration")
+                    : $_("sdxl_work_tooned_title", {}, "Tooned (RealCartoon XL): stylized 2.5D semi-realism & cartoon illustration")}
                 >
                   <span class="pill-icon">🎨</span>
                   <span>Tooned</span>
