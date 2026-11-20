@@ -6121,12 +6121,18 @@ async def check_krea_status_endpoint(request: Request, data: Optional[KreaStatus
     """
     ctx = _build_krea_ctx(request, data)
     res = await _check_effective_krea_status(ctx)
-    if isinstance(res, dict) and res.get("allowed") and res.get("tier") != "guest":
+    if isinstance(res, dict):
+        res = dict(res)
         try:
-            res = dict(res)
-            res["civitai_accounts"] = await core_service.list_civitai_publish_accounts(ctx)
+            include_fun = bool(res.get("uncensored") is True or ctx.private_mode or ctx.trusted_owner)
+            res["sdxl_models"] = core_service.get_sdxl_model_labels(include_fun=include_fun)
         except Exception as e:
-            logging.debug(f"[CivitAI] Accounts lookup in status skipped: {e}")
+            logging.debug(f"[Krea] sdxl_models label lookup skipped: {e}")
+        if res.get("allowed") and res.get("tier") != "guest":
+            try:
+                res["civitai_accounts"] = await core_service.list_civitai_publish_accounts(ctx)
+            except Exception as e:
+                logging.debug(f"[CivitAI] Accounts lookup in status skipped: {e}")
     return res
 
 

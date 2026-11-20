@@ -295,6 +295,39 @@ def resolve_style_checkpoint(style_key: str, *, allow_fun: bool = False) -> str:
                 return candidate
     return STYLE_MODELS.get(key, STYLE_MODELS["realistic"])
 
+
+def _format_checkpoint_label(filename: str) -> str:
+    """Derive a clean human-readable display name from a checkpoint filename."""
+    name = os.path.basename(str(filename or "")).strip()
+    if not name:
+        return ""
+    name = re.sub(r"\.(safetensors|ckpt|pt|pth)$", "", name, flags=re.IGNORECASE)
+    name = re.sub(r"[_-]?(fp16|bf16|fp8|pruned|emaonly|lightning|turbo|coreshift|play)\b", "", name, flags=re.IGNORECASE)
+    name = re.sub(r"([a-z])([A-Z])", r"\1 \2", name)
+    name = re.sub(r"(XL)(V\d)", r"\1 \2", name, flags=re.IGNORECASE)
+    name = re.sub(r"[_-]+", " ", name)
+    name = re.sub(r"\s+", " ", name).strip()
+    if name and name[0].islower():
+        name = name[0].upper() + name[1:]
+    return name
+
+
+def get_sdxl_model_labels(*, include_fun: bool = False) -> dict:
+    """Return display names for configured SDXL checkpoints from config/SETTINGS (omitting fun names for guests)."""
+    slots = ("realistic", "perfect", "fantasy", "tooned")
+    work = {}
+    for k in slots:
+        override = SETTINGS.get(f"WORK_{k.upper()}_LABEL", "").strip()
+        work[k] = override or _format_checkpoint_label(resolve_style_checkpoint(k, allow_fun=False))
+    out = {"work": work}
+    if include_fun:
+        fun = {}
+        for k in slots:
+            override = SETTINGS.get(f"{k.upper()}_LABEL", "").strip()
+            fun[k] = override or _format_checkpoint_label(resolve_style_checkpoint(k, allow_fun=True))
+        out["fun"] = fun
+    return out
+
 NEGATIVE_PROMPTS = get_json_prompt("negative_prompts.json")
 INTENT_PROMPT = get_prompt("intent.txt")
 CHAT_SUMMARY_PROMPT = get_prompt("chat_summary.txt")
