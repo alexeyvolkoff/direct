@@ -15,10 +15,10 @@
   "5": {
     "inputs": {
       "seed": 885015153121275,
-      "steps": 6,
-      "cfg": 1,
-      "sampler_name": "lcm",
-      "scheduler": "exponential",
+      "steps": 24,
+      "cfg": 5.0,
+      "sampler_name": "euler_ancestral",
+      "scheduler": "normal",
       "denoise": 1,
       "model": [
         "103",
@@ -211,7 +211,7 @@
   "126": {
     "inputs": {
       "lora_name": "dmd2_sdxl_4step_lora.safetensors",
-      "strength_model": 0.85,
+      "strength_model": 0,
       "strength_clip": 0,
       "model": [
         "127",

@@ -260,7 +260,7 @@ STYLE_MODELS = {
     "realistic2": SETTINGS.get("REALISTIC2_MODEL", SETTINGS.get("REALISTIC_MODEL", "CyberRealisticXLPlay_V10.0_FP16.safetensors")),
     "perfect": SETTINGS.get("PERFECT_MODEL", "cyberrealisticPony_v180Coreshift.safetensors"),
     "fantasy": SETTINGS.get("FANTASY_MODEL", "CyberIllustrious_V12_FP16.safetensors"),
-    "tooned": SETTINGS.get("TOONED_MODEL", "CyberRealistic_PonySemi_V5.safetensors"),
+    "tooned": SETTINGS.get("TOONED_MODEL", "PonyDiffusion_V6_XL.safetensors"),
 }
 
 WORK_STYLE_MODELS = {
@@ -4235,15 +4235,28 @@ def get_krea_presets(include_fun: bool = False, include_krea: bool = True) -> di
             archetypes.append(ch)
 
     # Append any additional predefined CivitAI SDXL styles/characters not present in local flow.json
+    # Only include LoRAs that are actually installed in COMFY_LORAS_DIR so guests/dropdowns never show missing LoRAs.
+    loras_dir = SETTINGS.get("COMFY_LORAS_DIR") or "/home/alexey/models/comfyui_models/loras"
+    def _is_lora_installed(item: dict) -> bool:
+        fname = str(item.get("filename") or "").strip()
+        vid = str(item.get("civitai_version_id") or "").strip()
+        if not fname and not vid:
+            return True  # prompt-only preset (e.g. "none")
+        if fname and os.path.isfile(os.path.join(loras_dir, fname)):
+            return True
+        if vid and os.path.isfile(os.path.join(loras_dir, f"civitai_{vid}.safetensors")):
+            return True
+        return False
+
     predef = horde_image_mapper.get_predefined_sdxl_presets()
     existing_style_ids = {str(s.get("id")) for s in art_styles if isinstance(s, dict)}
     for ps in predef.get("art_styles", []):
-        if ps.get("id") and ps["id"] not in existing_style_ids:
+        if ps.get("id") and ps["id"] not in existing_style_ids and _is_lora_installed(ps):
             art_styles.append(dict(ps))
             existing_style_ids.add(ps["id"])
     existing_arch_ids = {str(a.get("id")) for a in archetypes if isinstance(a, dict)}
     for pa in predef.get("archetypes", []):
-        if pa.get("id") and pa["id"] not in existing_arch_ids:
+        if pa.get("id") and pa["id"] not in existing_arch_ids and _is_lora_installed(pa):
             archetypes.append(dict(pa))
             existing_arch_ids.add(pa["id"])
 
@@ -5023,16 +5036,11 @@ async def generate_sdxl_studio_image(
         for k in active_lora_strengths
     )
 
-    # Balance DMD2 distillation LoRA vs character/style LoRAs so Pony/Illustrious do not flatten faces;
-    # disable DMD2 on Lightning/Turbo checkpoints which already have built-in step distillation.
+    # DMD2 distillation LoRA disabled: native SDXL / Pony / Illustrious sampling preserves colors,
+    # negative prompts, and CivitAI style LoRA fidelity (Lightning/Turbo checkpoints stay fast natively).
     if "126" in workflow_json and "inputs" in workflow_json["126"]:
         workflow_json["126"]["inputs"]["strength_clip"] = 0.0
-        if "lightning" in ckpt_low or "turbo" in ckpt_low:
-            workflow_json["126"]["inputs"]["strength_model"] = 0.0
-        elif has_active_char_lora:
-            workflow_json["126"]["inputs"]["strength_model"] = 0.76 if (is_pony_ckpt or is_illus_ckpt) else 0.85
-        else:
-            workflow_json["126"]["inputs"]["strength_model"] = 0.85 if (is_pony_ckpt or is_illus_ckpt) else 0.95
+        workflow_json["126"]["inputs"]["strength_model"] = 0.0
 
     if has_active_char_lora:
         for k in list(active_lora_strengths.keys()):
@@ -5086,11 +5094,21 @@ async def generate_sdxl_studio_image(
         sdxl_tail = "photorealistic, detailed face, natural skin texture, sharp focus, highres"
         final_positive = f"{clean_positive}, {sdxl_tail}" if clean_positive else sdxl_tail
 
+    if is_pony_ckpt:
+        wants_bw = bool(re.search(r"\b(monochrome|greyscale|grayscale|black and white|b&w|чёрно-бел|черно-бел)\b", clean_positive, re.I))
+        pony_neg_extras = ["score_5", "score_4"]
+        if not wants_bw:
+            pony_neg_extras.extend(["monochrome", "greyscale", "black and white"])
+        neg_low = negative_prompt.lower()
+        missing_neg = [t for t in pony_neg_extras if t not in neg_low]
+        if missing_neg:
+            negative_prompt = f"{negative_prompt}, {', '.join(missing_neg)}" if negative_prompt else ", ".join(missing_neg)
+
     workflow_json["4"]["inputs"]["text"] = negative_prompt
     workflow_json["85"]["inputs"]["text"] = final_positive
     workflow_json["85"]["inputs"]["clip"] = ["103", 1]
 
-    # Разрешение и параметры сэмплера (DMD2 ускоритель работает оптимально на 4..12 шагах и cfg 1.0..2.0)
+    # Разрешение и параметры сэмплера (нативный SDXL / Pony / Illustrious без DMD2; Lightning/Turbo — быстрый режим)
     w_clamped = max(512, min(1536, (int(width or 896) // 8) * 8))
     h_clamped = max(512, min(1536, (int(height or 1152) // 8) * 8))
     if "6" in workflow_json and "inputs" in workflow_json["6"]:
@@ -5098,25 +5116,48 @@ async def generate_sdxl_studio_image(
         workflow_json["6"]["inputs"]["height"] = h_clamped
 
     eff_seed = int(seed) if (seed is not None and int(seed) > 0) else random.randint(1, 1125899906842624)
-    default_steps = 8 if has_active_char_lora else 7
-    raw_steps_val = int(steps or default_steps)
-    eff_steps = default_steps if raw_steps_val > 12 else max(4, raw_steps_val)
-    if has_active_char_lora and eff_steps == 7:
-        eff_steps = 8
-    raw_cfg_val = float(cfg or (1.55 if has_active_char_lora else 1.45))
-    if raw_cfg_val <= 1.05 or raw_cfg_val > 2.2:
-        eff_cfg = 1.55 if has_active_char_lora else 1.45
-        eff_steps = max(default_steps, eff_steps)
+    is_fast_ckpt = ("lightning" in ckpt_low) or ("turbo" in ckpt_low)
+    if is_fast_ckpt:
+        default_steps = 6
+        raw_steps_val = int(steps or default_steps)
+        eff_steps = max(4, min(12, raw_steps_val)) if raw_steps_val <= 14 else default_steps
+        raw_cfg_val = float(cfg or 2.0)
+        eff_cfg = round(max(1.2, min(3.5, raw_cfg_val)), 2) if 1.1 <= raw_cfg_val <= 3.5 else 2.0
+        eff_sampler = "dpmpp_sde"
+        eff_scheduler = "karras"
     else:
-        eff_cfg = raw_cfg_val
-        if has_active_char_lora and abs(eff_cfg - 1.45) < 0.02:
-            eff_cfg = 1.55
-    if not is_uncensored and eff_cfg < 1.55:
-        eff_cfg = 1.55
+        default_steps = 24
+        raw_steps_val = int(steps or default_steps)
+        # If caller passed legacy DMD2 steps (<=10), upgrade to native SDXL/Pony default
+        eff_steps = default_steps if raw_steps_val <= 10 else max(12, min(45, raw_steps_val))
+        default_cfg = 4.5 if is_pony_ckpt else 5.0
+        raw_cfg_val = float(cfg or default_cfg)
+        # If caller passed legacy DMD2 cfg (<=2.2), upgrade to native SDXL/Pony default
+        eff_cfg = default_cfg if raw_cfg_val <= 2.2 else round(max(2.5, min(9.0, raw_cfg_val)), 2)
+        eff_sampler = "euler_ancestral" if (is_pony_ckpt or is_illus_ckpt) else "dpmpp_2m"
+        eff_scheduler = "normal" if eff_sampler == "euler_ancestral" else "karras"
+
+        req_sampler = str(sliders.get("sampler") or "").strip().lower()
+        sampler_aliases = {
+            "euler a": ("euler_ancestral", "normal"),
+            "euler_ancestral": ("euler_ancestral", "normal"),
+            "euler": ("euler", "normal"),
+            "dpm++ 2m": ("dpmpp_2m", "karras"),
+            "dpm++ 2m karras": ("dpmpp_2m", "karras"),
+            "dpm++ 2m sde": ("dpmpp_2m_sde", "karras"),
+            "dpm++ 2m sde karras": ("dpmpp_2m_sde", "karras"),
+            "dpm++ sde": ("dpmpp_sde", "karras"),
+            "dpm++ sde karras": ("dpmpp_sde", "karras"),
+        }
+        if req_sampler in sampler_aliases:
+            eff_sampler, eff_scheduler = sampler_aliases[req_sampler]
+
     if "5" in workflow_json and "inputs" in workflow_json["5"]:
         workflow_json["5"]["inputs"]["seed"] = eff_seed
         workflow_json["5"]["inputs"]["steps"] = eff_steps
         workflow_json["5"]["inputs"]["cfg"] = eff_cfg
+        workflow_json["5"]["inputs"]["sampler_name"] = eff_sampler
+        workflow_json["5"]["inputs"]["scheduler"] = eff_scheduler
 
     # Подключаем работу с референсами в SDXL:
     # 1) "faceswap" — перенос лица с референса в новую сцену (ReActor HyperSwap 256 + GFPGAN)
@@ -10495,7 +10536,7 @@ async def extract_civitai_image_preset(ctx: UserContext | None, text: str) -> tu
         sdxl_ckpt_pick = "sdxl_realistic"
         if any(k in joined_hints for k in ("illustrious", "noob", "anime", "wai")):
             sdxl_ckpt_pick = "sdxl_fantasy"
-        elif "semi" in joined_hints:
+        elif "290640" in checkpoint_vids or "pony diffusion" in joined_hints or "semi" in joined_hints:
             sdxl_ckpt_pick = "sdxl_tooned"
         elif "pony" in joined_hints:
             sdxl_ckpt_pick = "sdxl_perfect"
@@ -10519,28 +10560,85 @@ async def extract_civitai_image_preset(ctx: UserContext | None, text: str) -> tu
     archetype_weights = {aid: archetype_weights[aid] for aid in matched_archetypes if aid in archetype_weights}
     matched_archetype_labels = [f"{arch_by_id[aid]['name']} ({archetype_weights.get(aid, arch_by_id[aid]['default_strength'])})" for aid in matched_archetypes]
 
-    # Collect unmatched non-utility LoRAs (for transparent reporting)
+    # Auto-import unmatched CivitAI LoRAs (with exact weights) for the node owner; report remainder for guests
     utility_keywords = ("highres", "hires", "upscale", "detail", "lightning", "hyper", "lcm", "turbo", "slider", "dmd2")
+    is_owner_import = bool(ctx and (getattr(ctx, "private_mode", False) or getattr(ctx, "trusted_owner", False)))
+    imported_custom_loras: list[dict] = []
+    seen_custom_vids: set[str] = set()
     seen_unmatched = set()
     for dl in discovered_loras:
         if (dl["vid"] and f"v:{dl['vid']}" in matched_norms_or_vids) or (dl["norm"] and f"n:{dl['norm']}" in matched_norms_or_vids):
             continue
         disp = os.path.splitext(dl["name"])[0].strip()
-        if not disp or disp.lower() in seen_unmatched:
-            continue
+        vid_s = str(dl.get("vid") or "").strip()
         if any(uk in disp.lower() for uk in utility_keywords):
+            continue
+        if is_owner_import and vid_s.isdigit() and vid_s not in seen_custom_vids and len(imported_custom_loras) < 5:
+            base_low = str(dl.get("base") or "").lower()
+            eco_ok = True
+            if target_cat == "sdxl" and base_low and not any(b in base_low for b in ("sdxl", "pony", "illustrious", "noob")):
+                eco_ok = False
+            elif target_cat == "anima" and base_low and "anima" not in base_low:
+                eco_ok = False
+            elif target_cat == "krea2" and base_low and not any(b in base_low for b in ("krea", "flux", "qwen", "zit")):
+                eco_ok = False
+            if eco_ok:
+                cid = f"civitai_{vid_s}"
+                w_val = dl["weight"] if dl.get("weight") is not None else weight_by_vid.get(vid_s, 0.8)
+                try:
+                    w_val = round(max(0.1, min(1.5, float(w_val))), 2)
+                except Exception:
+                    w_val = 0.8
+                label_name = disp or f"LoRA {vid_s}"
+                seen_custom_vids.add(vid_s)
+                if cid not in matched_styles:
+                    matched_styles.append(cid)
+                style_weights[cid] = w_val
+                matched_style_labels.append(f"{label_name} ({w_val})")
+                imported_custom_loras.append({
+                    "id": cid,
+                    "name": label_name,
+                    "civitai_name": label_name,
+                    "civitai_version_id": vid_s,
+                    "base_model": dl.get("base") or ("Pony" if "pony" in joined_hints else "SDXL 1.0"),
+                    "category": "style",
+                    "strength": w_val,
+                    "filename": f"civitai_{vid_s}.safetensors",
+                    "trigger": f"<{cid}>",
+                    "models": [target_cat],
+                    "is_custom": True,
+                })
+                continue
+        if not disp or disp.lower() in seen_unmatched:
             continue
         seen_unmatched.add(disp.lower())
         unmatched_lora_names.append(disp)
 
-    # Steps, CFG, and Aspect Ratio
+    # Steps, CFG, Sampler, Negative Prompt, and Aspect Ratio
     raw_steps = gen_meta.get("steps") or v1_meta.get("steps") or comfy_parsed.get("steps")
     raw_cfg = gen_meta.get("cfgScale") or gen_meta.get("cfg") or v1_meta.get("cfgScale") or comfy_parsed.get("cfg")
+    raw_sampler = str(gen_meta.get("sampler") or v1_meta.get("sampler") or comfy_parsed.get("sampler") or "").strip()
+    raw_negative = str(
+        gen_meta.get("negativePrompt")
+        or v1_meta.get("negativePrompt")
+        or comfy_parsed.get("negative_prompt")
+        or ""
+    ).strip()
+    if raw_negative:
+        # Strip SD 1.5 embeddings like easynegative that do not apply to SDXL/Pony/DiT
+        raw_negative = re.sub(r"\b(easynegative|badhandv4|ng_deepnegative_v1_75t)\b\s*,?\s*", "", raw_negative, flags=re.IGNORECASE).strip(" ,")
 
     if is_sdxl_base_model(detected_base):
-        # Local SDXL runs with DMD2 4-step LCM accelerator (optimal at 6 steps, CFG 1.0)
-        final_steps = 6
-        final_cfg = 1.0
+        default_steps = 24
+        default_cfg = 4.5 if ("pony" in joined_hints or detected_base in ("sdxl_tooned", "sdxl_perfect")) else 5.0
+        try:
+            final_steps = max(12, min(45, int(raw_steps))) if raw_steps is not None else default_steps
+        except Exception:
+            final_steps = default_steps
+        try:
+            final_cfg = round(max(2.5, min(9.0, float(raw_cfg))), 1) if raw_cfg is not None else default_cfg
+        except Exception:
+            final_cfg = default_cfg
     else:
         default_steps = 25 if detected_base == "anima" else 12
         default_cfg = 3.0 if detected_base == "anima" else (2.0 if detected_base == "semi_realism" else 1.5)
@@ -10582,8 +10680,11 @@ async def extract_civitai_image_preset(ctx: UserContext | None, text: str) -> tu
         "style_weights": style_weights,
         "archetypes": matched_archetypes,
         "archetype_weights": archetype_weights,
+        "custom_loras": imported_custom_loras,
         "steps": final_steps,
         "cfg": final_cfg,
+        "sampler": raw_sampler,
+        "negative_prompt": raw_negative,
         "aspect": aspect,
     }
 

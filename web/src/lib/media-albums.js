@@ -684,7 +684,10 @@ export function humanizeCheckpointName(rawCkpt = "") {
 
   if (low.includes("analogmadness")) return { key: "ckpt:analog_madness_sdxl", label: "AnalogMadness SDXL" };
   if (low.includes("cyberrealisticxl") || low === "realistic") return { key: "ckpt:cyberrealistic_xl", label: "CyberRealistic XL" };
-  if (low.includes("ponysemi") || low === "tooned") return { key: "ckpt:pony_semi_xl", label: "Pony Semi XL" };
+  if (low.includes("ponydiffusion") || low.includes("pony_diffusion") || low === "tooned") {
+    return { key: "ckpt:pony_diffusion_v6_xl", label: "Pony Diffusion V6 XL" };
+  }
+  if (low.includes("ponysemi")) return { key: "ckpt:pony_semi_xl", label: "Pony Semi XL" };
   if (low.includes("cyberrealisticpony") || low.includes("ponyrealism") || low === "perfect") {
     return { key: "ckpt:cyberrealistic_pony", label: "CyberRealistic Pony" };
   }

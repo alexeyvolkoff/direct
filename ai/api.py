@@ -5516,6 +5516,11 @@ async def _run_civitai_lora_search(
     ctx.mcp_keys = mcp_keys or req_settings_mcp or (ctx.settings.get("mcp_keys") if isinstance(ctx.settings, dict) else None) or getattr(ctx, "mcp_keys", None) or {}
 
     is_owner = bool(ctx.private_mode or ctx.trusted_owner)
+    if not is_owner:
+        raise HTTPException(
+            status_code=403,
+            detail="CivitAI LoRA import is restricted to the node owner.",
+        )
     allow_nsfw = is_owner
     norm_eco = str(ecosystem or "sdxl").strip().lower()
     if norm_eco not in ("sdxl",):
@@ -5586,6 +5591,82 @@ async def search_horde_civitai_loras_post_endpoint(
         mcp_keys=data.mcp_keys,
         settings=data.settings,
     )
+
+
+class CivitaiLoraPrefetchInput(BaseModel):
+    loras: list[dict] = []
+    ecosystem: str = "sdxl"
+    omd_key: Optional[str] = None
+    mcp_keys: Optional[dict] = None
+    settings: Optional[dict] = None
+
+
+@app.post("/horde/civitai/loras/prefetch")
+async def prefetch_horde_civitai_loras_endpoint(
+    request: Request,
+    data: CivitaiLoraPrefetchInput,
+    header_omd_key: str | None = Depends(get_omd_key),
+):
+    """Owner-only background download of selected CivitAI SDXL/Pony LoRAs into local ComfyUI loras/."""
+    eff_key = data.omd_key or header_omd_key
+    ctx = get_ctx(eff_key)
+    ctx.private_mode = trusted_private_access(request, ctx)
+    ctx.trusted_owner = trusted_owner_access(request)
+    if isinstance(data.settings, dict):
+        ctx.settings.update({k: v for k, v in data.settings.items() if v is not None})
+    req_settings_mcp = data.settings.get("mcp_keys") if isinstance(data.settings, dict) else None
+    ctx.mcp_keys = data.mcp_keys or req_settings_mcp or (ctx.settings.get("mcp_keys") if isinstance(ctx.settings, dict) else None) or getattr(ctx, "mcp_keys", None) or {}
+
+    if not (ctx.private_mode or ctx.trusted_owner):
+        raise HTTPException(
+            status_code=403,
+            detail="CivitAI LoRA download is restricted to the node owner.",
+        )
+
+    civitai_token = core_service._resolve_civitai_token(ctx)
+    loras_dir = core_service.SETTINGS.get("COMFY_LORAS_DIR") or "/home/alexey/models/comfyui_models/loras"
+    raw_loras = [x for x in (data.loras or []) if isinstance(x, dict)][:10]
+    queued: list[str] = []
+    already_installed: list[str] = []
+
+    async def _bg_download(lora_key: str, custom_list: list[dict], eco: str, tok: str):
+        try:
+            res = await core_service.horde_image_mapper.ensure_local_civitai_lora(
+                lora_key=lora_key,
+                custom_loras=custom_list,
+                loras_dir=loras_dir,
+                allow_nsfw=True,
+                ecosystem=eco,
+                civitai_token=tok,
+            )
+            if res:
+                logging.info(f"[CivitaiPrefetch] Ready: {lora_key} -> {res.get('filename')}")
+            else:
+                logging.warning(f"[CivitaiPrefetch] Failed or skipped: {lora_key}")
+        except Exception as exc:
+            logging.warning(f"[CivitaiPrefetch] Error downloading {lora_key}: {exc}")
+
+    for item in raw_loras:
+        vid = str(item.get("civitai_version_id") or "").strip()
+        if not vid.isdigit():
+            continue
+        models_arr = item.get("models") if isinstance(item.get("models"), list) else []
+        eco = str(models_arr[0] if models_arr else (data.ecosystem or "sdxl")).strip().lower()
+        if eco != "sdxl":
+            continue
+        lora_key = str(item.get("id") or f"civitai_{vid}").strip()
+        cached_fp = os.path.join(loras_dir, f"civitai_{vid}.safetensors")
+        if os.path.isfile(cached_fp) and os.path.getsize(cached_fp) > 65536:
+            already_installed.append(lora_key)
+            continue
+        queued.append(lora_key)
+        asyncio.create_task(_bg_download(lora_key, raw_loras, eco, civitai_token))
+
+    return {
+        "status": "queued" if queued else "ready",
+        "queued": queued,
+        "already_installed": already_installed,
+    }
 
 
 @app.post("/personas/generate")

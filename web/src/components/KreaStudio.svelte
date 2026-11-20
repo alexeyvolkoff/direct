@@ -913,8 +913,8 @@
       generationError = "";
       if (!isSdxlModel(sliders.base_model)) {
         sliders.base_model = lastSdxlModel || "sdxl_realistic";
-        sliders.cfg = 1.45;
-        sliders.steps = 7;
+        sliders.cfg = 4.5;
+        sliders.steps = 24;
         sliders = { ...sliders };
         saveLocalSliders(sliders);
       }
@@ -928,9 +928,9 @@
     if (sliders.base_model === model) {
       if (isSdxlModel(model)) {
         generationError = "";
-        if (sliders.steps < 4 || sliders.steps > 12 || sliders.cfg < 1.0 || sliders.cfg > 2.2) {
-          sliders.steps = 7;
-          sliders.cfg = 1.45;
+        if (sliders.steps < 4 || sliders.steps > 45 || sliders.cfg < 1.0 || sliders.cfg > 9.0) {
+          sliders.steps = 24;
+          sliders.cfg = 4.5;
           sliders = { ...sliders };
           saveLocalSliders(sliders);
         }
@@ -945,8 +945,8 @@
     }
     sliders.base_model = model;
     if (isSdxlModel(model)) {
-      sliders.cfg = 1.45;
-      sliders.steps = 7;
+      sliders.cfg = 4.5;
+      sliders.steps = 24;
       generationError = "";
     } else if (isVideoModel(model)) {
       sliders.cfg = 1.0;
@@ -4055,6 +4055,26 @@
 
   function applyImportedSettings(applied) {
     if (!applied || typeof applied !== "object") return;
+    if (Array.isArray(applied.custom_loras) && applied.custom_loras.length > 0 && canImportCivitaiLoras) {
+      let mergedCustom = [...customCivitaiLoras];
+      let changedCustom = false;
+      for (const cl of applied.custom_loras) {
+        if (!cl || !cl.id || !cl.civitai_version_id) continue;
+        const idx = mergedCustom.findIndex((x) => x.id === cl.id);
+        if (idx === -1) {
+          mergedCustom = [{ ...cl, is_custom: true }, ...mergedCustom];
+          changedCustom = true;
+        } else if (cl.strength !== undefined && mergedCustom[idx].strength !== cl.strength) {
+          mergedCustom[idx] = { ...mergedCustom[idx], strength: cl.strength };
+          changedCustom = true;
+        }
+      }
+      if (changedCustom) {
+        customCivitaiLoras = mergedCustom;
+        persistCustomCivitaiLoras(customCivitaiLoras);
+      }
+      prefetchCivitaiLoras(applied.custom_loras);
+    }
     if (applied.base_model) {
       const normModel = isSdxlModel(applied.base_model) ? normalizeSdxlModel(applied.base_model) : applied.base_model;
       if (isSdxlModel(normModel)) lastSdxlModel = normModel;
@@ -4082,11 +4102,17 @@
         sliders.archetype_strength = sliders.archetype_weights[sliders.archetype];
       }
     }
-    if (typeof applied.steps === "number") {
-      sliders.steps = isSdxlModel(sliders.base_model) ? 6 : applied.steps;
+    if (typeof applied.steps === "number" && applied.steps > 0) {
+      sliders.steps = applied.steps;
     }
-    if (typeof applied.cfg === "number") {
-      sliders.cfg = isSdxlModel(sliders.base_model) ? 1.0 : applied.cfg;
+    if (typeof applied.cfg === "number" && applied.cfg > 0) {
+      sliders.cfg = applied.cfg;
+    }
+    if (typeof applied.sampler === "string" && applied.sampler.trim()) {
+      sliders.sampler = applied.sampler.trim();
+    }
+    if (typeof applied.negative_prompt === "string" && applied.negative_prompt.trim()) {
+      sliders.negative_prompt = applied.negative_prompt.trim();
     }
     if (applied.aspect) {
       sliders.aspect = applied.aspect;
@@ -8650,22 +8676,22 @@
                 <div class="advanced-setting-row">
                   <div class="setting-title-row">
                     <span class="setting-name">{$_("krea_steps", {}, "Шаги (Steps):")}</span>
-                    <span class="setting-val-badge">{sliders.steps} {studioEngineMode === "sdxl" ? "(DMD2)" : (sliders.steps <= 8 ? "(Turbo)" : "")}</span>
+                    <span class="setting-val-badge">{sliders.steps} {studioEngineMode === "sdxl" ? (sliders.steps <= 8 ? "(Fast)" : "(SDXL)") : (sliders.steps <= 8 ? "(Turbo)" : "")}</span>
                   </div>
                   {#if studioEngineMode === "sdxl"}
                     <input
                       type="range"
                       min="4"
-                      max="12"
+                      max="45"
                       step="1"
                       bind:value={sliders.steps}
                       on:input={() => { sliders = { ...sliders }; saveLocalSliders(sliders); }}
                       class="slider-input advanced-slider"
                     />
                     <div class="setting-subtext">
-                      <span>4 ({$_("krea_steps_fast", {}, "Быстро")})</span>
-                      <span>7 (DMD2)</span>
-                      <span>12 (Max)</span>
+                      <span>6 (Fast)</span>
+                      <span>24 (SDXL/Pony)</span>
+                      <span>45 (Max)</span>
                     </div>
                   {:else}
                     <input
@@ -8696,16 +8722,16 @@
                     <input
                       type="range"
                       min="1.0"
-                      max="2.2"
-                      step="0.05"
+                      max="9.0"
+                      step="0.1"
                       bind:value={sliders.cfg}
                       on:input={() => { sliders = { ...sliders }; saveLocalSliders(sliders); }}
                       class="slider-input advanced-slider"
                     />
                     <div class="setting-subtext">
-                      <span>1.0 (DMD2)</span>
-                      <span>1.45 ({$_("krea_steps_quality", {}, "Оптимум")})</span>
-                      <span>2.2 (Max)</span>
+                      <span>2.0 (Fast)</span>
+                      <span>4.5 (Pony)</span>
+                      <span>7.0 (Strong)</span>
                     </div>
                   {:else}
                     <input
