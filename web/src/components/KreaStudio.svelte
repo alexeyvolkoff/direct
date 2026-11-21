@@ -3378,6 +3378,12 @@
       console.error("[KreaStudio] Error scanning folder:", err);
     }
 
+    const existingReadmeSet = new Set(
+      (rawList || [])
+        .map((f) => String(f?.name || f?.value || "").toLowerCase())
+        .filter((nm) => nm.endsWith(".readme.md"))
+    );
+
     const imageExtRegex = /\.(jpe?g|png|webp|gif|mp4|webm|mov)$/i;
     const imageFiles = (rawList || []).filter((f) => {
       const name = f.name || f.value || "";
@@ -3395,15 +3401,21 @@
       const name = f.name || f.value;
       const cleanPath = `${effectiveFolder}/${name}`.replace(/\/+/g, "/");
       const isVid = videoExtRegex.test(name);
+      const readmeBaseLower = (name.replace(/\.[^/.]+$/, "") + ".Readme.md").toLowerCase();
+      const hasSidecarReadme = existingReadmeSet.has(readmeBaseLower);
+      const cachedMeta = sidecarReadmeCache.get(cleanPath) || null;
       let mtime = getItemTimestamp({ name, date: f.lastModified || f.date || (f.mtime ? f.mtime * 1000 : null) }) || Date.now();
       return {
         id: name,
         name,
         path: cleanPath,
         isVideo: isVid,
-        title: name.replace(/\.[^.]+$/, ""),
-        description: "",
-        prompt: localPromptCache[name] || "",
+        title: cachedMeta?.title || name.replace(/\.[^.]+$/, ""),
+        description: cachedMeta?.description || "",
+        prompt: cachedMeta?.prompt || localPromptCache[name] || "",
+        sensitive: Boolean(cachedMeta?.sensitive),
+        hasSidecarReadme,
+        readmeLoaded: Boolean(cachedMeta || !hasSidecarReadme),
         blobUrl: imageBlobCache[cleanPath] || imageBlobCache[name] || null,
         thumbBlobUrl: thumbBlobCache[cleanPath] || thumbBlobCache[name] || null,
         coverBlobUrl: isVid ? (thumbBlobCache[cleanPath + ":cover"] || null) : null,
@@ -3461,91 +3473,175 @@
     if (loadSeq !== _studioRuntime.creationsLoadSeq || _studioRuntime.isDestroyed) return;
     initLightGallery();
 
-    fetchMissingPrompts(effectiveFolder, activeDrive, loadSeq);
+    // Reset lazy readme queue for this folder load; visible cards load their .Readme.md on demand
+    lazyReadmeQueue = [];
+    lazyReadmeInFlight.clear();
   }
 
-  async function fetchMissingPrompts(effectiveFolder, activeDrive, loadSeq) {
-    const drive = activeDrive || getTargetDrive();
-    let dirty = false;
-    let lastFlushTs = Date.now();
-    const maybeFlush = (force = false) => {
-      if (!dirty) return;
-      const now = Date.now();
-      if (force || now - lastFlushTs >= 500) {
+  // In-memory cache of parsed .Readme.md sidecars (keyed by item.path) to avoid re-reading on reload/visibilitychange
+  const sidecarReadmeCache = new Map();
+  let lazyReadmeQueue = [];
+  const lazyReadmeInFlight = new Set();
+  let lazyReadmeActiveWorkers = 0;
+  let lazyReadmeFlushTimer = null;
+  let lazyReadmeObserver = null;
+  const lazyReadmeNodeMap = new WeakMap();
+
+  function scheduleLazyReadmeFlush() {
+    if (lazyReadmeFlushTimer || _studioRuntime.isDestroyed) return;
+    lazyReadmeFlushTimer = setTimeout(() => {
+      lazyReadmeFlushTimer = null;
+      if (!_studioRuntime.isDestroyed) {
         items = [...items];
-        dirty = false;
-        lastFlushTs = now;
       }
-    };
+    }, 220);
+  }
 
-    for (const item of items) {
-      if (loadSeq !== _studioRuntime.creationsLoadSeq || _studioRuntime.isDestroyed) return;
-      if (item.prompt && item.description && item.title !== item.name.replace(/\.[^.]+$/, "")) continue;
+  function applyParsedSidecarToItem(item, txt) {
+    if (!item || !txt) return false;
+    const titleMatch = txt.match(/^#\s*([^\n]+)/);
+    const title = titleMatch ? titleMatch[1].trim() : item.title;
+    const promptMatch = txt.match(/<!--\s*prompt:\s*([\s\S]*?)-->/i);
+    let prompt = promptMatch ? promptMatch[1].trim() : item.prompt;
+    const sensitive = hasSensitiveReadmeContent(txt);
+    const descText = stripSensitiveHashtags(
+      txt.replace(/<!--\s*prompt:[\s\S]*?-->/gi, "").replace(/^#\s*[^\n]+\n+/, "").trim()
+    );
+    if (!prompt) prompt = descText;
+    item.title = title;
+    item.prompt = prompt;
+    item.description = descText;
+    item.sensitive = sensitive;
+    item.readmeLoaded = true;
+    sidecarReadmeCache.set(item.path, { title, prompt, description: descText, sensitive });
+    if (prompt) setBoundedPromptCache(item.name, prompt);
+    return true;
+  }
 
-      if (!item.prompt && chatStore && typeof chatStore.getPromptForFile === "function") {
-        try {
-          const cachedPrompt = await chatStore.getPromptForFile(item.name).catch(() => "");
-          if (cachedPrompt) {
-            item.prompt = cachedPrompt;
-            setBoundedPromptCache(item.name, cachedPrompt);
-            dirty = true;
-            maybeFlush(false);
-            if (item.description && item.title !== item.name.replace(/\.[^.]+$/, "")) continue;
-          }
-        } catch (_) {}
-      }
+  async function loadSingleItemSidecarReadme(item, loadSeq) {
+    if (!item || !item.path || item.readmeLoaded || !item.hasSidecarReadme) return;
+    const cached = sidecarReadmeCache.get(item.path);
+    if (cached) {
+      item.title = cached.title || item.title;
+      item.prompt = cached.prompt || item.prompt;
+      item.description = cached.description || item.description;
+      item.sensitive = Boolean(cached.sensitive);
+      item.readmeLoaded = true;
+      scheduleLazyReadmeFlush();
+      return;
+    }
 
-      const readmePath = item.path.replace(/\.[^/.]+$/, "") + ".Readme.md";
-      const baseName = item.name.replace(/\.[^/.]+$/, "") + ".Readme.md";
+    if (!item.prompt && chatStore && typeof chatStore.getPromptForFile === "function") {
       try {
-        let txt = "";
-        // 1. Читаем из целевого P2P Drive через readDriveText
-        if (drive && (drive.isConnected || drive.status === "connected")) {
-          txt = await readDriveText(drive, readmePath).catch(() => null);
-        }
-        // 2. Если на P2P drive нет, запрашиваем через httpDrive (с ноды)
-        if (!txt && httpDrive && typeof httpDrive.fetch === "function") {
-          const resp = await httpDrive.fetch(readmePath).catch(() => null);
-          if (resp && resp.ok) {
-            txt = await resp.text().catch(() => "");
-          }
-        }
-        // 3. Fallback: прямой запрос к /generated/{baseName}
-        if (!txt && typeof window !== "undefined") {
-          const resp = await window.fetch(`/generated/${baseName}`).catch(() => null);
-          if (resp && resp.ok) {
-            txt = await resp.text().catch(() => "");
-          }
-        }
-        if (loadSeq !== _studioRuntime.creationsLoadSeq || _studioRuntime.isDestroyed) return;
-        if (txt) {
-          const titleMatch = txt.match(/^#\s*([^\n]+)/);
-          if (titleMatch) {
-            item.title = titleMatch[1].trim();
-          }
-          const promptMatch = txt.match(/<!--\s*prompt:\s*([\s\S]*?)-->/i);
-          if (promptMatch) {
-            item.prompt = promptMatch[1].trim();
-          }
-          item.sensitive = hasSensitiveReadmeContent(txt);
-          const descText = stripSensitiveHashtags(
-            txt.replace(/<!--\s*prompt:[\s\S]*?-->/gi, "").replace(/^#\s*[^\n]+\n+/, "").trim()
-          );
-          item.description = descText;
-          if (!item.prompt) {
-            item.prompt = descText;
-          }
-          if (item.prompt) {
-            setBoundedPromptCache(item.name, item.prompt);
-          }
-          dirty = true;
-          maybeFlush(false);
+        const cachedPrompt = await chatStore.getPromptForFile(item.name).catch(() => "");
+        if (cachedPrompt) {
+          item.prompt = cachedPrompt;
+          setBoundedPromptCache(item.name, cachedPrompt);
         }
       } catch (_) {}
     }
-    if (loadSeq === _studioRuntime.creationsLoadSeq && !_studioRuntime.isDestroyed) {
-      maybeFlush(true);
+
+    const drive = getTargetDrive();
+    const readmePath = item.path.replace(/\.[^/.]+$/, "") + ".Readme.md";
+    const baseName = item.name.replace(/\.[^/.]+$/, "") + ".Readme.md";
+    try {
+      let txt = "";
+      if (drive && (drive.isConnected || drive.status === "connected")) {
+        txt = await readDriveText(drive, readmePath).catch(() => null);
+      }
+      if (!txt && httpDrive && typeof httpDrive.fetch === "function") {
+        const resp = await httpDrive.fetch(readmePath).catch(() => null);
+        if (resp && resp.ok) txt = await resp.text().catch(() => "");
+      }
+      if (!txt && typeof window !== "undefined") {
+        const resp = await window.fetch(`/generated/${baseName}`).catch(() => null);
+        if (resp && resp.ok) txt = await resp.text().catch(() => "");
+      }
+      if (loadSeq !== _studioRuntime.creationsLoadSeq || _studioRuntime.isDestroyed) return;
+      if (txt) {
+        applyParsedSidecarToItem(item, txt);
+        scheduleLazyReadmeFlush();
+      } else {
+        item.readmeLoaded = true;
+        sidecarReadmeCache.set(item.path, {
+          title: item.title,
+          prompt: item.prompt,
+          description: item.description,
+          sensitive: Boolean(item.sensitive),
+        });
+      }
+    } catch (_) {
+      item.readmeLoaded = true;
     }
+  }
+
+  function drainLazyReadmeQueue() {
+    const MAX_CONCURRENCY = 2;
+    const seq = _studioRuntime.creationsLoadSeq;
+    while (lazyReadmeActiveWorkers < MAX_CONCURRENCY && lazyReadmeQueue.length > 0) {
+      const nextItem = lazyReadmeQueue.shift();
+      if (!nextItem || nextItem.readmeLoaded || !nextItem.hasSidecarReadme) continue;
+      lazyReadmeActiveWorkers += 1;
+      loadSingleItemSidecarReadme(nextItem, seq)
+        .finally(() => {
+          lazyReadmeInFlight.delete(nextItem.path);
+          lazyReadmeActiveWorkers = Math.max(0, lazyReadmeActiveWorkers - 1);
+          if (seq === _studioRuntime.creationsLoadSeq && !_studioRuntime.isDestroyed) {
+            drainLazyReadmeQueue();
+          }
+        });
+    }
+  }
+
+  function enqueueLazyReadme(item) {
+    if (!item || !item.path || item.readmeLoaded || !item.hasSidecarReadme) return;
+    if (lazyReadmeInFlight.has(item.path)) return;
+    lazyReadmeInFlight.add(item.path);
+    lazyReadmeQueue.push(item);
+    drainLazyReadmeQueue();
+  }
+
+  function getSharedLazyReadmeObserver() {
+    if (lazyReadmeObserver || typeof IntersectionObserver === "undefined") return lazyReadmeObserver;
+    lazyReadmeObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            const it = lazyReadmeNodeMap.get(entry.target);
+            if (it) enqueueLazyReadme(it);
+            try { lazyReadmeObserver.unobserve(entry.target); } catch (_) {}
+          }
+        }
+      },
+      { root: null, rootMargin: "350px 0px", threshold: 0.01 }
+    );
+    return lazyReadmeObserver;
+  }
+
+  function lazyReadme(node, item) {
+    let cur = item;
+    const obs = getSharedLazyReadmeObserver();
+    const attach = () => {
+      if (!cur || cur.readmeLoaded || !cur.hasSidecarReadme) return;
+      if (obs) {
+        lazyReadmeNodeMap.set(node, cur);
+        obs.observe(node);
+      } else {
+        enqueueLazyReadme(cur);
+      }
+    };
+    attach();
+    return {
+      update(nextItem) {
+        cur = nextItem;
+        if (cur && !cur.readmeLoaded && cur.hasSidecarReadme) {
+          attach();
+        }
+      },
+      destroy() {
+        try { obs && obs.unobserve(node); } catch (_) {}
+      }
+    };
   }
 
   function deleteCreation(item, e) {
@@ -5617,6 +5713,15 @@
   async function ensureItemPromptAndTitle(item) {
     if (!item) return;
     if (item.title && item.title !== item.name.replace(/\.[^.]+$/, "") && item.prompt && item.description) return;
+    if (item.path && sidecarReadmeCache.has(item.path)) {
+      const c = sidecarReadmeCache.get(item.path);
+      if (c.title) item.title = c.title;
+      if (c.prompt) item.prompt = c.prompt;
+      if (c.description) item.description = c.description;
+      item.sensitive = Boolean(c.sensitive);
+      item.readmeLoaded = true;
+      return;
+    }
     const readmePath = item.path.replace(/\.[^/.]+$/, "") + ".Readme.md";
     const baseName = item.name.replace(/\.[^/.]+$/, "") + ".Readme.md";
     try {
@@ -5634,13 +5739,7 @@
         if (resp && resp.ok) txt = await resp.text().catch(() => "");
       }
       if (txt) {
-        const titleMatch = txt.match(/^#\s*([^\n]+)/);
-        if (titleMatch) item.title = titleMatch[1].trim();
-        const promptMatch = txt.match(/<!--\s*prompt:\s*([\s\S]*?)-->/i);
-        if (promptMatch) item.prompt = promptMatch[1].trim();
-        const descText = txt.replace(/<!--\s*prompt:[\s\S]*?-->/gi, "").replace(/^#\s*[^\n]+\n+/, "").trim();
-        item.description = descText;
-        if (!item.prompt) item.prompt = descText;
+        applyParsedSidecarToItem(item, txt);
       }
     } catch (_) {}
   }
@@ -8099,7 +8198,7 @@
               {@const clickScope = activeKreaAlbum ? filteredKreaItems : kGroup.items}
               {@const immediateMemUrl = getImmediateMemoryUrl(item, imageBlobCache, thumbBlobCache)}
               {@const isKreaSelected = kreaSelectedIds.has(item.id)}
-              <div class="gallery-card" class:is-attached-ref={itemRefIdx >= 0} class:is-sensitive-card={itemShouldBlur} class:is-story-selected={isKreaSelected}>
+              <div class="gallery-card" use:lazyReadme={item} class:is-attached-ref={itemRefIdx >= 0} class:is-sensitive-card={itemShouldBlur} class:is-story-selected={isKreaSelected}>
                 <!-- svelte-ignore a11y-click-events-have-key-events -->
                 <!-- svelte-ignore a11y-no-static-element-interactions -->
                 <div
